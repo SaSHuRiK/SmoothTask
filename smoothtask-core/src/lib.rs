@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use config::Config;
 use std::time::{Duration, Instant};
+use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
@@ -24,7 +25,14 @@ use crate::metrics::windows::{StaticWindowIntrospector, WindowIntrospector, X11I
 use crate::policy::engine::PolicyEngine;
 
 /// Главный цикл демона: опрос метрик, ранжирование, применение.
-pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
+///
+/// Демон работает до тех пор, пока не будет получен сигнал завершения через `shutdown_rx`.
+/// Для корректного завершения отправьте сигнал через соответствующий `watch::Sender`.
+pub async fn run_daemon(
+    config: Config,
+    dry_run: bool,
+    mut shutdown_rx: watch::Receiver<()>,
+) -> Result<()> {
     info!("Initializing SmoothTask daemon (dry_run = {})", dry_run);
 
     // Инициализация подсистем
@@ -95,6 +103,12 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
 
     let mut iteration = 0u64;
     loop {
+        // Проверяем сигнал завершения перед началом итерации
+        if shutdown_rx.has_changed().unwrap_or(false) {
+            info!("Shutdown signal received, exiting main loop");
+            break;
+        }
+
         let loop_start = Instant::now();
         iteration += 1;
 
@@ -191,7 +205,16 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
         };
 
         if sleep_duration.as_millis() > 0 {
-            tokio::time::sleep(sleep_duration).await;
+            // Используем tokio::select! для ожидания либо sleep, либо shutdown сигнала
+            tokio::select! {
+                _ = tokio::time::sleep(sleep_duration) => {
+                    // Продолжаем цикл
+                }
+                _ = shutdown_rx.changed() => {
+                    info!("Shutdown signal received during sleep, exiting main loop");
+                    break;
+                }
+            }
         } else {
             warn!(
                 "Iteration {} took {}ms, longer than polling interval {}ms",
@@ -201,6 +224,9 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
             );
         }
     }
+
+    info!("SmoothTask daemon stopped after {} iterations", iteration);
+    Ok(())
 }
 
 /// Собрать полный снапшот системы.
@@ -306,3 +332,4 @@ fn collect_snapshot(
         responsiveness,
     })
 }
+

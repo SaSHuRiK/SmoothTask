@@ -419,3 +419,5 @@ pub struct Snapshot {
 - [PulseAudio and Latency - The Blog of Juho](https://juho.tykkala.fi/Pulseaudio-and-latency)
 - Обсуждения на форумах KWin, GNOME, Sway
 
+
+

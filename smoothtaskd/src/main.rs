@@ -1,6 +1,8 @@
 use anyhow::Result;
 use clap::Parser;
 use smoothtask_core::{config::Config, run_daemon};
+use tokio::signal;
+use tokio::sync::watch;
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -27,5 +29,17 @@ async fn main() -> Result<()> {
 
     tracing::info!("Starting SmoothTask daemon (dry_run = {})", args.dry_run);
 
-    run_daemon(config, args.dry_run).await
+    // Создаём канал для graceful shutdown
+    let (shutdown_tx, shutdown_rx) = watch::channel(());
+
+    // Создаём задачу для обработки сигналов завершения
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        let _ = signal::ctrl_c().await;
+        tracing::info!("Received SIGINT/SIGTERM, initiating graceful shutdown");
+        let _ = shutdown_tx_clone.send(());
+    });
+
+    // Запускаем демон с каналом shutdown
+    run_daemon(config, args.dry_run, shutdown_rx).await
 }
