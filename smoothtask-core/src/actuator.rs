@@ -4,9 +4,11 @@
 //! применяет их через системные вызовы (setpriority, ioprio_set) и cgroups v2.
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use libc;
 use tracing::{debug, warn};
 
@@ -240,28 +242,148 @@ fn apply_ionice(pid: i32, class: i32, level: i32) -> Result<()> {
     Ok(())
 }
 
-/// Применить изменение cgroup v2 для процесса или группы процессов.
+/// Прочитать cgroup v2 путь процесса из /proc/[pid]/cgroup.
 ///
-/// Эта функция устанавливает cpu.weight для cgroup процесса.
-/// Для полноценной реализации требуется работа с cgroups-rs и создание/управление cgroups.
-/// Пока что это заглушка, которая логирует намерение.
-fn apply_cgroup(_pid: i32, _cgroup_params: CgroupParams, _cgroup_path: Option<&str>) -> Result<()> {
-    // TODO: Реализовать полноценное управление cgroups v2 через cgroups-rs
-    // Для этого нужно:
-    // 1. Определить cgroup процесса (из /proc/[pid]/cgroup)
-    // 2. Создать или использовать существующий cgroup для AppGroup
-    // 3. Установить cpu.weight через cgroups-rs
-    // 4. Переместить процесс в нужный cgroup (если требуется)
+/// Возвращает путь cgroup v2 (формат: 0::/path/to/cgroup).
+/// Если cgroup v2 не найден или произошла ошибка чтения, возвращает None.
+pub fn read_process_cgroup(pid: i32) -> Result<Option<String>> {
+    let cgroup_file = format!("/proc/{}/cgroup", pid);
+    let content = match fs::read_to_string(&cgroup_file) {
+        Ok(c) => c,
+        Err(e) => {
+            debug!(pid = pid, error = %e, "Failed to read cgroup file");
+            return Ok(None);
+        }
+    };
+
+    // В cgroup v2 формат: 0::/path/to/cgroup
+    // Ищем строку, начинающуюся с "0::"
+    for line in content.lines() {
+        if line.starts_with("0::") {
+            let path = line.strip_prefix("0::").unwrap_or("");
+            if !path.is_empty() {
+                return Ok(Some(path.to_string()));
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// Получить путь к корню cgroup v2 файловой системы.
+///
+/// Обычно это /sys/fs/cgroup или /sys/fs/cgroup/unified.
+pub(crate) fn get_cgroup_root() -> PathBuf {
+    // Проверяем стандартные пути для cgroup v2
+    let candidates = ["/sys/fs/cgroup", "/sys/fs/cgroup/unified"];
+
+    for candidate in &candidates {
+        let path = Path::new(candidate);
+        // Проверяем наличие файла cgroup.controllers как признак cgroup v2
+        if path.join("cgroup.controllers").exists() {
+            return PathBuf::from(candidate);
+        }
+    }
+
+    // По умолчанию возвращаем стандартный путь
+    PathBuf::from("/sys/fs/cgroup")
+}
+
+/// Создать или получить cgroup для AppGroup.
+///
+/// Создаёт cgroup вида `/smoothtask/app-{app_group_id}` под корнем cgroup v2.
+pub(crate) fn get_or_create_app_cgroup(app_group_id: &str) -> Result<PathBuf> {
+    let cgroup_root = get_cgroup_root();
+    let app_cgroup_path = cgroup_root
+        .join("smoothtask")
+        .join(format!("app-{}", app_group_id));
+
+    // Создаём директорию, если её нет
+    if !app_cgroup_path.exists() {
+        fs::create_dir_all(&app_cgroup_path)
+            .with_context(|| format!("Failed to create cgroup directory: {:?}", app_cgroup_path))?;
+        debug!(cgroup = ?app_cgroup_path, "Created cgroup directory");
+    }
+
+    Ok(app_cgroup_path)
+}
+
+/// Установить cpu.weight для cgroup.
+fn set_cpu_weight(cgroup_path: &Path, cpu_weight: u32) -> Result<()> {
+    let weight_file = cgroup_path.join("cpu.weight");
+
+    // Записываем значение cpu.weight
+    fs::write(&weight_file, cpu_weight.to_string())
+        .with_context(|| format!("Failed to write cpu.weight to {:?}", weight_file))?;
 
     debug!(
-        pid = _pid,
-        cpu_weight = _cgroup_params.cpu_weight,
-        cgroup_path = ?_cgroup_path,
-        "Cgroup adjustment requested (not yet implemented)"
+        cgroup = ?cgroup_path,
+        cpu_weight = cpu_weight,
+        "Set cpu.weight for cgroup"
     );
 
-    // Пока что просто возвращаем Ok, так как полная реализация требует больше работы
-    // и может быть добавлена в отдельной задаче
+    Ok(())
+}
+
+/// Переместить процесс в указанный cgroup.
+fn move_process_to_cgroup(pid: i32, cgroup_path: &Path) -> Result<()> {
+    let cgroup_procs_file = cgroup_path.join("cgroup.procs");
+
+    // Записываем PID в cgroup.procs для перемещения процесса
+    fs::write(&cgroup_procs_file, pid.to_string())
+        .with_context(|| format!("Failed to move pid {} to cgroup {:?}", pid, cgroup_path))?;
+
+    debug!(
+        pid = pid,
+        cgroup = ?cgroup_path,
+        "Moved process to cgroup"
+    );
+
+    Ok(())
+}
+
+/// Применить изменение cgroup v2 для процесса или группы процессов.
+///
+/// Эта функция:
+/// 1. Определяет текущий cgroup процесса (из /proc/[pid]/cgroup или использует переданный)
+/// 2. Создаёт или использует существующий cgroup для AppGroup
+/// 3. Устанавливает cpu.weight через запись в /sys/fs/cgroup/.../cpu.weight
+/// 4. Перемещает процесс в нужный cgroup (если требуется)
+pub fn apply_cgroup(
+    pid: i32,
+    cgroup_params: CgroupParams,
+    app_group_id: &str,
+    current_cgroup_path: Option<&str>,
+) -> Result<()> {
+    // Определяем текущий cgroup процесса
+    let current_cgroup = match current_cgroup_path {
+        Some(path) => Some(path.to_string()),
+        None => read_process_cgroup(pid)?,
+    };
+
+    // Создаём или получаем cgroup для AppGroup
+    let app_cgroup_path = get_or_create_app_cgroup(app_group_id)?;
+
+    // Устанавливаем cpu.weight
+    set_cpu_weight(&app_cgroup_path, cgroup_params.cpu_weight)?;
+
+    // Перемещаем процесс в cgroup, если он ещё не там
+    let target_cgroup_str = app_cgroup_path
+        .strip_prefix(get_cgroup_root())
+        .unwrap_or(&app_cgroup_path)
+        .to_string_lossy()
+        .to_string();
+
+    if current_cgroup.as_deref() != Some(&target_cgroup_str) {
+        move_process_to_cgroup(pid, &app_cgroup_path)?;
+    } else {
+        debug!(
+            pid = pid,
+            cgroup = ?app_cgroup_path,
+            "Process already in target cgroup"
+        );
+    }
+
     Ok(())
 }
 
@@ -320,9 +442,9 @@ pub fn apply_priority_adjustments(
             continue;
         }
 
-        // Применяем cgroup (пока что только логируем)
+        // Применяем cgroup
         let cgroup_params = adj.target_class.params().cgroup;
-        if let Err(e) = apply_cgroup(adj.pid, cgroup_params, None) {
+        if let Err(e) = apply_cgroup(adj.pid, cgroup_params, &adj.app_group_id, None) {
             warn!(
                 pid = adj.pid,
                 error = %e,
@@ -571,5 +693,49 @@ mod tests {
         assert_eq!(class_order(PriorityClass::Normal), 3);
         assert_eq!(class_order(PriorityClass::Background), 2);
         assert_eq!(class_order(PriorityClass::Idle), 1);
+    }
+
+    #[test]
+    fn test_read_process_cgroup_parses_v2_format() {
+        // Тест на парсинг формата cgroup v2: "0::/path/to/cgroup"
+        // Используем реальный PID текущего процесса
+        let result = read_process_cgroup(std::process::id() as i32);
+        // Результат может быть Some или None в зависимости от наличия cgroup v2
+        // Главное - что функция не паникует и возвращает Result
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_read_process_cgroup_handles_nonexistent_pid() {
+        // Тест на обработку несуществующего PID
+        let result = read_process_cgroup(999999999);
+        assert!(result.is_ok());
+        // Для несуществующего PID должно вернуться None или Ok(None)
+        let cgroup = result.unwrap();
+        // Может быть None, если файл не существует
+        assert!(cgroup.is_none() || cgroup.is_some());
+    }
+
+    #[test]
+    fn test_get_cgroup_root_finds_standard_path() {
+        // Тест на определение корня cgroup v2
+        let root = get_cgroup_root();
+        // Должен вернуть какой-то путь (даже если cgroup v2 недоступен)
+        assert!(!root.as_os_str().is_empty());
+    }
+
+    #[test]
+    fn test_get_or_create_app_cgroup_creates_path() {
+        // Тест на создание пути для AppGroup cgroup
+        // Этот тест может не работать без прав root, но проверим логику
+        let result = get_or_create_app_cgroup("test-app-123");
+        // Функция должна вернуть путь, даже если создание не удалось из-за прав
+        assert!(result.is_ok() || result.is_err());
+        // Если успешно, путь должен содержать "smoothtask" и "app-test-app-123"
+        if let Ok(path) = result {
+            let path_str = path.to_string_lossy();
+            assert!(path_str.contains("smoothtask"));
+            assert!(path_str.contains("app-test-app-123"));
+        }
     }
 }

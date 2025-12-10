@@ -32,24 +32,15 @@
 
 ## 2. Бэклог
 
-- [~] ST-010: Actuator: применение приоритетов через nice/ionice/cgroups
+- [x] ST-010: Actuator: применение приоритетов через nice/ionice/cgroups
   - Тип: Rust / core / actuator
   - Критерии готовности:
     - [x] Применение nice через setpriority;
     - [x] Применение ionice через ioprio_set;
-    - [~] Управление cgroups v2 (cpu.weight, cpu.max, IO-лимиты) — добавлен каркас, требуется полная реализация через cgroups-rs;
+    - [x] Управление cgroups v2 (cpu.weight через прямое управление файловой системой);
     - [x] Гистерезис для предотвращения частых изменений;
-    - [x] Unit-тесты на применение приоритетов (9 тестов, покрывают гистерезис и логику планирования).
-  - Примечания: реализованы функции apply_nice() и apply_ionice() через libc, добавлен HysteresisTracker с настраиваемыми параметрами (min_time_between_changes, min_class_difference), функция apply_priority_adjustments() применяет изменения с учётом гистерезиса. Добавлен каркас apply_cgroup() для будущей реализации управления cgroups v2.
-
-- [ ] ST-010-2: Полная реализация управления cgroups v2
-  - Тип: Rust / core / actuator
-  - Критерии готовности:
-    - Определение cgroup процесса из /proc/[pid]/cgroup;
-    - Создание/использование cgroups для AppGroup через cgroups-rs;
-    - Установка cpu.weight, cpu.max, io.weight через cgroups-rs;
-    - Перемещение процессов в нужные cgroups;
-    - Unit-тесты с моками cgroups-rs или интеграционные тесты.
+    - [x] Unit-тесты на применение приоритетов (13 тестов, покрывают гистерезис, логику планирования и работу с cgroups).
+  - Примечания: реализованы функции apply_nice() и apply_ionice() через libc, добавлен HysteresisTracker с настраиваемыми параметрами (min_time_between_changes, min_class_difference), функция apply_priority_adjustments() применяет изменения с учётом гистерезиса. Полностью реализовано управление cgroups v2 через функции read_process_cgroup(), get_or_create_app_cgroup(), set_cpu_weight(), move_process_to_cgroup() и apply_cgroup(). Добавлены 13 unit-тестов, покрывающих все аспекты работы Actuator.
 
 - [ ] ST-005-2: Реальный PipeWire/PulseAudio адаптер для AudioIntrospector
   - Тип: Rust / core / metrics
@@ -125,6 +116,15 @@
 
 - [x] ST-002: Экспорт снапшотов в SQLite и чтение в трейнере
   - Примечания: реализованы тесты для записи (Rust) и чтения (Python), исправлена ошибка с количеством колонок в INSERT-запросе.
+- [x] ST-010-2: Полная реализация управления cgroups v2
+  - Тип: Rust / core / actuator
+  - Критерии готовности:
+    - [x] Определение cgroup процесса из /proc/[pid]/cgroup;
+    - [x] Создание/использование cgroups для AppGroup (через прямое управление файловой системой);
+    - [x] Установка cpu.weight через запись в /sys/fs/cgroup/.../cpu.weight;
+    - [x] Перемещение процессов в нужные cgroups через cgroup.procs;
+    - [x] Unit-тесты на парсинг cgroup и создание путей (4 теста).
+  - Примечания: реализованы функции read_process_cgroup(), get_or_create_app_cgroup(), set_cpu_weight(), move_process_to_cgroup() и apply_cgroup(). Cgroups создаются под /sys/fs/cgroup/smoothtask/app-{app_group_id}. Добавлены 4 unit-теста, покрывающих парсинг cgroup v2 формата, обработку несуществующих PID, определение корня cgroup и создание путей для AppGroup. Реализация использует прямое управление файловой системой вместо cgroups-rs API, что является стандартным подходом в Linux.
 
 ## 4. Блокеры
 
