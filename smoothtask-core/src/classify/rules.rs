@@ -187,35 +187,81 @@ impl PatternDatabase {
 
     /// Проверяет, соответствует ли строка паттерну.
     ///
-    /// Поддерживает простые wildcard паттерны:
-    /// - `*` - любая последовательность символов
+    /// Поддерживает glob паттерны:
+    /// - `*` - любая последовательность символов (включая пустую)
     /// - `?` - один символ
     /// - точное совпадение, если нет wildcard символов
+    ///
+    /// Примеры:
+    /// - `firefox*` соответствует `firefox`, `firefox-bin`, `firefox-esr`
+    /// - `*firefox` соответствует `firefox`, `something-firefox`
+    /// - `*firefox*` соответствует `firefox`, `firefox-bin`, `something-firefox-bin`
+    /// - `firefox-?-bin` соответствует `firefox-a-bin`, `firefox-1-bin`
+    /// - `firefox-*-bin` соответствует `firefox-esr-bin`, `firefox-123-bin`
     fn matches_pattern(text: &str, pattern: &str) -> bool {
-        // Если паттерн содержит wildcard символы, используем простое сопоставление
-        if pattern.contains('*') || pattern.contains('?') {
-            // Простая реализация: заменяем * на .* и ? на . для regex-подобного поведения
-            // Но для простоты используем starts_with/ends_with/contains для базовых случаев
-            if pattern.starts_with('*') && pattern.ends_with('*') {
-                // *something* -> contains
-                let inner = &pattern[1..pattern.len() - 1];
-                return text.contains(inner);
-            } else if pattern.ends_with('*') {
-                // something* -> starts_with
-                let prefix = &pattern[..pattern.len() - 1];
-                return text.starts_with(prefix);
-            } else if pattern.starts_with('*') {
-                // *something -> ends_with
-                let suffix = &pattern[1..];
-                return text.ends_with(suffix);
-            }
-            // Для более сложных случаев пока используем точное совпадение
-            // TODO: можно добавить полноценную поддержку glob/regex позже
+        // Если паттерн не содержит wildcard символов, используем точное совпадение
+        if !pattern.contains('*') && !pattern.contains('?') {
             return text == pattern;
         }
 
-        // Точное совпадение (case-sensitive)
-        text == pattern
+        // Используем рекурсивный алгоритм сопоставления glob паттернов
+        Self::glob_match_recursive(text.as_bytes(), pattern.as_bytes())
+    }
+
+    /// Рекурсивная функция для сопоставления glob паттернов.
+    ///
+    /// Алгоритм:
+    /// - `*` соответствует любой последовательности символов (включая пустую)
+    /// - `?` соответствует одному символу
+    /// - Обычные символы должны совпадать точно
+    fn glob_match_recursive(text: &[u8], pattern: &[u8]) -> bool {
+        // Базовый случай: если паттерн пуст, текст тоже должен быть пуст
+        if pattern.is_empty() {
+            return text.is_empty();
+        }
+
+        // Базовый случай: если текст пуст, паттерн должен состоять только из `*`
+        if text.is_empty() {
+            return pattern.iter().all(|&b| b == b'*');
+        }
+
+        match pattern[0] {
+            b'*' => {
+                // `*` может соответствовать:
+                // 1. Пустой строке (пропускаем `*` и продолжаем)
+                // 2. Одному или более символам (пропускаем один символ из text и продолжаем)
+                // 3. Всей оставшейся строке (если после `*` ничего нет)
+
+                // Оптимизация: если паттерн заканчивается на `*`, он соответствует всему
+                if pattern.len() == 1 {
+                    return true;
+                }
+
+                // Пробуем все возможные совпадения для `*`
+                for i in 0..=text.len() {
+                    if Self::glob_match_recursive(&text[i..], &pattern[1..]) {
+                        return true;
+                    }
+                }
+                false
+            }
+            b'?' => {
+                // `?` соответствует одному символу
+                if text.is_empty() {
+                    false
+                } else {
+                    Self::glob_match_recursive(&text[1..], &pattern[1..])
+                }
+            }
+            ch => {
+                // Обычный символ должен совпадать точно
+                if text.is_empty() || text[0] != ch {
+                    false
+                } else {
+                    Self::glob_match_recursive(&text[1..], &pattern[1..])
+                }
+            }
+        }
     }
 }
 
@@ -487,6 +533,7 @@ apps:
     #[test]
     fn matches_pattern_with_wildcards() {
         // Тестируем функцию matches_pattern напрямую
+        // Базовые случаи с *
         assert!(PatternDatabase::matches_pattern("firefox-bin", "firefox*"));
         assert!(PatternDatabase::matches_pattern("firefox", "firefox*"));
         assert!(PatternDatabase::matches_pattern(
@@ -499,6 +546,94 @@ apps:
         ));
         assert!(PatternDatabase::matches_pattern("firefox", "firefox"));
         assert!(!PatternDatabase::matches_pattern("chrome", "firefox"));
+
+        // Тесты с ? (один символ)
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-a-bin",
+            "firefox-?-bin"
+        ));
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-1-bin",
+            "firefox-?-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "firefox-ab-bin",
+            "firefox-?-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "firefox--bin",
+            "firefox-?-bin"
+        ));
+
+        // Тесты с множественными *
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-esr-bin",
+            "firefox-*-bin"
+        ));
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-123-bin",
+            "firefox-*-bin"
+        ));
+        assert!(PatternDatabase::matches_pattern(
+            "firefox--bin",
+            "firefox-*-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "firefox-esr",
+            "firefox-*-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "chrome-esr-bin",
+            "firefox-*-bin"
+        ));
+
+        // Тесты с комбинациями * и ?
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-a-esr-bin",
+            "firefox-?-*-bin"
+        ));
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-1-123-bin",
+            "firefox-?-*-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "firefox-esr-bin",
+            "firefox-?-*-bin"
+        ));
+
+        // Тесты с несколькими ?
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-12-bin",
+            "firefox-??-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "firefox-1-bin",
+            "firefox-??-bin"
+        ));
+        assert!(!PatternDatabase::matches_pattern(
+            "firefox-123-bin",
+            "firefox-??-bin"
+        ));
+
+        // Тесты с * в середине
+        assert!(PatternDatabase::matches_pattern(
+            "firefox-esr-bin",
+            "fire*bin"
+        ));
+        assert!(PatternDatabase::matches_pattern("firefox-bin", "fire*bin"));
+        assert!(!PatternDatabase::matches_pattern("firefox", "fire*bin"));
+
+        // Тесты с пустыми строками
+        assert!(PatternDatabase::matches_pattern("", "*"));
+        assert!(PatternDatabase::matches_pattern("", "**"));
+        assert!(!PatternDatabase::matches_pattern("", "?"));
+        assert!(!PatternDatabase::matches_pattern("a", ""));
+        assert!(PatternDatabase::matches_pattern("", ""));
+
+        // Тесты с только *
+        assert!(PatternDatabase::matches_pattern("anything", "*"));
+        assert!(PatternDatabase::matches_pattern("", "*"));
+        assert!(PatternDatabase::matches_pattern("a", "*"));
     }
 
     #[test]
