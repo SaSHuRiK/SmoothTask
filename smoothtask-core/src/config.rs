@@ -209,6 +209,14 @@ impl Thresholds {
             self.ui_loop_p95_threshold_ms
         );
 
+        // Логическая валидация: P99 должен быть >= P95, так как P99 - это более высокий перцентиль
+        ensure!(
+            self.sched_latency_p99_threshold_ms >= self.ui_loop_p95_threshold_ms,
+            "thresholds.sched_latency_p99_threshold_ms ({}) must be >= thresholds.ui_loop_p95_threshold_ms ({}) because P99 is a higher percentile than P95",
+            self.sched_latency_p99_threshold_ms,
+            self.ui_loop_p95_threshold_ms
+        );
+
         Ok(())
     }
 }
@@ -329,6 +337,8 @@ thresholds:
   interactive_percentile: 0.7
   normal_percentile: 0.5
   background_percentile: 0.3
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#
         )
     }
@@ -362,6 +372,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -411,7 +423,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.to_str().unwrap(),
             patterns_dir.to_str().unwrap()
@@ -444,7 +457,8 @@ thresholds:
   interactive_percentile: 0.7
   normal_percentile: 0.2
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
         );
 
@@ -534,6 +548,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -576,6 +592,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -618,6 +636,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -659,6 +679,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -701,6 +723,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -743,6 +767,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -829,7 +855,7 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 1000.0
   ui_loop_p95_threshold_ms: 2000.0
         "#,
             snapshot_db_path.display(),
@@ -873,7 +899,7 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 20.0
   ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
@@ -882,7 +908,7 @@ thresholds:
 
         // Должен загрузиться без ошибок
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
-        assert!((cfg.thresholds.sched_latency_p99_threshold_ms - 10.0).abs() < f64::EPSILON);
+        assert!((cfg.thresholds.sched_latency_p99_threshold_ms - 20.0).abs() < f64::EPSILON);
         assert!((cfg.thresholds.ui_loop_p95_threshold_ms - 16.67).abs() < f64::EPSILON);
     }
 
@@ -917,7 +943,7 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 20.0
   ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
@@ -963,7 +989,7 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 20.0
   ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
@@ -1005,6 +1031,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1047,6 +1075,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1085,6 +1115,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1124,6 +1156,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1165,6 +1199,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1203,6 +1239,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1326,6 +1364,8 @@ thresholds:
   interactive_percentile: 1.0
   normal_percentile: 1.0
   background_percentile: 1.0
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1364,6 +1404,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1406,6 +1448,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1577,7 +1621,7 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
-  sched_latency_p99_threshold_ms: 10.0
+  sched_latency_p99_threshold_ms: 1000.0
   ui_loop_p95_threshold_ms: 1000.0
         "#,
             snapshot_db_path.display(),
@@ -1618,6 +1662,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1660,6 +1706,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1701,6 +1749,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             patterns_dir.display()
         ));
@@ -1740,6 +1790,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display()
         ));
@@ -1780,6 +1832,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1822,6 +1876,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1864,6 +1920,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1873,6 +1931,135 @@ thresholds:
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config should load");
         assert_eq!(cfg.thresholds.user_idle_timeout_sec, 3600);
         assert_eq!(cfg.thresholds.interactive_build_grace_sec, 1800);
+    }
+
+    // Валидация логического соотношения между latency thresholds
+    #[test]
+    fn rejects_sched_latency_p99_threshold_less_than_ui_loop_p95_threshold() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
+  ui_loop_p95_threshold_ms: 20.0
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        let err_msg = err.to_string();
+        assert!(
+            err_msg.contains("sched_latency_p99_threshold_ms") && err_msg.contains("must be >=") && err_msg.contains("ui_loop_p95_threshold_ms"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_sched_latency_p99_threshold_equal_to_ui_loop_p95_threshold() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 16.67
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен успешно загрузиться, когда пороги равны
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config should load");
+        assert!((cfg.thresholds.sched_latency_p99_threshold_ms - 16.67).abs() < f64::EPSILON);
+        assert!((cfg.thresholds.ui_loop_p95_threshold_ms - 16.67).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn accepts_sched_latency_p99_threshold_greater_than_ui_loop_p95_threshold() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен успешно загрузиться, когда P99 > P95
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config should load");
+        assert!((cfg.thresholds.sched_latency_p99_threshold_ms - 20.0).abs() < f64::EPSILON);
+        assert!((cfg.thresholds.ui_loop_p95_threshold_ms - 16.67).abs() < f64::EPSILON);
     }
 
     #[test]
@@ -1904,6 +2091,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
@@ -1944,6 +2133,8 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
         "#,
             snapshot_db_path.display(),
             patterns_dir.display()
