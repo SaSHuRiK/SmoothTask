@@ -713,8 +713,87 @@ pub async fn run_daemon(
 
 /// Собрать полный снапшот системы.
 ///
-/// Использует `spawn_blocking` для блокирующих операций (чтение из /proc),
-/// чтобы не блокировать async runtime и позволить проверять shutdown сигналы.
+/// Функция собирает все метрики системы, процессов, окон, аудио и ввода,
+/// объединяя их в единый снапшот для последующего анализа и применения политики.
+///
+/// # Параметры
+///
+/// - `proc_paths`: Пути к файлам /proc для чтения системных метрик
+/// - `window_introspector`: Интроспектор для получения информации об окнах (X11/Wayland/Static)
+/// - `audio_introspector`: Интроспектор для получения метрик аудио (PipeWire/Static)
+/// - `input_tracker`: Трекер активности пользователя (evdev/Static)
+/// - `prev_cpu_times`: Предыдущие значения CPU для вычисления дельт (используется для CPU usage)
+/// - `thresholds`: Пороги для вычисления метрик отзывчивости
+/// - `latency_collector`: Коллектор scheduling latency (probe-thread)
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `Ok(Snapshot)` с полным снапшотом системы или `Err` при критической ошибке.
+///
+/// # Обработка ошибок
+///
+/// Функция использует graceful degradation: если один компонент не может собрать метрики
+/// (например, X11 недоступен или PipeWire не работает), функция продолжает работу с
+/// дефолтными значениями для этого компонента. Критической ошибкой считается только
+/// невозможность собрать системные метрики или метрики процессов (без них снапшот
+/// не имеет смысла).
+///
+/// # Алгоритм
+///
+/// 1. Сбор системных метрик (CPU, память, PSI, load average) через `spawn_blocking`
+/// 2. Вычисление дельт CPU для определения CPU usage
+/// 3. Сбор метрик процессов из /proc через `spawn_blocking`
+/// 4. Сбор метрик окон через window_introspector (X11/Wayland/Static)
+/// 5. Обновление информации об окнах в процессах
+/// 6. Сбор метрик аудио через audio_introspector (PipeWire/Static)
+/// 7. Обновление информации об аудио-клиентах в процессах
+/// 8. Сбор метрик ввода через input_tracker (evdev/Static)
+/// 9. Построение GlobalMetrics из собранных метрик
+/// 10. Построение ResponsivenessMetrics с вычислением bad_responsiveness и responsiveness_score
+///
+/// # Примеры использования
+///
+/// ```no_run
+/// use smoothtask_core::metrics::system::ProcPaths;
+/// use smoothtask_core::metrics::windows::StaticWindowIntrospector;
+/// use smoothtask_core::metrics::audio::StaticAudioIntrospector;
+/// use smoothtask_core::metrics::input::InputActivityTracker;
+/// use smoothtask_core::metrics::scheduling_latency::LatencyCollector;
+/// use std::sync::{Arc, Mutex};
+/// use std::time::Duration;
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// let proc_paths = ProcPaths::default();
+/// let window_introspector = Arc::new(StaticWindowIntrospector::new(Vec::new()));
+/// let audio_introspector = Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty()) as Box<dyn AudioIntrospector>));
+/// let input_tracker = Arc::new(Mutex::new(InputActivityTracker::new(Duration::from_secs(60))));
+/// let mut prev_cpu_times = None;
+/// let thresholds = Default::default();
+/// let latency_collector = Arc::new(LatencyCollector::new(1000));
+///
+/// let snapshot = collect_snapshot(
+///     &proc_paths,
+///     &window_introspector,
+///     &audio_introspector,
+///     &input_tracker,
+///     &mut prev_cpu_times,
+///     &thresholds,
+///     &latency_collector,
+/// ).await?;
+///
+/// println!("Collected {} processes", snapshot.processes.len());
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Примечания
+///
+/// - Все блокирующие операции (чтение из /proc, вызовы X11/PipeWire/evdev) обёрнуты
+///   в `spawn_blocking` для предотвращения блокировки async runtime
+/// - Функция не блокирует выполнение при ошибках компонентов (окна, аудио, ввод),
+///   используя дефолтные значения
+/// - `prev_cpu_times` обновляется внутри функции для вычисления дельт CPU на следующей итерации
+/// - `app_groups` в возвращаемом снапшоте пусты, они заполняются после группировки процессов
 async fn collect_snapshot(
     proc_paths: &ProcPaths,
     window_introspector: &Arc<dyn WindowIntrospector>,

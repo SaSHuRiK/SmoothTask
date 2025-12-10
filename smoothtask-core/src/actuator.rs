@@ -1409,7 +1409,10 @@ mod tests {
 
         // Оба вызова должны вернуть одинаковый путь (если оба успешны)
         if let (Ok(path1), Ok(path2)) = (result1, result2) {
-            assert_eq!(path1, path2, "get_or_create_app_cgroup should return consistent paths");
+            assert_eq!(
+                path1, path2,
+                "get_or_create_app_cgroup should return consistent paths"
+            );
         }
     }
 
@@ -1820,13 +1823,16 @@ mod tests {
         // Тест: все параметры совпадают - изменение не требуется
         let target = PriorityClass::Normal.params();
         let result = needs_change(
-            target.nice.nice,                    // current_nice
+            target.nice.nice,                                 // current_nice
             Some((target.ionice.class, target.ionice.level)), // current_ionice
-            Some(target.latency_nice.latency_nice), // current_latency_nice
-            Some(target.cgroup.cpu_weight),      // current_cpu_weight
+            Some(target.latency_nice.latency_nice),           // current_latency_nice
+            Some(target.cgroup.cpu_weight),                   // current_cpu_weight
             target,
         );
-        assert!(!result, "When all parameters match, needs_change should return false");
+        assert!(
+            !result,
+            "When all parameters match, needs_change should return false"
+        );
     }
 
     #[test]
@@ -1834,7 +1840,7 @@ mod tests {
         // Тест: nice отличается - изменение требуется
         let target = PriorityClass::Normal.params();
         let result = needs_change(
-            target.nice.nice + 1,                // current_nice отличается
+            target.nice.nice + 1, // current_nice отличается
             Some((target.ionice.class, target.ionice.level)),
             Some(target.latency_nice.latency_nice),
             Some(target.cgroup.cpu_weight),
@@ -1854,7 +1860,10 @@ mod tests {
             Some(target.cgroup.cpu_weight),
             target,
         );
-        assert!(result, "When latency_nice differs, needs_change should return true");
+        assert!(
+            result,
+            "When latency_nice differs, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1868,7 +1877,10 @@ mod tests {
             Some(target.cgroup.cpu_weight),
             target,
         );
-        assert!(result, "When latency_nice is unknown, needs_change should return true");
+        assert!(
+            result,
+            "When latency_nice is unknown, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1882,7 +1894,10 @@ mod tests {
             Some(target.cgroup.cpu_weight),
             target,
         );
-        assert!(result, "When ionice differs, needs_change should return true");
+        assert!(
+            result,
+            "When ionice differs, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1896,7 +1911,10 @@ mod tests {
             Some(target.cgroup.cpu_weight),
             target,
         );
-        assert!(result, "When ionice level differs, needs_change should return true");
+        assert!(
+            result,
+            "When ionice level differs, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1910,7 +1928,10 @@ mod tests {
             Some(target.cgroup.cpu_weight),
             target,
         );
-        assert!(result, "When ionice is unknown, needs_change should return true");
+        assert!(
+            result,
+            "When ionice is unknown, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1924,7 +1945,10 @@ mod tests {
             Some(target.cgroup.cpu_weight + 1), // current_cpu_weight отличается
             target,
         );
-        assert!(result, "When cpu_weight differs, needs_change should return true");
+        assert!(
+            result,
+            "When cpu_weight differs, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1938,7 +1962,10 @@ mod tests {
             None, // current_cpu_weight неизвестен
             target,
         );
-        assert!(result, "When cpu_weight is unknown, needs_change should return true");
+        assert!(
+            result,
+            "When cpu_weight is unknown, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1946,13 +1973,16 @@ mod tests {
         // Тест: несколько параметров отличаются - изменение требуется
         let target = PriorityClass::Interactive.params();
         let result = needs_change(
-            target.nice.nice + 1,                // nice отличается
+            target.nice.nice + 1,                                 // nice отличается
             Some((target.ionice.class, target.ionice.level + 1)), // ionice уровень отличается
-            Some(target.latency_nice.latency_nice + 1), // latency_nice отличается
-            Some(target.cgroup.cpu_weight + 10), // cpu_weight отличается
+            Some(target.latency_nice.latency_nice + 1),           // latency_nice отличается
+            Some(target.cgroup.cpu_weight + 10),                  // cpu_weight отличается
             target,
         );
-        assert!(result, "When multiple parameters differ, needs_change should return true");
+        assert!(
+            result,
+            "When multiple parameters differ, needs_change should return true"
+        );
     }
 
     #[test]
@@ -1966,7 +1996,10 @@ mod tests {
             None, // cpu_weight неизвестен
             target,
         );
-        assert!(result, "When all optional parameters are unknown, needs_change should return true");
+        assert!(
+            result,
+            "When all optional parameters are unknown, needs_change should return true"
+        );
     }
 
     #[test]
