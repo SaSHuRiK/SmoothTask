@@ -66,7 +66,7 @@ pub fn parse_pw_dump_clients(json: &str) -> Result<Vec<AudioClientInfo>> {
     Ok(result)
 }
 
-fn extract_items_array<'a>(value: &'a Value) -> Option<&'a Vec<Value>> {
+fn extract_items_array(value: &Value) -> Option<&Vec<Value>> {
     if let Some(arr) = value.as_array() {
         return Some(arr);
     }

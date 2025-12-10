@@ -430,7 +430,7 @@ pub fn read_nice(pid: i32) -> Result<Option<i32>> {
     }
 
     // Проверяем, что значение находится в допустимом диапазоне
-    if result < -20 || result > 19 {
+    if !(-20..=19).contains(&result) {
         debug!(
             pid = pid,
             nice = result,
@@ -655,7 +655,7 @@ pub fn read_latency_nice(pid: i32) -> Result<Option<i32>> {
 /// Диапазон: -20 (максимальная чувствительность к задержке) до +19 (безразличие к задержке).
 fn apply_latency_nice(pid: i32, latency_nice: i32) -> Result<()> {
     // Проверяем диапазон latency_nice
-    if latency_nice < -20 || latency_nice > 19 {
+    if !(-20..=19).contains(&latency_nice) {
         return Err(anyhow::anyhow!(
             "latency_nice must be in range [-20, 19], got {}",
             latency_nice
@@ -935,6 +935,7 @@ fn move_process_to_cgroup(pid: i32, cgroup_path: &Path) -> Result<()> {
 /// 2. Создаёт или использует существующий cgroup для AppGroup
 /// 3. Устанавливает cpu.weight через запись в /sys/fs/cgroup/.../cpu.weight
 /// 4. Перемещает процесс в нужный cgroup (если требуется)
+///
 /// Применить cgroup параметры для процесса.
 ///
 /// Функция создаёт или получает cgroup для AppGroup, устанавливает `cpu.weight`
@@ -1679,7 +1680,7 @@ mod tests {
         let latency_nice = result.unwrap();
         // Если latency_nice поддерживается, значение должно быть в диапазоне [-20, 19]
         if let Some(ln) = latency_nice {
-            assert!(ln >= -20 && ln <= 19);
+            assert!((-20..=19).contains(&ln));
         }
     }
 
@@ -1730,9 +1731,9 @@ mod tests {
         // Если ionice поддерживается, значение должно быть валидным
         if let Some((class, level)) = ionice {
             // Класс должен быть в диапазоне 1-3 (realtime, best-effort, idle)
-            assert!(class >= 1 && class <= 3);
+            assert!((1..=3).contains(&class));
             // Уровень должен быть в диапазоне 0-7
-            assert!(level >= 0 && level <= 7);
+            assert!((0..=7).contains(&level));
         }
     }
 
@@ -1804,7 +1805,7 @@ mod tests {
         let nice = result.unwrap();
         // Значение должно быть в диапазоне [-20, 19]
         if let Some(n) = nice {
-            assert!(n >= -20 && n <= 19);
+            assert!((-20..=19).contains(&n));
         }
     }
 
@@ -1923,7 +1924,7 @@ mod tests {
         let cpu_weight = result.unwrap();
         // Если cpu.weight поддерживается, значение должно быть в диапазоне [1, 10000]
         if let Some(weight) = cpu_weight {
-            assert!(weight >= 1 && weight <= 10000);
+            assert!((1..=10000).contains(&weight));
         }
     }
 

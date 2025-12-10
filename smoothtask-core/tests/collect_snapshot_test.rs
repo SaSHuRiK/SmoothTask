@@ -330,7 +330,7 @@ async fn test_collect_snapshot_responsiveness_metrics_correctness() {
     assert!(responsiveness.bad_responsiveness || !responsiveness.bad_responsiveness); // Может быть true или false
     assert!(responsiveness.responsiveness_score.is_some());
     if let Some(score) = responsiveness.responsiveness_score {
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 }
 

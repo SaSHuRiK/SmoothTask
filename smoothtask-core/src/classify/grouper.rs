@@ -43,7 +43,7 @@ impl ProcessGrouper {
                 let normalized = Self::normalize_cgroup(cgroup);
                 cgroup_groups
                     .entry(normalized)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(process.pid);
             } else {
                 processes_without_cgroup.push(process.pid);
@@ -55,7 +55,7 @@ impl ProcessGrouper {
         let mut group_counter = 0u64;
 
         // Обрабатываем группы по cgroup
-        for (_cgroup_path, pids) in &cgroup_groups {
+        for pids in cgroup_groups.values() {
             let group_id = format!("cgroup-{}", group_counter);
             group_counter += 1;
 
@@ -90,10 +90,7 @@ impl ProcessGrouper {
         // Шаг 3: Создаём AppGroupRecord из групп
         let mut groups_map: HashMap<String, Vec<i32>> = HashMap::new();
         for (pid, group_id) in process_to_group {
-            groups_map
-                .entry(group_id)
-                .or_insert_with(Vec::new)
-                .push(pid);
+            groups_map.entry(group_id).or_default().push(pid);
         }
 
         // Преобразуем в AppGroupRecord
@@ -106,7 +103,7 @@ impl ProcessGrouper {
             let app_name = pid_to_process
                 .get(&root_pid)
                 .and_then(|p| p.exe.as_ref())
-                .and_then(|exe| exe.split('/').last().map(|name| name.to_string()));
+                .and_then(|exe| exe.split('/').next_back().map(|name| name.to_string()));
 
             // Агрегируем метрики группы
             let mut total_cpu_share = None;
