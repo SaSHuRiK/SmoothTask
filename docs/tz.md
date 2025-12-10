@@ -81,40 +81,63 @@
    * Глобальные метрики: `/proc`, PSI.
    * Per-process: CPU/IO/mem, дерево процессов, cgroups.
    * Ввод/активность пользователя (evdev).
-   * Окна и фокус (X11/Wayland).
-   * Аудио (PipeWire/PulseAudio).
+   * Интеграция с `WindowIntrospector` и `AudioIntrospector` (см. ниже).
 
-2. **Process Grouper**
+2. **WindowIntrospector** (модульная абстракция)
 
-   * Строит **AppGroup** (по `ppid`, `cgroup_path`, systemd unit).
+   * Реализации:
+     * `X11Introspector` (EWMH, `_NET_WM_PID`, фокус, workspace);
+     * `WlrForeignToplevelIntrospector` (Wayland: `wlr-foreign-toplevel-management` для KWin/Mutter/Sway/Hyprland/Wayfire);
+     * (опционально) `KWinScriptIntrospector`, `GnomeShellExtensionIntrospector`.
+   * Выход: `WindowInfo` (app_id, title, workspace, is_focused, is_minimized, is_fullscreen, pid, pid_confidence).
+
+3. **AudioIntrospector** (модульная абстракция)
+
+   * Основная реализация: `PipeWireIntrospector` (встроенная логика `pw-top`/`pw-dump`):
+     * `AudioNodeInfo` (pid, latency_ms, xruns, dsp_load_local);
+     * `AudioGraphInfo` (dsp_load_global, xruns_global).
+   * Fallback: `PulseAudioIntrospector` (latency и underrun через `pactl`/libpulse).
+
+4. **Process Grouper**
+
+   * Строит **AppGroup** (по `ppid`, `cgroup_path`, systemd unit, autogroup).
+   * Учитывает `/proc/<pid>/autogroup` и systemd slice (`user.slice`, `app.slice`).
    * Помечает процессы `app_group_id`.
+   * Принятие решений на уровне групп: `SessionGroup`, `AppGroup`, отдельные cgroups.
 
-3. **Process Classifier (rules + ML, опционально)**
+5. **Process Classifier (rules + ML, опционально)**
 
    * Определяет тип процесса и AppGroup (GUI/CLI/daemon/batch/…).
    * Использует паттерн-базу и контекст.
 
-4. **Policy Engine**
+6. **Policy Engine**
 
    * Жёсткие правила (guardrails + семантика).
    * Параметризованные правила (пороги, тайминги).
    * Вызов ML-ранкера для упорядочивания кандидатов.
    * Выдача target-класса приоритета для процессов/AppGroup.
+   * Принятие решений **на уровне групп** (SessionGroup, AppGroup, cgroups), а не только per-pid.
 
-5. **Actuator**
+7. **Actuator**
 
-   * Применение:
+   * Применение (в порядке приоритета):
+     * **cgroups v2** (основной механизм):
+       * `cpu.weight`, `cpu.max` для CPU-контроля;
+       * `io.weight`, `io.max`, `io.cost` (для NVMe) для IO-контроля;
+       * перенос pid между cgroups для изоляции групп.
+     * **latency_nice** (второй приоритет):
+       * через `sched_setattr()` или cgroup-контроллер `latency`;
+       * основной инструмент управления латентностью.
+     * **nice/ionice** (третий приоритет, fine-tuning):
+       * `nice` (`setpriority`) — используется внутри одной группы, когда нужно развести процессы внутри AppGroup (например, IDE vs её компиляторы);
+       * `ionice` (`ioprio_set`) — дополнительная тонкая настройка IO-приоритетов.
+   * Гистерезис: не дёргать приоритеты при мелких колебаниях (разница классов ≥ 1, условие держится N снапшотов).
 
-     * `nice` (`setpriority`);
-     * `ionice` (`ioprio_set`);
-     * cgroups v2 (`cpu.weight`, `cpu.max`, IO-лимиты, перенос pid между cgroups).
-   * Гистерезис: не дёргать приоритеты при мелких колебаниях.
-
-6. **Snapshot Logger**
+8. **Snapshot Logger**
 
    * Пишет снапшоты в SQLite/файлы (для обучения и отладки).
 
-7. **Control API (опционально)**
+9. **Control API (опционально)**
 
    * HTTP/gRPC API для просмотра состояния, ручных override и отладки.
 
@@ -425,17 +448,34 @@ Snapshot {
 
 # 7. Политика, ранкер и приоритеты
 
-## 7.1. Жёсткие правила (guardrails)
+## 7.1. Главные рычаги управления приоритетами
+
+SmoothTask использует три уровня управления приоритетами (в порядке важности):
+
+1. **cgroups v2** (основной механизм):
+   * `cpu.weight`, `cpu.max` для CPU-контроля;
+   * `io.weight`, `io.max`, `io.cost` (для NVMe) для IO-контроля;
+   * перенос процессов между cgroups для изоляции.
+
+2. **latency_nice** (управление латентностью):
+   * диапазон `-20` (максимальная чувствительность) до `+19` (безразличие к задержке);
+   * основной инструмент для достижения низкой латентности интерактивных приложений;
+   * управление через `sched_setattr()` или cgroup-контроллер `latency`.
+
+3. **nice/ionice** (fine-tuning):
+   * `nice` — используется внутри одной группы/cgroup для тонкой настройки внутри AppGroup;
+   * `ionice` — дополнительная настройка IO-приоритетов.
+
+### Жёсткие правила (guardrails)
 
 Не подлежат авто-тюнингу:
 
 * Не менять:
-
   * `systemd`, `journald`, `udevd`, сетевые/дисковые критичные демоны.
 * Не выдавать:
-
   * `SCHED_FIFO/RR` юзерским процессам;
-  * `nice < -10`.
+  * `nice < -10`;
+  * `latency_nice < -20` или `> +19`.
 * Не опускать `audio_client` ниже `INTERACTIVE`, если есть XRUN на низком буфере.
 * Не превышать суммарный вес batch-групп (`max_batch_cpu_weight`) относительно total CPU.
 
@@ -495,25 +535,44 @@ Snapshot {
 
 * аудио, системные демоны и т.п. могут «поднимать/опускать» класс вне ранкера в рамках guardrails.
 
-## 7.4. Классы → nice / ionice / cgroup
+## 7.4. Классы QoS и типы задач
 
-Пример базовой таблицы:
+### QoS-классы
 
-| Class            | nice | ionice class/level | cpu.weight | Примечания                         |
-| ---------------- | ---- | ------------------ | ---------: | ---------------------------------- |
-| CRIT_INTERACTIVE | -8   | 2 / 0–1            |        200 | фокус + аудио/игра                 |
-| INTERACTIVE      | -4   | 2 / 2–3            |        150 | обычный UI/CLI                     |
-| NORMAL           | 0    | 2 / 4              |        100 | дефолт                             |
-| BACKGROUND       | +5   | 2 / 6              |         50 | batch / maintenance                |
-| IDLE             | +10  | 3 (idle)           |         25 | всё, что можно делать «на остатке» |
+| Класс | Описание | Типы задач |
+|-------|----------|------------|
+| **LATENCY_CRITICAL** | Максимальная отзывчивость | `AUDIO_RT` (PipeWire/Jack-клиенты, VoIP, DAW), фокусное окно игры, стриминг |
+| **UI_INTERACTIVE** | Интерактивный UI | Активный браузер, IDE, терминал с вводом |
+| **NORMAL** | Обычные процессы | Дефолтный класс для большинства процессов |
+| **BULK_BATCH** | Фоновые тяжёлые задачи | Сборки, encode/ffmpeg, рендер, тяжёлые скрипты |
+| **BACKGROUND_HEAVY** | Фоновые сервисы | Индексаторы (baloo, tracker, recollindex), backup (timeshift, rsync/borg/restic), package updates (apt, dnf, pacman, snapd, flatpak, packagekitd), торренты |
+| **SERVICE_CRITICAL** | Системные сервисы | Сетевые/дисковые демоны, systemd-сервисы (почти не трогаем) |
+
+### Классы → nice / latency_nice / ionice / cgroup
+
+Таблица параметров для каждого класса:
+
+| Class            | latency_nice | nice | ionice class/level | cpu.weight | cpu.max | Примечания                         |
+| ---------------- | -----------: | ---: | ------------------ | ---------: | ------- | ---------------------------------- |
+| LATENCY_CRITICAL |      -20…-10 |   -7 | 2 / 0–1            |        300 | -       | игры, RT-аудио, стриминг            |
+| UI_INTERACTIVE   |       -15…-5 |   -4 | 2 / 2–3            |   150–200  | -       | активный браузер, IDE, терминал     |
+| NORMAL           |        -2…+2 |    0 | 2 / 4              |        100 | -       | дефолт                              |
+| BULK_BATCH       |      +10…+15 |   +5 | 2 / 5–6            |         50 | 80%     | компиляторы, сборки                 |
+| BACKGROUND_HEAVY |      +15…+19 | +10 | 2 / 6–7 или 3      |         25 | 50%     | индексаторы, обновлялки, торренты   |
+| SERVICE_CRITICAL |        -2…+2 |    0 | 2 / 4–5            |        100 | -       | системные сервисы (почти не трогаем) |
+
+**Примечания:**
+
+* `cpu.max` в процентах или абсолютном значении (например, `80000 100000` означает 80% одного CPU);
+* Для NVMe-систем рекомендуется использовать `io.cost` вместо простых весов для лучшей изоляции;
+* `latency_nice` — основной инструмент управления латентностью, более важный чем `nice` для интерактивности.
 
 **Гистерезис:**
 
 * класс меняем только если:
-
-  * условие держится N снапшотов подряд;
+  * условие держится N снапшотов подряд (например, 3-5);
   * разница классов ≥ 1 (не мельтешим между соседями);
-* можно ввести «min_time_in_class».
+* можно ввести «min_time_in_class» для предотвращения частых переключений.
 
 ---
 
@@ -531,10 +590,29 @@ Snapshot {
 
 Используем `cpu_some`, `io_some`, `mem_some/full` как индикаторы «давки».
 
-## 8.3. Аудио
+## 8.3. Аудио (PipeWire/PulseAudio)
 
-* `audio_xruns_delta` за окно;
-* `audio_latency_ms` (из PipeWire/PA).
+**Метрики из PipeWire (основной источник):**
+
+* `dsp_load_global` (W/Q драйвера) — глобальная загрузка DSP графа;
+* `xruns_global_recent` — количество XRUN'ов за последний период (из ERR драйвера);
+* `xruns_per_node_recent` — XRUN'ы по каждому аудио-узлу;
+* `audio_latency_ms` — текущая латентность аудио-стрима;
+* `audio_xruns_delta` — изменение счётчика XRUN'ов за окно.
+
+**Метрики для AudioNodeInfo:**
+
+* `dsp_load_local` — загрузка конкретного узла (B/Q);
+* `latency_ms` — латентность конкретного узла.
+
+**PulseAudio (fallback):**
+
+* `audio_latency_ms` через `pactl list sinks`;
+* частота underrun-сообщений в логах.
+
+**Для ранкера:**
+
+* отдельная фича `audio_stability_score` на основе `dsp_load_local` и `xruns_per_node` для понимания: "если душишь этот процесс/группу → сразу хрипит звук".
 
 ## 8.4. UI
 
@@ -552,11 +630,18 @@ bad_responsiveness =
     psi_cpu_some_avg10 > T_cpu
  || psi_io_some_avg10  > T_io
  || sched_p99          > T_sched
- || audio_xruns_delta  > 0
+ || audio_xruns_global_recent > 0
+ || dsp_load_global    > T_dsp
  || ui_loop_p95        > T_ui (если есть)
 ```
 
 `responsiveness_score` – нормированная комбинация этих метрик.
+
+**Компоненты:**
+
+* `global_responsiveness_score` — общая отзывчивость системы;
+* `audio_stability_score` — стабильность аудио (на основе dsp_load и xruns);
+* `per_app_responsiveness_score(pid)` — отзывчивость конкретного приложения.
 
 Использование:
 
@@ -580,18 +665,27 @@ bad_responsiveness =
 ## 9.2. Подготовка датасета (Python)
 
 * Для каждого `snapshot_id`:
-
   * query = список кандидатов (процессов/AppGroup);
-  * X = фичи;
+  * X = фичи, включая:
+    * глобальные фичи (PSI, load, mem, responsiveness);
+    * per-process фичи (CPU/IO/RSS, контекст);
+    * тип и теги (gui/cli/batch/…);
+    * **состояние окна** (из WindowIntrospector: focus/background/minimized);
+    * **аудио-метрики** (из AudioIntrospector: latency, xruns, dsp_load);
+    * **QoS-тип** (из rule-сетки);
+    * принадлежность к AppGroup и aggregated features AppGroup.
   * y:
-
-    * сначала — teacher-score/класс;
-    * затем — скорректированный с учётом `responsiveness_score`.
+    * **первый teacher** — rule-set, вдохновлённый Ananicy:
+      * типы (`Game`, `Player-*`, `BG_CPUIO`, `Service`, `Web-Browser` и т.д.);
+      * с диапазонами `latency_nice`/cgroups из SmoothTask;
+    * CatBoostRanker сначала учится **повторять teacher-а**;
+    * затем, когда накопятся логи с метриками:
+      * добавление `responsiveness_score` и `audio_stability_score`;
+      * **корректировка таргетов**: там, где teacher привёл к `bad_responsiveness=1`, смещаем target-score так, чтобы ранкер "наказал" виновников.
 
 ## 9.3. Обучение
 
 * `CatBoostRanker`:
-
   * loss: YetiRank/PairLogit;
   * метрики: NDCG@k, RMSE по target-score.
 * (опция) `CatBoostClassifier` для типов.
@@ -663,35 +757,158 @@ bad_responsiveness =
 
 ---
 
-# 11. Этапы внедрения
+# 11. Конфигурация и валидация
 
-1. **MVP (rules-only)**
+## 11.1. Конфиг-слои
+
+Конфигурация SmoothTask состоит из **4 слоёв** (в порядке приоритета снизу вверх):
+
+1. **`vendor`** (вшитые пресеты SmoothTask):
+   * Базовые типы приложений и правила по умолчанию;
+   * Хранится в `/usr/share/smoothtask/` или встроен в бинарник.
+
+2. **`distro`** (опциональные правила от дистрибутива):
+   * Дистрибутив-специфичные правила;
+   * Например, `/usr/share/smoothtask/distro/` или `/etc/smoothtask/distro/`.
+
+3. **`user`** (ручные настройки пользователя):
+   * Пользовательские правила и переопределения;
+   * `/etc/smoothtask/rules.d/` или `~/.config/smoothtask/rules.d/`.
+
+4. **`runtime`** (авто-сгенерированные/ML-подсказки):
+   * Правила, сгенерированные ML-моделью или автоматически;
+   * Применяются временно и могут переопределяться пользователем.
+
+**Порядок применения:** `runtime > user > distro > vendor`
+
+То есть правила из слоя `user` переопределяют правила из `vendor`, а `runtime` переопределяет всё.
+
+## 11.2. Структура конфигов
+
+### `types.yaml` (базовый файл типов)
+
+Определяет базовые типы приложений и их параметры:
+
+```yaml
+types:
+  - type: Game
+    latency_nice_range: [-20, -10]
+    nice_range: [-7, -5]
+    ioclass: best-effort
+    ionice_range: [0, 3]
+    cpu_weight: 300
+    description: "Игры и игровые лаунчеры"
+  
+  - type: BG_CPUIO
+    latency_nice_range: [15, 19]
+    nice_range: [10, 19]
+    ioclass: idle
+    ionice_range: [6, 7]
+    cpu_weight: 25
+    cpu_max: "50%"
+    description: "Тяжёлые фоновые задачи"
+```
+
+### `rules.d/*.yaml` (правила матчинга)
+
+Правила, которые сопоставляют процессы с типами:
+
+```yaml
+rules:
+  - match:
+      name: "chrome"
+    type: Web-Browser
+    priority: 100  # vendor layer
+
+  - match:
+      name: "mkinitcpio"
+    type: BG_CPUIO
+    priority: 100
+```
+
+Поддерживаемые поля для `match`:
+* `name` — имя исполняемого файла
+* `cmdline` / `cmdline_contains` — командная строка
+* `parent_name` — имя родительского процесса
+* `cgroup_contains` — часть пути cgroup
+* `user` — пользователь процесса
+* `env_has` — наличие переменной окружения (например, `DISPLAY`)
+* `has_gui_window` — наличие GUI окна
+
+## 11.3. Валидация конфигов
+
+При старте демона выполняется строгая валидация конфигурации:
+
+1. **Проверка типов:**
+   * Все `type`, упомянутые в правилах, должны быть определены в `types.yaml`;
+   * Ошибка: `"type: BG_CPUIO not defined in types.yaml"` → демон не запускается.
+
+2. **Проверка синтаксиса:**
+   * Валидация YAML-синтаксиса;
+   * Проверка обязательных полей в правилах.
+
+3. **Проверка диапазонов:**
+   * `latency_nice` в диапазоне `[-20, 19]`;
+   * `nice` в диапазоне `[-10, 19]` (ограничение guardrails);
+   * `cpu.weight` положительное число.
+
+4. **При ошибках:**
+   * Демон не запускается;
+   * Лог с описанием ошибки, указанием файла и строки;
+   * Список всех найденных ошибок (не останавливаемся на первой).
+
+## 11.4. Логирование применения правил
+
+Для отладки и анализа логируется:
+
+* Какое правило сработало для процесса/AppGroup;
+* Какой `type` был присвоен;
+* Какой QoS-класс был определён;
+* Какие параметры приоритетов были применены (nice, latency_nice, cpu.weight и т.д.);
+
+Это позволяет дебажить: "почему этому процессу присвоили такой класс?".
+
+---
+
+# 12. Этапы внедрения
+
+1. **MVP (rules-only + cgroups + latency_nice)**
 
    * Метрики и классификация процессов/AppGroup по правилам.
-   * Применение фиксированных классов → `nice`/`ionice`/cgroups.
+   * Использование QoS-классов (LATENCY_CRITICAL, UI_INTERACTIVE, BULK_BATCH, BACKGROUND_HEAVY).
+   * Применение приоритетов через:
+     * **cgroups v2** (`cpu.weight`, `cpu.max`, `io.weight`, `io.max`);
+     * **latency_nice** через `sched_setattr()` или cgroup-контроллер;
+     * nice/ionice для fine-tuning внутри групп.
+   * WindowIntrospector и AudioIntrospector для базовых решений (фокус, аудио-статус).
    * Без ML, без логов (только runtime-логирование).
 
 2. **Logging Mode**
 
    * Включение Snapshot Logger.
-   * Расчёт `bad_responsiveness` и `responsiveness_score`.
-   * Teacher-policy = существующая rules-логика.
+   * Расширенные аудио-метрики (PipeWire: dsp_load, xruns_per_node) и WindowInfo.
+   * Расчёт `bad_responsiveness` с учётом `dsp_load_global` и `xruns_global_recent`.
+   * Расчёт `responsiveness_score`, `audio_stability_score`, `per_app_responsiveness_score`.
+   * Teacher-policy = rule-set с QoS-классами и диапазонами latency_nice/cgroups.
 
 3. **CatBoost v1**
 
-   * Подготовка датасета, обучение Ranker’а на teacher-политике.
+   * Подготовка датасета с новыми фичами (состояние окна, аудио-метрики, QoS-тип).
+   * Обучение Ranker'а повторять teacher-policy (с новыми QoS-классами).
    * Инференс через ONNX/JSON в режиме `dry-run`.
 
-4. **Hybrid Mode**
+4. **Hybrid Mode + feedback**
 
-   * Использование Ranker’а для score внутри зон/классов.
+   * Использование Ranker'а для score внутри зон/классов.
    * Сохранение guardrails и семантических правил.
+   * Добавление корректировок таргетов по метрикам латентности:
+     * если teacher привёл к `bad_responsiveness=1`, корректируем target-score.
    * Мониторинг метрик отзывчивости до/после.
 
 5. **Auto-tuning параметров**
 
    * Offline-оптимизация порогов policy по логам.
-   * Постепенное улучшение классов и порогов.
+   * Постепенное улучшение классов и порогов на основе feedback.
 
 6. **Расширения**
 
@@ -701,7 +918,7 @@ bad_responsiveness =
 
 ---
 
-# 12. Вопросы к интернету для паттерн-базы и интеграций
+# 13. Вопросы к интернету для паттерн-базы и интеграций
 
 При старте нужно собрать доп.данные/ресурсы:
 
