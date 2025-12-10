@@ -14,6 +14,7 @@ toml = "0.8"
 # системные штуки
 procfs = "0.16"
 nix = { version = "0.28", features = ["process", "signal"] }
+libc = "0.2"
 evdev = "0.12"
 
 # cgroups

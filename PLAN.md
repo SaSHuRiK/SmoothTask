@@ -11,6 +11,15 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-010-1: Планировщик изменений Actuator (nice/ionice без системных вызовов)
+  - Тип: Rust / core / actuator
+  - Критерии готовности:
+    - Структуры для описания желаемых изменений per-pid (nice/ionice, причина);
+    - Функция планирования на основе Snapshot и результатов Policy (priority_class);
+    - Игнорирование процессов, для которых значения уже соответствуют целевым;
+    - Unit-тесты на вычисление диффов и фильтрацию без изменений.
+  - Примечания: добавлен планировщик `plan_priority_changes`, формирующий диффы по nice/ionice на основе PolicyResult; покрыт 3 юнит-тестами.
+
 - [x] ST-009: Policy Engine: применение жёстких и семантических правил
   - Тип: Rust / core / policy
   - Критерии готовности:
@@ -23,14 +32,24 @@
 
 ## 2. Бэклог
 
-- [ ] ST-010: Actuator: применение приоритетов через nice/ionice/cgroups
+- [~] ST-010: Actuator: применение приоритетов через nice/ionice/cgroups
   - Тип: Rust / core / actuator
   - Критерии готовности:
-    - Применение nice через setpriority;
-    - Применение ionice через ioprio_set;
-    - Управление cgroups v2 (cpu.weight, cpu.max, IO-лимиты);
-    - Гистерезис для предотвращения частых изменений;
-    - Unit-тесты на применение приоритетов (без реальных системных вызовов в тестах).
+    - [x] Применение nice через setpriority;
+    - [x] Применение ionice через ioprio_set;
+    - [~] Управление cgroups v2 (cpu.weight, cpu.max, IO-лимиты) — добавлен каркас, требуется полная реализация через cgroups-rs;
+    - [x] Гистерезис для предотвращения частых изменений;
+    - [x] Unit-тесты на применение приоритетов (9 тестов, покрывают гистерезис и логику планирования).
+  - Примечания: реализованы функции apply_nice() и apply_ionice() через libc, добавлен HysteresisTracker с настраиваемыми параметрами (min_time_between_changes, min_class_difference), функция apply_priority_adjustments() применяет изменения с учётом гистерезиса. Добавлен каркас apply_cgroup() для будущей реализации управления cgroups v2.
+
+- [ ] ST-010-2: Полная реализация управления cgroups v2
+  - Тип: Rust / core / actuator
+  - Критерии готовности:
+    - Определение cgroup процесса из /proc/[pid]/cgroup;
+    - Создание/использование cgroups для AppGroup через cgroups-rs;
+    - Установка cpu.weight, cpu.max, io.weight через cgroups-rs;
+    - Перемещение процессов в нужные cgroups;
+    - Unit-тесты с моками cgroups-rs или интеграционные тесты.
 
 - [ ] ST-005-2: Реальный PipeWire/PulseAudio адаптер для AudioIntrospector
   - Тип: Rust / core / metrics
