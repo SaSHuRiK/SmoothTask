@@ -3,6 +3,7 @@
 //! Этот модуль предоставляет функции для чтения метрик процессов из файловой системы /proc.
 //! Используется библиотека procfs для удобного доступа к данным процессов.
 
+use crate::actuator::read_ionice;
 use crate::logging::snapshots::ProcessRecord;
 use anyhow::{Context, Result};
 use procfs::process::{Process, Stat};
@@ -91,6 +92,13 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     // Читаем nice из stat (конвертируем i64 в i32)
     let nice = stat.nice as i32;
 
+    // Читаем ionice через системный вызов ioprio_get
+    let (ionice_class, ionice_prio) = read_ionice(stat.pid as i32)
+        .ok()
+        .flatten()
+        .map(|(class, level)| (Some(class), Some(level)))
+        .unwrap_or((None, None));
+
     // Читаем RSS из status (в килобайтах, конвертируем в мегабайты)
     // В procfs RSS доступен через поле VmRSS в status
     let rss_mb = status.vmrss.map(|kb| kb / 1024);
@@ -143,10 +151,10 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         process_type: None,       // будет заполнено классификатором
         tags: Vec::new(),         // будет заполнено классификатором
         nice,
-        ionice_class: None, // требует чтения через ioprio_get (системный вызов)
-        ionice_prio: None,  // требует чтения через ioprio_get (системный вызов)
+        ionice_class,
+        ionice_prio,
         teacher_priority_class: None, // для обучения
-        teacher_score: None, // для обучения
+        teacher_score: None,          // для обучения
     };
 
     Ok(Some(record))

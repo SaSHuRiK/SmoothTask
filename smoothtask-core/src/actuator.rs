@@ -60,10 +60,13 @@ pub fn plan_priority_changes(
         };
 
         let params = policy.priority_class.params();
-        let current_ionice = process.ionice_class.zip(process.ionice_prio);
+        // Читаем текущий ionice из процесса, если он не был прочитан при сборе метрик
+        let current_ionice = process
+            .ionice_class
+            .zip(process.ionice_prio)
+            .or_else(|| read_ionice(process.pid).ok().flatten());
         // Читаем текущий latency_nice из процесса
-        let current_latency_nice = read_latency_nice(process.pid)
-            .unwrap_or(None); // В случае ошибки считаем, что latency_nice неизвестен
+        let current_latency_nice = read_latency_nice(process.pid).unwrap_or(None); // В случае ошибки считаем, что latency_nice неизвестен
 
         if needs_change(process.nice, current_ionice, current_latency_nice, params) {
             adjustments.push(PriorityAdjustment {
@@ -276,6 +279,65 @@ struct SchedAttr {
     sched_util_min: u32,
     sched_util_max: u32,
     latency_nice: i32,
+}
+
+/// Прочитать текущий ionice процесса через ioprio_get.
+///
+/// Возвращает `None`, если:
+/// - процесс не существует;
+/// - системный вызов не поддерживается (старое ядро);
+/// - ionice не установлен для процесса.
+///
+/// Возвращает `Some((class, level))`, где:
+/// - `class` = класс IO приоритета (0 = none, 1 = realtime, 2 = best-effort, 3 = idle)
+/// - `level` = уровень приоритета (0-7 для best-effort/realtime)
+pub fn read_ionice(pid: i32) -> Result<Option<(i32, i32)>> {
+    // IOPRIO_WHO_PROCESS = 1 означает, что мы читаем приоритет для процесса
+    const IOPRIO_WHO_PROCESS: i32 = 1;
+    // IOPRIO_CLASS_SHIFT = 13 (сдвиг для извлечения класса)
+    const IOPRIO_CLASS_SHIFT: i32 = 13;
+    // IOPRIO_PRIO_MASK = 0xFF (маска для извлечения уровня приоритета)
+    const IOPRIO_PRIO_MASK: i32 = 0xFF;
+
+    // Используем syscall напрямую, так как libc может не иметь ioprio_get
+    let result =
+        unsafe { libc::syscall(libc::SYS_ioprio_get, IOPRIO_WHO_PROCESS, pid as libc::pid_t) };
+
+    if result < 0 {
+        let errno = std::io::Error::last_os_error();
+        let raw_errno = errno.raw_os_error();
+        // Если системный вызов не поддерживается (например, старое ядро), возвращаем None
+        if raw_errno == Some(libc::ENOSYS) {
+            debug!(pid = pid, "ioprio_get not supported, cannot read ionice");
+            return Ok(None);
+        }
+        // Если процесс не существует, возвращаем None
+        if raw_errno == Some(libc::ESRCH) {
+            debug!(pid = pid, "Process not found, cannot read ionice");
+            return Ok(None);
+        }
+        // Для других ошибок также возвращаем None (более безопасное поведение)
+        // Например, EPERM (нет прав), EINVAL (неверные параметры) и т.д.
+        debug!(
+            pid = pid,
+            error = ?errno,
+            "Failed to read ionice, returning None"
+        );
+        return Ok(None);
+    }
+
+    let ioprio_value = result as i32;
+
+    // Извлекаем класс и уровень из значения
+    let class = (ioprio_value >> IOPRIO_CLASS_SHIFT) & 0x3;
+    let level = ioprio_value & IOPRIO_PRIO_MASK;
+
+    // Если класс = 0 (none), считаем, что ionice не установлен
+    if class == 0 {
+        return Ok(None);
+    }
+
+    Ok(Some((class, level)))
 }
 
 /// Прочитать текущий latency_nice процесса через sched_getattr.
@@ -1061,5 +1123,81 @@ mod tests {
             // Если sched_setattr не поддерживается, пропускаем тест
             // Это нормально для старых ядер
         }
+    }
+
+    #[test]
+    fn test_read_ionice_handles_nonexistent_pid() {
+        // Тест на обработку несуществующего PID
+        let result = read_ionice(999999999);
+        assert!(result.is_ok());
+        // Для несуществующего PID должно вернуться None
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_read_ionice_reads_current_process() {
+        // Тест на чтение ionice текущего процесса
+        let pid = std::process::id() as i32;
+        let result = read_ionice(pid);
+        assert!(result.is_ok());
+        // Результат может быть Some или None в зависимости от поддержки ionice
+        // Главное - что функция не паникует
+        let ionice = result.unwrap();
+        // Если ionice поддерживается, значение должно быть валидным
+        if let Some((class, level)) = ionice {
+            // Класс должен быть в диапазоне 1-3 (realtime, best-effort, idle)
+            assert!(class >= 1 && class <= 3);
+            // Уровень должен быть в диапазоне 0-7
+            assert!(level >= 0 && level <= 7);
+        }
+    }
+
+    #[test]
+    fn test_read_ionice_after_setting() {
+        // Тест на чтение ionice после установки
+        let pid = std::process::id() as i32;
+        let test_class = 2; // best-effort
+        let test_level = 4;
+
+        // Пытаемся установить ionice
+        if apply_ionice(pid, test_class, test_level).is_ok() {
+            // Ждём немного, чтобы системный вызов применился
+            std::thread::sleep(Duration::from_millis(10));
+
+            // Читаем ionice
+            let result = read_ionice(pid);
+            assert!(result.is_ok());
+            let ionice = result.unwrap();
+
+            // Если ionice поддерживается, значение должно совпадать
+            if let Some((class, level)) = ionice {
+                assert_eq!(class, test_class);
+                assert_eq!(level, test_level);
+            }
+        } else {
+            // Если ioprio_set не поддерживается или нет прав, пропускаем тест
+            // Это нормально для некоторых систем
+        }
+    }
+
+    #[test]
+    fn test_read_ionice_in_priority_adjustment() {
+        // Тест на то, что ionice включается в PriorityAdjustment
+        let process = base_process("app1", 1234);
+        let snapshot = make_snapshot(vec![process], vec![app_group("app1")]);
+
+        let mut policy_results = HashMap::new();
+        policy_results.insert(
+            "app1".to_string(),
+            make_policy_result(PriorityClass::Interactive, "focused GUI"),
+        );
+
+        let adjustments = plan_priority_changes(&snapshot, &policy_results);
+        assert_eq!(adjustments.len(), 1);
+
+        let adj = &adjustments[0];
+        assert_eq!(adj.target_ionice, PriorityClass::Interactive.ionice());
+        // current_ionice может быть Some или None в зависимости от поддержки ionice
+        // и наличия процесса с таким PID
     }
 }
