@@ -38,6 +38,7 @@ sudo ./target/release/smoothtaskd --config configs/smoothtask.example.yml
 ## Ссылки
 
 - 📖 [Техническое задание](docs/tz.md)
+- 🔍 [Исследование паттерн-базы приложений](docs/PATTERNS_RESEARCH.md)
 - 🏗️ [Архитектура](docs/ARCHITECTURE.md)
 - 📊 [Метрики](docs/METRICS.md)
 - ⚙️ [Политика приоритетов](docs/POLICY.md)
