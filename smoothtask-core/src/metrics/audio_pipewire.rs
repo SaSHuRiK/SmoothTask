@@ -1,13 +1,15 @@
-//! Парсинг вывода `pw-dump` для извлечения аудио-клиентов.
+//! Парсинг вывода `pw-dump` для извлечения аудио-клиентов и XRUN событий.
 //!
-//! Цель — дешёвый путь получить PID аудио-клиентов и их базовые параметры
-//! (sample rate, размер буфера) без прямой зависимости от PipeWire API.
-//! Модуль пригодится как вспомогательный слой для будущего PipeWireIntrospector.
+//! Реализует `PipeWireIntrospector` — интроспектор, использующий `pw-dump`
+//! для получения метрик аудио-стека без прямой зависимости от PipeWire API.
+//! Это простой подход, который работает через вызов команды `pw-dump` и парсинг JSON.
 
-use crate::metrics::audio::AudioClientInfo;
+use crate::metrics::audio::{AudioClientInfo, AudioIntrospector, AudioMetrics, XrunInfo};
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
+use std::process::Command;
+use std::time::SystemTime;
 
 /// Извлечь список аудио-клиентов из JSON вывода `pw-dump`.
 ///
@@ -272,4 +274,288 @@ mod tests {
         assert_eq!(clients.len(), 1);
         assert_eq!(clients[0], client(7777, Some(128), Some(96000)));
     }
+}
+
+/// Извлечь информацию о XRUN событиях из JSON вывода `pw-dump`.
+///
+/// Ищет узлы с ненулевым ERR (счётчик ошибок/XRUN) и создаёт XrunInfo
+/// для каждого такого узла, если у него есть связанный PID.
+///
+/// Примечание: ERR - это накопительный счётчик, поэтому эта функция
+/// возвращает все узлы с ERR > 0. Для отслеживания новых XRUN нужно
+/// сравнивать ERR между вызовами (это делается в PipeWireIntrospector).
+pub fn parse_pw_dump_xruns(json: &str) -> Result<Vec<(u32, u64)>> {
+    let value: Value = serde_json::from_str(json).context("Не удалось распарсить pw-dump JSON")?;
+    let items = extract_items_array(&value)
+        .ok_or_else(|| anyhow!("pw-dump не содержит массива объектов"))?;
+
+    let mut xruns = Vec::new();
+
+    for item in items {
+        if !is_node(item) {
+            continue;
+        }
+
+        let props = match item
+            .get("info")
+            .and_then(|info| info.get("props"))
+            .and_then(|p| p.as_object())
+        {
+            Some(p) => p,
+            None => continue,
+        };
+
+        // Ищем ERR в различных форматах
+        let err_count = parse_err_count(props);
+        if err_count == 0 {
+            continue;
+        }
+
+        // Если есть ERR и PID, сохраняем пару (PID, ERR)
+        if let Some(pid) = parse_pid(props) {
+            xruns.push((pid, err_count));
+        }
+    }
+
+    Ok(xruns)
+}
+
+fn parse_err_count(props: &Map<String, Value>) -> u64 {
+    // Ищем ERR в различных форматах, которые могут быть в pw-dump
+    for key in [
+        "node.error",
+        "node.ERR",
+        "error.count",
+        "xrun.count",
+        "node.xrun",
+    ] {
+        if let Some(err) = props.get(key).and_then(parse_u64) {
+            return err;
+        }
+    }
+    0
+}
+
+fn parse_u64(value: &Value) -> Option<u64> {
+    if let Some(n) = value.as_u64() {
+        return Some(n);
+    }
+    value.as_str().and_then(|s| s.trim().parse::<u64>().ok())
+}
+
+/// PipeWire интроспектор, использующий `pw-dump` для получения метрик.
+///
+/// Этот интроспектор вызывает `pw-dump` через команду и парсит результат
+/// для получения списка клиентов и XRUN событий. Это простой подход без
+/// прямой зависимости от PipeWire API.
+pub struct PipeWireIntrospector {
+    /// Время последнего вызова audio_metrics для отслеживания периода
+    last_metrics_time: Option<SystemTime>,
+    /// Последние известные ERR счётчики по PID (для отслеживания новых XRUN)
+    last_err_by_pid: HashMap<u32, u64>,
+}
+
+impl PipeWireIntrospector {
+    /// Создать новый PipeWire интроспектор.
+    pub fn new() -> Self {
+        Self {
+            last_metrics_time: None,
+            last_err_by_pid: HashMap::new(),
+        }
+    }
+
+    /// Вызвать `pw-dump` и получить JSON вывод.
+    fn call_pw_dump(&self) -> Result<String> {
+        let output = Command::new("pw-dump")
+            .output()
+            .context("Не удалось выполнить pw-dump. Убедитесь, что PipeWire установлен и pw-dump доступен в PATH")?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("pw-dump завершился с ошибкой: {}", stderr));
+        }
+
+        String::from_utf8(output.stdout).context("pw-dump вернул невалидный UTF-8")
+    }
+}
+
+impl Default for PipeWireIntrospector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl AudioIntrospector for PipeWireIntrospector {
+    fn audio_metrics(&mut self) -> Result<AudioMetrics> {
+        let now = SystemTime::now();
+        let period_start = self.last_metrics_time.unwrap_or(now);
+        let period_end = now;
+
+        // Вызываем pw-dump
+        let json = self.call_pw_dump()?;
+
+        // Парсим клиентов
+        let clients = parse_pw_dump_clients(&json)?;
+
+        // Парсим текущие ERR счётчики
+        let current_err_vec = parse_pw_dump_xruns(&json)?;
+        let current_err_by_pid: HashMap<u32, u64> = current_err_vec.into_iter().collect();
+        let mut xruns = Vec::new();
+        let mut xrun_count = 0u32;
+
+        // Сравниваем текущие ERR с предыдущими, чтобы найти новые XRUN
+        for (pid, current_err) in &current_err_by_pid {
+            let last_err = self.last_err_by_pid.get(pid).copied().unwrap_or(0);
+            if current_err > &last_err {
+                // Найдены новые XRUN для этого PID
+                let new_xruns = current_err - last_err;
+                for _ in 0..new_xruns {
+                    xruns.push(XrunInfo {
+                        timestamp: now,
+                        client_pid: Some(*pid),
+                    });
+                    xrun_count += 1;
+                }
+            }
+        }
+
+        // Также проверяем узлы без PID (если ERR увеличился глобально)
+        // Для простоты создаём одно событие, если общий ERR увеличился
+        let total_current_err: u64 = current_err_by_pid.values().sum();
+        let total_last_err: u64 = self.last_err_by_pid.values().sum();
+        if total_current_err > total_last_err {
+            // Могут быть XRUN без известного PID
+            let unknown_xruns = total_current_err
+                - total_last_err
+                - (total_current_err - total_last_err).min(xrun_count as u64);
+            for _ in 0..unknown_xruns {
+                xruns.push(XrunInfo {
+                    timestamp: now,
+                    client_pid: None,
+                });
+                xrun_count += 1;
+            }
+        }
+
+        // Обновляем состояние
+        self.last_metrics_time = Some(now);
+        self.last_err_by_pid = current_err_by_pid;
+
+        Ok(AudioMetrics {
+            xrun_count,
+            xruns,
+            clients,
+            period_start,
+            period_end,
+        })
+    }
+
+    fn clients(&self) -> Result<Vec<AudioClientInfo>> {
+        // Для clients() мы просто вызываем pw-dump и парсим клиентов
+        // без отслеживания периода
+        let json = self.call_pw_dump()?;
+        parse_pw_dump_clients(&json)
+    }
+}
+
+#[cfg(test)]
+mod pipewire_introspector_tests {
+    use super::*;
+
+    #[test]
+    fn pipewire_introspector_creation() {
+        let introspector = PipeWireIntrospector::new();
+        // Просто проверяем, что создание не падает
+        assert!(introspector.last_metrics_time.is_none());
+        assert!(introspector.last_err_by_pid.is_empty());
+    }
+
+    #[test]
+    fn parse_xruns_from_pw_dump() {
+        let json = r#"
+        [
+            {
+                "id": 42,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 1234,
+                        "node.error": 5
+                    }
+                }
+            },
+            {
+                "id": 43,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "pipewire.client.pid": "2345",
+                        "node.error": 0
+                    }
+                }
+            },
+            {
+                "id": 44,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 9999,
+                        "node.error": 2
+                    }
+                }
+            }
+        ]
+        "#;
+
+        let xruns = parse_pw_dump_xruns(json).unwrap();
+        assert_eq!(xruns.len(), 2);
+        assert_eq!(xruns[0], (1234, 5));
+        assert_eq!(xruns[1], (9999, 2));
+    }
+
+    #[test]
+    fn parse_xruns_empty_when_no_errors() {
+        let json = r#"
+        [
+            {
+                "id": 42,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 1234,
+                        "node.error": 0
+                    }
+                }
+            }
+        ]
+        "#;
+
+        let xruns = parse_pw_dump_xruns(json).unwrap();
+        assert_eq!(xruns.len(), 0);
+    }
+
+    #[test]
+    fn parse_xruns_ignores_non_nodes() {
+        let json = r#"
+        [
+            {
+                "id": 42,
+                "type": "PipeWire:Interface:Client",
+                "info": {
+                    "props": {
+                        "application.process.id": 1234,
+                        "node.error": 5
+                    }
+                }
+            }
+        ]
+        "#;
+
+        let xruns = parse_pw_dump_xruns(json).unwrap();
+        assert_eq!(xruns.len(), 0);
+    }
+
+    // Интеграционные тесты с реальным pw-dump требуют наличия PipeWire в системе
+    // и могут быть нестабильными, поэтому оставляем их опциональными
+    // Для unit-тестов можно использовать моки или фиктивные данные
 }
