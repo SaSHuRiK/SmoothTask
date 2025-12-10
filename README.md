@@ -41,6 +41,7 @@ sudo ./target/release/smoothtaskd --config configs/smoothtask.example.yml
 - 🔍 [Исследование паттерн-базы приложений](docs/PATTERNS_RESEARCH.md)
 - 🔬 [Исследование существующих решений](docs/EXISTING_SOLUTIONS_RESEARCH.md)
 - ⚡ [Исследование низко-латентных практик](docs/LOW_LATENCY_RESEARCH.md)
+- 🪟 [Исследование API композиторов и аудио-стеков](docs/API_INTROSPECTION_RESEARCH.md)
 - 🏗️ [Архитектура](docs/ARCHITECTURE.md)
 - 📊 [Метрики](docs/METRICS.md)
 - ⚙️ [Политика приоритетов](docs/POLICY.md)
