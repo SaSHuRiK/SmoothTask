@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
@@ -390,6 +390,7 @@ pub fn classify_all(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) -> PathBuf {
