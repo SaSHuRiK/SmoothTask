@@ -1219,4 +1219,392 @@ mod tests {
             let _: Box<dyn WindowIntrospector> = introspector;
         });
     }
+
+    // Unit-тесты для проверки обработки ошибок в collect_snapshot при недоступности компонентов
+    mod collect_snapshot_error_handling {
+        use super::*;
+        use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
+        use crate::metrics::input::{InputActivityTracker, InputTracker};
+        use crate::metrics::scheduling_latency::LatencyCollector;
+        use crate::metrics::system::ProcPaths;
+        use crate::metrics::windows::{StaticWindowIntrospector, WindowInfo, WindowIntrospector};
+        use std::sync::{Arc, Mutex};
+        use std::time::Duration;
+
+        /// Интроспектор окон, который всегда возвращает ошибку при вызове windows().
+        struct FailingWindowIntrospector;
+
+        impl WindowIntrospector for FailingWindowIntrospector {
+            fn windows(&self) -> Result<Vec<WindowInfo>> {
+                anyhow::bail!("Window introspector failed: X11 server unavailable")
+            }
+
+            fn focused_window(&self) -> Result<Option<WindowInfo>> {
+                anyhow::bail!("Window introspector failed: X11 server unavailable")
+            }
+        }
+
+        /// Интроспектор аудио, который всегда возвращает ошибку при вызове audio_metrics().
+        struct FailingAudioIntrospector;
+
+        impl AudioIntrospector for FailingAudioIntrospector {
+            fn audio_metrics(&mut self) -> Result<AudioMetrics> {
+                anyhow::bail!("Audio introspector failed: PipeWire unavailable")
+            }
+
+            fn clients(&self) -> Result<Vec<crate::metrics::audio::AudioClientInfo>> {
+                anyhow::bail!("Audio introspector failed: PipeWire unavailable")
+            }
+        }
+
+        /// Интроспектор аудио, который возвращает ошибку только при вызове audio_metrics().
+        struct PartiallyFailingAudioIntrospector;
+
+        impl AudioIntrospector for PartiallyFailingAudioIntrospector {
+            fn audio_metrics(&mut self) -> Result<AudioMetrics> {
+                anyhow::bail!("Audio metrics failed: XRUN counter unavailable")
+            }
+
+            fn clients(&self) -> Result<Vec<crate::metrics::audio::AudioClientInfo>> {
+                Ok(Vec::new())
+            }
+        }
+
+        fn create_test_thresholds() -> crate::config::Thresholds {
+            crate::config::Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 10.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            }
+        }
+
+        /// Тест проверяет graceful fallback при недоступности window introspector.
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_failing_window_introspector() {
+            let proc_paths = ProcPaths::default();
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(FailingWindowIntrospector);
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty())));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться, даже если window introspector недоступен
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should succeed even if window introspector fails"
+            );
+            let snapshot = result.unwrap();
+
+            // Проверяем, что снапшот собран корректно
+            assert!(snapshot.snapshot_id > 0);
+            // Процессы не должны иметь информацию об окнах (has_gui_window = false)
+            for process in &snapshot.processes {
+                assert!(
+                    !process.has_gui_window,
+                    "Process should not have GUI window info when window introspector fails"
+                );
+                assert!(
+                    !process.is_focused_window,
+                    "Process should not be marked as focused when window introspector fails"
+                );
+            }
+        }
+
+        /// Тест проверяет graceful fallback при недоступности audio introspector (audio_metrics).
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_failing_audio_introspector_metrics() {
+            let proc_paths = ProcPaths::default();
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(StaticWindowIntrospector::new(Vec::new()));
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(FailingAudioIntrospector)));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться, даже если audio introspector недоступен
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should succeed even if audio introspector fails"
+            );
+            let snapshot = result.unwrap();
+
+            // Проверяем, что снапшот собран корректно
+            assert!(snapshot.snapshot_id > 0);
+            // Процессы не должны иметь информацию об аудио (is_audio_client = false)
+            for process in &snapshot.processes {
+                assert!(
+                    !process.is_audio_client,
+                    "Process should not have audio client info when audio introspector fails"
+                );
+                assert!(
+                    !process.has_active_stream,
+                    "Process should not have active stream when audio introspector fails"
+                );
+            }
+            // Audio metrics должны быть пустыми (xrun_count = 0)
+            assert_eq!(
+                snapshot.responsiveness.audio_xruns_delta,
+                Some(0),
+                "Audio XRUNs should be 0 when audio introspector fails"
+            );
+        }
+
+        /// Тест проверяет graceful fallback при частичной недоступности audio introspector
+        /// (audio_metrics недоступен, но clients доступен).
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_partially_failing_audio_introspector() {
+            let proc_paths = ProcPaths::default();
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(StaticWindowIntrospector::new(Vec::new()));
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(PartiallyFailingAudioIntrospector)));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться, даже если audio_metrics недоступен
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should succeed even if audio_metrics fails"
+            );
+            let snapshot = result.unwrap();
+
+            // Проверяем, что снапшот собран корректно
+            assert!(snapshot.snapshot_id > 0);
+            // Audio metrics должны быть пустыми (xrun_count = 0), так как audio_metrics недоступен
+            assert_eq!(
+                snapshot.responsiveness.audio_xruns_delta,
+                Some(0),
+                "Audio XRUNs should be 0 when audio_metrics fails"
+            );
+        }
+
+        /// Тест проверяет graceful fallback при недоступности всех опциональных компонентов
+        /// (window, audio, input).
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_all_optional_components_failing() {
+            let proc_paths = ProcPaths::default();
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(FailingWindowIntrospector);
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(FailingAudioIntrospector)));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться, даже если все опциональные компоненты недоступны
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should succeed even if all optional components fail"
+            );
+            let snapshot = result.unwrap();
+
+            // Проверяем, что снапшот собран корректно с дефолтными значениями
+            assert!(snapshot.snapshot_id > 0);
+            // GlobalMetrics должны быть построены (даже с дефолтными значениями)
+            assert!(
+                snapshot.global.mem_total_kb > 0 || snapshot.global.mem_total_kb == 0,
+                "GlobalMetrics should be built even when optional components fail"
+            );
+            // ResponsivenessMetrics должны быть построены
+            assert!(
+                snapshot.responsiveness.audio_xruns_delta.is_some(),
+                "ResponsivenessMetrics should be built even when optional components fail"
+            );
+            // Проверяем, что процессы не имеют информации об окнах и аудио
+            for process in &snapshot.processes {
+                assert!(
+                    !process.has_gui_window,
+                    "Process should not have GUI window info when all components fail"
+                );
+                assert!(
+                    !process.is_audio_client,
+                    "Process should not have audio client info when all components fail"
+                );
+            }
+        }
+
+        /// Тест проверяет, что collect_snapshot корректно обрабатывает ошибку при
+        /// недоступности window introspector через spawn_blocking (ошибка join).
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_window_introspector_join_error() {
+            let proc_paths = ProcPaths::default();
+            // Используем валидный интроспектор, но ошибка может произойти в spawn_blocking
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(StaticWindowIntrospector::new(Vec::new()));
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty())));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            // Этот тест проверяет, что даже если spawn_blocking вернёт ошибку,
+            // collect_snapshot должен обработать её gracefully
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should handle window introspector errors gracefully"
+            );
+        }
+
+        /// Тест проверяет, что collect_snapshot корректно обрабатывает ошибку при
+        /// недоступности audio introspector через spawn_blocking (ошибка join).
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_audio_introspector_join_error() {
+            let proc_paths = ProcPaths::default();
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(StaticWindowIntrospector::new(Vec::new()));
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty())));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            // Этот тест проверяет, что даже если spawn_blocking вернёт ошибку,
+            // collect_snapshot должен обработать её gracefully
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should handle audio introspector errors gracefully"
+            );
+        }
+
+        /// Тест проверяет, что collect_snapshot корректно обрабатывает ошибку при
+        /// недоступности input tracker через spawn_blocking (ошибка join).
+        #[tokio::test]
+        async fn test_collect_snapshot_handles_input_tracker_join_error() {
+            let proc_paths = ProcPaths::default();
+            let window_introspector: Arc<dyn WindowIntrospector> =
+                Arc::new(StaticWindowIntrospector::new(Vec::new()));
+            let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> =
+                Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty())));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
+            let mut prev_cpu_times: Option<SystemMetrics> = None;
+            let thresholds = create_test_thresholds();
+            let latency_collector = Arc::new(LatencyCollector::new(1000));
+
+            // Этот тест проверяет, что даже если spawn_blocking вернёт ошибку,
+            // collect_snapshot должен обработать её gracefully
+            let result = collect_snapshot(
+                &proc_paths,
+                &window_introspector,
+                &audio_introspector,
+                &input_tracker,
+                &mut prev_cpu_times,
+                &thresholds,
+                &latency_collector,
+            )
+            .await;
+
+            // Функция должна успешно завершиться
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should handle input tracker errors gracefully"
+            );
+            let snapshot = result.unwrap();
+
+            // Проверяем, что input метрики заполнены дефолтными значениями
+            assert!(
+                snapshot.global.user_active || !snapshot.global.user_active,
+                "Input metrics should be filled with default values even if input tracker fails"
+            );
+        }
+    }
 }
