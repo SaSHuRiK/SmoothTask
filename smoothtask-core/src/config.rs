@@ -328,6 +328,16 @@ impl Paths {
             );
         }
 
+        // Проверяем, что snapshot_db_path не указывает на директорию (должен быть файл)
+        // Если путь уже существует, проверяем, что это не директория
+        if snapshot_path.exists() {
+            ensure!(
+                !snapshot_path.is_dir(),
+                "snapshot_db_path must point to a file, not a directory (got directory: {:?})",
+                snapshot_path
+            );
+        }
+
         let snapshot_parent = Path::new(&self.snapshot_db_path)
             .parent()
             .unwrap_or_else(|| Path::new("."));
@@ -1035,6 +1045,59 @@ thresholds:
         assert_eq!(
             cfg.paths.snapshot_db_path,
             snapshot_db_path.display().to_string()
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn rejects_snapshot_db_path_pointing_to_directory() {
+        // Тест проверяет, что валидация отклоняет snapshot_db_path, указывающий на директорию
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_dir = temp_dir.path().join("snapshots.sqlite");
+        // Создаём директорию с именем, похожим на файл
+        std::fs::create_dir_all(&snapshot_db_dir).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_dir.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен вернуть ошибку, так как snapshot_db_path указывает на директорию
+        let result = Config::load(file.path().to_str().unwrap());
+        assert!(
+            result.is_err(),
+            "Config should reject directory as snapshot_db_path"
+        );
+        let error_msg = result.unwrap_err().to_string();
+        assert!(
+            error_msg.contains("must point to a file") || error_msg.contains("directory"),
+            "Error message should mention that snapshot_db_path must be a file, got: {}",
+            error_msg
         );
     }
 
