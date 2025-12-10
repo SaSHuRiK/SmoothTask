@@ -60,7 +60,13 @@ pub fn plan_priority_changes(
         };
 
         let params = policy.priority_class.params();
-        // Читаем текущий ionice из процесса, если он не был прочитан при сборе метрик
+        // Читаем текущий nice из процесса, если он не был прочитан при сборе метрик
+        // (хотя nice всегда читается из /proc/[pid]/stat, но для консистентности используем функцию)
+        let current_nice = read_nice(process.pid)
+            .ok()
+            .flatten()
+            .unwrap_or(process.nice); // Fallback на значение из stat, если getpriority не сработал
+                                      // Читаем текущий ionice из процесса, если он не был прочитан при сборе метрик
         let current_ionice = process
             .ionice_class
             .zip(process.ionice_prio)
@@ -68,12 +74,12 @@ pub fn plan_priority_changes(
         // Читаем текущий latency_nice из процесса
         let current_latency_nice = read_latency_nice(process.pid).unwrap_or(None); // В случае ошибки считаем, что latency_nice неизвестен
 
-        if needs_change(process.nice, current_ionice, current_latency_nice, params) {
+        if needs_change(current_nice, current_ionice, current_latency_nice, params) {
             adjustments.push(PriorityAdjustment {
                 pid: process.pid,
                 app_group_id: app_group_id.clone(),
                 target_class: policy.priority_class,
-                current_nice: process.nice,
+                current_nice,
                 target_nice: params.nice.nice,
                 current_latency_nice,
                 target_latency_nice: params.latency_nice.latency_nice,
@@ -203,6 +209,62 @@ fn class_order(class: PriorityClass) -> i32 {
         PriorityClass::Background => 2,
         PriorityClass::Idle => 1,
     }
+}
+
+/// Прочитать текущий nice процесса через getpriority.
+///
+/// Возвращает `None`, если:
+/// - процесс не существует;
+/// - системный вызов не поддерживается (старое ядро);
+/// - произошла другая ошибка при чтении.
+///
+/// Возвращает `Some(nice)`, где `nice` находится в диапазоне [-20, 19].
+pub fn read_nice(pid: i32) -> Result<Option<i32>> {
+    // PRIO_PROCESS = 0 означает, что мы читаем приоритет для процесса
+    const PRIO_PROCESS: libc::__priority_which_t = 0;
+
+    // Сбрасываем errno перед вызовом getpriority
+    unsafe {
+        *libc::__errno_location() = 0;
+    }
+
+    let result = unsafe { libc::getpriority(PRIO_PROCESS, pid as libc::id_t) };
+    let errno = unsafe { *libc::__errno_location() };
+
+    // getpriority возвращает значение в диапазоне [-20, 19]
+    // но может вернуть -1, если nice = -1, поэтому нужно проверить errno
+    // Если errno != 0, то это ошибка
+    if result == -1 && errno != 0 {
+        // Это ошибка, а не значение nice = -1
+        match errno {
+            libc::ENOSYS => {
+                debug!(pid = pid, "getpriority not supported, cannot read nice");
+            }
+            libc::ESRCH => {
+                debug!(pid = pid, "Process not found, cannot read nice");
+            }
+            _ => {
+                debug!(
+                    pid = pid,
+                    errno = errno,
+                    "Failed to read nice, returning None"
+                );
+            }
+        }
+        return Ok(None);
+    }
+
+    // Проверяем, что значение находится в допустимом диапазоне
+    if result < -20 || result > 19 {
+        debug!(
+            pid = pid,
+            nice = result,
+            "getpriority returned invalid nice value, returning None"
+        );
+        return Ok(None);
+    }
+
+    Ok(Some(result as i32))
 }
 
 /// Применить изменение nice для процесса.
@@ -1199,5 +1261,79 @@ mod tests {
         assert_eq!(adj.target_ionice, PriorityClass::Interactive.ionice());
         // current_ionice может быть Some или None в зависимости от поддержки ionice
         // и наличия процесса с таким PID
+    }
+
+    #[test]
+    fn test_read_nice_handles_nonexistent_pid() {
+        // Тест на обработку несуществующего PID
+        let result = read_nice(999999999);
+        assert!(result.is_ok());
+        // Для несуществующего PID должно вернуться None
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_read_nice_reads_current_process() {
+        // Тест на чтение nice текущего процесса
+        let pid = std::process::id() as i32;
+        let result = read_nice(pid);
+        assert!(result.is_ok());
+        // Результат должен быть Some, так как nice всегда поддерживается
+        let nice = result.unwrap();
+        // Значение должно быть в диапазоне [-20, 19]
+        if let Some(n) = nice {
+            assert!(n >= -20 && n <= 19);
+        }
+    }
+
+    #[test]
+    fn test_read_nice_after_setting() {
+        // Тест на чтение nice после установки
+        let pid = std::process::id() as i32;
+        let test_value = 5;
+
+        // Пытаемся установить nice
+        if apply_nice(pid, test_value).is_ok() {
+            // Ждём немного, чтобы системный вызов применился
+            std::thread::sleep(Duration::from_millis(10));
+
+            // Читаем nice
+            let result = read_nice(pid);
+            assert!(result.is_ok());
+            let nice = result.unwrap();
+
+            // Значение должно совпадать
+            if let Some(n) = nice {
+                assert_eq!(n, test_value);
+            }
+
+            // Восстанавливаем исходное значение nice (обычно 0)
+            let _ = apply_nice(pid, 0);
+        } else {
+            // Если setpriority не поддерживается, пропускаем тест
+            // Это маловероятно, но возможно
+        }
+    }
+
+    #[test]
+    fn test_read_nice_in_priority_adjustment() {
+        // Тест на то, что nice включается в PriorityAdjustment
+        let process = base_process("app1", 1234);
+        let snapshot = make_snapshot(vec![process], vec![app_group("app1")]);
+
+        let mut policy_results = HashMap::new();
+        policy_results.insert(
+            "app1".to_string(),
+            make_policy_result(PriorityClass::Interactive, "focused GUI"),
+        );
+
+        let adjustments = plan_priority_changes(&snapshot, &policy_results);
+        assert_eq!(adjustments.len(), 1);
+
+        let adj = &adjustments[0];
+        assert_eq!(adj.target_nice, PriorityClass::Interactive.nice());
+        // current_nice должен быть прочитан через read_nice()
+        // Значение должно быть в диапазоне [-20, 19]
+        assert!(adj.current_nice >= -20 && adj.current_nice <= 19);
     }
 }
