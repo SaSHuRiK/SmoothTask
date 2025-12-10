@@ -833,6 +833,8 @@ pub fn apply_priority_adjustments(
             debug!(
                 pid = adj.pid,
                 target_class = ?adj.target_class,
+                app_group_id = %adj.app_group_id,
+                reason = %adj.reason,
                 "Skipping change due to hysteresis"
             );
             result.skipped_hysteresis += 1;
@@ -843,8 +845,13 @@ pub fn apply_priority_adjustments(
         if let Err(e) = apply_nice(adj.pid, adj.target_nice) {
             warn!(
                 pid = adj.pid,
+                app_group_id = %adj.app_group_id,
+                target_class = ?adj.target_class,
+                current_nice = adj.current_nice,
+                target_nice = adj.target_nice,
+                reason = %adj.reason,
                 error = %e,
-                "Failed to apply nice"
+                "Failed to apply nice priority"
             );
             result.errors += 1;
             continue;
@@ -854,8 +861,13 @@ pub fn apply_priority_adjustments(
         if let Err(e) = apply_latency_nice(adj.pid, adj.target_latency_nice) {
             warn!(
                 pid = adj.pid,
+                app_group_id = %adj.app_group_id,
+                target_class = ?adj.target_class,
+                current_latency_nice = ?adj.current_latency_nice,
+                target_latency_nice = adj.target_latency_nice,
+                reason = %adj.reason,
                 error = %e,
-                "Failed to apply latency_nice"
+                "Failed to apply latency_nice (may not be supported on older kernels)"
             );
             // Не считаем это критичной ошибкой, так как latency_nice может быть не поддерживается
             // на старых ядрах
@@ -865,8 +877,14 @@ pub fn apply_priority_adjustments(
         if let Err(e) = apply_ionice(adj.pid, adj.target_ionice.class, adj.target_ionice.level) {
             warn!(
                 pid = adj.pid,
+                app_group_id = %adj.app_group_id,
+                target_class = ?adj.target_class,
+                current_ionice = ?adj.current_ionice,
+                target_ionice_class = adj.target_ionice.class,
+                target_ionice_level = adj.target_ionice.level,
+                reason = %adj.reason,
                 error = %e,
-                "Failed to apply ionice"
+                "Failed to apply ionice priority"
             );
             result.errors += 1;
             continue;
@@ -877,8 +895,13 @@ pub fn apply_priority_adjustments(
         if let Err(e) = apply_cgroup(adj.pid, cgroup_params, &adj.app_group_id, None) {
             warn!(
                 pid = adj.pid,
+                app_group_id = %adj.app_group_id,
+                target_class = ?adj.target_class,
+                current_cpu_weight = ?adj.current_cpu_weight,
+                target_cpu_weight = adj.target_cpu_weight,
+                reason = %adj.reason,
                 error = %e,
-                "Failed to apply cgroup"
+                "Failed to apply cgroup (cgroups may not be available)"
             );
             // Не считаем это критичной ошибкой, так как cgroups может быть недоступен
         }
@@ -1531,5 +1554,88 @@ mod tests {
         assert!(result.is_ok());
         // Функция должна работать без паники, даже если cgroup недоступен
         let _cpu_weight = result.unwrap();
+    }
+
+    #[test]
+    fn test_apply_cgroup_handles_nonexistent_pid() {
+        // Тест на обработку несуществующего PID
+        let nonexistent_pid = 999999999;
+        let cgroup_params = CgroupParams { cpu_weight: 100 };
+        let app_group_id = "test-app-123";
+
+        let result = apply_cgroup(nonexistent_pid, cgroup_params, app_group_id, None);
+        // Функция должна вернуть ошибку для несуществующего PID
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        // Ошибка должна содержать информацию о проблеме
+        assert!(
+            error_msg.contains("not found")
+                || error_msg.contains("Process")
+                || error_msg.contains("cgroup"),
+            "Error message should mention the problem, got: {}",
+            error_msg
+        );
+    }
+
+    #[test]
+    fn test_apply_cgroup_with_current_cgroup_path() {
+        // Тест на использование переданного current_cgroup_path
+        let pid = std::process::id() as i32;
+        let cgroup_params = CgroupParams { cpu_weight: 100 };
+        let app_group_id = "test-app-456";
+        let current_cgroup = Some("/user.slice/user-1000.slice/session-1.scope");
+
+        // Функция может не работать без прав root, но должна не паниковать
+        let result = apply_cgroup(pid, cgroup_params, app_group_id, current_cgroup);
+        // Результат может быть Ok или Err в зависимости от доступности cgroups
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_apply_cgroup_creates_cgroup_path() {
+        // Тест на создание пути для cgroup
+        let pid = std::process::id() as i32;
+        let cgroup_params = CgroupParams { cpu_weight: 200 };
+        let app_group_id = "test-app-789";
+
+        // Функция может не работать без прав root, но должна не паниковать
+        let result = apply_cgroup(pid, cgroup_params, app_group_id, None);
+        // Результат может быть Ok или Err в зависимости от доступности cgroups
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_apply_cgroup_validates_cpu_weight() {
+        // Тест на валидацию cpu.weight (должно быть в диапазоне [1, 10000])
+        // Но функция apply_cgroup не валидирует cpu_weight напрямую,
+        // валидация происходит в set_cpu_weight
+        // Этот тест проверяет, что функция работает с валидным cpu_weight
+        let pid = std::process::id() as i32;
+        let cgroup_params = CgroupParams { cpu_weight: 5000 }; // Валидное значение
+        let app_group_id = "test-app-valid-weight";
+
+        let result = apply_cgroup(pid, cgroup_params, app_group_id, None);
+        // Результат может быть Ok или Err в зависимости от доступности cgroups
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_apply_cgroup_handles_process_already_in_cgroup() {
+        // Тест на случай, когда процесс уже в нужном cgroup
+        // Это проверяется внутри apply_cgroup через сравнение current_cgroup и target_cgroup
+        let pid = std::process::id() as i32;
+        let cgroup_params = CgroupParams { cpu_weight: 100 };
+        let app_group_id = "test-app-same-cgroup";
+
+        // Пытаемся применить cgroup дважды - второй раз процесс уже должен быть в cgroup
+        let result1 = apply_cgroup(pid, cgroup_params, app_group_id, None);
+        let result2 = apply_cgroup(pid, cgroup_params, app_group_id, None);
+
+        // Оба вызова могут не работать без прав root, но не должны паниковать
+        let _ = result1;
+        let _ = result2;
     }
 }
