@@ -10,7 +10,7 @@ use anyhow::Result;
 use config::Config;
 
 /// Главный цикл демона: опрос метрик, ранжирование, применение.
-pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
+pub async fn run_daemon(_config: Config, dry_run: bool) -> Result<()> {
     // TODO:
     // 1. инициализация подсистем (cgroups, БД, model-инференс)
     // 2. основной loop:
