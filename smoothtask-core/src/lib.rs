@@ -9,6 +9,7 @@ pub mod policy;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use config::Config;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
@@ -23,11 +24,46 @@ use crate::metrics::input::InputTracker;
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
+use crate::metrics::input::EvdevInputTracker;
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
     X11Introspector,
 };
 use crate::policy::engine::PolicyEngine;
+
+/// Проверить доступность необходимых системных утилит и устройств.
+///
+/// Проверяет доступность:
+/// - `pw-dump` (для PipeWire метрик)
+/// - evdev устройств (для метрик ввода пользователя)
+///
+/// Логирует предупреждения, если утилиты или устройства недоступны.
+pub fn check_system_utilities() {
+    // Проверка pw-dump
+    let pw_dump_available = std::process::Command::new("pw-dump")
+        .arg("--version")
+        .output()
+        .is_ok();
+    if !pw_dump_available {
+        warn!(
+            "pw-dump not available. Audio metrics will be limited. \
+            Install PipeWire and ensure pw-dump is in PATH."
+        );
+    } else {
+        debug!("pw-dump is available");
+    }
+
+    // Проверка evdev устройств
+    let evdev_available = EvdevInputTracker::is_available();
+    if !evdev_available {
+        warn!(
+            "No evdev input devices found. User activity tracking will be limited. \
+            Ensure /dev/input/event* devices are accessible."
+        );
+    } else {
+        debug!("evdev input devices are available");
+    }
+}
 
 /// Создаёт window introspector, пытаясь использовать доступные бекенды в порядке приоритета:
 /// 1. X11Introspector (если X-сервер доступен)
@@ -87,6 +123,9 @@ pub async fn run_daemon(
     mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
     info!("Initializing SmoothTask daemon (dry_run = {})", dry_run);
+
+    // Проверка доступности системных утилит и устройств
+    check_system_utilities();
 
     // Инициализация подсистем
     let mut snapshot_logger = if !config.paths.snapshot_db_path.is_empty() {
@@ -333,11 +372,10 @@ async fn collect_snapshot(
 
     // Сбор системных метрик (блокирующая операция - оборачиваем в spawn_blocking)
     let proc_paths_clone = proc_paths.clone();
-    let system_metrics =
-        tokio::task::spawn_blocking(move || collect_system_metrics(&proc_paths_clone))
-            .await
-            .context("Failed to join system metrics task")?
-            .context("Failed to collect system metrics")?;
+    let system_metrics = tokio::task::spawn_blocking(move || collect_system_metrics(&proc_paths_clone))
+        .await
+        .context("Failed to join system metrics task")?
+        .context("Failed to collect system metrics: unable to read /proc filesystem (stat, meminfo, PSI)")?;
 
     // Вычисление дельт CPU
     let cpu_usage = if let Some(ref prev) = prev_cpu_times {
@@ -351,16 +389,25 @@ async fn collect_snapshot(
     let mut processes = tokio::task::spawn_blocking(|| collect_process_metrics())
         .await
         .context("Failed to join process metrics task")?
-        .context("Failed to collect process metrics")?;
+        .context("Failed to collect process metrics: unable to read process information from /proc")?;
 
     // Сбор метрик окон (может быть блокирующим для X11 - оборачиваем в spawn_blocking)
     let window_introspector_clone = Arc::clone(window_introspector);
-    let pid_to_window = tokio::task::spawn_blocking(move || {
+    let pid_to_window = match tokio::task::spawn_blocking(move || {
         crate::metrics::windows::build_pid_to_window_map(window_introspector_clone.as_ref())
     })
     .await
-    .context("Failed to join window metrics task")?
-    .unwrap_or_default();
+    {
+        Ok(Ok(map)) => map,
+        Ok(Err(e)) => {
+            warn!("Failed to collect window metrics: {}. Continuing without window information.", e);
+            HashMap::new()
+        }
+        Err(e) => {
+            warn!("Failed to join window metrics task: {}. Continuing without window information.", e);
+            HashMap::new()
+        }
+    };
 
     // Обновление информации об окнах в процессах
     for process in &mut processes {
@@ -373,17 +420,28 @@ async fn collect_snapshot(
 
     // Сбор метрик аудио (может быть блокирующим для PipeWire - оборачиваем в spawn_blocking)
     let audio_introspector_clone = Arc::clone(audio_introspector);
-    let (audio_metrics, audio_clients) = tokio::task::spawn_blocking(move || {
+    let (audio_metrics, audio_clients) = match tokio::task::spawn_blocking(move || {
         let mut introspector = audio_introspector_clone.lock().unwrap();
-        let metrics = introspector.audio_metrics().unwrap_or_else(|_| {
+        let metrics = introspector.audio_metrics().unwrap_or_else(|e| {
+            warn!("Audio introspector failed to collect metrics: {}. Using empty metrics.", e);
             use std::time::SystemTime;
             AudioMetrics::empty(SystemTime::now(), SystemTime::now())
         });
-        let clients = introspector.clients().unwrap_or_default();
+        let clients = introspector.clients().unwrap_or_else(|e| {
+            warn!("Audio introspector failed to collect clients: {}. Using empty client list.", e);
+            Vec::new()
+        });
         (metrics, clients)
     })
     .await
-    .context("Failed to join audio metrics task")?;
+    {
+        Ok(result) => result,
+        Err(e) => {
+            warn!("Failed to join audio metrics task: {}. Continuing without audio information.", e);
+            use std::time::SystemTime;
+            (AudioMetrics::empty(SystemTime::now(), SystemTime::now()), Vec::new())
+        }
+    };
     let audio_client_pids: std::collections::HashSet<u32> =
         audio_clients.iter().map(|c| c.pid).collect();
 
@@ -398,12 +456,22 @@ async fn collect_snapshot(
     // Сбор метрик ввода (может быть блокирующим для evdev - оборачиваем в spawn_blocking)
     // InputTracker::update() может читать из /dev/input, что является блокирующей операцией
     let input_tracker_clone = Arc::clone(input_tracker);
-    let input_metrics = tokio::task::spawn_blocking(move || {
+    let input_metrics = match tokio::task::spawn_blocking(move || {
         let mut tracker = input_tracker_clone.lock().unwrap();
         tracker.update(now)
     })
     .await
-    .context("Failed to join input metrics task")?;
+    {
+        Ok(metrics) => metrics,
+        Err(e) => {
+            warn!("Failed to join input metrics task: {}. Using default input metrics.", e);
+            use crate::metrics::input::InputMetrics;
+            InputMetrics {
+                user_active: false,
+                time_since_last_input_ms: None,
+            }
+        }
+    };
 
     // Построение GlobalMetrics
     let global = GlobalMetrics {
@@ -457,6 +525,22 @@ async fn collect_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_check_system_utilities_does_not_panic() {
+        // Тест проверяет, что функция check_system_utilities не паникует
+        // независимо от доступности утилит
+        check_system_utilities();
+    }
+
+    #[test]
+    fn test_check_system_utilities_logs_warnings_when_unavailable() {
+        // Тест проверяет, что функция проверяет доступность утилит
+        // (конкретное поведение зависит от окружения, но функция не должна паниковать)
+        check_system_utilities();
+        // Если утилиты недоступны, должны быть логи предупреждений
+        // Но мы не можем проверить логи в unit-тестах, поэтому просто проверяем, что функция выполняется
+    }
 
     #[test]
     fn test_create_window_introspector_always_returns_valid_introspector() {
