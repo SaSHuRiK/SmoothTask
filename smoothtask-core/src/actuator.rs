@@ -371,6 +371,29 @@ fn class_order(class: PriorityClass) -> i32 {
 /// - произошла другая ошибка при чтении.
 ///
 /// Возвращает `Some(nice)`, где `nice` находится в диапазоне [-20, 19].
+/// Прочитать текущий nice процесса через getpriority.
+///
+/// Возвращает `None`, если:
+/// - процесс не существует;
+/// - системный вызов не поддерживается (старое ядро);
+/// - произошла ошибка при чтении nice.
+///
+/// Возвращает `Some(nice)`, где `nice` находится в диапазоне [-20, 19]
+/// (стандартный диапазон для nice в Linux).
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::actuator::read_nice;
+///
+/// // Прочитать nice для текущего процесса
+/// let current_pid = std::process::id() as i32;
+/// match read_nice(current_pid)? {
+///     Some(nice) => println!("Current nice: {}", nice),
+///     None => println!("Could not read nice"),
+/// }
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn read_nice(pid: i32) -> Result<Option<i32>> {
     // PRIO_PROCESS = 0 означает, что мы читаем приоритет для процесса
     const PRIO_PROCESS: libc::__priority_which_t = 0;
@@ -704,6 +727,32 @@ fn apply_latency_nice(pid: i32, latency_nice: i32) -> Result<()> {
 ///
 /// Возвращает путь cgroup v2 (формат: 0::/path/to/cgroup).
 /// Если cgroup v2 не найден или произошла ошибка чтения, возвращает None.
+/// Прочитать путь cgroup процесса из /proc/[pid]/cgroup.
+///
+/// Функция читает файл `/proc/[pid]/cgroup` и извлекает путь cgroup v2.
+/// В cgroup v2 формат файла: `0::/path/to/cgroup`, где `0::` - префикс для cgroup v2.
+///
+/// Возвращает `None`, если:
+/// - процесс не существует;
+/// - файл `/proc/[pid]/cgroup` недоступен;
+/// - cgroup v2 не найден (только cgroup v1 или пустой путь).
+///
+/// Возвращает `Some(path)`, где `path` - относительный путь cgroup v2
+/// (например, `/user.slice/user-1000.slice/session-2.scope`).
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::actuator::read_process_cgroup;
+///
+/// // Прочитать cgroup для текущего процесса
+/// let current_pid = std::process::id() as i32;
+/// match read_process_cgroup(current_pid)? {
+///     Some(cgroup) => println!("Current cgroup: {}", cgroup),
+///     None => println!("Could not read cgroup"),
+/// }
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn read_process_cgroup(pid: i32) -> Result<Option<String>> {
     let cgroup_file = format!("/proc/{}/cgroup", pid);
     let content = match fs::read_to_string(&cgroup_file) {
@@ -886,6 +935,34 @@ fn move_process_to_cgroup(pid: i32, cgroup_path: &Path) -> Result<()> {
 /// 2. Создаёт или использует существующий cgroup для AppGroup
 /// 3. Устанавливает cpu.weight через запись в /sys/fs/cgroup/.../cpu.weight
 /// 4. Перемещает процесс в нужный cgroup (если требуется)
+/// Применить cgroup параметры для процесса.
+///
+/// Функция создаёт или получает cgroup для AppGroup, устанавливает `cpu.weight`
+/// и перемещает процесс в этот cgroup, если он ещё не там.
+///
+/// # Аргументы
+///
+/// * `pid` - PID процесса, для которого применяются параметры
+/// * `cgroup_params` - параметры cgroup (cpu.weight)
+/// * `app_group_id` - идентификатор AppGroup (используется для создания пути cgroup)
+/// * `current_cgroup_path` - текущий путь cgroup процесса (если известен, иначе читается из /proc)
+///
+/// # Возвращает
+///
+/// `Ok(())` если все операции выполнены успешно, иначе `Err` с описанием ошибки.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::actuator::apply_cgroup;
+/// use smoothtask_core::policy::classes::CgroupParams;
+///
+/// // Применить cgroup параметры для процесса
+/// let pid = 1234;
+/// let params = CgroupParams { cpu_weight: 100 };
+/// apply_cgroup(pid, params, "firefox", None)?;
+/// # Ok::<(), anyhow::Error>(())
+/// ```
 pub fn apply_cgroup(
     pid: i32,
     cgroup_params: CgroupParams,
