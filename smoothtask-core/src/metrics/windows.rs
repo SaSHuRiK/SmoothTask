@@ -4,6 +4,8 @@
 //! позволяет уже сейчас работать с нормализованными структурами и писать
 //! юнит-тесты вокруг логики выбора активного окна.
 
+pub use crate::metrics::windows_x11::X11Introspector;
+
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 

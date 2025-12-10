@@ -20,7 +20,7 @@ use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::InputActivityTracker;
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
-use crate::metrics::windows::{StaticWindowIntrospector, WindowIntrospector};
+use crate::metrics::windows::{StaticWindowIntrospector, WindowIntrospector, X11Introspector};
 use crate::policy::engine::PolicyEngine;
 
 /// Главный цикл демона: опрос метрик, ранжирование, применение.
@@ -41,8 +41,24 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
     let mut hysteresis = HysteresisTracker::new();
 
     // Инициализация интроспекторов
-    // TODO: в будущем заменить на реальные X11/Wayland бекенды
-    let window_introspector = StaticWindowIntrospector::new(Vec::new());
+    // Пробуем использовать X11Introspector, если X-сервер доступен
+    let window_introspector: Box<dyn WindowIntrospector> = {
+        if X11Introspector::is_available() {
+            match X11Introspector::new() {
+                Ok(introspector) => {
+                    info!("Using X11Introspector for window metrics");
+                    Box::new(introspector)
+                }
+                Err(e) => {
+                    warn!("X11 server available but failed to initialize X11Introspector: {}, falling back to StaticWindowIntrospector", e);
+                    Box::new(StaticWindowIntrospector::new(Vec::new()))
+                }
+            }
+        } else {
+            warn!("X11 server not available, using StaticWindowIntrospector");
+            Box::new(StaticWindowIntrospector::new(Vec::new()))
+        }
+    };
 
     // Инициализация PipeWire интроспектора с fallback на статический, если PipeWire недоступен
     let mut audio_introspector: Box<dyn AudioIntrospector> = {
@@ -87,7 +103,7 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
         // Сбор снапшота
         let snapshot = match collect_snapshot(
             &proc_paths,
-            &window_introspector as &dyn WindowIntrospector,
+            window_introspector.as_ref(),
             &mut audio_introspector,
             &mut input_tracker,
             &mut prev_cpu_times,
