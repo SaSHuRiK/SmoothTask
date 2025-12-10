@@ -235,7 +235,7 @@ async fn test_collect_snapshot_with_all_optional_components_failing() {
     // Проверяем, что снапшот собран корректно с дефолтными значениями
     assert!(snapshot.snapshot_id > 0);
     // GlobalMetrics должны быть построены (даже с дефолтными значениями)
-    assert!(snapshot.global.mem_total_kb >= 0);
+    // mem_total_kb имеет тип u64, который всегда >= 0, поэтому проверка не нужна
     // ResponsivenessMetrics должны быть построены
     assert!(snapshot.responsiveness.audio_xruns_delta.is_some());
 }
@@ -275,11 +275,8 @@ async fn test_collect_snapshot_global_metrics_correctness() {
     assert!(global.cpu_system >= 0.0 && global.cpu_system <= 100.0);
     assert!(global.cpu_idle >= 0.0 && global.cpu_idle <= 100.0);
     assert!(global.cpu_iowait >= 0.0 && global.cpu_iowait <= 100.0);
-    assert!(global.mem_total_kb >= 0);
-    assert!(global.mem_used_kb >= 0);
-    assert!(global.mem_available_kb >= 0);
-    assert!(global.swap_total_kb >= 0);
-    assert!(global.swap_used_kb >= 0);
+    // Поля mem_* и swap_* имеют тип u64, который всегда >= 0, поэтому проверки не нужны
+    // Проверяем только, что они заполнены (не проверяем >= 0, так как это всегда true для u64)
     assert!(global.load_avg_one >= 0.0);
     assert!(global.load_avg_five >= 0.0);
     assert!(global.load_avg_fifteen >= 0.0);

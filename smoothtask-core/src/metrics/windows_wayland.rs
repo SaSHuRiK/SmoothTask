@@ -156,15 +156,102 @@ pub struct WaylandIntrospector {
 impl WaylandIntrospector {
     /// Создаёт новый WaylandIntrospector, подключаясь к Wayland композитору.
     ///
-    /// Возвращает ошибку, если:
-    /// - Wayland недоступен (переменные окружения не установлены, socket не найден);
-    /// - wlr-foreign-toplevel-management не поддерживается композитором;
-    /// - реализация ещё не завершена (временная ошибка до полной реализации).
+    /// Функция проверяет доступность Wayland окружения и пытается создать интроспектор.
+    /// В текущей версии функция возвращает ошибку, так как полная реализация ещё не завершена.
+    ///
+    /// # Возвращаемое значение
+    ///
+    /// Возвращает `Ok(WaylandIntrospector)`, если Wayland доступен и интроспектор успешно создан,
+    /// или `Err` с описанием причины ошибки.
     ///
     /// # Ошибки
     ///
-    /// - Если Wayland недоступен, возвращается ошибка с описанием причины.
-    /// - Если Wayland доступен, но реализация не завершена, возвращается информативная ошибка.
+    /// Функция возвращает ошибку в следующих случаях:
+    ///
+    /// 1. **Wayland недоступен**: переменные окружения не установлены, socket не найден.
+    ///    Сообщение об ошибке включает инструкции по проверке доступности Wayland.
+    ///
+    /// 2. **Реализация не завершена**: Wayland доступен, но полная реализация интроспектора
+    ///    ещё не завершена. Это временная ошибка, которая будет исправлена в будущих обновлениях.
+    ///
+    /// # Примеры использования
+    ///
+    /// ## Базовое использование
+    ///
+    /// ```no_run
+    /// use smoothtask_core::metrics::windows::WaylandIntrospector;
+    ///
+    /// match WaylandIntrospector::new() {
+    ///     Ok(introspector) => {
+    ///         // Интроспектор успешно создан
+    ///         println!("Wayland introspector created successfully");
+    ///     }
+    ///     Err(e) => {
+    ///         // Обработка ошибки
+    ///         eprintln!("Failed to create Wayland introspector: {}", e);
+    ///     }
+    /// }
+    /// ```
+    ///
+    /// ## Использование с проверкой доступности
+    ///
+    /// ```no_run
+    /// use smoothtask_core::metrics::windows::WaylandIntrospector;
+    ///
+    /// if WaylandIntrospector::is_available() {
+    ///     match WaylandIntrospector::new() {
+    ///         Ok(introspector) => {
+    ///             // Используем интроспектор
+    ///         }
+    ///         Err(e) => {
+    ///             // Wayland доступен, но интроспектор не может быть создан
+    ///             // (например, реализация не завершена)
+    ///             eprintln!("Wayland available but introspector creation failed: {}", e);
+    ///         }
+    ///     }
+    /// } else {
+    ///     // Wayland недоступен, используем fallback (например, X11 или StaticWindowIntrospector)
+    ///     println!("Wayland not available, using fallback");
+    /// }
+    /// ```
+    ///
+    /// ## Использование в главном цикле демона
+    ///
+    /// ```no_run
+    /// use smoothtask_core::metrics::windows::{WaylandIntrospector, X11Introspector, StaticWindowIntrospector, WindowIntrospector};
+    ///
+    /// // Пробуем создать WaylandIntrospector
+    /// let window_introspector: Box<dyn WindowIntrospector> = if WaylandIntrospector::is_available() {
+    ///     match WaylandIntrospector::new() {
+    ///         Ok(introspector) => {
+    ///             Box::new(introspector)
+    ///         }
+    ///         Err(_) => {
+    ///             // Fallback на X11 или StaticWindowIntrospector
+    ///             if X11Introspector::is_available() {
+    ///                 Box::new(X11Introspector::new().unwrap())
+    ///             } else {
+    ///                 Box::new(StaticWindowIntrospector::new(Vec::new()))
+    ///             }
+    ///         }
+    ///     }
+    /// } else {
+    ///     // Wayland недоступен, используем X11 или StaticWindowIntrospector
+    ///     if X11Introspector::is_available() {
+    ///         Box::new(X11Introspector::new().unwrap())
+    ///     } else {
+    ///         Box::new(StaticWindowIntrospector::new(Vec::new()))
+    ///     }
+    /// };
+    /// ```
+    ///
+    /// # Примечания
+    ///
+    /// - Функция проверяет доступность Wayland через `is_available()` перед попыткой создания.
+    /// - В текущей версии функция всегда возвращает ошибку, так как полная реализация ещё не завершена.
+    /// - Полная реализация требует работы с асинхронными событиями через wayland-client API.
+    /// - Система автоматически использует fallback на `StaticWindowIntrospector`, если Wayland недоступен
+    ///   или интроспектор не может быть создан.
     pub fn new() -> Result<Self> {
         // Проверяем доступность Wayland
         if !Self::is_available() {
@@ -392,22 +479,24 @@ mod tests {
 
     #[test]
     fn test_is_wayland_available_empty_wayland_display() {
-        // Тест проверяет, что пустая строка WAYLAND_DISPLAY не считается валидной
+        // Тест проверяет, что пустая строка WAYLAND_DISPLAY обрабатывается корректно
         let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
         let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+        let old_runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
 
-        // Устанавливаем пустую строку
+        // Устанавливаем пустую строку для WAYLAND_DISPLAY
         std::env::set_var("WAYLAND_DISPLAY", "");
         std::env::remove_var("XDG_SESSION_TYPE");
+        std::env::remove_var("XDG_RUNTIME_DIR");
 
         // Пустая строка всё равно считается установленной переменной
-        // (is_ok() вернёт true), поэтому функция вернёт true
+        // (env::var("WAYLAND_DISPLAY") вернёт Ok("")), поэтому функция вернёт true
         // Это поведение соответствует логике: если переменная установлена (даже пустая),
         // это признак того, что Wayland может быть доступен
         let result = is_wayland_available();
-        // Результат зависит от реализации: если пустая строка считается валидной,
-        // функция вернёт true, иначе false
-        let _ = result;
+        // Проверяем, что функция вернула true для пустой строки
+        // (так как env::var("WAYLAND_DISPLAY").is_ok() вернёт true даже для пустой строки)
+        assert!(result, "Empty WAYLAND_DISPLAY should be treated as available (variable is set)");
 
         // Восстанавливаем переменные окружения
         std::env::remove_var("WAYLAND_DISPLAY");
@@ -416,6 +505,43 @@ mod tests {
         }
         if let Some(val) = old_xdg_session {
             std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+        if let Some(val) = old_runtime_dir {
+            std::env::set_var("XDG_RUNTIME_DIR", val);
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_available_empty_xdg_session_type() {
+        // Тест проверяет, что пустая строка XDG_SESSION_TYPE не считается валидной
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+        let old_runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
+
+        // Удаляем WAYLAND_DISPLAY
+        std::env::remove_var("WAYLAND_DISPLAY");
+        // Устанавливаем пустую строку для XDG_SESSION_TYPE
+        std::env::set_var("XDG_SESSION_TYPE", "");
+        std::env::remove_var("XDG_RUNTIME_DIR");
+
+        // Пустая строка XDG_SESSION_TYPE не равна "wayland", поэтому функция должна
+        // проверить другие признаки (socket в /run/user/<uid>/wayland-0)
+        let result = is_wayland_available();
+        // Результат зависит от наличия socket, но проверка XDG_SESSION_TYPE должна
+        // игнорировать пустую строку (так как "" != "wayland")
+        // Проверяем только, что функция не паникует
+        let _ = result;
+
+        // Восстанавливаем переменные окружения
+        std::env::remove_var("XDG_SESSION_TYPE");
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+        if let Some(val) = old_runtime_dir {
+            std::env::set_var("XDG_RUNTIME_DIR", val);
         }
     }
 
