@@ -22,7 +22,10 @@ use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::InputTracker;
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
-use crate::metrics::windows::{StaticWindowIntrospector, WindowIntrospector, X11Introspector};
+use crate::metrics::windows::{
+    is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
+    X11Introspector,
+};
 use crate::policy::engine::PolicyEngine;
 
 /// Главный цикл демона: опрос метрик, ранжирование, применение.
@@ -51,6 +54,8 @@ pub async fn run_daemon(
 
     // Инициализация интроспекторов
     // Пробуем использовать X11Introspector, если X-сервер доступен
+    // Если X11 недоступен, пробуем WaylandIntrospector
+    // В противном случае используем StaticWindowIntrospector
     // Используем Arc для возможности использования в spawn_blocking
     let window_introspector: Arc<dyn WindowIntrospector> = {
         let introspector: Box<dyn WindowIntrospector> = if X11Introspector::is_available() {
@@ -60,12 +65,39 @@ pub async fn run_daemon(
                     Box::new(introspector)
                 }
                 Err(e) => {
-                    warn!("X11 server available but failed to initialize X11Introspector: {}, falling back to StaticWindowIntrospector", e);
+                    warn!("X11 server available but failed to initialize X11Introspector: {}, trying Wayland", e);
+                    // Пробуем Wayland как fallback
+                    if is_wayland_available() {
+                        match WaylandIntrospector::new() {
+                            Ok(introspector) => {
+                                info!("Using WaylandIntrospector for window metrics");
+                                Box::new(introspector)
+                            }
+                            Err(e) => {
+                                warn!("Wayland available but failed to initialize WaylandIntrospector: {}, falling back to StaticWindowIntrospector", e);
+                                Box::new(StaticWindowIntrospector::new(Vec::new()))
+                            }
+                        }
+                    } else {
+                        warn!("Wayland not available, falling back to StaticWindowIntrospector");
+                        Box::new(StaticWindowIntrospector::new(Vec::new()))
+                    }
+                }
+            }
+        } else if is_wayland_available() {
+            // X11 недоступен, пробуем Wayland
+            match WaylandIntrospector::new() {
+                Ok(introspector) => {
+                    info!("Using WaylandIntrospector for window metrics");
+                    Box::new(introspector)
+                }
+                Err(e) => {
+                    warn!("Wayland available but failed to initialize WaylandIntrospector: {}, falling back to StaticWindowIntrospector", e);
                     Box::new(StaticWindowIntrospector::new(Vec::new()))
                 }
             }
         } else {
-            warn!("X11 server not available, using StaticWindowIntrospector");
+            warn!("Neither X11 nor Wayland available, using StaticWindowIntrospector");
             Box::new(StaticWindowIntrospector::new(Vec::new()))
         };
         Arc::from(introspector)
