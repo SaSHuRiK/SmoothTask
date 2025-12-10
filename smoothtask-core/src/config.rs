@@ -162,8 +162,18 @@ impl Thresholds {
             self.sched_latency_p99_threshold_ms
         );
         ensure!(
+            self.sched_latency_p99_threshold_ms <= 1000.0,
+            "thresholds.sched_latency_p99_threshold_ms must be <= 1000.0 ms (1 second) to ensure reasonable latency monitoring (got {})",
+            self.sched_latency_p99_threshold_ms
+        );
+        ensure!(
             self.ui_loop_p95_threshold_ms > 0.0,
             "thresholds.ui_loop_p95_threshold_ms must be positive (got {})",
+            self.ui_loop_p95_threshold_ms
+        );
+        ensure!(
+            self.ui_loop_p95_threshold_ms <= 1000.0,
+            "thresholds.ui_loop_p95_threshold_ms must be <= 1000.0 ms (1 second) to ensure reasonable UI latency monitoring (got {})",
             self.ui_loop_p95_threshold_ms
         );
 
@@ -635,5 +645,135 @@ thresholds:
             cfg.paths.snapshot_db_path,
             snapshot_db_path.display().to_string()
         );
+    }
+
+    #[test]
+    fn rejects_sched_latency_p99_threshold_too_large() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 2000.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("sched_latency_p99_threshold_ms must be <= 1000.0"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_ui_loop_p95_threshold_too_large() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
+  ui_loop_p95_threshold_ms: 2000.0
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("ui_loop_p95_threshold_ms must be <= 1000.0"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_valid_latency_thresholds() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен загрузиться без ошибок
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert!((cfg.thresholds.sched_latency_p99_threshold_ms - 10.0).abs() < f64::EPSILON);
+        assert!((cfg.thresholds.ui_loop_p95_threshold_ms - 16.67).abs() < f64::EPSILON);
     }
 }
