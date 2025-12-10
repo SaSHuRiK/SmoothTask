@@ -46,6 +46,48 @@ pub struct PriorityAdjustment {
 }
 
 /// Построить список изменений приоритетов на основе результатов политики.
+///
+/// Функция анализирует снапшот системы и результаты политики, определяя,
+/// какие процессы требуют обновления приоритетов (nice, ionice, latency_nice, cpu.weight).
+///
+/// # Параметры
+///
+/// - `snapshot`: Текущий снапшот системы с метриками процессов
+/// - `policy_results`: Результаты применения политики для каждого AppGroup
+///
+/// # Возвращаемое значение
+///
+/// Вектор `PriorityAdjustment`, содержащий все процессы, которые требуют
+/// изменения приоритетов. Процессы, у которых текущие приоритеты уже соответствуют
+/// целевым, не включаются в результат.
+///
+/// # Алгоритм
+///
+/// 1. Для каждого процесса из снапшота проверяется наличие AppGroup и результата политики
+/// 2. Читаются текущие значения приоритетов (nice, ionice, latency_nice, cpu.weight)
+/// 3. Сравниваются текущие значения с целевыми из `PriorityParams`
+/// 4. Если хотя бы один приоритет отличается, процесс добавляется в список изменений
+///
+/// # Примечания
+///
+/// - Если текущее значение приоритета неизвестно (например, latency_nice не поддерживается
+///   старым ядром), процесс всё равно включается в список изменений
+/// - Функция не применяет изменения, а только планирует их
+/// - Реальное применение выполняется через `apply_priority_adjustments()`
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::actuator::plan_priority_changes;
+/// use smoothtask_core::logging::snapshots::Snapshot;
+/// use std::collections::HashMap;
+/// use smoothtask_core::policy::engine::PolicyResult;
+///
+/// # let snapshot = Snapshot::default();
+/// # let policy_results = HashMap::new();
+/// let adjustments = plan_priority_changes(&snapshot, &policy_results);
+/// // adjustments содержит все процессы, требующие изменения приоритетов
+/// ```
 pub fn plan_priority_changes(
     snapshot: &Snapshot,
     policy_results: &HashMap<String, PolicyResult>,
@@ -182,6 +224,28 @@ impl HysteresisTracker {
     }
 
     /// Создать трекер с кастомными параметрами.
+    ///
+    /// # Параметры
+    ///
+    /// - `min_time_between_changes`: Минимальное время между изменениями приоритета
+    ///   для одного процесса. Предотвращает слишком частые изменения.
+    /// - `min_class_difference`: Минимальная разница в порядке классов для применения
+    ///   изменения. Например, если `min_class_difference = 2`, то изменение с
+    ///   `Normal` (3) на `Interactive` (4) будет применено (разница = 1 < 2, не применяется),
+    ///   а изменение с `Normal` (3) на `CritInteractive` (5) будет применено (разница = 2 >= 2).
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::actuator::HysteresisTracker;
+    /// use std::time::Duration;
+    ///
+    /// // Трекер с более строгими параметрами (10 секунд между изменениями, разница >= 2)
+    /// let tracker = HysteresisTracker::with_params(
+    ///     Duration::from_secs(10),
+    ///     2
+    /// );
+    /// ```
     pub fn with_params(min_time_between_changes: Duration, min_class_difference: i32) -> Self {
         Self {
             history: HashMap::new(),
@@ -807,6 +871,31 @@ pub fn apply_cgroup(
 }
 
 /// Результат применения изменений приоритетов.
+///
+/// Структура содержит статистику применения изменений приоритетов к процессам.
+/// Используется для мониторинга работы демона и отладки проблем с применением приоритетов.
+///
+/// # Поля
+///
+/// - `applied`: Количество успешно применённых изменений (все приоритеты установлены)
+/// - `skipped_hysteresis`: Количество изменений, пропущенных из-за гистерезиса
+///   (слишком недавнее изменение или недостаточная разница классов)
+/// - `errors`: Количество ошибок при применении (например, процесс не существует,
+///   нет прав доступа)
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::actuator::{apply_priority_adjustments, ApplyResult, HysteresisTracker};
+/// use smoothtask_core::actuator::PriorityAdjustment;
+///
+/// # let adjustments = Vec::<PriorityAdjustment>::new();
+/// # let mut hysteresis = HysteresisTracker::new();
+/// let result: ApplyResult = apply_priority_adjustments(&adjustments, &mut hysteresis);
+///
+/// println!("Applied: {}, Skipped: {}, Errors: {}",
+///     result.applied, result.skipped_hysteresis, result.errors);
+/// ```
 #[derive(Debug, Default)]
 pub struct ApplyResult {
     /// Количество успешно применённых изменений.
@@ -819,8 +908,60 @@ pub struct ApplyResult {
 
 /// Применить список изменений приоритетов к процессам.
 ///
-/// Применяет nice и ionice для каждого процесса из списка adjustments,
-/// учитывая гистерезис для предотвращения частых изменений.
+/// Функция применяет все типы приоритетов (nice, ionice, latency_nice, cpu.weight)
+/// для каждого процесса из списка adjustments, учитывая гистерезис для предотвращения
+/// слишком частых изменений.
+///
+/// # Параметры
+///
+/// - `adjustments`: Список изменений приоритетов, полученный из `plan_priority_changes()`
+/// - `hysteresis`: Трекер гистерезиса для предотвращения частых изменений
+///
+/// # Возвращаемое значение
+///
+/// `ApplyResult` со статистикой применения:
+/// - `applied`: количество успешно применённых изменений
+/// - `skipped_hysteresis`: количество изменений, пропущенных из-за гистерезиса
+/// - `errors`: количество ошибок при применении
+///
+/// # Алгоритм
+///
+/// 1. Для каждого изменения проверяется гистерезис (время с последнего изменения,
+///    разница классов)
+/// 2. Если гистерезис разрешает изменение, применяются приоритеты в порядке:
+///    - nice (через `setpriority`)
+///    - latency_nice (через `sched_setattr`, если поддерживается)
+///    - ionice (через `ioprio_set`)
+///    - cpu.weight (через cgroups v2)
+/// 3. При ошибке применения одного приоритета остальные продолжают применяться
+///    (частичное применение)
+/// 4. Изменение фиксируется в истории гистерезиса
+///
+/// # Обработка ошибок
+///
+/// - Ошибки применения приоритетов логируются через `warn!`, но не останавливают
+///   обработку остальных процессов
+/// - Ошибки применения latency_nice и cgroup не считаются критичными (могут быть
+///   недоступны на старых системах)
+/// - Ошибки применения nice и ionice считаются критичными и увеличивают счётчик ошибок
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
+/// use smoothtask_core::logging::snapshots::Snapshot;
+/// use std::collections::HashMap;
+/// use smoothtask_core::policy::engine::PolicyResult;
+///
+/// # let snapshot = Snapshot::default();
+/// # let policy_results = HashMap::<String, PolicyResult>::new();
+/// let adjustments = plan_priority_changes(&snapshot, &policy_results);
+/// let mut hysteresis = HysteresisTracker::new();
+///
+/// let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+/// println!("Applied {} changes, skipped {} due to hysteresis, {} errors",
+///     result.applied, result.skipped_hysteresis, result.errors);
+/// ```
 pub fn apply_priority_adjustments(
     adjustments: &[PriorityAdjustment],
     hysteresis: &mut HysteresisTracker,
