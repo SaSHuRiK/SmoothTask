@@ -8,9 +8,25 @@ pub struct Config {
     pub polling_interval_ms: u64,
     pub max_candidates: usize,
     pub dry_run_default: bool,
+    #[serde(default = "default_policy_mode")]
+    pub policy_mode: PolicyMode,
 
     pub thresholds: Thresholds,
     pub paths: Paths,
+}
+
+/// Режим работы Policy Engine.
+#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum PolicyMode {
+    /// Только правила, без ML-ранкера.
+    RulesOnly,
+    /// Правила + ML-ранкер для определения приоритетов.
+    Hybrid,
+}
+
+fn default_policy_mode() -> PolicyMode {
+    PolicyMode::RulesOnly
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -213,12 +229,44 @@ thresholds:
         assert_eq!(cfg.polling_interval_ms, 500);
         assert_eq!(cfg.max_candidates, 150);
         assert!(!cfg.dry_run_default);
+        assert_eq!(cfg.policy_mode, PolicyMode::RulesOnly);
         assert_eq!(
             cfg.paths.snapshot_db_path,
             snapshot_db_path.display().to_string()
         );
         assert_eq!(cfg.paths.patterns_dir, patterns_dir.display().to_string());
         assert!((cfg.thresholds.crit_interactive_percentile - 0.9).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn loads_config_with_hybrid_mode() {
+        let file = write_temp_config(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+policy_mode: hybrid
+
+paths:
+  snapshot_db_path: "/var/lib/smoothtask/snapshots.sqlite"
+  patterns_dir: "/etc/smoothtask/patterns"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+        );
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert_eq!(cfg.policy_mode, PolicyMode::Hybrid);
     }
 
     #[test]

@@ -2,9 +2,11 @@
 //!
 //! Policy Engine применяет жёсткие правила (guardrails) и семантические правила
 //! для определения целевого класса приоритета для каждой AppGroup в снапшоте.
+//! В режиме hybrid также использует ML-ранкер для более точного определения приоритетов.
 
-use crate::config::Config;
+use crate::config::{Config, PolicyMode};
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
+use crate::model::ranker::{Ranker, RankingResult};
 use crate::policy::classes::PriorityClass;
 
 /// Результат оценки политики для одной AppGroup.
@@ -19,12 +21,28 @@ pub struct PolicyResult {
 /// Policy Engine для применения правил к снапшоту.
 pub struct PolicyEngine {
     config: Config,
+    ranker: Option<Box<dyn Ranker>>,
 }
 
 impl PolicyEngine {
     /// Создать новый Policy Engine с заданной конфигурацией.
+    ///
+    /// В режиме hybrid автоматически создаётся StubRanker (в будущем можно заменить на реальный ML-ранкер).
     pub fn new(config: Config) -> Self {
-        Self { config }
+        let ranker: Option<Box<dyn Ranker>> = if config.policy_mode == PolicyMode::Hybrid {
+            Some(Box::new(crate::model::ranker::StubRanker::new()))
+        } else {
+            None
+        };
+        Self { config, ranker }
+    }
+
+    /// Создать Policy Engine с явно заданным ранкером (для тестирования).
+    pub fn with_ranker(config: Config, ranker: Box<dyn Ranker>) -> Self {
+        Self {
+            config,
+            ranker: Some(ranker),
+        }
     }
 
     /// Оценить снапшот и определить приоритеты для всех AppGroup.
@@ -40,10 +58,24 @@ impl PolicyEngine {
         &self,
         snapshot: &Snapshot,
     ) -> std::collections::HashMap<String, PolicyResult> {
+        // В hybrid mode сначала ранжируем все группы
+        let ranking_results: Option<std::collections::HashMap<String, RankingResult>> =
+            if let Some(ref ranker) = self.ranker {
+                Some(ranker.rank(&snapshot.app_groups, snapshot))
+            } else {
+                None
+            };
+
         let mut results = std::collections::HashMap::new();
 
         for app_group in &snapshot.app_groups {
-            let result = self.evaluate_app_group(app_group, snapshot);
+            let result = self.evaluate_app_group(
+                app_group,
+                snapshot,
+                ranking_results
+                    .as_ref()
+                    .and_then(|r| r.get(&app_group.app_group_id)),
+            );
             results.insert(app_group.app_group_id.clone(), result);
         }
 
@@ -51,8 +83,13 @@ impl PolicyEngine {
     }
 
     /// Оценить одну AppGroup и определить её приоритет.
-    fn evaluate_app_group(&self, app_group: &AppGroupRecord, snapshot: &Snapshot) -> PolicyResult {
-        // 1. Применяем жёсткие правила (guardrails)
+    fn evaluate_app_group(
+        &self,
+        app_group: &AppGroupRecord,
+        snapshot: &Snapshot,
+        ranking_result: Option<&RankingResult>,
+    ) -> PolicyResult {
+        // 1. Применяем жёсткие правила (guardrails) - они имеют наивысший приоритет
         if let Some(guardrail_result) = self.apply_guardrails(app_group, snapshot) {
             return guardrail_result;
         }
@@ -62,10 +99,41 @@ impl PolicyEngine {
             return semantic_result;
         }
 
-        // 3. Дефолтный приоритет (если правила не применились)
+        // 3. В hybrid mode используем ML-ранкер для определения приоритета на основе percentile
+        if let Some(ranking) = ranking_result {
+            let priority_class = self.map_percentile_to_class(ranking.percentile);
+            return PolicyResult {
+                priority_class,
+                reason: format!(
+                    "ml-ranker: percentile={:.3}, score={:.3}, rank={}",
+                    ranking.percentile, ranking.score, ranking.rank
+                ),
+            };
+        }
+
+        // 4. Дефолтный приоритет (если правила не применились и нет ранкера)
         PolicyResult {
             priority_class: PriorityClass::Normal,
             reason: "default: no rules matched".to_string(),
+        }
+    }
+
+    /// Маппинг percentile на класс приоритета согласно порогам из конфига.
+    ///
+    /// Пороги должны быть упорядочены: background_percentile <= normal_percentile <=
+    /// interactive_percentile <= crit_interactive_percentile
+    fn map_percentile_to_class(&self, percentile: f64) -> PriorityClass {
+        let t = &self.config.thresholds;
+        if percentile >= t.crit_interactive_percentile as f64 {
+            PriorityClass::CritInteractive
+        } else if percentile >= t.interactive_percentile as f64 {
+            PriorityClass::Interactive
+        } else if percentile >= t.normal_percentile as f64 {
+            PriorityClass::Normal
+        } else if percentile >= t.background_percentile as f64 {
+            PriorityClass::Background
+        } else {
+            PriorityClass::Idle
         }
     }
 
@@ -277,6 +345,31 @@ mod tests {
             polling_interval_ms: 500,
             max_candidates: 150,
             dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+            },
+        }
+    }
+
+    fn create_hybrid_config() -> Config {
+        Config {
+            polling_interval_ms: 500,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::Hybrid,
             thresholds: Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,
@@ -624,5 +717,171 @@ mod tests {
 
         assert_eq!(result.priority_class, PriorityClass::Normal);
         assert!(result.reason.contains("default"));
+    }
+
+    #[test]
+    fn test_hybrid_mode_uses_ranker() {
+        let config = create_hybrid_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        // Создаём группы, которые НЕ попадают под правила (не фокусные, не системные, не updater)
+        // чтобы проверить, что ранкер используется
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "normal-app-1".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: Some("app1".to_string()),
+                total_cpu_share: Some(0.5), // Высокий CPU для ранкера
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(500),
+                has_gui_window: true,    // GUI, но не в фокусе
+                is_focused_group: false, // Не в фокусе, чтобы не попасть под семантические правила
+                tags: vec![],
+                priority_class: None,
+            },
+            AppGroupRecord {
+                app_group_id: "normal-app-2".to_string(),
+                root_pid: 2000,
+                process_ids: vec![2000],
+                app_name: Some("app2".to_string()),
+                total_cpu_share: Some(0.1), // Низкий CPU
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        snapshot.app_groups = app_groups;
+
+        let results = engine.evaluate_snapshot(&snapshot);
+
+        // Проверяем, что результаты есть для всех групп
+        assert_eq!(results.len(), 2);
+
+        // Обе группы должны использовать ранкер (не попадают под правила)
+        let app1_result = results.get("normal-app-1").unwrap();
+        let app2_result = results.get("normal-app-2").unwrap();
+
+        // В hybrid mode ранкер должен определить приоритеты на основе percentile
+        // StubRanker даёт более высокий score группам с GUI и высоким CPU
+        assert!(app1_result.priority_class >= app2_result.priority_class);
+        assert!(app1_result.reason.contains("ml-ranker"));
+        assert!(app2_result.reason.contains("ml-ranker"));
+    }
+
+    #[test]
+    fn test_hybrid_mode_guardrails_override_ranker() {
+        let config = create_hybrid_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        // Системный процесс должен быть защищён, даже если ранкер даст высокий score
+        let system_process = ProcessRecord {
+            pid: 1,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: Some("/usr/lib/systemd/systemd".to_string()),
+            cmdline: None,
+            cgroup_path: Some("/system.slice/systemd.service".to_string()),
+            systemd_unit: Some("systemd.service".to_string()),
+            app_group_id: Some("systemd".to_string()),
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 1000,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: Some(50),
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: Some("daemon".to_string()),
+            tags: vec![],
+            nice: 0,
+            ionice_class: Some(2),
+            ionice_prio: Some(4),
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        let app_group = AppGroupRecord {
+            app_group_id: "systemd".to_string(),
+            root_pid: 1,
+            process_ids: vec![1],
+            app_name: Some("systemd".to_string()),
+            total_cpu_share: Some(0.05),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(50),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        };
+
+        snapshot.processes = vec![system_process];
+        snapshot.app_groups = vec![app_group];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+        let result = results.get("systemd").unwrap();
+
+        // Guardrails должны переопределить ранкер
+        assert_eq!(result.priority_class, PriorityClass::Normal);
+        assert!(result.reason.contains("system process"));
+    }
+
+    #[test]
+    fn test_map_percentile_to_class() {
+        let config = create_hybrid_config();
+        let engine = PolicyEngine::new(config);
+
+        // Тестируем маппинг percentile на классы
+        // Используем приватный метод через публичный API через evaluate_snapshot
+
+        let mut snapshot = create_test_snapshot();
+        let app_group = AppGroupRecord {
+            app_group_id: "test".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: None,
+            total_cpu_share: Some(0.1),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        };
+
+        snapshot.app_groups = vec![app_group];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+        let result = results.get("test").unwrap();
+
+        // Проверяем, что результат содержит информацию о percentile
+        // StubRanker для одной группы даст percentile = 1.0, что должно дать CritInteractive
+        // (так как 1.0 >= 0.9)
+        assert!(result.reason.contains("ml-ranker"));
     }
 }

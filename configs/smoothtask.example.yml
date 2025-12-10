@@ -1,6 +1,10 @@
 polling_interval_ms: 500
 max_candidates: 150
 dry_run_default: false
+# Режим работы Policy Engine:
+# - rules-only: только правила, без ML-ранкера (по умолчанию)
+# - hybrid: правила + ML-ранкер для определения приоритетов
+policy_mode: rules-only
 
 paths:
   snapshot_db_path: "/var/lib/smoothtask/snapshots.sqlite"
