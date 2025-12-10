@@ -89,6 +89,71 @@ pub struct Paths {
 }
 
 impl Config {
+    /// Загружает конфигурацию из YAML файла.
+    ///
+    /// Функция читает файл по указанному пути, парсит YAML и валидирует конфигурацию.
+    /// При ошибках чтения, парсинга или валидации возвращается `Result::Err` с описанием проблемы.
+    ///
+    /// # Примеры использования
+    ///
+    /// ## Базовое использование
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    ///
+    /// let config = Config::load("configs/smoothtask.yml")?;
+    /// println!("Polling interval: {} ms", config.polling_interval_ms);
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// ## Обработка ошибок
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    ///
+    /// match Config::load("configs/smoothtask.yml") {
+    ///     Ok(config) => println!("Config loaded successfully"),
+    ///     Err(e) => eprintln!("Failed to load config: {}", e),
+    /// }
+    /// ```
+    ///
+    /// ## Использование с переменной окружения
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    /// use std::env;
+    ///
+    /// let config_path = env::var("SMOOTHTASK_CONFIG")
+    ///     .unwrap_or_else(|_| "configs/smoothtask.example.yml".to_string());
+    /// let config = Config::load(&config_path)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    ///
+    /// # Ошибки
+    ///
+    /// Функция может вернуть ошибку в следующих случаях:
+    ///
+    /// - Файл не существует или недоступен для чтения
+    /// - Файл содержит некорректный YAML
+    /// - Конфигурация не проходит валидацию (некорректные значения полей)
+    ///
+    /// # Примеры ошибок
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    ///
+    /// // Файл не существует
+    /// let err = Config::load("/nonexistent/path.yml").unwrap_err();
+    /// assert!(err.to_string().contains("failed to read config"));
+    ///
+    /// // Некорректный YAML
+    /// // let err = Config::load("invalid.yaml").unwrap_err();
+    /// // assert!(err.to_string().contains("failed to parse YAML"));
+    ///
+    /// // Валидация не прошла
+    /// // let err = Config::load("invalid_config.yml").unwrap_err();
+    /// // assert!(err.to_string().contains("must be"));
+    /// ```
     pub fn load(path: &str) -> Result<Self> {
         let data = fs::read_to_string(path)
             .with_context(|| format!("failed to read config from {path}"))?;
@@ -190,7 +255,7 @@ impl Thresholds {
         );
         ensure!(
             self.user_idle_timeout_sec <= 86400,
-            "thresholds.user_idle_timeout_sec must be <= 86400 sec (24 hours) to ensure reasonable user activity tracking (got {})",
+            "thresholds.user_idle_timeout_sec must be <= 86400 sec (24 hours) to ensure reasonable user activity tracking. Current value: {} sec. Please use a value between 1 and 86400 seconds.",
             self.user_idle_timeout_sec
         );
         ensure!(
@@ -200,7 +265,7 @@ impl Thresholds {
         );
         ensure!(
             self.interactive_build_grace_sec <= 3600,
-            "thresholds.interactive_build_grace_sec must be <= 3600 sec (1 hour) to ensure reasonable grace period for interactive builds (got {})",
+            "thresholds.interactive_build_grace_sec must be <= 3600 sec (1 hour) to ensure reasonable grace period for interactive builds. Current value: {} sec. Please use a value between 1 and 3600 seconds.",
             self.interactive_build_grace_sec
         );
         ensure!(
