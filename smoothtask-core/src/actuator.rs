@@ -286,6 +286,60 @@ impl HysteresisTracker {
     }
 
     /// Очистить историю для процессов, которые больше не существуют.
+    ///
+    /// Функция удаляет из истории изменений приоритетов все записи для процессов,
+    /// которые не присутствуют в списке активных PIDs. Это предотвращает накопление
+    /// устаревших данных о завершившихся процессах.
+    ///
+    /// # Параметры
+    ///
+    /// - `active_pids`: Список PIDs процессов, которые всё ещё существуют в системе.
+    ///   История для всех остальных процессов будет удалена.
+    ///
+    /// # Алгоритм
+    ///
+    /// 1. Создаётся HashSet из активных PIDs для быстрого поиска
+    /// 2. Удаляются все записи из истории, чьи PIDs не присутствуют в активном списке
+    ///
+    /// # Примеры
+    ///
+    /// ## Базовое использование
+    ///
+    /// ```no_run
+    /// use smoothtask_core::actuator::HysteresisTracker;
+    ///
+    /// let mut tracker = HysteresisTracker::new();
+    ///
+    /// // После применения приоритетов через apply_priority_adjustments,
+    /// // история содержит записи для всех процессов, которым были применены изменения.
+    /// // Очищаем историю, оставляя только активные процессы
+    /// tracker.cleanup(&[1001, 1003]);
+    ///
+    /// // Теперь история содержит только записи для процессов 1001 и 1003
+    /// ```
+    ///
+    /// ## Использование в цикле демона
+    ///
+    /// ```no_run
+    /// use smoothtask_core::actuator::HysteresisTracker;
+    /// use smoothtask_core::logging::snapshots::Snapshot;
+    ///
+    /// # fn get_snapshot() -> Snapshot { unimplemented!() }
+    /// let mut tracker = HysteresisTracker::new();
+    /// let snapshot = get_snapshot();
+    ///
+    /// // Получаем список активных PIDs из снапшота
+    /// let active_pids: Vec<i32> = snapshot.processes.iter().map(|p| p.pid).collect();
+    ///
+    /// // Очищаем историю от завершившихся процессов
+    /// tracker.cleanup(&active_pids);
+    /// ```
+    ///
+    /// # Примечания
+    ///
+    /// - Функция эффективна даже для больших списков процессов благодаря использованию HashSet
+    /// - Если `active_pids` пуст, вся история будет очищена
+    /// - Если процесс присутствует в `active_pids`, но не в истории, ничего не происходит
     pub fn cleanup(&mut self, active_pids: &[i32]) {
         let active_set: std::collections::HashSet<_> = active_pids.iter().copied().collect();
         self.history.retain(|pid, _| active_set.contains(pid));
@@ -1306,6 +1360,65 @@ mod tests {
         assert!(tracker.history.contains_key(&1001));
         assert!(tracker.history.contains_key(&1003));
         assert!(!tracker.history.contains_key(&1002));
+    }
+
+    #[test]
+    fn hysteresis_cleanup_clears_all_when_empty_list() {
+        let mut tracker = HysteresisTracker::new();
+        tracker.record_change(1001, PriorityClass::Normal);
+        tracker.record_change(1002, PriorityClass::Background);
+        tracker.record_change(1003, PriorityClass::Idle);
+
+        assert_eq!(tracker.history.len(), 3);
+
+        // Очищаем с пустым списком активных PIDs
+        tracker.cleanup(&[]);
+
+        assert_eq!(tracker.history.len(), 0);
+    }
+
+    #[test]
+    fn hysteresis_cleanup_keeps_all_when_all_active() {
+        let mut tracker = HysteresisTracker::new();
+        tracker.record_change(1001, PriorityClass::Normal);
+        tracker.record_change(1002, PriorityClass::Background);
+        tracker.record_change(1003, PriorityClass::Idle);
+
+        assert_eq!(tracker.history.len(), 3);
+
+        // Очищаем, указывая все процессы как активные
+        tracker.cleanup(&[1001, 1002, 1003]);
+
+        assert_eq!(tracker.history.len(), 3);
+        assert!(tracker.history.contains_key(&1001));
+        assert!(tracker.history.contains_key(&1002));
+        assert!(tracker.history.contains_key(&1003));
+    }
+
+    #[test]
+    fn hysteresis_cleanup_handles_nonexistent_pids() {
+        let mut tracker = HysteresisTracker::new();
+        tracker.record_change(1001, PriorityClass::Normal);
+        tracker.record_change(1002, PriorityClass::Background);
+
+        assert_eq!(tracker.history.len(), 2);
+
+        // Очищаем, указывая PIDs, которых нет в истории
+        tracker.cleanup(&[9999, 8888]);
+
+        assert_eq!(tracker.history.len(), 0);
+    }
+
+    #[test]
+    fn hysteresis_cleanup_on_empty_history() {
+        let mut tracker = HysteresisTracker::new();
+
+        assert_eq!(tracker.history.len(), 0);
+
+        // Очищаем пустую историю
+        tracker.cleanup(&[1001, 1002, 1003]);
+
+        assert_eq!(tracker.history.len(), 0);
     }
 
     #[test]
