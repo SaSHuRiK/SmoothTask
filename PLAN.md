@@ -11,6 +11,16 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-011-1: Сбор метрик процессов из /proc (легкие метрики)
+  - Тип: Rust / core / metrics
+  - Критерии готовности:
+    - Функция `collect_process_metrics()` для сбора метрик всех процессов;
+    - Чтение из `/proc/[pid]/stat`, `/proc/[pid]/status`, `/proc/[pid]/cmdline`, `/proc/[pid]/cgroup`;
+    - Заполнение базовых полей ProcessRecord (pid, ppid, uid, gid, exe, cmdline, cgroup_path, state, start_time, nice, rss_mb);
+    - Unit-тесты на парсинг фиктивных данных из /proc;
+    - Обработка ошибок доступа к процессам (процесс завершился, нет прав).
+  - Примечания: реализован модуль `metrics::process` с функцией `collect_process_metrics()`, использующей библиотеку `procfs` для чтения метрик процессов. Добавлены вспомогательные функции для чтения cgroup_path, systemd_unit, UID/GID и переменных окружения. Добавлены 6 unit-тестов, покрывающих парсинг cgroup, извлечение systemd unit, чтение переменных окружения и обработку ошибок.
+
 - [x] ST-010-1: Планировщик изменений Actuator (nice/ionice без системных вызовов)
   - Тип: Rust / core / actuator
   - Критерии готовности:
