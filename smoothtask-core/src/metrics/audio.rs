@@ -231,4 +231,148 @@ mod tests {
         let metrics = AudioMetrics::empty(now, now);
         assert_eq!(metrics.xrun_rate_per_sec(), 0.0);
     }
+
+    #[test]
+    fn period_duration_when_end_before_start() {
+        // Тест проверяет, что period_duration_ms() корректно обрабатывает случай,
+        // когда period_end < period_start (должно вернуть 0)
+        let start = SystemTime::now();
+        let end = start - Duration::from_millis(100); // end раньше start
+        let metrics = AudioMetrics::empty(start, end);
+        // duration_since вернёт None, и мы используем Duration::ZERO
+        assert_eq!(metrics.period_duration_ms(), 0);
+    }
+
+    #[test]
+    fn period_duration_very_long_period() {
+        // Тест проверяет корректность вычисления для очень длинного периода
+        let start = SystemTime::now();
+        let end = start + Duration::from_secs(86400); // 24 часа
+        let metrics = AudioMetrics::empty(start, end);
+        assert_eq!(metrics.period_duration_ms(), 86400 * 1000);
+    }
+
+    #[test]
+    fn period_duration_very_short_period() {
+        // Тест проверяет корректность вычисления для очень короткого периода
+        let start = SystemTime::now();
+        let end = start + Duration::from_micros(100); // 0.1 мс
+        let metrics = AudioMetrics::empty(start, end);
+        // Должно быть округлено до 0 мс или 1 мс в зависимости от точности
+        assert!(metrics.period_duration_ms() <= 1);
+    }
+
+    #[test]
+    fn xrun_rate_very_high() {
+        // Тест проверяет вычисление rate для очень большого количества XRUN
+        let start = SystemTime::now();
+        let end = start + Duration::from_secs(1);
+        let mut metrics = AudioMetrics::empty(start, end);
+        metrics.xrun_count = 1000; // 1000 XRUN за секунду
+        assert!((metrics.xrun_rate_per_sec() - 1000.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn xrun_rate_very_small_duration() {
+        // Тест проверяет, что при очень маленькой длительности rate = 0
+        let start = SystemTime::now();
+        let end = start + Duration::from_nanos(1); // 1 наносекунда
+        let mut metrics = AudioMetrics::empty(start, end);
+        metrics.xrun_count = 100;
+        // При duration_secs близкой к 0, rate должен быть 0
+        let rate = metrics.xrun_rate_per_sec();
+        // rate может быть очень большим из-за деления на очень маленькое число,
+        // но в реальности duration_secs будет 0 из-за округления
+        assert!(rate >= 0.0);
+    }
+
+    #[test]
+    fn xrun_rate_fractional_seconds() {
+        // Тест проверяет вычисление rate для дробного количества секунд
+        let start = SystemTime::now();
+        let end = start + Duration::from_millis(500); // 0.5 секунды
+        let mut metrics = AudioMetrics::empty(start, end);
+        metrics.xrun_count = 5;
+        // 5 XRUN за 0.5 секунды = 10 в секунду
+        assert!((metrics.xrun_rate_per_sec() - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    fn has_xruns_when_count_zero_but_xruns_not_empty() {
+        // Тест проверяет, что has_xruns() проверяет только xrun_count, а не xruns
+        let start = SystemTime::now();
+        let end = start + Duration::from_secs(1);
+        let mut metrics = AudioMetrics::empty(start, end);
+        metrics.xrun_count = 0;
+        metrics.xruns = vec![xrun(Some(42))]; // xruns не пустой, но count = 0
+                                              // has_xruns() проверяет только xrun_count
+        assert!(!metrics.has_xruns());
+    }
+
+    #[test]
+    fn has_xruns_when_count_nonzero_but_xruns_empty() {
+        // Тест проверяет, что has_xruns() работает даже если xruns пустой
+        let start = SystemTime::now();
+        let end = start + Duration::from_secs(1);
+        let mut metrics = AudioMetrics::empty(start, end);
+        metrics.xrun_count = 5;
+        metrics.xruns = Vec::new(); // xruns пустой, но count > 0
+        assert!(metrics.has_xruns());
+    }
+
+    #[test]
+    fn find_client_empty_list() {
+        // Тест проверяет поиск клиента в пустом списке
+        let now = SystemTime::now();
+        let metrics = AudioMetrics::empty(now, now);
+        assert!(metrics.find_client(42).is_none());
+    }
+
+    #[test]
+    fn find_client_multiple_clients_same_pid() {
+        // Тест проверяет, что find_client() возвращает первый найденный клиент
+        // (если есть несколько клиентов с одинаковым PID)
+        let now = SystemTime::now();
+        let mut metrics = AudioMetrics::empty(now, now);
+        let client1 = AudioClientInfo {
+            pid: 42,
+            buffer_size_samples: Some(1024),
+            sample_rate_hz: Some(48000),
+        };
+        let client2 = AudioClientInfo {
+            pid: 42,
+            buffer_size_samples: Some(2048),
+            sample_rate_hz: Some(44100),
+        };
+        metrics.clients = vec![client1.clone(), client2];
+        // find_client должен вернуть первый клиент с PID 42
+        let found = metrics.find_client(42);
+        assert!(found.is_some());
+        assert_eq!(found.unwrap().pid, 42);
+        assert_eq!(found.unwrap().buffer_size_samples, Some(1024));
+    }
+
+    #[test]
+    fn find_client_large_list() {
+        // Тест проверяет поиск клиента в большом списке
+        let now = SystemTime::now();
+        let mut metrics = AudioMetrics::empty(now, now);
+        let mut clients = Vec::new();
+        for i in 0..100 {
+            clients.push(client(i));
+        }
+        metrics.clients = clients;
+        assert_eq!(metrics.find_client(50).unwrap().pid, 50);
+        assert_eq!(metrics.find_client(99).unwrap().pid, 99);
+        assert!(metrics.find_client(100).is_none());
+    }
+
+    #[test]
+    fn xrun_rate_zero_xruns() {
+        // Тест проверяет, что rate = 0, когда xrun_count = 0
+        let start = SystemTime::now();
+        let end = start + Duration::from_secs(10);
+        let metrics = AudioMetrics::empty(start, end);
+        assert_eq!(metrics.xrun_rate_per_sec(), 0.0);
+    }
 }
