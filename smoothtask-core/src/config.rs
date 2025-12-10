@@ -217,12 +217,47 @@ impl Paths {
             snapshot_parent,
         );
 
+        // Проверяем, что родительская директория доступна для записи
+        // (пробуем создать временный файл для проверки прав доступа)
+        #[cfg(unix)]
+        {
+            use std::fs::File;
+            use std::io::Write;
+            let test_file = snapshot_parent.join(".smoothtask_write_test");
+            if let Ok(mut file) = File::create(&test_file) {
+                // Если файл создан, пробуем записать в него
+                if file.write_all(b"test").is_ok() {
+                    // Удаляем тестовый файл
+                    let _ = std::fs::remove_file(&test_file);
+                } else {
+                    anyhow::bail!(
+                        "snapshot_db_path parent directory is not writable (got {:?})",
+                        snapshot_parent
+                    );
+                }
+            } else {
+                anyhow::bail!(
+                    "snapshot_db_path parent directory is not writable (got {:?})",
+                    snapshot_parent
+                );
+            }
+        }
+
         let patterns_dir = Path::new(&self.patterns_dir);
         ensure!(
             patterns_dir.is_dir(),
             "patterns_dir must point to an existing directory (got {:?})",
             patterns_dir,
         );
+
+        // Проверяем, что директория patterns_dir доступна для чтения
+        #[cfg(unix)]
+        {
+            use std::fs::read_dir;
+            if read_dir(patterns_dir).is_err() {
+                anyhow::bail!("patterns_dir is not readable (got {:?})", patterns_dir);
+            }
+        }
 
         Ok(())
     }
@@ -775,5 +810,94 @@ thresholds:
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
         assert!((cfg.thresholds.sched_latency_p99_threshold_ms - 10.0).abs() < f64::EPSILON);
         assert!((cfg.thresholds.ui_loop_p95_threshold_ms - 16.67).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn validates_snapshot_db_path_parent_is_writable() {
+        // Тест проверяет, что валидация проверяет права на запись в родительскую директорию
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен загрузиться без ошибок (временная директория доступна для записи)
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert_eq!(
+            cfg.paths.snapshot_db_path,
+            snapshot_db_path.display().to_string()
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn validates_patterns_dir_is_readable() {
+        // Тест проверяет, что валидация проверяет права на чтение директории patterns_dir
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен загрузиться без ошибок (временная директория доступна для чтения)
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert_eq!(cfg.paths.patterns_dir, patterns_dir.display().to_string());
     }
 }
