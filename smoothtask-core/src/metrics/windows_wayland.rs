@@ -84,12 +84,24 @@ pub struct WaylandIntrospector {
 impl WaylandIntrospector {
     /// Создаёт новый WaylandIntrospector, подключаясь к Wayland композитору.
     ///
-    /// Возвращает ошибку, если Wayland недоступен или wlr-foreign-toplevel-management
-    /// не поддерживается композитором.
+    /// Возвращает ошибку, если:
+    /// - Wayland недоступен (переменные окружения не установлены, socket не найден);
+    /// - wlr-foreign-toplevel-management не поддерживается композитором;
+    /// - реализация ещё не завершена (временная ошибка до полной реализации).
+    ///
+    /// # Ошибки
+    ///
+    /// - Если Wayland недоступен, возвращается ошибка с описанием причины.
+    /// - Если Wayland доступен, но реализация не завершена, возвращается информативная ошибка.
     pub fn new() -> Result<Self> {
         // Проверяем доступность Wayland
         if !Self::is_available() {
-            anyhow::bail!("Wayland is not available");
+            anyhow::bail!(
+                "Wayland is not available. Check that:\n\
+                 - WAYLAND_DISPLAY environment variable is set, or\n\
+                 - XDG_SESSION_TYPE=wayland, or\n\
+                 - Wayland socket exists in $XDG_RUNTIME_DIR or /run/user/<uid>/"
+            );
         }
 
         // ПРИМЕЧАНИЕ: Полная реализация требует:
@@ -102,9 +114,16 @@ impl WaylandIntrospector {
         // Это сложная задача, требующая правильной работы с асинхронными событиями
         // через wayland-client 0.31 API. Полная реализация будет добавлена в будущем.
         anyhow::bail!(
-            "WaylandIntrospector::new() not yet fully implemented. Full implementation requires \
-             complex async event handling through wayland-client API with Dispatch traits and \
-             proper registry binding. This will be added in the future."
+            "WaylandIntrospector is not yet fully implemented. \
+             Wayland is available, but the full implementation requires:\n\
+             - Connection to Wayland compositor via wayland-client API\n\
+             - Event handling through Dispatch traits\n\
+             - Registry binding for wlr-foreign-toplevel-management protocol\n\
+             - Event handlers for window state updates (title, app_id, state, pid)\n\
+             \n\
+             This is a complex task requiring proper async event handling. \
+             The implementation will be completed in a future update. \
+             For now, the system will fall back to StaticWindowIntrospector."
         )
     }
 
@@ -118,8 +137,14 @@ impl WindowIntrospector for WaylandIntrospector {
     fn windows(&self) -> Result<Vec<WindowInfo>> {
         // TODO: реализовать получение списка окон через wlr-foreign-toplevel-management
         anyhow::bail!(
-            "WaylandIntrospector::windows() not yet fully implemented. Full implementation requires \
-             complex async event handling through wayland-client API and will be added in the future."
+            "WaylandIntrospector::windows() is not yet fully implemented. \
+             This method requires:\n\
+             - Connection to Wayland compositor\n\
+             - wlr-foreign-toplevel-management protocol support\n\
+             - Async event handling through wayland-client API\n\
+             \n\
+             The full implementation will be added in a future update. \
+             This error should not occur if WaylandIntrospector::new() was called successfully."
         )
     }
 }
@@ -149,9 +174,52 @@ mod tests {
                 // Если Wayland доступен и реализация готова, это нормально
                 // Но пока мы ожидаем ошибку
             }
-            Err(_) => {
+            Err(e) => {
                 // Ожидаемая ошибка, пока не реализовано полностью
+                // Проверяем, что сообщение об ошибке информативное
+                let msg = e.to_string();
+                assert!(
+                    msg.contains("not yet fully implemented") || msg.contains("not available"),
+                    "Error message should be informative, got: {}",
+                    msg
+                );
             }
+        }
+    }
+
+    #[test]
+    fn test_wayland_introspector_creation_error_message_when_unavailable() {
+        // Тест проверяет, что сообщение об ошибке информативно, когда Wayland недоступен
+        // Временно отключаем Wayland для теста
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+
+        // Принудительно делаем Wayland недоступным для этого теста
+        // (в реальности это может не сработать, если есть socket, но мы проверяем сообщение)
+        match WaylandIntrospector::new() {
+            Ok(_) => {
+                // Если Wayland всё ещё доступен через socket, это нормально
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // Проверяем, что сообщение содержит полезную информацию
+                assert!(
+                    msg.contains("not available") || msg.contains("not yet fully implemented"),
+                    "Error message should mention availability or implementation status, got: {}",
+                    msg
+                );
+            }
+        }
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
         }
     }
 
@@ -166,8 +234,15 @@ mod tests {
                         // Если реализация готова, это нормально
                         // Но пока мы ожидаем ошибку
                     }
-                    Err(_) => {
+                    Err(e) => {
                         // Ожидаемая ошибка, пока не реализовано полностью
+                        // Проверяем, что сообщение об ошибке информативное
+                        let msg = e.to_string();
+                        assert!(
+                            msg.contains("not yet fully implemented") || msg.contains("windows()"),
+                            "Error message should be informative, got: {}",
+                            msg
+                        );
                     }
                 }
             }
