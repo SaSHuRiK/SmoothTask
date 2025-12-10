@@ -37,6 +37,10 @@ pub struct PriorityAdjustment {
     pub current_ionice: Option<(i32, i32)>,
     /// Целевой ionice.
     pub target_ionice: IoNiceParams,
+    /// Текущий cpu.weight процесса, если известен.
+    pub current_cpu_weight: Option<u32>,
+    /// Целевой cpu.weight.
+    pub target_cpu_weight: u32,
     /// Причина из PolicyEngine (для логирования/трассировки).
     pub reason: String,
 }
@@ -73,8 +77,16 @@ pub fn plan_priority_changes(
             .or_else(|| read_ionice(process.pid).ok().flatten());
         // Читаем текущий latency_nice из процесса
         let current_latency_nice = read_latency_nice(process.pid).unwrap_or(None); // В случае ошибки считаем, что latency_nice неизвестен
+                                                                                   // Читаем текущий cpu.weight из cgroup процесса
+        let current_cpu_weight = read_cpu_weight(process.pid).unwrap_or(None); // В случае ошибки считаем, что cpu.weight неизвестен
 
-        if needs_change(current_nice, current_ionice, current_latency_nice, params) {
+        if needs_change(
+            current_nice,
+            current_ionice,
+            current_latency_nice,
+            current_cpu_weight,
+            params,
+        ) {
             adjustments.push(PriorityAdjustment {
                 pid: process.pid,
                 app_group_id: app_group_id.clone(),
@@ -85,6 +97,8 @@ pub fn plan_priority_changes(
                 target_latency_nice: params.latency_nice.latency_nice,
                 current_ionice,
                 target_ionice: params.ionice,
+                current_cpu_weight,
+                target_cpu_weight: params.cgroup.cpu_weight,
                 reason: policy.reason.clone(),
             });
         }
@@ -97,6 +111,7 @@ fn needs_change(
     current_nice: i32,
     current_ionice: Option<(i32, i32)>,
     current_latency_nice: Option<i32>,
+    current_cpu_weight: Option<u32>,
     target: PriorityParams,
 ) -> bool {
     if current_nice != target.nice.nice {
@@ -113,9 +128,28 @@ fn needs_change(
     }
 
     match current_ionice {
-        Some((class, level)) => class != target.ionice.class || level != target.ionice.level,
-        None => true,
+        Some((class, level)) => {
+            if class != target.ionice.class || level != target.ionice.level {
+                return true;
+            }
+        }
+        None => return true,
     }
+
+    // Проверяем cpu.weight
+    match current_cpu_weight {
+        Some(weight) => {
+            if weight != target.cgroup.cpu_weight {
+                return true;
+            }
+        }
+        None => {
+            // Если cpu.weight неизвестен, считаем, что нужно изменить
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Информация о последнем изменении приоритета процесса (для гистерезиса).
@@ -1411,6 +1445,53 @@ mod tests {
 
         let adj = &adjustments[0];
         assert_eq!(adj.target_nice, PriorityClass::Interactive.nice());
+    }
+
+    #[test]
+    fn test_cpu_weight_in_priority_adjustment() {
+        // Тест на то, что cpu.weight включается в PriorityAdjustment
+        let process = base_process("app1", 1234);
+        let snapshot = make_snapshot(vec![process], vec![app_group("app1")]);
+
+        let mut policy_results = HashMap::new();
+        policy_results.insert(
+            "app1".to_string(),
+            make_policy_result(PriorityClass::CritInteractive, "focused GUI"),
+        );
+
+        let adjustments = plan_priority_changes(&snapshot, &policy_results);
+        assert_eq!(adjustments.len(), 1);
+
+        let adj = &adjustments[0];
+        assert_eq!(
+            adj.target_cpu_weight,
+            PriorityClass::CritInteractive.cpu_weight()
+        );
+        assert_eq!(adj.target_cpu_weight, 200);
+        // current_cpu_weight может быть Some или None в зависимости от поддержки cgroup v2
+        // и наличия процесса с таким PID
+    }
+
+    #[test]
+    fn test_needs_change_with_cpu_weight() {
+        // Тест на то, что needs_change возвращает true, когда cpu.weight отличается
+        use crate::policy::classes::{CgroupParams, IoNiceParams, LatencyNiceParams, NiceParams};
+
+        let params = PriorityParams {
+            nice: NiceParams { nice: 0 },
+            latency_nice: LatencyNiceParams { latency_nice: 0 },
+            ionice: IoNiceParams { class: 2, level: 4 },
+            cgroup: CgroupParams { cpu_weight: 100 },
+        };
+
+        // Все параметры совпадают - не нужно изменять
+        assert!(!needs_change(0, Some((2, 4)), Some(0), Some(100), params));
+
+        // cpu.weight отличается - нужно изменить
+        assert!(needs_change(0, Some((2, 4)), Some(0), Some(50), params));
+
+        // cpu.weight неизвестен - нужно изменить
+        assert!(needs_change(0, Some((2, 4)), Some(0), None, params));
     }
 
     #[test]

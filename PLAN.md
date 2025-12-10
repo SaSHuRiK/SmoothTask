@@ -35,6 +35,15 @@
 
 ## 3. Готово (Done)
 
+- [x] ST-050: Добавление чтения и проверки cpu.weight в plan_priority_changes() и needs_change()
+  - Тип: Rust / core / actuator
+  - Критерии готовности:
+    - [x] Добавлены поля current_cpu_weight и target_cpu_weight в PriorityAdjustment;
+    - [x] Добавлено чтение cpu.weight в plan_priority_changes();
+    - [x] Добавлена проверка cpu.weight в needs_change();
+    - [x] Unit-тесты для проверки cpu.weight (2 новых теста).
+  - Примечания: реализовано чтение и проверка cpu.weight для консистентности с другими приоритетами (nice, ionice, latency_nice). Добавлены поля current_cpu_weight и target_cpu_weight в структуру PriorityAdjustment. Функция plan_priority_changes() теперь читает текущий cpu.weight из cgroup процесса через read_cpu_weight(). Функция needs_change() проверяет, отличается ли текущий cpu.weight от целевого, и возвращает true, если cpu.weight неизвестен. Добавлены 2 новых unit-теста, покрывающих включение cpu.weight в PriorityAdjustment и проверку needs_change с cpu.weight. Все 178 unit-тестов проекта проходят успешно.
+
 - [x] ST-000: Валидация конфигурации при загрузке
   - Примечания: покрыто юнит-тестом загрузки `Config::load`.
 - [x] ST-003: Сбор пользовательского ввода (evdev) для user_active/idle
