@@ -29,8 +29,6 @@
 
 ## 2. Бэклог
 
-- [ ] ST-003: Сбор пользовательского ввода (evdev) для user_active/idle
-  - Тип: Rust / core / metrics
 - [ ] ST-004: Минимальный WindowIntrospector (X11/Wayland) для фокуса окна
   - Тип: Rust / core / metrics
 - [ ] ST-005: Аудио метрики (PipeWire/PulseAudio, XRUN)
@@ -40,6 +38,8 @@
 
 - [x] ST-000: Валидация конфигурации при загрузке
   - Примечания: покрыто юнит-тестом загрузки `Config::load`.
+- [x] ST-003: Сбор пользовательского ввода (evdev) для user_active/idle
+  - Примечания: добавлен `InputActivityTracker` с юнит-тестами, считает `user_active` и `time_since_last_input_ms` без зависимости от реального `/dev/input`.
 
 ## 4. Блокеры
 
