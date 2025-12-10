@@ -1,0 +1,21 @@
+# Паттерны индексаторов и поисковых демонов для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: indexer
+apps:
+  - name: "baloo"
+    label: "KDE Baloo"
+    exe_patterns: ["baloo_file", "baloo_file_extractor", "baloo_filemetadata_temp_extractor", "baloo_fileindexer"]
+    systemd_units: ["baloo_file.service"]
+    tags: ["indexer", "maintenance"]
+  
+  - name: "tracker"
+    label: "GNOME Tracker"
+    exe_patterns: ["tracker-miner-fs", "tracker-miner-fs-3", "tracker3", "tracker-miner-rss", "tracker-store"]
+    systemd_units: ["tracker-miner-fs-3.service", "tracker-store.service"]
+    tags: ["indexer", "maintenance"]
+  
+  - name: "recoll"
+    label: "Recoll"
+    exe_patterns: ["recollindex", "recoll"]
+    tags: ["indexer", "maintenance"]
+

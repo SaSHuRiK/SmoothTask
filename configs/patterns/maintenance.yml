@@ -1,30 +1,89 @@
-# Паттерны maintenance-задач для классификации
-maintenance:
+# Паттерны обновлялок и пакетных менеджеров для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: maintenance
+apps:
+  # APT/DPKG
   - name: "apt"
+    label: "APT"
     exe_patterns: ["apt", "apt-get"]
     tags: ["maintenance", "updater"]
   
+  - name: "unattended-upgrades"
+    label: "Unattended Upgrades"
+    exe_patterns: ["unattended-upgrades"]
+    systemd_units: ["apt-daily.service", "apt-daily-upgrade.service"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "synaptic"
+    label: "Synaptic"
+    exe_patterns: ["synaptic"]
+    desktop_patterns: ["synaptic.desktop"]
+    tags: ["maintenance", "updater", "gui_interactive"]
+  
+  # DNF/YUM
   - name: "dnf"
-    exe_patterns: ["dnf"]
+    label: "DNF"
+    exe_patterns: ["dnf", "yum"]
     tags: ["maintenance", "updater"]
   
+  - name: "dnf-automatic"
+    label: "DNF Automatic"
+    exe_patterns: ["dnf-automatic"]
+    systemd_units: ["dnf-makecache.service"]
+    tags: ["maintenance", "updater"]
+  
+  # Pacman
+  - name: "pacman"
+    label: "Pacman"
+    exe_patterns: ["pacman"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "yay"
+    label: "yay (AUR helper)"
+    exe_patterns: ["yay"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "paru"
+    label: "paru (AUR helper)"
+    exe_patterns: ["paru"]
+    tags: ["maintenance", "updater"]
+  
+  # Zypper
+  - name: "zypper"
+    label: "Zypper"
+    exe_patterns: ["zypper", "yast2"]
+    tags: ["maintenance", "updater"]
+  
+  # Snap
   - name: "snapd"
-    exe_patterns: ["snapd"]
+    label: "Snapd"
+    exe_patterns: ["snapd", "snap"]
+    systemd_units: ["snapd.service"]
     tags: ["maintenance", "updater"]
   
+  - name: "snap-store"
+    label: "Snap Store"
+    exe_patterns: ["snap-store"]
+    desktop_patterns: ["snap-store.desktop"]
+    tags: ["maintenance", "updater", "gui_interactive"]
+  
+  # Flatpak
   - name: "flatpak"
-    exe_patterns: ["flatpak"]
+    label: "Flatpak"
+    exe_patterns: ["flatpak", "flatpak-system-helper"]
+    systemd_units: ["flatpak-system-helper.service"]
     tags: ["maintenance", "updater"]
   
-  - name: "packagekitd"
-    exe_patterns: ["packagekitd"]
+  - name: "gnome-software"
+    label: "GNOME Software"
+    exe_patterns: ["gnome-software"]
+    desktop_patterns: ["org.gnome.Software.desktop"]
+    tags: ["maintenance", "updater", "gui_interactive"]
+  
+  # PackageKit
+  - name: "packagekit"
+    label: "PackageKit"
+    exe_patterns: ["packagekitd", "pkcon"]
+    systemd_units: ["packagekit.service"]
     tags: ["maintenance", "updater"]
-  
-  - name: "tracker"
-    exe_patterns: ["tracker-miner", "tracker-store"]
-    tags: ["maintenance", "indexer"]
-  
-  - name: "baloo"
-    exe_patterns: ["baloo"]
-    tags: ["maintenance", "indexer"]
 

@@ -1,0 +1,40 @@
+# Паттерны торрент-клиентов для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: torrent
+apps:
+  - name: "qbittorrent"
+    label: "qBittorrent"
+    exe_patterns: ["qbittorrent", "qbittorrent-nox"]
+    desktop_patterns: ["org.qbittorrent.qBittorrent.desktop"]
+    tags: ["torrent", "batch_heavy"]
+  
+  - name: "transmission"
+    label: "Transmission"
+    exe_patterns: ["transmission-gtk", "transmission-qt", "transmission-daemon", "transmission-cli"]
+    desktop_patterns: ["transmission-gtk.desktop"]
+    systemd_units: ["transmission-daemon.service"]
+    tags: ["torrent", "batch_heavy"]
+  
+  - name: "deluge"
+    label: "Deluge"
+    exe_patterns: ["deluge", "deluged"]
+    desktop_patterns: ["deluge.desktop"]
+    systemd_units: ["deluged.service"]
+    tags: ["torrent", "batch_heavy"]
+  
+  - name: "tixati"
+    label: "Tixati"
+    exe_patterns: ["tixati"]
+    desktop_patterns: ["tixati.desktop"]
+    tags: ["torrent", "batch_heavy"]
+  
+  - name: "rtorrent"
+    label: "rTorrent"
+    exe_patterns: ["rtorrent"]
+    tags: ["torrent", "batch_heavy", "cli_interactive"]
+  
+  - name: "aria2"
+    label: "aria2"
+    exe_patterns: ["aria2c"]
+    tags: ["torrent", "batch_heavy"]
+

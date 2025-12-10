@@ -1,18 +1,64 @@
 # Паттерны браузеров для классификации
-browsers:
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: browser
+apps:
   - name: "firefox"
-    exe_patterns: ["firefox", "firefox-bin"]
-    tags: ["browser", "gui_interactive"]
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox", "firefox-bin", "firefox-esr"]
+    desktop_patterns: ["firefox.desktop"]
+    tags: ["browser", "firefox-family", "gui_interactive"]
   
   - name: "chromium"
+    label: "Chromium"
     exe_patterns: ["chromium", "chromium-browser"]
-    tags: ["browser", "gui_interactive"]
+    desktop_patterns: ["chromium-browser.desktop"]
+    tags: ["browser", "chromium-family", "gui_interactive"]
   
   - name: "chrome"
-    exe_patterns: ["google-chrome", "chrome"]
-    tags: ["browser", "gui_interactive"]
+    label: "Google Chrome"
+    exe_patterns: ["google-chrome", "google-chrome-stable", "chrome"]
+    desktop_patterns: ["google-chrome.desktop"]
+    tags: ["browser", "chromium-family", "gui_interactive"]
   
   - name: "brave"
+    label: "Brave Browser"
     exe_patterns: ["brave", "brave-browser"]
+    desktop_patterns: ["brave-browser.desktop"]
+    tags: ["browser", "chromium-family", "gui_interactive"]
+  
+  - name: "microsoft-edge"
+    label: "Microsoft Edge"
+    exe_patterns: ["microsoft-edge", "msedge"]
+    desktop_patterns: ["microsoft-edge.desktop"]
+    tags: ["browser", "chromium-family", "gui_interactive"]
+  
+  - name: "vivaldi"
+    label: "Vivaldi"
+    exe_patterns: ["vivaldi", "vivaldi-bin"]
+    desktop_patterns: ["vivaldi-stable.desktop"]
+    tags: ["browser", "chromium-family", "gui_interactive"]
+  
+  - name: "opera"
+    label: "Opera"
+    exe_patterns: ["opera", "opera-beta", "opera-developer"]
+    desktop_patterns: ["opera.desktop"]
+    tags: ["browser", "chromium-family", "gui_interactive"]
+  
+  - name: "epiphany"
+    label: "GNOME Web / Epiphany"
+    exe_patterns: ["epiphany"]
+    desktop_patterns: ["org.gnome.Epiphany.desktop"]
+    tags: ["browser", "gui_interactive"]
+  
+  - name: "falkon"
+    label: "Falkon"
+    exe_patterns: ["falkon"]
+    desktop_patterns: ["org.kde.falkon.desktop"]
+    tags: ["browser", "gui_interactive"]
+  
+  - name: "midori"
+    label: "Midori"
+    exe_patterns: ["midori"]
+    desktop_patterns: ["midori.desktop"]
     tags: ["browser", "gui_interactive"]
 

@@ -1,0 +1,101 @@
+# Паттерны билд-систем и сборочных инструментов для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: build_tool
+apps:
+  # C/C++ build systems
+  - name: "make"
+    label: "GNU Make"
+    exe_patterns: ["make"]
+    tags: ["build_tool"]
+  
+  - name: "cmake"
+    label: "CMake"
+    exe_patterns: ["cmake"]
+    tags: ["build_tool"]
+  
+  - name: "ninja"
+    label: "Ninja"
+    exe_patterns: ["ninja"]
+    tags: ["build_tool"]
+  
+  - name: "meson"
+    label: "Meson"
+    exe_patterns: ["meson"]
+    tags: ["build_tool"]
+  
+  - name: "bazel"
+    label: "Bazel"
+    exe_patterns: ["bazel"]
+    tags: ["build_tool"]
+  
+  - name: "qmake"
+    label: "qmake"
+    exe_patterns: ["qmake"]
+    tags: ["build_tool"]
+  
+  # Rust
+  - name: "cargo"
+    label: "Cargo"
+    exe_patterns: ["cargo"]
+    tags: ["build_tool"]
+  
+  # Go
+  - name: "go"
+    label: "Go"
+    exe_patterns: ["go"]
+    tags: ["build_tool"]
+  
+  # Node.js
+  - name: "npm"
+    label: "npm"
+    exe_patterns: ["npm"]
+    tags: ["build_tool"]
+  
+  - name: "yarn"
+    label: "Yarn"
+    exe_patterns: ["yarn"]
+    tags: ["build_tool"]
+  
+  - name: "pnpm"
+    label: "pnpm"
+    exe_patterns: ["pnpm"]
+    tags: ["build_tool"]
+  
+  - name: "turbo"
+    label: "Turbo"
+    exe_patterns: ["turbo"]
+    tags: ["build_tool"]
+  
+  - name: "nx"
+    label: "Nx"
+    exe_patterns: ["nx"]
+    tags: ["build_tool"]
+  
+  # Python
+  - name: "pip"
+    label: "pip"
+    exe_patterns: ["pip", "pip3"]
+    tags: ["build_tool"]
+  
+  - name: "poetry"
+    label: "Poetry"
+    exe_patterns: ["poetry"]
+    tags: ["build_tool"]
+  
+  # Java/Android
+  - name: "maven"
+    label: "Apache Maven"
+    exe_patterns: ["mvn"]
+    tags: ["build_tool"]
+  
+  - name: "gradle"
+    label: "Gradle"
+    exe_patterns: ["gradle", "gradlew"]
+    tags: ["build_tool"]
+  
+  # .NET
+  - name: "dotnet"
+    label: ".NET SDK"
+    exe_patterns: ["dotnet"]
+    tags: ["build_tool"]
+

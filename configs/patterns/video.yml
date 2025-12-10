@@ -1,0 +1,63 @@
+# Паттерны видеоплееров для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: video
+apps:
+  - name: "vlc"
+    label: "VLC Media Player"
+    exe_patterns: ["vlc"]
+    desktop_patterns: ["vlc.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "mpv"
+    label: "mpv"
+    exe_patterns: ["mpv"]
+    desktop_patterns: ["mpv.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "smplayer"
+    label: "SMPlayer"
+    exe_patterns: ["smplayer"]
+    desktop_patterns: ["smplayer.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "mplayer"
+    label: "MPlayer"
+    exe_patterns: ["mplayer"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "celluloid"
+    label: "Celluloid"
+    exe_patterns: ["celluloid"]
+    desktop_patterns: ["io.github.celluloid_player.Celluloid.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "haruna"
+    label: "Haruna"
+    exe_patterns: ["haruna"]
+    desktop_patterns: ["org.kde.haruna.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "kodi"
+    label: "Kodi / XBMC"
+    exe_patterns: ["kodi", "xbmc"]
+    desktop_patterns: ["kodi.desktop"]
+    tags: ["player", "gui_interactive", "media_center"]
+  
+  - name: "qmplay2"
+    label: "QMPlay2"
+    exe_patterns: ["qmplay2"]
+    desktop_patterns: ["qmplay2.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "parole"
+    label: "Parole"
+    exe_patterns: ["parole"]
+    desktop_patterns: ["org.xfce.Parole.desktop"]
+    tags: ["player", "gui_interactive"]
+  
+  - name: "dragon"
+    label: "Dragon Player"
+    exe_patterns: ["dragon"]
+    desktop_patterns: ["org.kde.dragonplayer.desktop"]
+    tags: ["player", "gui_interactive"]
+

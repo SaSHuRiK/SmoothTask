@@ -1,26 +1,97 @@
 # Паттерны IDE для классификации
-ide:
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: ide
+apps:
   - name: "vscode"
+    label: "Visual Studio Code"
     exe_patterns: ["code", "code-insiders"]
+    desktop_patterns: ["code.desktop"]
     tags: ["ide", "gui_interactive"]
   
-  - name: "clion"
-    exe_patterns: ["clion", "clion.sh"]
+  - name: "vscodium"
+    label: "VSCodium"
+    exe_patterns: ["vscodium"]
+    desktop_patterns: ["vscodium.desktop"]
     tags: ["ide", "gui_interactive"]
   
   - name: "idea"
-    exe_patterns: ["idea", "intellij"]
+    label: "IntelliJ IDEA"
+    exe_patterns: ["idea", "idea64", "intellij", "intellij-idea-*"]
+    desktop_patterns: ["jetbrains-idea.desktop"]
     tags: ["ide", "gui_interactive"]
   
   - name: "pycharm"
-    exe_patterns: ["pycharm", "pycharm.sh"]
+    label: "PyCharm"
+    exe_patterns: ["pycharm", "pycharm.sh", "pycharm-community"]
+    desktop_patterns: ["jetbrains-pycharm.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "clion"
+    label: "CLion"
+    exe_patterns: ["clion", "clion.sh"]
+    desktop_patterns: ["jetbrains-clion.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "webstorm"
+    label: "WebStorm"
+    exe_patterns: ["webstorm", "webstorm.sh"]
+    desktop_patterns: ["jetbrains-webstorm.desktop"]
     tags: ["ide", "gui_interactive"]
   
   - name: "rider"
+    label: "Rider"
     exe_patterns: ["rider", "rider.sh"]
+    desktop_patterns: ["jetbrains-rider.desktop"]
     tags: ["ide", "gui_interactive"]
   
   - name: "rustrover"
+    label: "RustRover"
     exe_patterns: ["rustrover", "rustrover.sh"]
+    desktop_patterns: ["jetbrains-rustrover.desktop"]
     tags: ["ide", "gui_interactive"]
+  
+  - name: "sublime"
+    label: "Sublime Text"
+    exe_patterns: ["subl", "sublime_text"]
+    desktop_patterns: ["sublime_text.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "kate"
+    label: "Kate"
+    exe_patterns: ["kate"]
+    desktop_patterns: ["org.kde.kate.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "kdevelop"
+    label: "KDevelop"
+    exe_patterns: ["kdevelop"]
+    desktop_patterns: ["org.kde.kdevelop.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "geany"
+    label: "Geany"
+    exe_patterns: ["geany"]
+    desktop_patterns: ["geany.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "eclipse"
+    label: "Eclipse"
+    exe_patterns: ["eclipse"]
+    desktop_patterns: ["eclipse.desktop"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "nvim"
+    label: "Neovim"
+    exe_patterns: ["nvim"]
+    tags: ["ide", "cli_interactive"]
+  
+  - name: "vim"
+    label: "Vim"
+    exe_patterns: ["vim"]
+    tags: ["ide", "cli_interactive"]
+  
+  - name: "emacs"
+    label: "Emacs"
+    exe_patterns: ["emacs", "emacsclient"]
+    tags: ["ide", "cli_interactive", "gui_interactive"]
 

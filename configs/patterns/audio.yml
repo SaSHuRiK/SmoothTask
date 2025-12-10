@@ -1,18 +1,92 @@
-# Паттерны аудио-приложений для классификации
-audio:
+# Паттерны аудио-плееров для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: audio
+apps:
   - name: "pipewire"
+    label: "PipeWire"
     exe_patterns: ["pipewire", "pipewire-pulse"]
     tags: ["audio_client", "system_service"]
   
   - name: "pulseaudio"
+    label: "PulseAudio"
     exe_patterns: ["pulseaudio"]
     tags: ["audio_client", "system_service"]
   
+  - name: "rhythmbox"
+    label: "Rhythmbox"
+    exe_patterns: ["rhythmbox"]
+    desktop_patterns: ["org.gnome.Rhythmbox3.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "elisa"
+    label: "Elisa"
+    exe_patterns: ["elisa"]
+    desktop_patterns: ["org.kde.elisa.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "lollypop"
+    label: "Lollypop"
+    exe_patterns: ["lollypop"]
+    desktop_patterns: ["org.gnome.Lollypop.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "strawberry"
+    label: "Strawberry"
+    exe_patterns: ["strawberry"]
+    desktop_patterns: ["strawberry.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "clementine"
+    label: "Clementine"
+    exe_patterns: ["clementine"]
+    desktop_patterns: ["clementine.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "amarok"
+    label: "Amarok"
+    exe_patterns: ["amarok"]
+    desktop_patterns: ["org.kde.amarok.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "audacious"
+    label: "Audacious"
+    exe_patterns: ["audacious"]
+    desktop_patterns: ["org.atheme.audacious.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "deadbeef"
+    label: "DeaDBeeF"
+    exe_patterns: ["deadbeef"]
+    desktop_patterns: ["deadbeef.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "tauon"
+    label: "Tauon Music Box"
+    exe_patterns: ["tauonmb", "tauon-music-box"]
+    desktop_patterns: ["tauonmb.desktop"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "cmus"
+    label: "cmus"
+    exe_patterns: ["cmus"]
+    tags: ["audio_client", "cli_interactive"]
+  
+  - name: "mpd"
+    label: "MPD"
+    exe_patterns: ["mpd"]
+    systemd_units: ["mpd.service"]
+    tags: ["audio_client", "system_service"]
+  
   - name: "spotify"
+    label: "Spotify"
     exe_patterns: ["spotify"]
+    desktop_patterns: ["spotify.desktop"]
     tags: ["audio_client", "gui_interactive"]
   
   - name: "vlc"
+    label: "VLC Media Player"
     exe_patterns: ["vlc"]
+    desktop_patterns: ["vlc.desktop"]
     tags: ["audio_client", "gui_interactive", "player"]
+
 

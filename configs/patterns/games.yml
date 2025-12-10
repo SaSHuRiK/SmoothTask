@@ -1,18 +1,26 @@
 # Паттерны игр для классификации
-games:
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: game
+apps:
   - name: "steam"
+    label: "Steam"
     exe_patterns: ["steam"]
+    desktop_patterns: ["steam.desktop"]
     tags: ["game", "gui_interactive"]
   
   - name: "lutris"
+    label: "Lutris"
     exe_patterns: ["lutris"]
+    desktop_patterns: ["net.lutris.Lutris.desktop"]
     tags: ["game", "gui_interactive"]
   
   - name: "wine"
+    label: "Wine"
     exe_patterns: ["wine", "wine64"]
     tags: ["game", "gui_interactive"]
   
   - name: "proton"
+    label: "Proton"
     exe_patterns: ["proton"]
     tags: ["game", "gui_interactive"]
 

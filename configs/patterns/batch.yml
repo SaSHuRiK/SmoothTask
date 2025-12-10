@@ -1,30 +1,20 @@
 # Паттерны batch-задач для классификации
-batch:
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: batch
+apps:
   - name: "ffmpeg"
+    label: "FFmpeg"
     exe_patterns: ["ffmpeg"]
     tags: ["batch_heavy"]
   
   - name: "handbrake"
+    label: "HandBrake CLI"
     exe_patterns: ["HandBrakeCLI"]
     tags: ["batch_heavy"]
   
   - name: "rsync"
+    label: "rsync"
     exe_patterns: ["rsync"]
     tags: ["batch_heavy"]
-  
-  - name: "qbittorrent"
-    exe_patterns: ["qbittorrent", "qbittorrent-nox"]
-    tags: ["batch_heavy", "torrent"]
-  
-  - name: "transmission"
-    exe_patterns: ["transmission-daemon", "transmission-cli"]
-    tags: ["batch_heavy", "torrent"]
-  
-  - name: "make"
-    exe_patterns: ["make"]
-    tags: ["build_tool", "batch_heavy"]
-  
-  - name: "cargo"
-    exe_patterns: ["cargo"]
-    tags: ["build_tool"]
+
 

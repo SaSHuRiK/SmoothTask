@@ -1,0 +1,79 @@
+# Паттерны терминалов для классификации
+# Основано на исследовании: docs/PATTERNS_RESEARCH.md
+category: terminal
+apps:
+  - name: "gnome-terminal"
+    label: "GNOME Terminal"
+    exe_patterns: ["gnome-terminal"]
+    desktop_patterns: ["org.gnome.Terminal.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "konsole"
+    label: "Konsole"
+    exe_patterns: ["konsole"]
+    desktop_patterns: ["org.kde.konsole.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "xfce-terminal"
+    label: "Xfce Terminal"
+    exe_patterns: ["xfce4-terminal"]
+    desktop_patterns: ["xfce4-terminal.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "xterm"
+    label: "XTerm"
+    exe_patterns: ["xterm"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "terminator"
+    label: "Terminator"
+    exe_patterns: ["terminator"]
+    desktop_patterns: ["terminator.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "tilix"
+    label: "Tilix"
+    exe_patterns: ["tilix"]
+    desktop_patterns: ["tilix.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "guake"
+    label: "Guake"
+    exe_patterns: ["guake"]
+    desktop_patterns: ["guake.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "yakuake"
+    label: "Yakuake"
+    exe_patterns: ["yakuake"]
+    desktop_patterns: ["org.kde.yakuake.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "kitty"
+    label: "Kitty"
+    exe_patterns: ["kitty"]
+    desktop_patterns: ["kitty.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "alacritty"
+    label: "Alacritty"
+    exe_patterns: ["alacritty"]
+    desktop_patterns: ["Alacritty.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "wezterm"
+    label: "WezTerm"
+    exe_patterns: ["wezterm"]
+    desktop_patterns: ["org.wezfurlong.wezterm.desktop"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "st"
+    label: "st (simple terminal)"
+    exe_patterns: ["st"]
+    tags: ["terminal", "gui_interactive"]
+  
+  - name: "urxvt"
+    label: "urxvt / rxvt-unicode"
+    exe_patterns: ["urxvt", "rxvt-unicode"]
+    tags: ["terminal", "gui_interactive"]
+
