@@ -45,10 +45,19 @@ pub struct Thresholds {
     /// Порог для sched_latency_p99_ms (в миллисекундах) для определения bad_responsiveness.
     #[serde(default = "default_sched_latency_p99_threshold")]
     pub sched_latency_p99_threshold_ms: f64,
+
+    /// Порог для ui_loop_p95_ms (в миллисекундах) для определения bad_responsiveness.
+    /// По умолчанию 16.67 мс (60 FPS).
+    #[serde(default = "default_ui_loop_p95_threshold")]
+    pub ui_loop_p95_threshold_ms: f64,
 }
 
 fn default_sched_latency_p99_threshold() -> f64 {
     10.0 // 10 мс по умолчанию
+}
+
+fn default_ui_loop_p95_threshold() -> f64 {
+    16.67 // 16.67 мс по умолчанию (60 FPS)
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -127,6 +136,10 @@ impl Thresholds {
         ensure!(
             self.sched_latency_p99_threshold_ms > 0.0,
             "sched_latency_p99_threshold_ms must be positive"
+        );
+        ensure!(
+            self.ui_loop_p95_threshold_ms > 0.0,
+            "ui_loop_p95_threshold_ms must be positive"
         );
 
         Ok(())

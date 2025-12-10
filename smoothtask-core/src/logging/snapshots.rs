@@ -83,7 +83,7 @@ impl ResponsivenessMetrics {
     /// - sched_p99 > T_sched
     /// - audio_xruns_global_recent > 0
     /// - dsp_load_global > T_dsp (пока не реализовано)
-    /// - ui_loop_p95 > T_ui (пока не реализовано)
+    /// - ui_loop_p95 > T_ui
     ///
     /// responsiveness_score вычисляется как нормированная комбинация метрик (0.0 = плохо, 1.0 = хорошо).
     pub fn compute(&mut self, global: &GlobalMetrics, thresholds: &Thresholds) {
@@ -119,10 +119,8 @@ impl ResponsivenessMetrics {
         }
 
         // Проверка UI latency (если есть)
-        // TODO: добавить порог для ui_loop_p95_ms когда появится метрика
         if let Some(ui_p95) = self.ui_loop_p95_ms {
-            // Временный порог 16.67 мс (60 FPS)
-            if ui_p95 > 16.67 {
+            if ui_p95 > thresholds.ui_loop_p95_threshold_ms {
                 bad = true;
             }
         }
@@ -166,7 +164,7 @@ impl ResponsivenessMetrics {
 
         // UI latency (вес 0.1, если есть)
         if let Some(ui_p95) = self.ui_loop_p95_ms {
-            let normalized = (ui_p95 / 16.67).min(2.0);
+            let normalized = (ui_p95 / thresholds.ui_loop_p95_threshold_ms).min(2.0);
             problem_score += normalized * 0.1;
             weight_sum += 0.1;
         }
@@ -731,6 +729,7 @@ mod tests {
             normal_percentile: 0.3,
             background_percentile: 0.1,
             sched_latency_p99_threshold_ms: 10.0,
+            ui_loop_p95_threshold_ms: 16.67,
         }
     }
 
@@ -928,6 +927,83 @@ mod tests {
             (0.0..=1.0).contains(&score),
             "score should be in [0, 1] range, got {}",
             score
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_ui_latency_high() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1),
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0),
+            audio_xruns_delta: Some(0),
+            ui_loop_p95_ms: Some(20.0), // Выше порога 16.67
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness due to high UI latency"
+        );
+        assert!(responsiveness.responsiveness_score.is_some());
+        let score = responsiveness.responsiveness_score.unwrap();
+        assert!(
+            score < 0.9,
+            "score should be lower due to high UI latency, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_ui_latency_low() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1),
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0),
+            audio_xruns_delta: Some(0),
+            ui_loop_p95_ms: Some(10.0), // Ниже порога 16.67
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            !responsiveness.bad_responsiveness,
+            "should not detect bad responsiveness when UI latency is below threshold"
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_ui_latency_custom_threshold() {
+        let mut thresholds = create_test_thresholds();
+        thresholds.ui_loop_p95_threshold_ms = 8.33; // Кастомный порог (120 FPS)
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1),
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0),
+            audio_xruns_delta: Some(0),
+            ui_loop_p95_ms: Some(10.0), // Выше кастомного порога 8.33
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness with custom UI latency threshold"
         );
     }
 }
