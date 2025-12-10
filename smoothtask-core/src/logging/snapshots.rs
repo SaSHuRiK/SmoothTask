@@ -77,15 +77,99 @@ pub struct ResponsivenessMetrics {
 impl ResponsivenessMetrics {
     /// Вычислить bad_responsiveness и responsiveness_score на основе метрик и порогов.
     ///
-    /// Согласно документации, bad_responsiveness определяется как:
-    /// - psi_cpu_some_avg10 > T_cpu
-    /// - psi_io_some_avg10 > T_io
-    /// - sched_p99 > T_sched
-    /// - audio_xruns_global_recent > 0
-    /// - dsp_load_global > T_dsp (пока не реализовано)
-    /// - ui_loop_p95 > T_ui
+    /// # Алгоритм вычисления bad_responsiveness
     ///
-    /// responsiveness_score вычисляется как нормированная комбинация метрик (0.0 = плохо, 1.0 = хорошо).
+    /// `bad_responsiveness` устанавливается в `true`, если хотя бы одна из следующих метрик
+    /// превышает свой порог:
+    ///
+    /// - **PSI CPU**: `psi_cpu_some_avg10 > thresholds.psi_cpu_some_high`
+    /// - **PSI IO**: `psi_io_some_avg10 > thresholds.psi_io_some_high`
+    /// - **Scheduling latency**: `sched_latency_p99_ms > thresholds.sched_latency_p99_threshold_ms`
+    /// - **Audio XRUN**: `audio_xruns_delta > 0` (любые XRUN события)
+    /// - **UI latency**: `ui_loop_p95_ms > thresholds.ui_loop_p95_threshold_ms`
+    ///
+    /// Если метрика отсутствует (None), она не учитывается при определении bad_responsiveness.
+    ///
+    /// # Алгоритм вычисления responsiveness_score
+    ///
+    /// `responsiveness_score` вычисляется как взвешенная комбинация нормализованных метрик:
+    ///
+    /// 1. Для каждой доступной метрики вычисляется нормализованное значение:
+    ///    - Для PSI CPU/IO: `normalized = min(metric / threshold, 2.0)`
+    ///    - Для scheduling/UI latency: `normalized = min(metric / threshold, 2.0)`
+    ///    - Для XRUN: бинарное значение (1.0 если есть XRUN, 0.0 если нет)
+    ///
+    /// 2. Каждая метрика имеет свой вес:
+    ///    - PSI CPU: 0.3 (30%)
+    ///    - PSI IO: 0.2 (20%)
+    ///    - Scheduling latency: 0.3 (30%)
+    ///    - XRUN: 0.1 (10%)
+    ///    - UI latency: 0.1 (10%)
+    ///
+    /// 3. Вычисляется `problem_score` как сумма `normalized_value * weight` для всех метрик.
+    ///
+    /// 4. Финальный score: `score = max(0.0, min(1.0, 1.0 - (problem_score / weight_sum)))`
+    ///
+    ///    - `score = 1.0` означает идеальную отзывчивость (нет проблем)
+    ///    - `score = 0.0` означает очень плохую отзывчивость (множественные проблемы)
+    ///    - Если нет доступных метрик (`weight_sum == 0`), score устанавливается в `1.0`
+    ///
+    /// # Примеры использования
+    ///
+    /// ## Базовое использование
+    ///
+    /// ```rust,no_run
+    /// use smoothtask_core::logging::snapshots::{ResponsivenessMetrics, GlobalMetrics};
+    /// use smoothtask_core::config::Thresholds;
+    ///
+    /// let mut responsiveness = ResponsivenessMetrics::default();
+    /// let global = GlobalMetrics {
+    ///     psi_cpu_some_avg10: Some(0.5),
+    ///     psi_io_some_avg10: Some(0.3),
+    ///     ..Default::default()
+    /// };
+    /// let thresholds = Thresholds::default();
+    ///
+    /// responsiveness.compute(&global, &thresholds);
+    ///
+    /// // Проверка результата
+    /// if responsiveness.bad_responsiveness {
+    ///     println!("Система имеет проблемы с отзывчивостью");
+    /// }
+    /// if let Some(score) = responsiveness.responsiveness_score {
+    ///     println!("Score отзывчивости: {:.2}", score);
+    /// }
+    /// ```
+    ///
+    /// ## Использование в цикле демона
+    ///
+    /// ```rust,no_run
+    /// // В функции collect_snapshot
+    /// let mut responsiveness = ResponsivenessMetrics {
+    ///     sched_latency_p95_ms: latency_collector.p95(),
+    ///     sched_latency_p99_ms: latency_collector.p99(),
+    ///     audio_xruns_delta: Some(audio_metrics.xrun_count as u64),
+    ///     ..Default::default()
+    /// };
+    ///
+    /// // Вычисление метрик отзывчивости
+    /// responsiveness.compute(&global, &config.thresholds);
+    ///
+    /// // Использование в логировании или принятии решений
+    /// if responsiveness.bad_responsiveness {
+    ///     warn!("Обнаружены проблемы с отзывчивостью системы");
+    /// }
+    /// ```
+    ///
+    /// # Примечания
+    ///
+    /// - Нормализация метрик ограничена значением 2.0, чтобы предотвратить чрезмерное влияние
+    ///   экстремальных значений на итоговый score.
+    /// - Веса метрик отражают относительную важность каждого типа проблемы для общей отзывчивости.
+    /// - Scheduling latency и PSI CPU имеют наибольший вес (0.3), так как они наиболее критичны
+    ///   для отзывчивости системы.
+    /// - Если метрика отсутствует (None), она не учитывается в вычислениях, и её вес не добавляется
+    ///   к `weight_sum`.
     pub fn compute(&mut self, global: &GlobalMetrics, thresholds: &Thresholds) {
         // Вычисление bad_responsiveness
         let mut bad = false;

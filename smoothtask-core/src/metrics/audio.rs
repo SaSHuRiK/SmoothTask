@@ -45,7 +45,38 @@ pub struct AudioMetrics {
 
 impl AudioMetrics {
     /// Создать пустые метрики для заданного периода.
+    ///
+    /// # Валидация периода
+    ///
+    /// Функция проверяет, что `period_end >= period_start`. Если это условие не выполняется,
+    /// функция паникует с описательным сообщением об ошибке.
+    ///
+    /// # Примеры
+    ///
+    /// ```rust,no_run
+    /// use std::time::{SystemTime, Duration};
+    ///
+    /// let start = SystemTime::now();
+    /// let end = start + Duration::from_secs(1);
+    /// let metrics = AudioMetrics::empty(start, end); // OK
+    /// ```
+    ///
+    /// ```rust,should_panic
+    /// use std::time::{SystemTime, Duration};
+    ///
+    /// let start = SystemTime::now();
+    /// let end = start - Duration::from_secs(1); // end < start
+    /// let metrics = AudioMetrics::empty(start, end); // Паникует
+    /// ```
     pub fn empty(period_start: SystemTime, period_end: SystemTime) -> Self {
+        // Валидация: period_end должен быть >= period_start
+        if period_end < period_start {
+            panic!(
+                "Invalid period: period_end ({:?}) must be >= period_start ({:?})",
+                period_end, period_start
+            );
+        }
+
         Self {
             xrun_count: 0,
             xruns: Vec::new(),
@@ -53,6 +84,24 @@ impl AudioMetrics {
             period_start,
             period_end,
         }
+    }
+
+    /// Проверить валидность периода метрик.
+    ///
+    /// Возвращает `true`, если `period_end >= period_start`, иначе `false`.
+    ///
+    /// # Примеры
+    ///
+    /// ```rust,no_run
+    /// use std::time::{SystemTime, Duration};
+    ///
+    /// let start = SystemTime::now();
+    /// let end = start + Duration::from_secs(1);
+    /// let metrics = AudioMetrics::empty(start, end);
+    /// assert!(metrics.validate_period()); // OK
+    /// ```
+    pub fn validate_period(&self) -> bool {
+        self.period_end >= self.period_start
     }
 
     /// Длительность периода в миллисекундах.
@@ -233,14 +282,12 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "Invalid period: period_end")]
     fn period_duration_when_end_before_start() {
-        // Тест проверяет, что period_duration_ms() корректно обрабатывает случай,
-        // когда period_end < period_start (должно вернуть 0)
+        // Тест проверяет, что empty() паникует, когда period_end < period_start
         let start = SystemTime::now();
         let end = start - Duration::from_millis(100); // end раньше start
-        let metrics = AudioMetrics::empty(start, end);
-        // duration_since вернёт None, и мы используем Duration::ZERO
-        assert_eq!(metrics.period_duration_ms(), 0);
+        let _metrics = AudioMetrics::empty(start, end); // Должно паниковать
     }
 
     #[test]
@@ -374,5 +421,32 @@ mod tests {
         let end = start + Duration::from_secs(10);
         let metrics = AudioMetrics::empty(start, end);
         assert_eq!(metrics.xrun_rate_per_sec(), 0.0);
+    }
+
+    #[test]
+    fn validate_period_valid() {
+        // Тест проверяет, что validate_period() возвращает true для валидного периода
+        let start = SystemTime::now();
+        let end = start + Duration::from_secs(1);
+        let metrics = AudioMetrics::empty(start, end);
+        assert!(metrics.validate_period());
+    }
+
+    #[test]
+    fn validate_period_equal_times() {
+        // Тест проверяет, что validate_period() возвращает true, когда start == end
+        let now = SystemTime::now();
+        let metrics = AudioMetrics::empty(now, now);
+        assert!(metrics.validate_period());
+    }
+
+    #[test]
+    fn validate_period_after_creation() {
+        // Тест проверяет, что validate_period() работает для метрик, созданных через empty()
+        let start = SystemTime::now();
+        let end = start + Duration::from_millis(500);
+        let metrics = AudioMetrics::empty(start, end);
+        assert!(metrics.validate_period());
+        assert_eq!(metrics.period_duration_ms(), 500);
     }
 }
