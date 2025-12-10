@@ -1,18 +1,96 @@
 """Чтение снапшотов из SQLite и формирование датасета для обучения."""
 
+from __future__ import annotations
+
+import json
+import sqlite3
 from pathlib import Path
+from typing import Iterable
 
 import pandas as pd
 
 
-def load_snapshots_as_frame(db_path: Path) -> pd.DataFrame:
+_PROCESS_BOOL_COLS = {
+    "has_tty",
+    "has_gui_window",
+    "is_focused_window",
+    "env_has_display",
+    "env_has_wayland",
+    "env_ssh",
+    "is_audio_client",
+    "has_active_stream",
+}
+_SNAPSHOT_BOOL_COLS = {"user_active", "bad_responsiveness"}
+_APP_GROUP_BOOL_COLS = {"has_gui_window", "is_focused_group"}
+
+
+def _json_list(value: str | None) -> list:
+    if value is None:
+        return []
+    parsed = json.loads(value)
+    if isinstance(parsed, list):
+        return parsed
+    raise ValueError(f"Ожидался JSON-массив, получено: {type(parsed)}")
+
+
+def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
+    for col in columns:
+        if col in df.columns:
+            df[col] = df[col].astype("Int64").astype("boolean")
+
+
+def _load_table(conn: sqlite3.Connection, table: str, parse_dates: list[str] | None = None) -> pd.DataFrame:
+    return pd.read_sql(f"SELECT * FROM {table}", conn, parse_dates=parse_dates or [])
+
+
+def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
-    
-    TODO: реализовать чтение из SQLite с правильной структурой таблиц.
+
+    Returns:
+        DataFrame на уровне процессов с джойном глобальных и групповых метрик.
+        Столбцы с булевыми значениями приведены к dtype ``boolean``,
+        JSON-поля tags/process_ids распарсены в списки.
     """
-    # TODO: подключение к БД, чтение снапшотов
-    # return pd.read_sql(...)
-    raise NotImplementedError("TODO: реализовать загрузку снапшотов")
+    path = Path(db_path)
+    if not path.exists():
+        raise FileNotFoundError(path)
+
+    with sqlite3.connect(path) as conn:
+        snapshots = _load_table(conn, "snapshots", parse_dates=["timestamp"])
+        processes = _load_table(conn, "processes")
+        app_groups = _load_table(conn, "app_groups")
+
+    if processes.empty:
+        return pd.DataFrame()
+
+    # Нормализуем булевые флаги и JSON-списки.
+    _to_bool(snapshots, _SNAPSHOT_BOOL_COLS)
+    _to_bool(processes, _PROCESS_BOOL_COLS)
+    _to_bool(app_groups, _APP_GROUP_BOOL_COLS)
+
+    if "tags" in processes.columns:
+        processes["tags"] = processes["tags"].apply(_json_list)
+    if "tags" in app_groups.columns:
+        app_groups["tags"] = app_groups["tags"].apply(_json_list)
+    if "process_ids" in app_groups.columns:
+        app_groups["process_ids"] = app_groups["process_ids"].apply(_json_list)
+
+    df = processes.merge(
+        snapshots,
+        on="snapshot_id",
+        how="left",
+        suffixes=("_proc", "_snap"),
+    )
+
+    if not app_groups.empty:
+        df = df.merge(
+            app_groups,
+            on=["snapshot_id", "app_group_id"],
+            how="left",
+            suffixes=("", "_group"),
+        )
+
+    return df
 
 

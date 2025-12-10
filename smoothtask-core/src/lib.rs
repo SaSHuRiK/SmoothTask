@@ -1,10 +1,10 @@
+pub mod actuator;
+pub mod classify;
 pub mod config;
+pub mod logging;
 pub mod metrics;
 pub mod model;
-pub mod classify;
 pub mod policy;
-pub mod actuator;
-pub mod logging;
 
 use anyhow::Result;
 use config::Config;
@@ -28,4 +28,3 @@ pub async fn run_daemon(_config: Config, dry_run: bool) -> Result<()> {
         }
     }
 }
-

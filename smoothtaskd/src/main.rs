@@ -29,4 +29,3 @@ async fn main() -> Result<()> {
 
     run_daemon(config, args.dry_run).await
 }
-

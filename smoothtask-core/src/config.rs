@@ -44,7 +44,10 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
-        ensure!(self.polling_interval_ms > 0, "polling_interval_ms must be positive");
+        ensure!(
+            self.polling_interval_ms > 0,
+            "polling_interval_ms must be positive"
+        );
         ensure!(self.max_candidates > 0, "max_candidates must be positive");
 
         self.thresholds.validate()?;
@@ -57,7 +60,10 @@ impl Config {
 impl Thresholds {
     fn validate(&self) -> Result<()> {
         let percentiles = [
-            ("crit_interactive_percentile", self.crit_interactive_percentile),
+            (
+                "crit_interactive_percentile",
+                self.crit_interactive_percentile,
+            ),
             ("interactive_percentile", self.interactive_percentile),
             ("normal_percentile", self.normal_percentile),
             ("background_percentile", self.background_percentile),
@@ -243,8 +249,7 @@ thresholds:
 
         let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
         assert!(
-            err
-                .to_string()
+            err.to_string()
                 .contains("priority percentiles must be non-decreasing"),
             "unexpected error: {err:?}"
         );
