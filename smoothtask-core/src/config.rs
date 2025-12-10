@@ -1973,7 +1973,9 @@ thresholds:
         let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
         let err_msg = err.to_string();
         assert!(
-            err_msg.contains("sched_latency_p99_threshold_ms") && err_msg.contains("must be >=") && err_msg.contains("ui_loop_p95_threshold_ms"),
+            err_msg.contains("sched_latency_p99_threshold_ms")
+                && err_msg.contains("must be >=")
+                && err_msg.contains("ui_loop_p95_threshold_ms"),
             "unexpected error: {err:?}"
         );
     }

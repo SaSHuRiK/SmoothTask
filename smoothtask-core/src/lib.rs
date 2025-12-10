@@ -31,6 +31,82 @@ use crate::metrics::windows::{
 };
 use crate::policy::engine::PolicyEngine;
 
+/// Статистика работы демона для мониторинга производительности.
+#[derive(Debug, Clone)]
+struct DaemonStats {
+    /// Общее количество итераций
+    total_iterations: u64,
+    /// Количество успешных итераций
+    successful_iterations: u64,
+    /// Количество итераций с ошибками
+    error_iterations: u64,
+    /// Суммарное время выполнения всех итераций (в миллисекундах)
+    total_duration_ms: u128,
+    /// Максимальное время выполнения итерации (в миллисекундах)
+    max_iteration_duration_ms: u128,
+    /// Количество применённых изменений приоритетов
+    total_applied_adjustments: u64,
+    /// Количество ошибок при применении приоритетов
+    total_apply_errors: u64,
+}
+
+impl DaemonStats {
+    /// Создаёт новую статистику.
+    fn new() -> Self {
+        Self {
+            total_iterations: 0,
+            successful_iterations: 0,
+            error_iterations: 0,
+            total_duration_ms: 0,
+            max_iteration_duration_ms: 0,
+            total_applied_adjustments: 0,
+            total_apply_errors: 0,
+        }
+    }
+
+    /// Обновляет статистику после успешной итерации.
+    fn record_successful_iteration(&mut self, duration_ms: u128, applied: u64, errors: u64) {
+        self.total_iterations += 1;
+        self.successful_iterations += 1;
+        self.total_duration_ms += duration_ms;
+        self.max_iteration_duration_ms = self.max_iteration_duration_ms.max(duration_ms);
+        self.total_applied_adjustments += applied;
+        self.total_apply_errors += errors;
+    }
+
+    /// Обновляет статистику после итерации с ошибкой.
+    fn record_error_iteration(&mut self) {
+        self.total_iterations += 1;
+        self.error_iterations += 1;
+    }
+
+    /// Вычисляет среднее время итерации (в миллисекундах).
+    fn average_iteration_duration_ms(&self) -> f64 {
+        if self.successful_iterations > 0 {
+            self.total_duration_ms as f64 / self.successful_iterations as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// Логирует статистику.
+    fn log_stats(&self) {
+        let avg_duration = self.average_iteration_duration_ms();
+        info!(
+            "Daemon stats: {} total iterations ({} successful, {} errors), \
+             avg iteration: {:.2}ms, max iteration: {}ms, \
+             applied adjustments: {}, apply errors: {}",
+            self.total_iterations,
+            self.successful_iterations,
+            self.error_iterations,
+            avg_duration,
+            self.max_iteration_duration_ms,
+            self.total_applied_adjustments,
+            self.total_apply_errors
+        );
+    }
+}
+
 /// Проверить доступность необходимых системных утилит и устройств.
 ///
 /// Проверяет доступность:
@@ -209,6 +285,8 @@ pub async fn run_daemon(
     info!("SmoothTask daemon started, entering main loop");
 
     let mut iteration = 0u64;
+    let mut stats = DaemonStats::new();
+    const STATS_LOG_INTERVAL: u64 = 10; // Логируем статистику каждые 10 итераций
     loop {
         // Проверяем сигнал завершения перед началом итерации
         // Используем borrow_and_update() для обновления внутреннего состояния
@@ -243,6 +321,7 @@ pub async fn run_daemon(
             Ok(snap) => snap,
             Err(e) => {
                 error!("Failed to collect snapshot: {}", e);
+                stats.record_error_iteration();
                 // Проверяем shutdown перед sleep
                 if *shutdown_rx.borrow_and_update() {
                     info!("Shutdown signal received, exiting main loop");
@@ -288,7 +367,7 @@ pub async fn run_daemon(
         // Планирование изменений приоритетов
         let adjustments = plan_priority_changes(&snapshot, &policy_results);
 
-        if dry_run {
+        let (applied_count, error_count) = if dry_run {
             debug!(
                 "Dry-run: would apply {} priority adjustments",
                 adjustments.len()
@@ -299,6 +378,7 @@ pub async fn run_daemon(
                     adj.pid, adj.current_nice, adj.target_nice, adj.reason
                 );
             }
+            (0, 0)
         } else {
             // Применение изменений
             let apply_result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -314,7 +394,8 @@ pub async fn run_daemon(
                     apply_result.errors
                 );
             }
-        }
+            (apply_result.applied, apply_result.errors)
+        };
 
         // Логирование снапшота (опционально)
         if let Some(ref mut logger) = snapshot_logger {
@@ -325,7 +406,17 @@ pub async fn run_daemon(
 
         // Вычисляем время до следующей итерации
         let elapsed = loop_start.elapsed();
-        let sleep_duration = if elapsed.as_millis() < config.polling_interval_ms as u128 {
+        let elapsed_ms = elapsed.as_millis();
+
+        // Обновляем статистику
+        stats.record_successful_iteration(elapsed_ms, applied_count as u64, error_count as u64);
+
+        // Логируем статистику периодически
+        if iteration % STATS_LOG_INTERVAL == 0 {
+            stats.log_stats();
+        }
+
+        let sleep_duration = if elapsed_ms < config.polling_interval_ms as u128 {
             Duration::from_millis(config.polling_interval_ms) - elapsed
         } else {
             Duration::from_millis(0)
@@ -364,6 +455,9 @@ pub async fn run_daemon(
     }
 
     info!("SmoothTask daemon stopped after {} iterations", iteration);
+
+    // Логируем финальную статистику
+    stats.log_stats();
 
     // Останавливаем probe-thread перед завершением
     latency_probe.stop();
@@ -570,6 +664,96 @@ async fn collect_snapshot(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_daemon_stats_new() {
+        let stats = DaemonStats::new();
+        assert_eq!(stats.total_iterations, 0);
+        assert_eq!(stats.successful_iterations, 0);
+        assert_eq!(stats.error_iterations, 0);
+        assert_eq!(stats.total_duration_ms, 0);
+        assert_eq!(stats.max_iteration_duration_ms, 0);
+        assert_eq!(stats.total_applied_adjustments, 0);
+        assert_eq!(stats.total_apply_errors, 0);
+    }
+
+    #[test]
+    fn test_daemon_stats_record_successful_iteration() {
+        let mut stats = DaemonStats::new();
+        stats.record_successful_iteration(100, 5, 1);
+
+        assert_eq!(stats.total_iterations, 1);
+        assert_eq!(stats.successful_iterations, 1);
+        assert_eq!(stats.error_iterations, 0);
+        assert_eq!(stats.total_duration_ms, 100);
+        assert_eq!(stats.max_iteration_duration_ms, 100);
+        assert_eq!(stats.total_applied_adjustments, 5);
+        assert_eq!(stats.total_apply_errors, 1);
+
+        // Добавляем ещё одну итерацию
+        stats.record_successful_iteration(150, 3, 0);
+
+        assert_eq!(stats.total_iterations, 2);
+        assert_eq!(stats.successful_iterations, 2);
+        assert_eq!(stats.total_duration_ms, 250);
+        assert_eq!(stats.max_iteration_duration_ms, 150); // Максимум обновлён
+        assert_eq!(stats.total_applied_adjustments, 8);
+        assert_eq!(stats.total_apply_errors, 1);
+    }
+
+    #[test]
+    fn test_daemon_stats_record_error_iteration() {
+        let mut stats = DaemonStats::new();
+        stats.record_error_iteration();
+
+        assert_eq!(stats.total_iterations, 1);
+        assert_eq!(stats.successful_iterations, 0);
+        assert_eq!(stats.error_iterations, 1);
+
+        // Добавляем успешную итерацию после ошибки
+        stats.record_successful_iteration(100, 2, 0);
+
+        assert_eq!(stats.total_iterations, 2);
+        assert_eq!(stats.successful_iterations, 1);
+        assert_eq!(stats.error_iterations, 1);
+    }
+
+    #[test]
+    fn test_daemon_stats_average_iteration_duration() {
+        let mut stats = DaemonStats::new();
+
+        // Без итераций среднее должно быть 0
+        assert_eq!(stats.average_iteration_duration_ms(), 0.0);
+
+        // Добавляем несколько итераций
+        stats.record_successful_iteration(100, 0, 0);
+        stats.record_successful_iteration(200, 0, 0);
+        stats.record_successful_iteration(150, 0, 0);
+
+        // Среднее: (100 + 200 + 150) / 3 = 150.0
+        assert!((stats.average_iteration_duration_ms() - 150.0).abs() < 0.01);
+
+        // Добавляем ошибку (не должна влиять на среднее)
+        stats.record_error_iteration();
+        assert!((stats.average_iteration_duration_ms() - 150.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn test_daemon_stats_max_iteration_duration() {
+        let mut stats = DaemonStats::new();
+
+        stats.record_successful_iteration(50, 0, 0);
+        assert_eq!(stats.max_iteration_duration_ms, 50);
+
+        stats.record_successful_iteration(100, 0, 0);
+        assert_eq!(stats.max_iteration_duration_ms, 100);
+
+        stats.record_successful_iteration(75, 0, 0);
+        assert_eq!(stats.max_iteration_duration_ms, 100); // Максимум не изменился
+
+        stats.record_successful_iteration(200, 0, 0);
+        assert_eq!(stats.max_iteration_duration_ms, 200); // Новый максимум
+    }
 
     #[test]
     fn test_check_system_utilities_does_not_panic() {
