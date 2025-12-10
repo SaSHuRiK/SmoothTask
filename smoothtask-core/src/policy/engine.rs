@@ -19,6 +19,51 @@ pub struct PolicyResult {
 }
 
 /// Policy Engine для применения правил к снапшоту.
+///
+/// Policy Engine определяет приоритеты для AppGroup на основе:
+/// 1. Жёстких правил (guardrails) — имеют наивысший приоритет
+/// 2. Семантических правил — применяются, если guardrails не сработали
+/// 3. ML-ранкера (в hybrid режиме) — используется для ранжирования групп
+///
+/// # Примеры использования
+///
+/// ## Базовое использование (rules-only режим)
+///
+/// ```no_run
+/// use smoothtask_core::config::Config;
+/// use smoothtask_core::policy::engine::PolicyEngine;
+/// use smoothtask_core::logging::snapshots::Snapshot;
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let config = Config::load("config.yml")?;
+/// let engine = PolicyEngine::new(config);
+///
+/// // Оценить снапшот
+/// let snapshot = Snapshot::default(); // ваш снапшот
+/// let results = engine.evaluate_snapshot(&snapshot);
+///
+/// // Результаты содержат приоритеты для каждой AppGroup
+/// for (app_group_id, result) in results {
+///     println!("{}: {:?} ({})", app_group_id, result.priority_class, result.reason);
+/// }
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Использование с кастомным ранкером (для тестирования)
+///
+/// ```no_run
+/// use smoothtask_core::config::Config;
+/// use smoothtask_core::policy::engine::PolicyEngine;
+/// use smoothtask_core::model::ranker::{Ranker, StubRanker};
+///
+/// # fn main() -> anyhow::Result<()> {
+/// let config = Config::load("config.yml")?;
+/// let ranker = Box::new(StubRanker::new());
+/// let engine = PolicyEngine::with_ranker(config, ranker);
+/// # Ok(())
+/// # }
+/// ```
 pub struct PolicyEngine {
     config: Config,
     ranker: Option<Box<dyn Ranker>>,
@@ -27,7 +72,25 @@ pub struct PolicyEngine {
 impl PolicyEngine {
     /// Создать новый Policy Engine с заданной конфигурацией.
     ///
-    /// В режиме hybrid автоматически создаётся StubRanker (в будущем можно заменить на реальный ML-ранкер).
+    /// В режиме `hybrid` автоматически создаётся `StubRanker` (в будущем можно заменить на реальный ML-ранкер).
+    /// В режиме `rules-only` ранкер не используется.
+    ///
+    /// # Аргументы
+    ///
+    /// * `config` - конфигурация с параметрами политики и режимом работы
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    /// use smoothtask_core::policy::engine::PolicyEngine;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let config = Config::load("config.yml")?;
+    /// let engine = PolicyEngine::new(config);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn new(config: Config) -> Self {
         let ranker: Option<Box<dyn Ranker>> = if config.policy_mode == PolicyMode::Hybrid {
             Some(Box::new(crate::model::ranker::StubRanker::new()))
@@ -38,6 +101,29 @@ impl PolicyEngine {
     }
 
     /// Создать Policy Engine с явно заданным ранкером (для тестирования).
+    ///
+    /// Этот метод полезен для тестирования с кастомным ранкером или для использования
+    /// реального ML-ранкера вместо StubRanker.
+    ///
+    /// # Аргументы
+    ///
+    /// * `config` - конфигурация с параметрами политики
+    /// * `ranker` - ранкер для ранжирования AppGroup (должен реализовывать трейт `Ranker`)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    /// use smoothtask_core::policy::engine::PolicyEngine;
+    /// use smoothtask_core::model::ranker::{Ranker, StubRanker};
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let config = Config::load("config.yml")?;
+    /// let ranker = Box::new(StubRanker::new());
+    /// let engine = PolicyEngine::with_ranker(config, ranker);
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn with_ranker(config: Config, ranker: Box<dyn Ranker>) -> Self {
         Self {
             config,
@@ -47,13 +133,41 @@ impl PolicyEngine {
 
     /// Оценить снапшот и определить приоритеты для всех AppGroup.
     ///
+    /// Функция применяет правила к каждой AppGroup в снапшоте в следующем порядке:
+    /// 1. Жёсткие правила (guardrails) — защита системных процессов, RT-приоритеты, аудио
+    /// 2. Семантические правила — фокусный GUI, активный терминал, updater/indexer, noisy neighbour
+    /// 3. ML-ранкер (в hybrid режиме) — ранжирование на основе percentile
+    /// 4. Дефолтный приоритет — если правила не применились
+    ///
     /// # Аргументы
     ///
     /// * `snapshot` - снапшот системы с процессами и группами
     ///
     /// # Возвращает
     ///
-    /// Маппинг app_group_id -> PolicyResult с приоритетом и причиной.
+    /// Маппинг `app_group_id -> PolicyResult` с приоритетом и причиной выбора.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::config::Config;
+    /// use smoothtask_core::policy::engine::PolicyEngine;
+    /// use smoothtask_core::logging::snapshots::Snapshot;
+    ///
+    /// # fn main() -> anyhow::Result<()> {
+    /// let config = Config::load("config.yml")?;
+    /// let engine = PolicyEngine::new(config);
+    ///
+    /// let snapshot = Snapshot::default(); // ваш снапшот
+    /// let results = engine.evaluate_snapshot(&snapshot);
+    ///
+    /// // Обработка результатов
+    /// for (app_group_id, result) in results {
+    ///     println!("{}: {:?} ({})", app_group_id, result.priority_class, result.reason);
+    /// }
+    /// # Ok(())
+    /// # }
+    /// ```
     pub fn evaluate_snapshot(
         &self,
         snapshot: &Snapshot,

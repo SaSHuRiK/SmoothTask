@@ -255,4 +255,213 @@ mod tests {
         assert_eq!(result.percentile, 1.0); // Единственная группа имеет percentile = 1.0
         assert!((0.0..=1.0).contains(&result.score));
     }
+
+    #[test]
+    fn test_stub_ranker_empty_list() {
+        let ranker = StubRanker::new();
+        let snapshot = create_test_snapshot();
+
+        let app_groups = vec![];
+
+        let results = ranker.rank(&app_groups, &snapshot);
+
+        assert_eq!(results.len(), 0);
+    }
+
+    #[test]
+    fn test_stub_ranker_identical_scores() {
+        let ranker = StubRanker::new();
+        let mut snapshot = create_test_snapshot();
+
+        // Создаём две группы с одинаковыми характеристиками (должны получить одинаковый score)
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "group1".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: Some("app1".to_string()),
+                total_cpu_share: Some(0.2),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+            AppGroupRecord {
+                app_group_id: "group2".to_string(),
+                root_pid: 2000,
+                process_ids: vec![2000],
+                app_name: Some("app2".to_string()),
+                total_cpu_share: Some(0.2),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        snapshot.app_groups = app_groups.clone();
+
+        let results = ranker.rank(&app_groups, &snapshot);
+
+        assert_eq!(results.len(), 2);
+        let result1 = results.get("group1").unwrap();
+        let result2 = results.get("group2").unwrap();
+
+        // Одинаковые характеристики должны дать одинаковый score
+        assert_eq!(result1.score, result2.score);
+
+        // Обе группы должны иметь валидные rank и percentile
+        assert!(result1.rank >= 1 && result1.rank <= 2);
+        assert!(result2.rank >= 1 && result2.rank <= 2);
+        assert!((0.0..=1.0).contains(&result1.percentile));
+        assert!((0.0..=1.0).contains(&result2.percentile));
+    }
+
+    #[test]
+    fn test_stub_ranker_boundary_values() {
+        let ranker = StubRanker::new();
+        let mut snapshot = create_test_snapshot();
+
+        // Группа с максимальным score (focused + GUI + высокий CPU)
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "max_score".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: Some("app".to_string()),
+                total_cpu_share: Some(0.5), // > 0.3 для бонуса
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(500),
+                has_gui_window: true,
+                is_focused_group: true,
+                tags: vec![],
+                priority_class: None,
+            },
+            // Группа с минимальным score (ничего особенного)
+            AppGroupRecord {
+                app_group_id: "min_score".to_string(),
+                root_pid: 2000,
+                process_ids: vec![2000],
+                app_name: Some("app".to_string()),
+                total_cpu_share: Some(0.1), // < 0.3, без бонуса
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(50),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        snapshot.app_groups = app_groups.clone();
+
+        let results = ranker.rank(&app_groups, &snapshot);
+
+        assert_eq!(results.len(), 2);
+        let max_result = results.get("max_score").unwrap();
+        let min_result = results.get("min_score").unwrap();
+
+        // Максимальный score должен быть выше минимального
+        assert!(max_result.score > min_result.score);
+        assert_eq!(max_result.rank, 1);
+        assert_eq!(min_result.rank, 2);
+
+        // Проверяем, что scores в допустимом диапазоне [0.0, 1.0]
+        assert!((0.0..=1.0).contains(&max_result.score));
+        assert!((0.0..=1.0).contains(&min_result.score));
+
+        // Percentile для максимального score должен быть выше
+        assert!(max_result.percentile > min_result.percentile);
+    }
+
+    #[test]
+    fn test_stub_ranker_multiple_groups() {
+        let ranker = StubRanker::new();
+        let mut snapshot = create_test_snapshot();
+
+        // Создаём несколько групп с разными характеристиками
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "focused".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: Some("focused".to_string()),
+                total_cpu_share: Some(0.2),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(200),
+                has_gui_window: true,
+                is_focused_group: true,
+                tags: vec![],
+                priority_class: None,
+            },
+            AppGroupRecord {
+                app_group_id: "gui".to_string(),
+                root_pid: 2000,
+                process_ids: vec![2000],
+                app_name: Some("gui".to_string()),
+                total_cpu_share: Some(0.2),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(200),
+                has_gui_window: true,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+            AppGroupRecord {
+                app_group_id: "background".to_string(),
+                root_pid: 3000,
+                process_ids: vec![3000],
+                app_name: Some("background".to_string()),
+                total_cpu_share: Some(0.1),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        snapshot.app_groups = app_groups.clone();
+
+        let results = ranker.rank(&app_groups, &snapshot);
+
+        assert_eq!(results.len(), 3);
+
+        let focused_result = results.get("focused").unwrap();
+        let gui_result = results.get("gui").unwrap();
+        let background_result = results.get("background").unwrap();
+
+        // Фокусная группа должна иметь самый высокий score
+        assert!(focused_result.score > gui_result.score);
+        assert!(focused_result.score > background_result.score);
+
+        // GUI группа должна иметь более высокий score, чем фоновая
+        assert!(gui_result.score > background_result.score);
+
+        // Проверяем ранги
+        assert_eq!(focused_result.rank, 1);
+        assert_eq!(gui_result.rank, 2);
+        assert_eq!(background_result.rank, 3);
+
+        // Проверяем percentile (должны быть упорядочены)
+        assert!(focused_result.percentile > gui_result.percentile);
+        assert!(gui_result.percentile > background_result.percentile);
+
+        // Все percentile должны быть в диапазоне [0.0, 1.0]
+        assert!((0.0..=1.0).contains(&focused_result.percentile));
+        assert!((0.0..=1.0).contains(&gui_result.percentile));
+        assert!((0.0..=1.0).contains(&background_result.percentile));
+    }
 }

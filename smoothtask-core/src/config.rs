@@ -211,11 +211,19 @@ impl Thresholds {
             );
         }
 
+        // Валидация упорядоченности percentile порогов
+        // Пороги должны быть упорядочены: background <= normal <= interactive <= crit_interactive
         ensure!(
             self.background_percentile <= self.normal_percentile
                 && self.normal_percentile <= self.interactive_percentile
                 && self.interactive_percentile <= self.crit_interactive_percentile,
-            "priority percentiles must be non-decreasing from background to critical"
+            "thresholds: priority percentiles must be non-decreasing from background to critical. \
+             Current values: background={}, normal={}, interactive={}, crit_interactive={}. \
+             Please ensure: background <= normal <= interactive <= crit_interactive",
+            self.background_percentile,
+            self.normal_percentile,
+            self.interactive_percentile,
+            self.crit_interactive_percentile
         );
 
         ensure!(
@@ -553,11 +561,103 @@ thresholds:
         );
 
         let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        let err_str = err.to_string();
         assert!(
-            err.to_string()
-                .contains("priority percentiles must be non-decreasing"),
-            "unexpected error: {err:?}"
+            err_str.contains("priority percentiles must be non-decreasing"),
+            "unexpected error: {err_str:?}"
         );
+        // Проверяем, что сообщение содержит конкретные значения
+        assert!(
+            err_str.contains("background=")
+                && err_str.contains("normal=")
+                && err_str.contains("interactive=")
+                && err_str.contains("crit_interactive="),
+            "error message should contain percentile values: {err_str:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_percentile_order_when_background_greater_than_normal() {
+        let file = write_temp_config(
+            r#"
+polling_interval_ms: 100
+max_candidates: 1
+dry_run_default: true
+
+paths:
+  snapshot_db_path: "/tmp/db"
+  patterns_dir: "/tmp/patterns"
+
+thresholds:
+  psi_cpu_some_high: 0.2
+  psi_io_some_high: 0.2
+  user_idle_timeout_sec: 1
+  interactive_build_grace_sec: 1
+  noisy_neighbour_cpu_share: 0.5
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.2
+  background_percentile: 0.3
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+        );
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        let err_str = err.to_string();
+        assert!(
+            err_str.contains("priority percentiles must be non-decreasing"),
+            "unexpected error: {err_str:?}"
+        );
+        assert!(
+            err_str.contains("background=0.3") && err_str.contains("normal=0.2"),
+            "error message should contain problematic values: {err_str:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_equal_percentile_values() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 100
+max_candidates: 1
+dry_run_default: true
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.2
+  psi_io_some_high: 0.2
+  user_idle_timeout_sec: 1
+  interactive_build_grace_sec: 1
+  noisy_neighbour_cpu_share: 0.5
+
+  crit_interactive_percentile: 0.5
+  interactive_percentile: 0.5
+  normal_percentile: 0.5
+  background_percentile: 0.5
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен успешно загрузиться, когда все percentile равны (это валидно)
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config should load");
+        assert!((cfg.thresholds.background_percentile - 0.5).abs() < f32::EPSILON);
+        assert!((cfg.thresholds.normal_percentile - 0.5).abs() < f32::EPSILON);
+        assert!((cfg.thresholds.interactive_percentile - 0.5).abs() < f32::EPSILON);
+        assert!((cfg.thresholds.crit_interactive_percentile - 0.5).abs() < f32::EPSILON);
     }
 
     #[test]
