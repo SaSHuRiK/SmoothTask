@@ -79,9 +79,24 @@ impl Config {
     fn validate(&self) -> Result<()> {
         ensure!(
             self.polling_interval_ms > 0,
-            "polling_interval_ms must be positive"
+            "polling_interval_ms must be positive (got {})",
+            self.polling_interval_ms
         );
-        ensure!(self.max_candidates > 0, "max_candidates must be positive");
+        ensure!(
+            self.polling_interval_ms <= 60000,
+            "polling_interval_ms must be <= 60000 ms (1 minute) to ensure responsive system monitoring (got {})",
+            self.polling_interval_ms
+        );
+        ensure!(
+            self.max_candidates > 0,
+            "max_candidates must be positive (got {})",
+            self.max_candidates
+        );
+        ensure!(
+            self.max_candidates <= 10000,
+            "max_candidates must be <= 10000 to prevent excessive memory usage (got {})",
+            self.max_candidates
+        );
 
         self.thresholds.validate()?;
         self.paths.validate()?;
@@ -105,7 +120,7 @@ impl Thresholds {
         for (name, value) in percentiles {
             ensure!(
                 (0.0..=1.0).contains(&value),
-                "{name} must be in the [0, 1] range (got {value})"
+                "thresholds.{name} must be in the [0, 1] range (got {value})"
             );
         }
 
@@ -117,29 +132,39 @@ impl Thresholds {
         );
 
         ensure!(
-            (0.0..=1.0).contains(&self.psi_cpu_some_high)
-                && (0.0..=1.0).contains(&self.psi_io_some_high),
-            "PSI thresholds must be in the [0, 1] range"
+            (0.0..=1.0).contains(&self.psi_cpu_some_high),
+            "thresholds.psi_cpu_some_high must be in the [0, 1] range (got {})",
+            self.psi_cpu_some_high
+        );
+        ensure!(
+            (0.0..=1.0).contains(&self.psi_io_some_high),
+            "thresholds.psi_io_some_high must be in the [0, 1] range (got {})",
+            self.psi_io_some_high
         );
         ensure!(
             (0.0..=1.0).contains(&self.noisy_neighbour_cpu_share),
-            "noisy_neighbour_cpu_share must be in the [0, 1] range"
+            "thresholds.noisy_neighbour_cpu_share must be in the [0, 1] range (got {})",
+            self.noisy_neighbour_cpu_share
         );
         ensure!(
             self.user_idle_timeout_sec > 0,
-            "user_idle_timeout_sec must be positive"
+            "thresholds.user_idle_timeout_sec must be positive (got {})",
+            self.user_idle_timeout_sec
         );
         ensure!(
             self.interactive_build_grace_sec > 0,
-            "interactive_build_grace_sec must be positive"
+            "thresholds.interactive_build_grace_sec must be positive (got {})",
+            self.interactive_build_grace_sec
         );
         ensure!(
             self.sched_latency_p99_threshold_ms > 0.0,
-            "sched_latency_p99_threshold_ms must be positive"
+            "thresholds.sched_latency_p99_threshold_ms must be positive (got {})",
+            self.sched_latency_p99_threshold_ms
         );
         ensure!(
             self.ui_loop_p95_threshold_ms > 0.0,
-            "ui_loop_p95_threshold_ms must be positive"
+            "thresholds.ui_loop_p95_threshold_ms must be positive (got {})",
+            self.ui_loop_p95_threshold_ms
         );
 
         Ok(())
@@ -156,6 +181,22 @@ impl Paths {
             !self.patterns_dir.trim().is_empty(),
             "patterns_dir must not be empty"
         );
+
+        // Проверяем, что snapshot_db_path имеет расширение .sqlite или .db
+        let snapshot_path = Path::new(&self.snapshot_db_path);
+        if let Some(ext) = snapshot_path.extension() {
+            let ext_str = ext.to_string_lossy().to_lowercase();
+            ensure!(
+                ext_str == "sqlite" || ext_str == "db",
+                "snapshot_db_path must have .sqlite or .db extension (got {:?})",
+                ext
+            );
+        } else {
+            anyhow::bail!(
+                "snapshot_db_path must have .sqlite or .db extension (got path without extension: {:?})",
+                snapshot_path
+            );
+        }
 
         let snapshot_parent = Path::new(&self.snapshot_db_path)
             .parent()
@@ -384,6 +425,215 @@ thresholds:
             err.to_string()
                 .contains("patterns_dir must point to an existing directory"),
             "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_polling_interval_too_large() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 70000
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("polling_interval_ms must be <= 60000"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_max_candidates_too_large() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 20000
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("max_candidates must be <= 10000"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_snapshot_db_path_without_extension() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots"); // без расширения
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("snapshot_db_path must have .sqlite or .db extension"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_snapshot_db_path_with_wrong_extension() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.txt"); // неправильное расширение
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("snapshot_db_path must have .sqlite or .db extension"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_snapshot_db_path_with_db_extension() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.db"); // .db расширение
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен загрузиться без ошибок
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert_eq!(
+            cfg.paths.snapshot_db_path,
+            snapshot_db_path.display().to_string()
         );
     }
 }
