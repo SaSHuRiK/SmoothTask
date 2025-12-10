@@ -187,13 +187,57 @@ impl ProcessGrouper {
         app_groups
     }
 
-    /// Нормализует cgroup_path, оставляя только до user.slice или session.slice.
+    /// Нормализует cgroup_path, оставляя только до user.slice, session.slice или app.slice.
+    ///
+    /// Функция обрезает cgroup_path, останавливаясь на первом вхождении одного из следующих элементов:
+    /// - `session-*.scope` (например, `session-2.scope`)
+    /// - `app.slice`
+    /// - `system.slice` (останавливается сразу после него)
+    ///
+    /// # Аргументы
+    ///
+    /// * `cgroup_path` - путь к cgroup для нормализации
+    ///
+    /// # Возвращает
+    ///
+    /// Нормализованный путь к cgroup, обрезанный до соответствующего уровня.
+    ///
+    /// # Примеры
+    ///
+    /// ```
+    /// use smoothtask_core::classify::grouper::ProcessGrouper;
+    ///
+    /// // Останавливается на session-*.scope
+    /// assert_eq!(
+    ///     ProcessGrouper::normalize_cgroup("/user.slice/user-1000.slice/session-2.scope/app"),
+    ///     "/user.slice/user-1000.slice/session-2.scope"
+    /// );
+    ///
+    /// // Останавливается на app.slice
+    /// assert_eq!(
+    ///     ProcessGrouper::normalize_cgroup("/user.slice/user-1000.slice/app.slice/firefox.service"),
+    ///     "/user.slice/user-1000.slice/app.slice"
+    /// );
+    ///
+    /// // Останавливается на system.slice
+    /// assert_eq!(
+    ///     ProcessGrouper::normalize_cgroup("/system.slice/systemd.service"),
+    ///     "/system.slice"
+    /// );
+    ///
+    /// // Если нет специальных элементов, возвращает весь путь
+    /// assert_eq!(
+    ///     ProcessGrouper::normalize_cgroup("/user.slice/user-1000.slice/custom.slice"),
+    ///     "/user.slice/user-1000.slice/custom.slice"
+    /// );
+    /// ```
+    ///
+    /// # Примечания
+    ///
+    /// - Функция всегда возвращает путь, начинающийся с `/`
+    /// - Пустые части пути (двойные слэши) игнорируются
+    /// - Если путь не содержит специальных элементов, возвращается весь путь
     fn normalize_cgroup(cgroup_path: &str) -> String {
-        // Примеры:
-        // /user.slice/user-1000.slice/session-2.scope -> /user.slice/user-1000.slice/session-2.scope
-        // /user.slice/user-1000.slice/app.slice/firefox.service -> /user.slice/user-1000.slice/app.slice
-        // /system.slice/systemd.service -> /system.slice
-
         let parts: Vec<&str> = cgroup_path.split('/').filter(|s| !s.is_empty()).collect();
         let mut normalized = Vec::new();
 
@@ -514,6 +558,63 @@ mod tests {
         assert_eq!(
             ProcessGrouper::normalize_cgroup("/system.slice/systemd.service"),
             "/system.slice"
+        );
+    }
+
+    #[test]
+    fn test_cgroup_normalization_edge_cases() {
+        // Пустой путь
+        assert_eq!(ProcessGrouper::normalize_cgroup(""), "/");
+
+        // Путь без слэшей
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("user.slice"),
+            "/user.slice"
+        );
+
+        // Путь с множественными слэшами
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("//user.slice///user-1000.slice//app.slice"),
+            "/user.slice/user-1000.slice/app.slice"
+        );
+
+        // Путь, который не содержит специальных элементов
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("/user.slice/user-1000.slice/custom.slice/service"),
+            "/user.slice/user-1000.slice/custom.slice/service"
+        );
+
+        // Путь только с system.slice
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("/system.slice"),
+            "/system.slice"
+        );
+
+        // Путь только с app.slice
+        assert_eq!(ProcessGrouper::normalize_cgroup("/app.slice"), "/app.slice");
+
+        // Путь с session-*.scope в середине
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("/user.slice/session-1.scope/app.slice/service"),
+            "/user.slice/session-1.scope"
+        );
+
+        // Путь с несколькими session-*.scope (останавливается на первом)
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("/user.slice/session-1.scope/session-2.scope/service"),
+            "/user.slice/session-1.scope"
+        );
+
+        // Путь с app.slice после system.slice (останавливается на system.slice)
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("/system.slice/app.slice/service"),
+            "/system.slice"
+        );
+
+        // Путь с session-*.scope после app.slice (останавливается на app.slice)
+        assert_eq!(
+            ProcessGrouper::normalize_cgroup("/user.slice/app.slice/session-1.scope/service"),
+            "/user.slice/app.slice"
         );
     }
 
