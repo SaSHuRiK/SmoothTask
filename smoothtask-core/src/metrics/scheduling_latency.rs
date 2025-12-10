@@ -1,10 +1,13 @@
 //! Модуль для измерения scheduling latency через probe-thread (mini-cyclictest).
 //!
-//! Пока реализована только структура для хранения измерений и вычисления перцентилей.
-//! Полная реализация probe-thread будет добавлена в задаче ST-045.
+//! Реализует mini-cyclictest поток, который периодически спит и измеряет задержки пробуждения.
 
 use std::collections::VecDeque;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::{Duration, Instant};
+use tracing::{debug, info, warn};
 
 /// Коллектор для хранения измерений scheduling latency и вычисления перцентилей.
 ///
@@ -138,6 +141,139 @@ impl LatencyCollector {
     /// Очищает все измерения.
     pub fn clear(&self) {
         self.samples.lock().unwrap().clear();
+    }
+}
+
+/// Probe-thread для измерения scheduling latency (mini-cyclictest).
+///
+/// Создаёт отдельный поток, который периодически спит на заданный интервал
+/// и измеряет задержку пробуждения (wakeup_delay = фактическое время - ожидаемое время).
+/// Измерения сохраняются в LatencyCollector для последующего вычисления перцентилей.
+pub struct LatencyProbe {
+    /// Поток probe-thread
+    handle: Option<thread::JoinHandle<()>>,
+    /// Флаг для остановки probe-thread
+    shutdown: Arc<AtomicBool>,
+}
+
+impl LatencyProbe {
+    /// Создаёт новый LatencyProbe с указанными параметрами.
+    ///
+    /// # Аргументы
+    ///
+    /// * `collector` - коллектор для хранения измерений
+    /// * `sleep_interval_ms` - интервал сна в миллисекундах (рекомендуется 5-10 мс)
+    /// * `max_samples` - максимальное количество измерений в окне (рекомендуется 1000-5000)
+    ///
+    /// # Пример
+    ///
+    /// ```
+    /// use smoothtask_core::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
+    /// use std::sync::Arc;
+    ///
+    /// let collector = Arc::new(LatencyCollector::new(1000));
+    /// let probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+    /// ```
+    pub fn new(
+        collector: Arc<LatencyCollector>,
+        sleep_interval_ms: u64,
+        max_samples: usize,
+    ) -> Self {
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let shutdown_clone = Arc::clone(&shutdown);
+        let collector_clone = Arc::clone(&collector);
+        let sleep_interval = Duration::from_millis(sleep_interval_ms);
+
+        let handle = thread::Builder::new()
+            .name("latency-probe".to_string())
+            .spawn(move || {
+                Self::probe_thread_loop(collector_clone, shutdown_clone, sleep_interval);
+            })
+            .expect("Failed to spawn latency probe thread");
+
+        info!(
+            "Started latency probe thread (sleep_interval={}ms, max_samples={})",
+            sleep_interval_ms, max_samples
+        );
+
+        Self {
+            handle: Some(handle),
+            shutdown,
+        }
+    }
+
+    /// Основной цикл probe-thread.
+    ///
+    /// Поток спит на заданный интервал и измеряет задержку пробуждения.
+    fn probe_thread_loop(
+        collector: Arc<LatencyCollector>,
+        shutdown: Arc<AtomicBool>,
+        sleep_interval: Duration,
+    ) {
+        debug!("Latency probe thread started");
+
+        loop {
+            // Проверяем shutdown перед каждым измерением
+            if shutdown.load(Ordering::Relaxed) {
+                debug!("Latency probe thread received shutdown signal");
+                break;
+            }
+
+            // Запоминаем время перед сном
+            let sleep_start = Instant::now();
+
+            // Спим на заданный интервал
+            thread::sleep(sleep_interval);
+
+            // Измеряем фактическое время пробуждения
+            let wakeup_time = Instant::now();
+            let actual_delay = wakeup_time.duration_since(sleep_start);
+
+            // Вычисляем задержку пробуждения (wakeup_delay)
+            // Если пробуждение произошло точно в срок, delay = 0
+            // Если пробуждение задержалось, delay > 0
+            let wakeup_delay = if actual_delay > sleep_interval {
+                actual_delay - sleep_interval
+            } else {
+                // Если пробуждение произошло раньше (маловероятно, но возможно),
+                // считаем delay = 0
+                Duration::from_secs(0)
+            };
+
+            // Преобразуем задержку в миллисекунды
+            let latency_ms = wakeup_delay.as_secs_f64() * 1000.0;
+
+            // Добавляем измерение в коллектор
+            collector.add_sample(latency_ms);
+
+            // Логируем только значительные задержки (> 1 мс) для отладки
+            if latency_ms > 1.0 {
+                debug!("Scheduling latency detected: {:.2} ms", latency_ms);
+            }
+        }
+
+        debug!("Latency probe thread stopped");
+    }
+
+    /// Останавливает probe-thread и ждёт его завершения.
+    ///
+    /// Должна быть вызвана перед уничтожением LatencyProbe для корректного завершения потока.
+    pub fn stop(&mut self) {
+        if let Some(handle) = self.handle.take() {
+            info!("Stopping latency probe thread");
+            self.shutdown.store(true, Ordering::Relaxed);
+            if let Err(e) = handle.join() {
+                warn!("Failed to join latency probe thread: {:?}", e);
+            } else {
+                info!("Latency probe thread stopped");
+            }
+        }
+    }
+}
+
+impl Drop for LatencyProbe {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -287,5 +423,90 @@ mod tests {
         assert!((p95 - 950.0).abs() < 10.0);
         // P99 должен быть около 990
         assert!((p99 - 990.0).abs() < 10.0);
+    }
+
+    #[test]
+    fn test_latency_probe_starts_and_stops() {
+        use std::time::Duration;
+        let collector = Arc::new(LatencyCollector::new(1000));
+        let mut probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+
+        // Даём probe-thread немного времени для работы
+        thread::sleep(Duration::from_millis(50));
+
+        // Проверяем, что измерения собираются
+        let initial_len = collector.len();
+        assert!(
+            initial_len > 0,
+            "Probe thread should collect some measurements"
+        );
+
+        // Останавливаем probe-thread
+        probe.stop();
+
+        // Даём время для завершения потока
+        thread::sleep(Duration::from_millis(10));
+
+        // Проверяем, что поток действительно остановился (количество измерений не увеличивается)
+        let final_len = collector.len();
+        thread::sleep(Duration::from_millis(20));
+        let len_after_stop = collector.len();
+        assert_eq!(
+            len_after_stop, final_len,
+            "Probe thread should stop collecting measurements after stop()"
+        );
+    }
+
+    #[test]
+    fn test_latency_probe_collects_measurements() {
+        use std::time::Duration;
+        let collector = Arc::new(LatencyCollector::new(1000));
+        let mut probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+
+        // Даём probe-thread время для сбора нескольких измерений
+        thread::sleep(Duration::from_millis(100));
+
+        // Проверяем, что измерения собраны
+        let len = collector.len();
+        assert!(
+            len >= 10,
+            "Should collect at least 10 measurements in 100ms (5ms interval)"
+        );
+
+        // Проверяем, что можно вычислить перцентили
+        let p95 = collector.p95();
+        let p99 = collector.p99();
+        assert!(p95.is_some(), "Should be able to compute P95");
+        assert!(p99.is_some(), "Should be able to compute P99");
+
+        probe.stop();
+    }
+
+    #[test]
+    fn test_latency_probe_drop_stops_thread() {
+        use std::time::Duration;
+        let collector = Arc::new(LatencyCollector::new(1000));
+        let probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+
+        // Даём probe-thread время для работы
+        thread::sleep(Duration::from_millis(50));
+
+        let len_before_drop = collector.len();
+        assert!(len_before_drop > 0);
+
+        // Drop должен остановить поток
+        drop(probe);
+
+        // Даём время для завершения потока
+        thread::sleep(Duration::from_millis(20));
+
+        // Проверяем, что поток остановился
+        let len_after_drop = collector.len();
+        thread::sleep(Duration::from_millis(20));
+        let len_after_wait = collector.len();
+        assert_eq!(
+            len_after_wait, len_after_drop,
+            "Probe thread should stop after drop"
+        );
     }
 }

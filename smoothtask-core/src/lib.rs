@@ -21,6 +21,7 @@ use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospe
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::InputTracker;
 use crate::metrics::process::collect_process_metrics;
+use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
@@ -131,6 +132,13 @@ pub async fn run_daemon(
     let idle_threshold = Duration::from_secs(config.thresholds.user_idle_timeout_sec);
     let input_tracker = Arc::new(Mutex::new(InputTracker::new(idle_threshold)));
 
+    // Инициализация probe-thread для измерения scheduling latency
+    // Используем размер окна 5000 измерений (примерно 25-50 секунд при интервале 5-10 мс)
+    let latency_collector = Arc::new(LatencyCollector::new(5000));
+    let sleep_interval_ms = 5; // 5 мс согласно документации tz.md
+    let mut latency_probe =
+        LatencyProbe::new(Arc::clone(&latency_collector), sleep_interval_ms, 5000);
+
     // Загрузка базы паттернов для классификации
     let pattern_db = PatternDatabase::load(&config.paths.patterns_dir)
         .context("Failed to load pattern database")?;
@@ -171,6 +179,7 @@ pub async fn run_daemon(
             &input_tracker,
             &mut prev_cpu_times,
             &config.thresholds,
+            &latency_collector,
         )
         .await
         {
@@ -298,6 +307,10 @@ pub async fn run_daemon(
     }
 
     info!("SmoothTask daemon stopped after {} iterations", iteration);
+
+    // Останавливаем probe-thread перед завершением
+    latency_probe.stop();
+
     Ok(())
 }
 
@@ -312,6 +325,7 @@ async fn collect_snapshot(
     input_tracker: &Arc<Mutex<InputTracker>>,
     prev_cpu_times: &mut Option<SystemMetrics>,
     thresholds: &crate::config::Thresholds,
+    latency_collector: &Arc<LatencyCollector>,
 ) -> Result<Snapshot> {
     let now = Instant::now();
     let timestamp = Utc::now();
@@ -415,11 +429,14 @@ async fn collect_snapshot(
     };
 
     // Построение ResponsivenessMetrics
+    // Читаем scheduling latency из LatencyCollector (probe-thread)
+    let sched_latency_p95_ms = latency_collector.p95();
+    let sched_latency_p99_ms = latency_collector.p99();
+
     let mut responsiveness = ResponsivenessMetrics {
         audio_xruns_delta: Some(audio_metrics.xrun_count as u64),
-        // TODO: добавить сбор scheduling latency через probe-thread (mini-cyclictest)
-        // sched_latency_p95_ms и sched_latency_p99_ms пока остаются None
-        // См. задачу ST-045 в PLAN.md
+        sched_latency_p95_ms,
+        sched_latency_p99_ms,
         ..Default::default()
     };
 
