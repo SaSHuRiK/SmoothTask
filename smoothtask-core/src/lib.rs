@@ -754,9 +754,11 @@ pub async fn run_daemon(
 /// # Примеры использования
 ///
 /// ```no_run
+/// use smoothtask_core::collect_snapshot;
+/// use smoothtask_core::config::Thresholds;
 /// use smoothtask_core::metrics::system::ProcPaths;
 /// use smoothtask_core::metrics::windows::StaticWindowIntrospector;
-/// use smoothtask_core::metrics::audio::StaticAudioIntrospector;
+/// use smoothtask_core::metrics::audio::{AudioIntrospector, StaticAudioIntrospector};
 /// use smoothtask_core::metrics::input::InputActivityTracker;
 /// use smoothtask_core::metrics::scheduling_latency::LatencyCollector;
 /// use std::sync::{Arc, Mutex};
@@ -768,7 +770,19 @@ pub async fn run_daemon(
 /// let audio_introspector = Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty()) as Box<dyn AudioIntrospector>));
 /// let input_tracker = Arc::new(Mutex::new(InputActivityTracker::new(Duration::from_secs(60))));
 /// let mut prev_cpu_times = None;
-/// let thresholds = Default::default();
+/// let thresholds = Thresholds {
+///     psi_cpu_some_high: 0.6,
+///     psi_io_some_high: 0.4,
+///     user_idle_timeout_sec: 120,
+///     interactive_build_grace_sec: 10,
+///     noisy_neighbour_cpu_share: 0.7,
+///     crit_interactive_percentile: 0.9,
+///     interactive_percentile: 0.6,
+///     normal_percentile: 0.3,
+///     background_percentile: 0.1,
+///     sched_latency_p99_threshold_ms: 10.0,
+///     ui_loop_p95_threshold_ms: 16.67,
+/// };
 /// let latency_collector = Arc::new(LatencyCollector::new(1000));
 ///
 /// let snapshot = collect_snapshot(
@@ -794,7 +808,7 @@ pub async fn run_daemon(
 ///   используя дефолтные значения
 /// - `prev_cpu_times` обновляется внутри функции для вычисления дельт CPU на следующей итерации
 /// - `app_groups` в возвращаемом снапшоте пусты, они заполняются после группировки процессов
-async fn collect_snapshot(
+pub async fn collect_snapshot(
     proc_paths: &ProcPaths,
     window_introspector: &Arc<dyn WindowIntrospector>,
     audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
