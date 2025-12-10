@@ -417,6 +417,9 @@ async fn collect_snapshot(
     // Построение ResponsivenessMetrics
     let mut responsiveness = ResponsivenessMetrics {
         audio_xruns_delta: Some(audio_metrics.xrun_count as u64),
+        // TODO: добавить сбор scheduling latency через probe-thread (mini-cyclictest)
+        // sched_latency_p95_ms и sched_latency_p99_ms пока остаются None
+        // См. задачу ST-045 в PLAN.md
         ..Default::default()
     };
 
