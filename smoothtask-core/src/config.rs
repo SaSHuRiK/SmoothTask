@@ -152,8 +152,18 @@ impl Thresholds {
             self.user_idle_timeout_sec
         );
         ensure!(
+            self.user_idle_timeout_sec <= 86400,
+            "thresholds.user_idle_timeout_sec must be <= 86400 sec (24 hours) to ensure reasonable user activity tracking (got {})",
+            self.user_idle_timeout_sec
+        );
+        ensure!(
             self.interactive_build_grace_sec > 0,
             "thresholds.interactive_build_grace_sec must be positive (got {})",
+            self.interactive_build_grace_sec
+        );
+        ensure!(
+            self.interactive_build_grace_sec <= 3600,
+            "thresholds.interactive_build_grace_sec must be <= 3600 sec (1 hour) to ensure reasonable grace period for interactive builds (got {})",
             self.interactive_build_grace_sec
         );
         ensure!(
@@ -1675,5 +1685,129 @@ thresholds:
             err.to_string().contains("patterns_dir must not be empty"),
             "unexpected error: {err:?}"
         );
+    }
+
+    #[test]
+    fn rejects_user_idle_timeout_sec_too_large() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 100000
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("user_idle_timeout_sec must be <= 86400"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_interactive_build_grace_sec_too_large() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10000
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("interactive_build_grace_sec must be <= 3600"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn accepts_valid_timeout_values() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 3600
+  interactive_build_grace_sec: 1800
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Должен успешно загрузиться с валидными значениями
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config should load");
+        assert_eq!(cfg.thresholds.user_idle_timeout_sec, 3600);
+        assert_eq!(cfg.thresholds.interactive_build_grace_sec, 1800);
     }
 }
