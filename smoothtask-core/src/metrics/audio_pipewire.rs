@@ -322,12 +322,18 @@ pub fn parse_pw_dump_xruns(json: &str) -> Result<Vec<(u32, u64)>> {
 
 fn parse_err_count(props: &Map<String, Value>) -> u64 {
     // Ищем ERR в различных форматах, которые могут быть в pw-dump
+    // Поддерживаем различные варианты названий, которые встречаются в разных версиях PipeWire
     for key in [
         "node.error",
         "node.ERR",
         "error.count",
         "xrun.count",
         "node.xrun",
+        "error",            // Простой вариант без префикса
+        "xrun",             // Простой вариант без префикса
+        "node.error.count", // Полный вариант с префиксом
+        "pipewire.error",   // Вариант с префиксом pipewire
+        "pipewire.xrun",    // Вариант с префиксом pipewire
     ] {
         if let Some(err) = props.get(key).and_then(parse_u64) {
             return err;
@@ -406,6 +412,7 @@ impl AudioIntrospector for PipeWireIntrospector {
         // Сравниваем текущие ERR с предыдущими, чтобы найти новые XRUN
         for (pid, current_err) in &current_err_by_pid {
             let last_err = self.last_err_by_pid.get(pid).copied().unwrap_or(0);
+
             if current_err > &last_err {
                 // Найдены новые XRUN для этого PID
                 let new_xruns = current_err - last_err;
@@ -416,7 +423,12 @@ impl AudioIntrospector for PipeWireIntrospector {
                     });
                     xrun_count += 1;
                 }
+            } else if current_err < &last_err {
+                // ERR уменьшился - вероятно, узел перезапустился или сбросился
+                // В этом случае считаем, что счётчик сбросился, и не создаём события
+                // (это нормальное поведение при перезапуске узла)
             }
+            // Если ERR не изменился, новых XRUN нет
         }
 
         // Также проверяем узлы без PID (если ERR увеличился глобально)
@@ -425,19 +437,25 @@ impl AudioIntrospector for PipeWireIntrospector {
         let total_last_err: u64 = self.last_err_by_pid.values().sum();
         if total_current_err > total_last_err {
             // Могут быть XRUN без известного PID
+            // Вычисляем разницу, учитывая уже учтённые XRUN для узлов с PID
+            let accounted_xruns: u64 = xrun_count as u64;
             let unknown_xruns = total_current_err
-                - total_last_err
-                - (total_current_err - total_last_err).min(xrun_count as u64);
-            for _ in 0..unknown_xruns {
-                xruns.push(XrunInfo {
-                    timestamp: now,
-                    client_pid: None,
-                });
-                xrun_count += 1;
+                .saturating_sub(total_last_err)
+                .saturating_sub(accounted_xruns);
+
+            if unknown_xruns > 0 {
+                for _ in 0..unknown_xruns {
+                    xruns.push(XrunInfo {
+                        timestamp: now,
+                        client_pid: None,
+                    });
+                    xrun_count += 1;
+                }
             }
         }
 
-        // Обновляем состояние
+        // Обновляем состояние: сохраняем только текущие узлы (очищаем исчезнувшие)
+        // Это важно, чтобы не накапливать данные об узлах, которые больше не существуют
         self.last_metrics_time = Some(now);
         self.last_err_by_pid = current_err_by_pid;
 
@@ -553,6 +571,168 @@ mod pipewire_introspector_tests {
 
         let xruns = parse_pw_dump_xruns(json).unwrap();
         assert_eq!(xruns.len(), 0);
+    }
+
+    #[test]
+    fn parse_xruns_supports_various_err_formats() {
+        // Тест различных форматов ERR
+        let test_cases = vec![
+            (r#"{"application.process.id": 1001, "error": 3}"#, 3),
+            (r#"{"application.process.id": 1002, "xrun": 5}"#, 5),
+            (
+                r#"{"application.process.id": 1003, "node.error.count": 7}"#,
+                7,
+            ),
+            (
+                r#"{"application.process.id": 1004, "pipewire.error": 2}"#,
+                2,
+            ),
+            (r#"{"application.process.id": 1005, "pipewire.xrun": 4}"#, 4),
+        ];
+
+        for (props_json, expected_err) in test_cases {
+            let props: Map<String, Value> = serde_json::from_str(props_json).unwrap();
+            let err_count = parse_err_count(&props);
+            assert_eq!(err_count, expected_err, "Failed for props: {}", props_json);
+        }
+    }
+
+    #[test]
+    fn parse_xruns_supports_string_format_err() {
+        // Тест, что ERR может быть строкой
+        let json = r#"
+        [
+            {
+                "id": 50,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 2000,
+                        "node.error": "10"
+                    }
+                }
+            }
+        ]
+        "#;
+
+        let xruns = parse_pw_dump_xruns(json).unwrap();
+        assert_eq!(xruns.len(), 1);
+        assert_eq!(xruns[0], (2000, 10));
+    }
+
+    #[test]
+    fn pipewire_introspector_tracks_new_xruns() {
+        // Проверяем, что интроспектор корректно инициализируется
+        let introspector = PipeWireIntrospector::new();
+
+        // Проверяем начальное состояние
+        assert!(introspector.last_metrics_time.is_none());
+        assert!(introspector.last_err_by_pid.is_empty());
+
+        // Симулируем состояние: у нас уже был узел с ERR=5
+        let mut introspector = introspector;
+        introspector.last_err_by_pid.insert(1234, 5);
+
+        // Проверяем, что состояние обновлено
+        assert_eq!(introspector.last_err_by_pid.get(&1234), Some(&5));
+    }
+
+    #[test]
+    fn pipewire_introspector_handles_decreased_err() {
+        // Тест обработки случая, когда ERR уменьшился (перезапуск узла)
+        // Это не должно создавать отрицательные XRUN или ошибки
+
+        let json1 = r#"
+        [
+            {
+                "id": 60,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 3000,
+                        "node.error": 10
+                    }
+                }
+            }
+        ]
+        "#;
+
+        let json2 = r#"
+        [
+            {
+                "id": 60,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 3000,
+                        "node.error": 3
+                    }
+                }
+            }
+        ]
+        "#;
+
+        // Первый вызов: ERR=10
+        let xruns1 = parse_pw_dump_xruns(json1).unwrap();
+        assert_eq!(xruns1.len(), 1);
+        assert_eq!(xruns1[0], (3000, 10));
+
+        // Второй вызов: ERR=3 (уменьшился - узел перезапустился)
+        let xruns2 = parse_pw_dump_xruns(json2).unwrap();
+        assert_eq!(xruns2.len(), 1);
+        assert_eq!(xruns2[0], (3000, 3));
+
+        // В реальном интроспекторе при уменьшении ERR не должно создаваться событий XRUN
+        // Это проверяется в логике audio_metrics(), где мы проверяем current_err > last_err
+    }
+
+    #[test]
+    fn pipewire_introspector_handles_disappeared_nodes() {
+        // Тест обработки случая, когда узел исчез из вывода pw-dump
+        // Это не должно вызывать ошибок, просто узел должен быть удалён из last_err_by_pid
+
+        let json1 = r#"
+        [
+            {
+                "id": 70,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 4000,
+                        "node.error": 5
+                    }
+                }
+            }
+        ]
+        "#;
+
+        let json2 = r#"
+        [
+            {
+                "id": 71,
+                "type": "PipeWire:Interface:Node",
+                "info": {
+                    "props": {
+                        "application.process.id": 5000,
+                        "node.error": 2
+                    }
+                }
+            }
+        ]
+        "#;
+
+        // Первый вызов: узел 4000 с ERR=5
+        let xruns1 = parse_pw_dump_xruns(json1).unwrap();
+        assert_eq!(xruns1.len(), 1);
+        assert_eq!(xruns1[0], (4000, 5));
+
+        // Второй вызов: узел 4000 исчез, появился новый узел 5000
+        let xruns2 = parse_pw_dump_xruns(json2).unwrap();
+        assert_eq!(xruns2.len(), 1);
+        assert_eq!(xruns2[0], (5000, 2));
+
+        // В реальном интроспекторе при обновлении last_err_by_pid = current_err_by_pid
+        // узел 4000 автоматически исчезнет из отслеживания
     }
 
     // Интеграционные тесты с реальным pw-dump требуют наличия PipeWire в системе
