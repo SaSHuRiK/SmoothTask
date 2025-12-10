@@ -53,6 +53,15 @@ pub struct NiceParams {
     pub nice: i32,
 }
 
+/// Параметры latency_nice для класса приоритета.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LatencyNiceParams {
+    /// Значение latency_nice (от -20 до +19).
+    /// -20 = максимальная чувствительность к задержке (UI, аудио, игры)
+    /// +19 = безразличие к задержке (batch, индексация)
+    pub latency_nice: i32,
+}
+
 /// Параметры ionice для класса приоритета.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IoNiceParams {
@@ -73,6 +82,7 @@ pub struct CgroupParams {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PriorityParams {
     pub nice: NiceParams,
+    pub latency_nice: LatencyNiceParams,
     pub ionice: IoNiceParams,
     pub cgroup: CgroupParams,
 }
@@ -83,26 +93,31 @@ impl PriorityClass {
         match self {
             PriorityClass::CritInteractive => PriorityParams {
                 nice: NiceParams { nice: -8 },
+                latency_nice: LatencyNiceParams { latency_nice: -15 },
                 ionice: IoNiceParams { class: 2, level: 0 },
                 cgroup: CgroupParams { cpu_weight: 200 },
             },
             PriorityClass::Interactive => PriorityParams {
                 nice: NiceParams { nice: -4 },
+                latency_nice: LatencyNiceParams { latency_nice: -10 },
                 ionice: IoNiceParams { class: 2, level: 2 },
                 cgroup: CgroupParams { cpu_weight: 150 },
             },
             PriorityClass::Normal => PriorityParams {
                 nice: NiceParams { nice: 0 },
+                latency_nice: LatencyNiceParams { latency_nice: 0 },
                 ionice: IoNiceParams { class: 2, level: 4 },
                 cgroup: CgroupParams { cpu_weight: 100 },
             },
             PriorityClass::Background => PriorityParams {
                 nice: NiceParams { nice: 5 },
+                latency_nice: LatencyNiceParams { latency_nice: 10 },
                 ionice: IoNiceParams { class: 2, level: 6 },
                 cgroup: CgroupParams { cpu_weight: 50 },
             },
             PriorityClass::Idle => PriorityParams {
                 nice: NiceParams { nice: 10 },
+                latency_nice: LatencyNiceParams { latency_nice: 15 },
                 ionice: IoNiceParams { class: 3, level: 0 }, // idle class
                 cgroup: CgroupParams { cpu_weight: 25 },
             },
@@ -112,6 +127,11 @@ impl PriorityClass {
     /// Получить значение nice.
     pub fn nice(&self) -> i32 {
         self.params().nice.nice
+    }
+
+    /// Получить параметры latency_nice.
+    pub fn latency_nice(&self) -> i32 {
+        self.params().latency_nice.latency_nice
     }
 
     /// Получить параметры ionice.
@@ -162,6 +182,7 @@ mod tests {
     fn test_crit_interactive_params() {
         let params = PriorityClass::CritInteractive.params();
         assert_eq!(params.nice.nice, -8);
+        assert_eq!(params.latency_nice.latency_nice, -15);
         assert_eq!(params.ionice.class, 2);
         assert_eq!(params.ionice.level, 0);
         assert_eq!(params.cgroup.cpu_weight, 200);
@@ -171,6 +192,7 @@ mod tests {
     fn test_interactive_params() {
         let params = PriorityClass::Interactive.params();
         assert_eq!(params.nice.nice, -4);
+        assert_eq!(params.latency_nice.latency_nice, -10);
         assert_eq!(params.ionice.class, 2);
         assert_eq!(params.ionice.level, 2);
         assert_eq!(params.cgroup.cpu_weight, 150);
@@ -180,6 +202,7 @@ mod tests {
     fn test_normal_params() {
         let params = PriorityClass::Normal.params();
         assert_eq!(params.nice.nice, 0);
+        assert_eq!(params.latency_nice.latency_nice, 0);
         assert_eq!(params.ionice.class, 2);
         assert_eq!(params.ionice.level, 4);
         assert_eq!(params.cgroup.cpu_weight, 100);
@@ -189,6 +212,7 @@ mod tests {
     fn test_background_params() {
         let params = PriorityClass::Background.params();
         assert_eq!(params.nice.nice, 5);
+        assert_eq!(params.latency_nice.latency_nice, 10);
         assert_eq!(params.ionice.class, 2);
         assert_eq!(params.ionice.level, 6);
         assert_eq!(params.cgroup.cpu_weight, 50);
@@ -198,6 +222,7 @@ mod tests {
     fn test_idle_params() {
         let params = PriorityClass::Idle.params();
         assert_eq!(params.nice.nice, 10);
+        assert_eq!(params.latency_nice.latency_nice, 15);
         assert_eq!(params.ionice.class, 3); // idle class
         assert_eq!(params.ionice.level, 0);
         assert_eq!(params.cgroup.cpu_weight, 25);
@@ -247,6 +272,7 @@ mod tests {
     fn test_convenience_methods() {
         let class = PriorityClass::Interactive;
         assert_eq!(class.nice(), -4);
+        assert_eq!(class.latency_nice(), -10);
         assert_eq!(class.ionice().class, 2);
         assert_eq!(class.ionice().level, 2);
         assert_eq!(class.cpu_weight(), 150);
