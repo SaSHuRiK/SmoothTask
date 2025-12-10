@@ -16,6 +16,7 @@ use crate::actuator::{apply_priority_adjustments, plan_priority_changes, Hystere
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
 use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
+use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::InputActivityTracker;
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
@@ -39,11 +40,26 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
     let policy_engine = PolicyEngine::new(config.clone());
     let mut hysteresis = HysteresisTracker::new();
 
-    // Инициализация интроспекторов (пока используем статические бекенды)
-    // TODO: в будущем заменить на реальные X11/Wayland и PipeWire/PulseAudio бекенды
+    // Инициализация интроспекторов
+    // TODO: в будущем заменить на реальные X11/Wayland бекенды
     let window_introspector = StaticWindowIntrospector::new(Vec::new());
-    let mut audio_introspector: Box<dyn AudioIntrospector> =
-        Box::new(StaticAudioIntrospector::empty());
+
+    // Инициализация PipeWire интроспектора с fallback на статический, если PipeWire недоступен
+    let mut audio_introspector: Box<dyn AudioIntrospector> = {
+        // Проверяем доступность pw-dump
+        let pw_dump_available = std::process::Command::new("pw-dump")
+            .arg("--version")
+            .output()
+            .is_ok();
+
+        if pw_dump_available {
+            info!("Using PipeWireIntrospector for audio metrics");
+            Box::new(PipeWireIntrospector::new())
+        } else {
+            warn!("pw-dump not available, falling back to StaticAudioIntrospector");
+            Box::new(StaticAudioIntrospector::empty())
+        }
+    };
 
     // Инициализация трекера активности пользователя
     let idle_threshold = Duration::from_secs(config.thresholds.user_idle_timeout_sec);
