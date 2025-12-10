@@ -44,8 +44,8 @@ impl X11Introspector {
     ///
     /// Возвращает ошибку, если X-сервер недоступен или EWMH не поддерживается.
     pub fn new() -> Result<Self> {
-        let (connection, screen_num) = x11rb::connect(None)
-            .context("Failed to connect to X server")?;
+        let (connection, screen_num) =
+            x11rb::connect(None).context("Failed to connect to X server")?;
 
         let connection = Arc::new(connection);
         let setup = connection.setup();

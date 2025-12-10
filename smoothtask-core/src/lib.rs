@@ -17,7 +17,7 @@ use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::Patte
 use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
-use crate::metrics::input::InputActivityTracker;
+use crate::metrics::input::InputTracker;
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
 use crate::metrics::windows::{StaticWindowIntrospector, WindowIntrospector, X11Introspector};
@@ -79,7 +79,7 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
 
     // Инициализация трекера активности пользователя
     let idle_threshold = Duration::from_secs(config.thresholds.user_idle_timeout_sec);
-    let mut input_tracker = InputActivityTracker::new(idle_threshold);
+    let mut input_tracker = InputTracker::new(idle_threshold);
 
     // Загрузка базы паттернов для классификации
     let pattern_db = PatternDatabase::load(&config.paths.patterns_dir)
@@ -208,7 +208,7 @@ fn collect_snapshot(
     proc_paths: &ProcPaths,
     window_introspector: &dyn WindowIntrospector,
     audio_introspector: &mut Box<dyn AudioIntrospector>,
-    input_tracker: &mut InputActivityTracker,
+    input_tracker: &mut InputTracker,
     prev_cpu_times: &mut Option<SystemMetrics>,
     thresholds: &crate::config::Thresholds,
 ) -> Result<Snapshot> {
@@ -261,9 +261,8 @@ fn collect_snapshot(
         }
     }
 
-    // Сбор метрик ввода (пока используем фиктивные события, так как нет реального evdev)
-    // TODO: в будущем интегрировать реальный evdev
-    let input_metrics = input_tracker.metrics(now);
+    // Сбор метрик ввода (обновляем трекер для чтения новых событий из evdev, если доступно)
+    let input_metrics = input_tracker.update(now);
 
     // Построение GlobalMetrics
     let global = GlobalMetrics {
