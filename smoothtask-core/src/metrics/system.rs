@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Сырые счётчики CPU из `/proc/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -152,21 +153,54 @@ impl Default for ProcPaths {
 }
 
 /// Собрать системные метрики из /proc.
+///
+/// Если PSI-файлы недоступны (например, на старых ядрах без поддержки PSI),
+/// функция продолжит работу с пустыми метриками PSI вместо возврата ошибки.
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     let cpu_contents = read_file(&paths.stat)?;
     let meminfo_contents = read_file(&paths.meminfo)?;
     let loadavg_contents = read_file(&paths.loadavg)?;
-    let pressure_cpu_contents = read_file(&paths.pressure_cpu)?;
-    let pressure_io_contents = read_file(&paths.pressure_io)?;
-    let pressure_mem_contents = read_file(&paths.pressure_memory)?;
 
     let cpu_times = parse_cpu_times(&cpu_contents)?;
     let memory = parse_meminfo(&meminfo_contents)?;
     let load_avg = parse_loadavg(&loadavg_contents)?;
+
+    // PSI может быть недоступен на старых ядрах, поэтому обрабатываем ошибки gracefully
+    let pressure_cpu = read_file(&paths.pressure_cpu)
+        .and_then(|contents| parse_pressure(&contents))
+        .unwrap_or_else(|e| {
+            warn!(
+                "Не удалось прочитать PSI CPU из {}: {}, используем пустые метрики",
+                paths.pressure_cpu.display(),
+                e
+            );
+            Pressure::default()
+        });
+    let pressure_io = read_file(&paths.pressure_io)
+        .and_then(|contents| parse_pressure(&contents))
+        .unwrap_or_else(|e| {
+            warn!(
+                "Не удалось прочитать PSI IO из {}: {}, используем пустые метрики",
+                paths.pressure_io.display(),
+                e
+            );
+            Pressure::default()
+        });
+    let pressure_memory = read_file(&paths.pressure_memory)
+        .and_then(|contents| parse_pressure(&contents))
+        .unwrap_or_else(|e| {
+            warn!(
+                "Не удалось прочитать PSI Memory из {}: {}, используем пустые метрики",
+                paths.pressure_memory.display(),
+                e
+            );
+            Pressure::default()
+        });
+
     let pressure = PressureMetrics {
-        cpu: parse_pressure(&pressure_cpu_contents)?,
-        io: parse_pressure(&pressure_io_contents)?,
-        memory: parse_pressure(&pressure_mem_contents)?,
+        cpu: pressure_cpu,
+        io: pressure_io,
+        memory: pressure_memory,
     };
 
     Ok(SystemMetrics {
@@ -447,5 +481,64 @@ SwapFree:        4096000 kB
         assert_eq!(metrics.memory.mem_total_kb, 16_384_256);
         assert_eq!(metrics.pressure.io.full.as_ref().unwrap().total, 3456);
         assert!((metrics.load_avg.one - 0.42).abs() < 1e-6);
+    }
+
+    #[test]
+    fn collect_system_metrics_works_without_psi() {
+        // Тест проверяет, что collect_system_metrics продолжает работу,
+        // даже если PSI-файлы недоступны (старые ядра без поддержки PSI)
+        let tmp = TempDir::new().expect("tmp");
+        let root = tmp.path();
+
+        fs::write(root.join("stat"), PROC_STAT).unwrap();
+        fs::write(root.join("meminfo"), MEMINFO).unwrap();
+        fs::write(root.join("loadavg"), LOADAVG).unwrap();
+
+        // Не создаём директорию pressure, чтобы симулировать отсутствие PSI
+
+        let paths = ProcPaths::new(root);
+        let metrics = collect_system_metrics(&paths).expect("metrics");
+
+        // Проверяем, что основные метрики собраны
+        assert_eq!(metrics.memory.mem_total_kb, 16_384_256);
+        assert!((metrics.load_avg.one - 0.42).abs() < 1e-6);
+
+        // Проверяем, что PSI-метрики пустые (default)
+        assert!(metrics.pressure.cpu.some.is_none());
+        assert!(metrics.pressure.cpu.full.is_none());
+        assert!(metrics.pressure.io.some.is_none());
+        assert!(metrics.pressure.io.full.is_none());
+        assert!(metrics.pressure.memory.some.is_none());
+        assert!(metrics.pressure.memory.full.is_none());
+    }
+
+    #[test]
+    fn collect_system_metrics_works_with_partial_psi() {
+        // Тест проверяет, что collect_system_metrics продолжает работу,
+        // даже если только часть PSI-файлов доступна
+        let tmp = TempDir::new().expect("tmp");
+        let root = tmp.path();
+
+        fs::write(root.join("stat"), PROC_STAT).unwrap();
+        fs::write(root.join("meminfo"), MEMINFO).unwrap();
+        fs::write(root.join("loadavg"), LOADAVG).unwrap();
+
+        let pressure_dir = root.join("pressure");
+        fs::create_dir(&pressure_dir).unwrap();
+        // Создаём только CPU pressure, но не IO и Memory
+        fs::write(pressure_dir.join("cpu"), PRESSURE_CPU).unwrap();
+
+        let paths = ProcPaths::new(root);
+        let metrics = collect_system_metrics(&paths).expect("metrics");
+
+        // Проверяем, что основные метрики собраны
+        assert_eq!(metrics.memory.mem_total_kb, 16_384_256);
+
+        // Проверяем, что CPU pressure доступен
+        assert!(metrics.pressure.cpu.some.is_some());
+
+        // Проверяем, что IO и Memory pressure пустые
+        assert!(metrics.pressure.io.some.is_none());
+        assert!(metrics.pressure.memory.some.is_none());
     }
 }
