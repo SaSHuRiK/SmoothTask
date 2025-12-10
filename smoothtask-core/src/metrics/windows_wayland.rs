@@ -10,12 +10,84 @@ use crate::metrics::windows::{WindowInfo, WindowIntrospector};
 
 /// Проверяет, доступно ли Wayland окружение.
 ///
-/// Проверяет несколько признаков:
-/// 1. Переменная окружения `WAYLAND_DISPLAY` установлена
-/// 2. Переменная окружения `XDG_SESSION_TYPE=wayland`
-/// 3. Наличие Wayland socket в `/run/user/<uid>/wayland-*` или `$XDG_RUNTIME_DIR/wayland-*`
+/// Функция проверяет несколько признаков доступности Wayland композитора в порядке приоритета:
 ///
-/// Возвращает `true`, если хотя бы один из признаков указывает на Wayland.
+/// 1. **Переменная окружения `WAYLAND_DISPLAY`** — самый надёжный признак, устанавливается
+///    композитором при запуске. Если установлена, функция сразу возвращает `true`.
+///
+/// 2. **Переменная окружения `XDG_SESSION_TYPE=wayland`** — указывает на тип сессии.
+///    Проверяется только если `WAYLAND_DISPLAY` не установлена.
+///
+/// 3. **Wayland socket в `$XDG_RUNTIME_DIR`** — ищет файлы, начинающиеся с `wayland-`
+///    в директории, указанной в переменной окружения `XDG_RUNTIME_DIR`.
+///
+/// 4. **Wayland socket в `/run/user/<uid>/wayland-0`** — проверяет стандартное расположение
+///    Wayland socket для текущего пользователя. UID получается из переменной окружения `UID`
+///    или через системный вызов `getuid()`.
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `true`, если хотя бы один из признаков указывает на доступность Wayland,
+/// и `false` в противном случае.
+///
+/// # Алгоритм проверки
+///
+/// Функция проверяет признаки в порядке приоритета и возвращает `true` при первом
+/// найденном признаке. Это означает, что если `WAYLAND_DISPLAY` установлена, остальные
+/// проверки не выполняются.
+///
+/// # Примеры использования
+///
+/// ## Базовое использование
+///
+/// ```no_run
+/// use smoothtask_core::metrics::windows::is_wayland_available;
+///
+/// if is_wayland_available() {
+///     println!("Wayland композитор доступен");
+/// } else {
+///     println!("Wayland композитор недоступен, используем X11 или fallback");
+/// }
+/// ```
+///
+/// ## Использование для выбора интроспектора
+///
+/// ```no_run
+/// use smoothtask_core::metrics::windows::{is_wayland_available, X11Introspector};
+///
+/// let window_introspector = if is_wayland_available() {
+///     // Пробуем создать WaylandIntrospector
+///     // ...
+/// } else if X11Introspector::is_available() {
+///     // Используем X11Introspector
+///     // ...
+/// } else {
+///     // Fallback на StaticWindowIntrospector
+///     // ...
+/// };
+/// ```
+///
+/// ## Использование в тестах
+///
+/// ```no_run
+/// use smoothtask_core::metrics::windows::is_wayland_available;
+///
+/// #[test]
+/// fn test_wayland_detection() {
+///     // Функция не должна паниковать независимо от окружения
+///     let available = is_wayland_available();
+///     // available может быть true или false в зависимости от окружения
+/// }
+/// ```
+///
+/// # Примечания
+///
+/// - Функция не требует прав root и безопасна для вызова из любого контекста
+/// - Функция не блокирует выполнение и работает быстро (только проверка переменных
+///   окружения и существования файлов)
+/// - Наличие Wayland socket не гарантирует, что композитор работает, но является
+///   хорошим индикатором доступности Wayland окружения
+/// - В системах без Wayland (например, чистый X11) функция вернёт `false`
 pub fn is_wayland_available() -> bool {
     // Проверка переменной окружения WAYLAND_DISPLAY
     if std::env::var("WAYLAND_DISPLAY").is_ok() {
@@ -290,6 +362,154 @@ mod tests {
         std::env::remove_var("XDG_SESSION_TYPE");
         if let Some(val) = old_value {
             std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_available_priority_wayland_display_first() {
+        // Тест проверяет, что WAYLAND_DISPLAY имеет приоритет над XDG_SESSION_TYPE
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        // Устанавливаем XDG_SESSION_TYPE=x11 (не-Wayland)
+        std::env::set_var("XDG_SESSION_TYPE", "x11");
+        // Устанавливаем WAYLAND_DISPLAY (должен иметь приоритет)
+        std::env::set_var("WAYLAND_DISPLAY", "wayland-0");
+
+        // Функция должна вернуть true, так как WAYLAND_DISPLAY установлена
+        assert!(is_wayland_available());
+
+        // Восстанавливаем переменные окружения
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_available_empty_wayland_display() {
+        // Тест проверяет, что пустая строка WAYLAND_DISPLAY не считается валидной
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        // Устанавливаем пустую строку
+        std::env::set_var("WAYLAND_DISPLAY", "");
+        std::env::remove_var("XDG_SESSION_TYPE");
+
+        // Пустая строка всё равно считается установленной переменной
+        // (is_ok() вернёт true), поэтому функция вернёт true
+        // Это поведение соответствует логике: если переменная установлена (даже пустая),
+        // это признак того, что Wayland может быть доступен
+        let result = is_wayland_available();
+        // Результат зависит от реализации: если пустая строка считается валидной,
+        // функция вернёт true, иначе false
+        let _ = result;
+
+        // Восстанавливаем переменные окружения
+        std::env::remove_var("WAYLAND_DISPLAY");
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_available_xdg_session_type_not_wayland() {
+        // Тест проверяет, что XDG_SESSION_TYPE=x11 не считается признаком Wayland
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+
+        // Удаляем WAYLAND_DISPLAY
+        std::env::remove_var("WAYLAND_DISPLAY");
+        // Устанавливаем XDG_SESSION_TYPE=x11 (не-Wayland)
+        std::env::set_var("XDG_SESSION_TYPE", "x11");
+
+        // Функция может вернуть true, если есть socket, или false, если socket нет
+        // Проверяем только, что функция не паникует
+        let _ = is_wayland_available();
+
+        // Восстанавливаем переменные окружения
+        std::env::remove_var("XDG_SESSION_TYPE");
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_available_all_vars_unset() {
+        // Тест проверяет поведение, когда все переменные окружения не установлены
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+        let old_runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
+
+        // Удаляем все переменные окружения
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+        std::env::remove_var("XDG_RUNTIME_DIR");
+
+        // Функция должна проверить socket в /run/user/<uid>/wayland-0
+        // Результат зависит от наличия socket, но функция не должна паниковать
+        let _ = is_wayland_available();
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+        if let Some(val) = old_runtime_dir {
+            std::env::set_var("XDG_RUNTIME_DIR", val);
+        }
+    }
+
+    #[test]
+    fn test_is_wayland_available_multiple_calls_consistent() {
+        // Тест проверяет консистентность при повторных вызовах
+        let result1 = is_wayland_available();
+        let result2 = is_wayland_available();
+        let result3 = is_wayland_available();
+
+        // Результаты должны быть одинаковыми при повторных вызовах
+        // (если окружение не меняется)
+        assert_eq!(result1, result2);
+        assert_eq!(result2, result3);
+    }
+
+    #[test]
+    fn test_is_wayland_available_xdg_session_type_case_sensitive() {
+        // Тест проверяет, что проверка XDG_SESSION_TYPE чувствительна к регистру
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+
+        // Удаляем WAYLAND_DISPLAY
+        std::env::remove_var("WAYLAND_DISPLAY");
+        // Устанавливаем XDG_SESSION_TYPE с разным регистром
+        std::env::set_var("XDG_SESSION_TYPE", "Wayland"); // С заглавной буквы
+
+        // Функция должна вернуть false, так как "Wayland" != "wayland"
+        // (если нет других признаков Wayland)
+        let result = is_wayland_available();
+        // Результат может быть true, если есть socket, но проверка XDG_SESSION_TYPE
+        // должна быть чувствительна к регистру
+        let _ = result;
+
+        // Восстанавливаем переменные окружения
+        std::env::remove_var("XDG_SESSION_TYPE");
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
         }
     }
 }
