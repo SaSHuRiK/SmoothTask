@@ -1,0 +1,18 @@
+# Паттерны браузеров для классификации
+browsers:
+  - name: "firefox"
+    exe_patterns: ["firefox", "firefox-bin"]
+    tags: ["browser", "gui_interactive"]
+  
+  - name: "chromium"
+    exe_patterns: ["chromium", "chromium-browser"]
+    tags: ["browser", "gui_interactive"]
+  
+  - name: "chrome"
+    exe_patterns: ["google-chrome", "chrome"]
+    tags: ["browser", "gui_interactive"]
+  
+  - name: "brave"
+    exe_patterns: ["brave", "brave-browser"]
+    tags: ["browser", "gui_interactive"]
+

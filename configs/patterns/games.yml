@@ -1,0 +1,18 @@
+# Паттерны игр для классификации
+games:
+  - name: "steam"
+    exe_patterns: ["steam"]
+    tags: ["game", "gui_interactive"]
+  
+  - name: "lutris"
+    exe_patterns: ["lutris"]
+    tags: ["game", "gui_interactive"]
+  
+  - name: "wine"
+    exe_patterns: ["wine", "wine64"]
+    tags: ["game", "gui_interactive"]
+  
+  - name: "proton"
+    exe_patterns: ["proton"]
+    tags: ["game", "gui_interactive"]
+

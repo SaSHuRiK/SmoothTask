@@ -1,0 +1,26 @@
+# Паттерны IDE для классификации
+ide:
+  - name: "vscode"
+    exe_patterns: ["code", "code-insiders"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "clion"
+    exe_patterns: ["clion", "clion.sh"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "idea"
+    exe_patterns: ["idea", "intellij"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "pycharm"
+    exe_patterns: ["pycharm", "pycharm.sh"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "rider"
+    exe_patterns: ["rider", "rider.sh"]
+    tags: ["ide", "gui_interactive"]
+  
+  - name: "rustrover"
+    exe_patterns: ["rustrover", "rustrover.sh"]
+    tags: ["ide", "gui_interactive"]
+

@@ -1,0 +1,18 @@
+# Паттерны аудио-приложений для классификации
+audio:
+  - name: "pipewire"
+    exe_patterns: ["pipewire", "pipewire-pulse"]
+    tags: ["audio_client", "system_service"]
+  
+  - name: "pulseaudio"
+    exe_patterns: ["pulseaudio"]
+    tags: ["audio_client", "system_service"]
+  
+  - name: "spotify"
+    exe_patterns: ["spotify"]
+    tags: ["audio_client", "gui_interactive"]
+  
+  - name: "vlc"
+    exe_patterns: ["vlc"]
+    tags: ["audio_client", "gui_interactive", "player"]
+

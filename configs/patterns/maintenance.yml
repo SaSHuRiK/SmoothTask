@@ -1,0 +1,30 @@
+# Паттерны maintenance-задач для классификации
+maintenance:
+  - name: "apt"
+    exe_patterns: ["apt", "apt-get"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "dnf"
+    exe_patterns: ["dnf"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "snapd"
+    exe_patterns: ["snapd"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "flatpak"
+    exe_patterns: ["flatpak"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "packagekitd"
+    exe_patterns: ["packagekitd"]
+    tags: ["maintenance", "updater"]
+  
+  - name: "tracker"
+    exe_patterns: ["tracker-miner", "tracker-store"]
+    tags: ["maintenance", "indexer"]
+  
+  - name: "baloo"
+    exe_patterns: ["baloo"]
+    tags: ["maintenance", "indexer"]
+

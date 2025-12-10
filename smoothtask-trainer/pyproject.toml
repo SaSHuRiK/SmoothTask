@@ -1,0 +1,26 @@
+[project]
+name = "smoothtask-trainer"
+version = "0.0.1"
+description = "Trainer tools for SmoothTask (CatBoostRanker, policy tuning)"
+authors = [
+    { name = "Your Name", email = "you@example.com" }
+]
+requires-python = ">=3.10"
+
+dependencies = [
+    "catboost>=1.2",
+    "numpy>=1.26",
+    "pandas>=2.0",
+    "scikit-learn>=1.5",
+    "pyarrow>=16.0",
+    "matplotlib>=3.8"
+]
+
+[project.optional-dependencies]
+dev = [
+    "jupyterlab",
+    "black",
+    "isort",
+    "mypy",
+]
+

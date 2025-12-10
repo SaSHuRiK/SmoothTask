@@ -1,0 +1,37 @@
+[package]
+name = "smoothtask-core"
+version = "0.0.1"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time"] }
+tracing = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1.0"
+toml = "0.8"
+
+# системные штуки
+procfs = "0.16"
+psi = "0.1"              # если понадобится, можно скорректировать
+nix = { version = "0.28", features = ["process", "signal"] }
+
+# cgroups
+cgroups-rs = "0.3"
+
+# X11 / Wayland / audio будем добавлять по мере реализации:
+# x11rb = "0.13"
+# smithay-client-toolkit = "0.18"
+# pipewire = "0.6"
+# libpulse-binding = "2.28.1"
+
+# ML-инференс через ONNX Runtime (вариант)
+onnxruntime = { version = "0.19", features = ["download-binaries"] }
+
+# SQLite / хранение снапшотов
+rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+anyhow = "1"
+thiserror = "1"
+

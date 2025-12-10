@@ -1,0 +1,20 @@
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "/var/lib/smoothtask/snapshots.sqlite"
+  patterns_dir: "/etc/smoothtask/patterns"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+
