@@ -9,15 +9,49 @@ use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 ///
 /// Содержит числовые, булевые и категориальные фичи в том же порядке,
 /// что и в Python-версии `build_feature_matrix`.
+///
+/// # Структура фич
+///
+/// - **Числовые фичи** (33 штуки): метрики CPU, IO, памяти, латентности и т.д.
+/// - **Булевые фичи** (12 штук): флаги наличия GUI, фокуса, тегов и т.д.
+/// - **Категориальные фичи** (6 штук): тип процесса, теги, категория и т.д.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::model::features::{build_features, FeatureVector};
+/// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
+///
+/// // Построение фич для AppGroup из снапшота
+/// let features = build_features(&snapshot, &app_group);
+///
+/// // Получение общего количества фич
+/// let total = features.total_features();
+/// println!("Total features: {}", total);
+///
+/// // Доступ к числовым фичам
+/// if let Some(cpu_share) = features.numeric.get(0) {
+///     println!("CPU share: {}", cpu_share);
+/// }
+///
+/// // Доступ к категориальным фичам
+/// if let Some(process_type) = features.categorical.get(0) {
+///     println!("Process type: {}", process_type);
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct FeatureVector {
     /// Числовые фичи (в порядке _NUMERIC_COLS из Python).
+    /// Содержит 33 числовых значения: CPU usage, IO metrics, memory, latency и т.д.
     pub numeric: Vec<f64>,
     /// Булевые фичи (в порядке _BOOL_COLS из Python).
+    /// Содержит 12 булевых значений (0 или 1): has_gui, is_focused, has_tags и т.д.
     pub bool: Vec<i32>,
     /// Категориальные фичи (в порядке _CAT_COLS из Python).
+    /// Содержит 6 категориальных значений: process_type, tags, category и т.д.
     pub categorical: Vec<String>,
     /// Индексы категориальных фичей в общем векторе (numeric + bool + categorical).
+    /// Используется для указания CatBoost, какие фичи являются категориальными.
     pub cat_feature_indices: Vec<usize>,
 }
 
@@ -30,14 +64,40 @@ impl FeatureVector {
 
 /// Построить вектор фич для AppGroup из снапшота.
 ///
+/// Функция извлекает метрики из снапшота и AppGroup, преобразует их в вектор фич,
+/// совместимый с CatBoostRanker. Для отсутствующих значений используются дефолты:
+/// - 0.0 для числовых фич
+/// - 0 для булевых фич
+/// - "unknown" для категориальных фич
+///
 /// # Аргументы
 ///
-/// * `snapshot` - полный снапшот системы
+/// * `snapshot` - полный снапшот системы с метриками процессов, окон, аудио и т.д.
 /// * `app_group` - группа приложений, для которой строятся фичи
 ///
 /// # Возвращает
 ///
 /// `FeatureVector` с нормализованными фичами и дефолтами для отсутствующих значений.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::model::features::build_features;
+/// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
+///
+/// // Сбор снапшота и группировка процессов (опущено для краткости)
+/// let snapshot: Snapshot = /* ... */;
+/// let app_group: AppGroupRecord = /* ... */;
+///
+/// // Построение фич
+/// let features = build_features(&snapshot, &app_group);
+///
+/// // Использование фич для ранжирования
+/// println!("Total features: {}", features.total_features());
+/// println!("Numeric features: {}", features.numeric.len());
+/// println!("Boolean features: {}", features.bool.len());
+/// println!("Categorical features: {}", features.categorical.len());
+/// ```
 pub fn build_features(snapshot: &Snapshot, app_group: &AppGroupRecord) -> FeatureVector {
     // Находим процессы группы
     let group_processes: Vec<&ProcessRecord> = snapshot

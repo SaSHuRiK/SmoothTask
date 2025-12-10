@@ -16,6 +16,26 @@ use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 pub struct PatternCategory(pub String);
 
 /// Паттерн для одного приложения.
+///
+/// Паттерн определяет правила сопоставления процесса с приложением на основе
+/// имени исполняемого файла, desktop ID и cgroup пути.
+///
+/// # Примеры
+///
+/// ```yaml
+/// name: firefox
+/// label: Mozilla Firefox
+/// exe_patterns:
+///   - "firefox"
+///   - "firefox-*-bin"
+/// desktop_patterns:
+///   - "firefox.desktop"
+/// cgroup_patterns:
+///   - "*firefox*"
+/// tags:
+///   - "browser"
+///   - "gui"
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppPattern {
     /// Уникальное имя приложения (например, "firefox", "vscode").
@@ -23,29 +43,75 @@ pub struct AppPattern {
     /// Человекочитаемое название.
     pub label: String,
     /// Паттерны для сопоставления с exe/comm процесса.
+    /// Поддерживаются wildcard символы: `*` (любые символы) и `?` (один символ).
     #[serde(default)]
     pub exe_patterns: Vec<String>,
     /// Паттерны для сопоставления с desktop-файлом.
+    /// Поддерживаются wildcard символы: `*` и `?`.
     #[serde(default)]
     pub desktop_patterns: Vec<String>,
     /// Паттерны для сопоставления с cgroup_path.
+    /// Поддерживаются wildcard символы: `*` и `?`.
     #[serde(default)]
     pub cgroup_patterns: Vec<String>,
     /// Теги, которые будут присвоены процессу при совпадении.
+    /// Теги используются для классификации и фильтрации процессов.
     #[serde(default)]
     pub tags: Vec<String>,
 }
 
 /// Файл с паттернами одной категории.
+///
+/// Каждый YAML файл в директории паттернов должен содержать структуру PatternFile
+/// с категорией и списком паттернов приложений.
+///
+/// # Пример структуры YAML файла
+///
+/// ```yaml
+/// category: browser
+/// apps:
+///   - name: firefox
+///     label: Mozilla Firefox
+///     exe_patterns: ["firefox", "firefox-*-bin"]
+///     tags: ["browser", "gui"]
+///   - name: chromium
+///     label: Chromium
+///     exe_patterns: ["chromium", "chromium-browser"]
+///     tags: ["browser", "gui"]
+/// ```
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PatternFile {
-    /// Категория паттернов.
+    /// Категория паттернов (например, "browser", "ide", "terminal").
     pub category: PatternCategory,
     /// Список паттернов приложений в этой категории.
     pub apps: Vec<AppPattern>,
 }
 
 /// База паттернов для классификации процессов.
+///
+/// PatternDatabase загружает паттерны из YAML файлов и предоставляет методы
+/// для поиска паттернов, соответствующих процессам.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::classify::rules::PatternDatabase;
+/// use std::path::Path;
+///
+/// // Загрузка паттернов из директории
+/// let db = PatternDatabase::load(Path::new("/path/to/patterns"))?;
+///
+/// // Поиск паттернов для процесса
+/// let matches = db.match_process(
+///     Some("firefox"),
+///     Some("firefox.desktop"),
+///     Some("/user.slice/user-1000.slice/session-2.scope")
+/// );
+///
+/// for (category, pattern) in matches {
+///     println!("Found pattern: {} in category {}", pattern.name, category.0);
+/// }
+/// ```
 #[derive(Debug, Clone)]
 pub struct PatternDatabase {
     /// Маппинг категория -> список паттернов.
@@ -57,6 +123,9 @@ pub struct PatternDatabase {
 impl PatternDatabase {
     /// Загружает паттерны из директории с YAML файлами.
     ///
+    /// Функция сканирует указанную директорию, находит все YAML файлы (`.yml` или `.yaml`),
+    /// парсит их и загружает паттерны в базу данных.
+    ///
     /// # Аргументы
     ///
     /// * `patterns_dir` - путь к директории с YAML файлами паттернов
@@ -64,6 +133,22 @@ impl PatternDatabase {
     /// # Возвращает
     ///
     /// База данных паттернов или ошибку при загрузке/парсинге.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::classify::rules::PatternDatabase;
+    /// use std::path::Path;
+    ///
+    /// let db = PatternDatabase::load(Path::new("configs/patterns"))?;
+    /// ```
+    ///
+    /// # Ошибки
+    ///
+    /// Функция возвращает ошибку, если:
+    /// - директория не существует или недоступна для чтения
+    /// - YAML файл имеет неверный формат
+    /// - структура паттерна не соответствует ожидаемой
     pub fn load(patterns_dir: impl AsRef<Path>) -> Result<Self> {
         let patterns_dir = patterns_dir.as_ref();
         let mut patterns_by_category = HashMap::new();
