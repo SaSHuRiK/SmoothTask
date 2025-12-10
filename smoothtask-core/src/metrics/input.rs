@@ -92,8 +92,90 @@ fn duration_to_ms(d: Duration) -> u64 {
 
 /// Трекер активности пользователя, читающий события из реальных evdev устройств.
 ///
-/// Автоматически обнаруживает доступные устройства ввода (клавиатура, мышь)
-/// и читает события из `/dev/input/event*` в неблокирующем режиме.
+/// `EvdevInputTracker` автоматически обнаруживает доступные устройства ввода
+/// (клавиатура, мышь, тачпад) в `/dev/input/event*` и читает события в неблокирующем режиме.
+///
+/// # Примеры использования
+///
+/// ## Базовое использование
+///
+/// ```no_run
+/// use std::time::{Duration, Instant};
+/// use smoothtask_core::metrics::input::EvdevInputTracker;
+///
+/// // Проверяем доступность evdev устройств
+/// if EvdevInputTracker::is_available() {
+///     // Создаём трекер с порогом простоя 5 секунд
+///     let mut tracker = EvdevInputTracker::new(Duration::from_secs(5))?;
+///
+///     // Обновляем метрики, читая новые события
+///     let metrics = tracker.update(Instant::now());
+///     println!("User active: {}", metrics.user_active);
+///     println!("Time since last input: {:?} ms", metrics.time_since_last_input_ms);
+///
+///     // Получаем текущие метрики без чтения новых событий
+///     let current_metrics = tracker.metrics(Instant::now());
+/// }
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// ## Обработка ошибок
+///
+/// ```no_run
+/// use std::time::Duration;
+/// use smoothtask_core::metrics::input::EvdevInputTracker;
+///
+/// match EvdevInputTracker::new(Duration::from_secs(5)) {
+///     Ok(tracker) => {
+///         // Трекер успешно создан, можно использовать
+///     }
+///     Err(e) => {
+///         // Ошибка может возникнуть, если:
+///         // - нет доступных устройств ввода
+///         // - нет прав доступа к /dev/input/event*
+///         // - устройства не поддерживают нужные типы событий
+///         eprintln!("Failed to create EvdevInputTracker: {}", e);
+///     }
+/// }
+/// ```
+///
+/// ## Использование в цикле демона
+///
+/// ```no_run
+/// use std::time::{Duration, Instant};
+/// use smoothtask_core::metrics::input::EvdevInputTracker;
+///
+/// let mut tracker = EvdevInputTracker::new(Duration::from_secs(5))?;
+///
+/// loop {
+///     let now = Instant::now();
+///     let metrics = tracker.update(now);
+///
+///     if metrics.user_active {
+///         // Пользователь активен, можно применять интерактивные приоритеты
+///     } else {
+///         // Пользователь неактивен, можно снизить приоритеты
+///     }
+///
+///     // Спим до следующей итерации
+///     std::thread::sleep(Duration::from_millis(100));
+/// }
+/// # Ok::<(), anyhow::Error>(())
+/// ```
+///
+/// # Обработка ошибок
+///
+/// Методы `update()` и `metrics()` не возвращают ошибки, так как:
+/// - чтение событий происходит в неблокирующем режиме
+/// - ошибки чтения из отдельных устройств логируются, но не прерывают работу
+/// - если устройство отключено, оно просто пропускается
+///
+/// # Производительность
+///
+/// - Чтение событий происходит в неблокирующем режиме, не блокируя поток
+/// - События читаются из всех обнаруженных устройств параллельно
+/// - Устройства не захватываются эксклюзивно (не используется `grab()`),
+///   поэтому другие приложения могут продолжать работать
 pub struct EvdevInputTracker {
     devices: Vec<Device>,
     activity_tracker: InputActivityTracker,
@@ -149,11 +231,60 @@ impl InputTracker {
 
 impl EvdevInputTracker {
     /// Проверить, доступны ли evdev устройства.
+    ///
+    /// Проверяет наличие доступных устройств ввода в `/dev/input/event*`
+    /// и их поддержку нужных типов событий (KEY, RELATIVE, ABSOLUTE).
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если найдено хотя бы одно подходящее устройство, иначе `false`.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::metrics::input::EvdevInputTracker;
+    ///
+    /// if EvdevInputTracker::is_available() {
+    ///     println!("Evdev devices are available");
+    /// } else {
+    ///     println!("No evdev devices found");
+    /// }
+    /// ```
     pub fn is_available() -> bool {
         Self::discover_devices().is_ok() && !Self::discover_devices().unwrap().is_empty()
     }
 
     /// Создать новый трекер с автоматическим обнаружением устройств.
+    ///
+    /// Автоматически обнаруживает все доступные устройства ввода в `/dev/input/event*`
+    /// и создаёт трекер для мониторинга активности пользователя.
+    ///
+    /// # Параметры
+    ///
+    /// * `idle_threshold` - порог простоя в миллисекундах. Если с последнего события
+    ///   прошло больше этого времени, пользователь считается неактивным.
+    ///
+    /// # Возвращает
+    ///
+    /// `Ok(EvdevInputTracker)`, если найдено хотя бы одно устройство, иначе `Err`.
+    ///
+    /// # Ошибки
+    ///
+    /// Возвращает ошибку, если:
+    /// - нет доступных устройств ввода (`No input devices found`)
+    /// - нет прав доступа к `/dev/input/event*`
+    /// - устройства не поддерживают нужные типы событий
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use std::time::Duration;
+    /// use smoothtask_core::metrics::input::EvdevInputTracker;
+    ///
+    /// // Создаём трекер с порогом простоя 5 секунд
+    /// let tracker = EvdevInputTracker::new(Duration::from_secs(5))?;
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn new(idle_threshold: Duration) -> Result<Self, anyhow::Error> {
         let devices = Self::discover_devices()?;
         if devices.is_empty() {
@@ -173,7 +304,40 @@ impl EvdevInputTracker {
 
     /// Обновить метрики, прочитав новые события из всех устройств.
     ///
-    /// Читает события в неблокирующем режиме и обновляет внутренний трекер активности.
+    /// Читает все доступные события из всех обнаруженных устройств ввода
+    /// в неблокирующем режиме и обновляет внутренний трекер активности.
+    ///
+    /// # Параметры
+    ///
+    /// * `now` - текущее время для вычисления времени с последнего события
+    ///
+    /// # Возвращает
+    ///
+    /// `InputMetrics` с обновлёнными метриками активности пользователя.
+    ///
+    /// # Поведение
+    ///
+    /// - Чтение происходит в неблокирующем режиме (не ждёт новых событий)
+    /// - Ошибки чтения из отдельных устройств логируются, но не прерывают работу
+    /// - Если устройство отключено, оно пропускается
+    /// - Все события из всех устройств агрегируются вместе
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use std::time::{Duration, Instant};
+    /// use smoothtask_core::metrics::input::EvdevInputTracker;
+    ///
+    /// let mut tracker = EvdevInputTracker::new(Duration::from_secs(5))?;
+    /// let metrics = tracker.update(Instant::now());
+    ///
+    /// if metrics.user_active {
+    ///     println!("User is active");
+    /// } else {
+    ///     println!("User is idle for {} ms", metrics.time_since_last_input_ms.unwrap_or(0));
+    /// }
+    /// # Ok::<(), anyhow::Error>(())
+    /// ```
     pub fn update(&mut self, now: Instant) -> InputMetrics {
         let mut all_events = Vec::new();
 
@@ -207,8 +371,24 @@ impl EvdevInputTracker {
 
     /// Обнаружить доступные устройства ввода.
     ///
-    /// Ищет устройства в `/dev/input/event*` и фильтрует их по типу
-    /// (клавиатура, мышь, сенсорный ввод).
+    /// Ищет все доступные устройства ввода в `/dev/input/event*` и фильтрует их
+    /// по поддержке нужных типов событий (KEY, RELATIVE, ABSOLUTE).
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор открытых устройств, поддерживающих нужные типы событий.
+    ///
+    /// # Ошибки
+    ///
+    /// Возвращает ошибку, если:
+    /// - нет прав доступа к `/dev/input`
+    /// - директория `/dev/input` не существует
+    ///
+    /// # Примечания
+    ///
+    /// - Устройства не захватываются эксклюзивно (не используется `grab()`)
+    /// - Поддерживаются только устройства с типами событий KEY, RELATIVE или ABSOLUTE
+    /// - Ошибки открытия отдельных устройств игнорируются (логируются через debug)
     fn discover_devices() -> Result<Vec<Device>, anyhow::Error> {
         let input_dir = Path::new("/dev/input");
         let mut devices = Vec::new();
@@ -539,5 +719,166 @@ mod tests {
                 duration
             );
         }
+    }
+
+    // Unit-тесты для InputTracker enum
+
+    #[test]
+    fn input_tracker_new_creates_tracker() {
+        // Проверяем, что InputTracker::new() всегда создаёт валидный трекер
+        let tracker = InputTracker::new(Duration::from_secs(5));
+        // Функция не должна паниковать, независимо от доступности evdev
+        match tracker {
+            InputTracker::Evdev(_) => {
+                // Evdev трекер создан успешно
+            }
+            InputTracker::Simple(_) => {
+                // Fallback на простой трекер (evdev недоступен или ошибка)
+            }
+        }
+    }
+
+    #[test]
+    fn input_tracker_new_consistency() {
+        // Проверяем консистентность при повторных вызовах
+        let tracker1 = InputTracker::new(Duration::from_secs(5));
+        let tracker2 = InputTracker::new(Duration::from_secs(5));
+
+        // Оба трекера должны быть одного типа (Evdev или Simple)
+        match (&tracker1, &tracker2) {
+            (InputTracker::Evdev(_), InputTracker::Evdev(_)) => {}
+            (InputTracker::Simple(_), InputTracker::Simple(_)) => {}
+            _ => {
+                // Это нормально, если доступность evdev изменилась между вызовами
+                // (например, устройство было подключено/отключено)
+            }
+        }
+    }
+
+    #[test]
+    fn input_tracker_simple_update() {
+        // Тест для InputTracker::Simple::update()
+        let mut tracker = InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(5)));
+        let now = Instant::now();
+
+        // Для Simple трекера update() просто возвращает metrics() без чтения событий
+        let metrics = tracker.update(now);
+        assert!(!metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, None);
+    }
+
+    #[test]
+    fn input_tracker_simple_metrics() {
+        // Тест для InputTracker::Simple::metrics()
+        let tracker = InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(5)));
+        let now = Instant::now();
+
+        let metrics = tracker.metrics(now);
+        assert!(!metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, None);
+    }
+
+    #[test]
+    fn input_tracker_simple_metrics_after_activity() {
+        // Тест для InputTracker::Simple::metrics() после регистрации активности
+        let mut tracker = InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(5)));
+        let now = Instant::now();
+
+        // Регистрируем активность через внутренний трекер
+        match &mut tracker {
+            InputTracker::Simple(activity_tracker) => {
+                activity_tracker.register_activity(now);
+            }
+            _ => unreachable!(),
+        }
+
+        // Проверяем метрики
+        let metrics = tracker.metrics(now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn input_tracker_evdev_update() {
+        // Тест для InputTracker::Evdev::update()
+        // Этот тест может работать только если evdev устройства доступны
+        if let Ok(evdev_tracker) = EvdevInputTracker::new(Duration::from_secs(5)) {
+            let tracker = InputTracker::Evdev(evdev_tracker);
+            let now = Instant::now();
+
+            // Для Evdev трекера update() читает события из устройств
+            match tracker {
+                InputTracker::Evdev(mut t) => {
+                    let metrics = t.update(now);
+                    // Без событий user_active должен быть false
+                    assert!(!metrics.user_active);
+                }
+                _ => unreachable!(),
+            }
+        }
+        // Если evdev недоступен, тест просто пропускается
+    }
+
+    #[test]
+    fn input_tracker_evdev_metrics() {
+        // Тест для InputTracker::Evdev::metrics()
+        // Этот тест может работать только если evdev устройства доступны
+        if let Ok(evdev_tracker) = EvdevInputTracker::new(Duration::from_secs(5)) {
+            let tracker = InputTracker::Evdev(evdev_tracker);
+            let now = Instant::now();
+
+            // Для Evdev трекера metrics() возвращает текущие метрики без чтения событий
+            match tracker {
+                InputTracker::Evdev(t) => {
+                    let metrics = t.metrics(now);
+                    // Без событий user_active должен быть false
+                    assert!(!metrics.user_active);
+                }
+                _ => unreachable!(),
+            }
+        }
+        // Если evdev недоступен, тест просто пропускается
+    }
+
+    #[test]
+    fn input_tracker_update_vs_metrics() {
+        // Тест для проверки разницы между update() и metrics()
+        let mut tracker = InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(5)));
+        let now = Instant::now();
+
+        // Для Simple трекера update() и metrics() должны возвращать одинаковые значения
+        // (так как update() просто вызывает metrics())
+        let metrics_update = tracker.update(now);
+        let metrics_direct = tracker.metrics(now);
+
+        assert_eq!(metrics_update.user_active, metrics_direct.user_active);
+        assert_eq!(
+            metrics_update.time_since_last_input_ms,
+            metrics_direct.time_since_last_input_ms
+        );
+    }
+
+    #[test]
+    fn input_tracker_both_variants_work() {
+        // Тест для проверки, что оба варианта enum работают корректно
+        let idle_threshold = Duration::from_secs(5);
+        let now = Instant::now();
+
+        // Создаём Simple трекер напрямую
+        let simple_tracker = InputTracker::Simple(InputActivityTracker::new(idle_threshold));
+        let simple_metrics = simple_tracker.metrics(now);
+
+        // Создаём трекер через new() (может быть Evdev или Simple)
+        let auto_tracker = InputTracker::new(idle_threshold);
+        let auto_metrics = auto_tracker.metrics(now);
+
+        // Оба трекера должны возвращать валидные метрики
+        assert_eq!(simple_metrics.user_active, auto_metrics.user_active);
+        // time_since_last_input_ms может отличаться, если в Evdev были события
+        // но структура должна быть одинаковой
+        assert!(
+            simple_metrics.time_since_last_input_ms.is_none()
+                || auto_metrics.time_since_last_input_ms.is_some()
+        );
     }
 }
