@@ -41,6 +41,14 @@ pub struct Thresholds {
     pub interactive_percentile: f32,
     pub normal_percentile: f32,
     pub background_percentile: f32,
+
+    /// Порог для sched_latency_p99_ms (в миллисекундах) для определения bad_responsiveness.
+    #[serde(default = "default_sched_latency_p99_threshold")]
+    pub sched_latency_p99_threshold_ms: f64,
+}
+
+fn default_sched_latency_p99_threshold() -> f64 {
+    10.0 // 10 мс по умолчанию
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -115,6 +123,10 @@ impl Thresholds {
         ensure!(
             self.interactive_build_grace_sec > 0,
             "interactive_build_grace_sec must be positive"
+        );
+        ensure!(
+            self.sched_latency_p99_threshold_ms > 0.0,
+            "sched_latency_p99_threshold_ms must be positive"
         );
 
         Ok(())
@@ -262,6 +274,7 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
         "#,
         );
 
@@ -292,6 +305,7 @@ thresholds:
   interactive_percentile: 0.7
   normal_percentile: 0.2
   background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 10.0
         "#,
         );
 

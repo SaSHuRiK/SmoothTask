@@ -91,6 +91,7 @@ pub async fn run_daemon(config: Config, dry_run: bool) -> Result<()> {
             &mut audio_introspector,
             &mut input_tracker,
             &mut prev_cpu_times,
+            &config.thresholds,
         ) {
             Ok(snap) => snap,
             Err(e) => {
@@ -193,6 +194,7 @@ fn collect_snapshot(
     audio_introspector: &mut Box<dyn AudioIntrospector>,
     input_tracker: &mut InputActivityTracker,
     prev_cpu_times: &mut Option<SystemMetrics>,
+    thresholds: &crate::config::Thresholds,
 ) -> Result<Snapshot> {
     let now = Instant::now();
     let timestamp = Utc::now();
@@ -271,11 +273,13 @@ fn collect_snapshot(
     };
 
     // Построение ResponsivenessMetrics
-    let responsiveness = ResponsivenessMetrics {
+    let mut responsiveness = ResponsivenessMetrics {
         audio_xruns_delta: Some(audio_metrics.xrun_count as u64),
-        bad_responsiveness: audio_metrics.has_xruns(),
         ..Default::default()
     };
+
+    // Вычисление bad_responsiveness и responsiveness_score
+    responsiveness.compute(&global, thresholds);
 
     // Пока app_groups будут пустыми, они заполнятся после группировки
     Ok(Snapshot {

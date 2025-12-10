@@ -194,6 +194,17 @@
     - [x] Unit-тесты для hybrid mode (3 новых теста).
   - Примечания: реализована интеграция ML-ранкера в Policy Engine. Добавлено поле policy_mode в Config с поддержкой режимов rules-only (по умолчанию) и hybrid. В hybrid mode PolicyEngine использует StubRanker для ранжирования групп и маппит percentile на классы приоритетов через пороги из конфига. Guardrails и семантические правила имеют приоритет над ранкером. Добавлены 3 новых unit-теста, покрывающих использование ранкера, приоритет guardrails и маппинг percentile. Все 110 тестов проекта проходят успешно.
 
+- [x] ST-020: Реализация вычисления bad_responsiveness и responsiveness_score
+  - Тип: Rust / core / logging
+  - Критерии готовности:
+    - [x] Добавлен порог sched_latency_p99_threshold_ms в Config;
+    - [x] Реализована функция ResponsivenessMetrics::compute() для вычисления bad_responsiveness и responsiveness_score;
+    - [x] bad_responsiveness вычисляется на основе PSI CPU/IO, scheduling latency, XRUN и UI latency;
+    - [x] responsiveness_score вычисляется как нормированная комбинация метрик (0.0 = плохо, 1.0 = хорошо);
+    - [x] Интеграция в collect_snapshot();
+    - [x] Unit-тесты для всех сценариев (8 тестов).
+  - Примечания: реализовано вычисление метрик отзывчивости согласно документации tz.md. Добавлен порог sched_latency_p99_threshold_ms в Config с дефолтным значением 10.0 мс. Функция compute() проверяет PSI CPU/IO, scheduling latency, XRUN и UI latency для определения bad_responsiveness. responsiveness_score вычисляется как взвешенная комбинация нормализованных метрик. Добавлены 8 unit-тестов, покрывающих хорошие условия, высокие PSI CPU/IO, высокую scheduling latency, XRUN, множественные проблемы, отсутствие метрик и диапазон score. Все 118 тестов проекта проходят успешно.
+
 ## 4. Блокеры
 
 - [!] ST-099: Вернуть зависимость onnxruntime, когда появится стабильная версия с нужными фичами

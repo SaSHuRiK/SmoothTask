@@ -6,13 +6,14 @@ use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
+use crate::config::Thresholds;
 use crate::metrics::system::SystemMetrics;
 
 /// Идентификатор снапшота (timestamp в миллисекундах).
 pub type SnapshotId = u64;
 
 /// Глобальные метрики системы (упрощённая версия для снапшотов).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GlobalMetrics {
     pub cpu_user: f64,
     pub cpu_system: f64,
@@ -71,6 +72,114 @@ pub struct ResponsivenessMetrics {
     pub frame_jank_ratio: Option<f64>,
     pub bad_responsiveness: bool,
     pub responsiveness_score: Option<f64>,
+}
+
+impl ResponsivenessMetrics {
+    /// Вычислить bad_responsiveness и responsiveness_score на основе метрик и порогов.
+    ///
+    /// Согласно документации, bad_responsiveness определяется как:
+    /// - psi_cpu_some_avg10 > T_cpu
+    /// - psi_io_some_avg10 > T_io
+    /// - sched_p99 > T_sched
+    /// - audio_xruns_global_recent > 0
+    /// - dsp_load_global > T_dsp (пока не реализовано)
+    /// - ui_loop_p95 > T_ui (пока не реализовано)
+    ///
+    /// responsiveness_score вычисляется как нормированная комбинация метрик (0.0 = плохо, 1.0 = хорошо).
+    pub fn compute(&mut self, global: &GlobalMetrics, thresholds: &Thresholds) {
+        // Вычисление bad_responsiveness
+        let mut bad = false;
+
+        // Проверка PSI CPU
+        if let Some(psi_cpu) = global.psi_cpu_some_avg10 {
+            if psi_cpu > thresholds.psi_cpu_some_high as f64 {
+                bad = true;
+            }
+        }
+
+        // Проверка PSI IO
+        if let Some(psi_io) = global.psi_io_some_avg10 {
+            if psi_io > thresholds.psi_io_some_high as f64 {
+                bad = true;
+            }
+        }
+
+        // Проверка scheduling latency
+        if let Some(sched_p99) = self.sched_latency_p99_ms {
+            if sched_p99 > thresholds.sched_latency_p99_threshold_ms {
+                bad = true;
+            }
+        }
+
+        // Проверка XRUN
+        if let Some(xruns) = self.audio_xruns_delta {
+            if xruns > 0 {
+                bad = true;
+            }
+        }
+
+        // Проверка UI latency (если есть)
+        // TODO: добавить порог для ui_loop_p95_ms когда появится метрика
+        if let Some(ui_p95) = self.ui_loop_p95_ms {
+            // Временный порог 16.67 мс (60 FPS)
+            if ui_p95 > 16.67 {
+                bad = true;
+            }
+        }
+
+        self.bad_responsiveness = bad;
+
+        // Вычисление responsiveness_score
+        // Score = 1.0 - нормализованная комбинация проблемных метрик
+        // Чем больше проблем, тем ниже score
+        let mut problem_score = 0.0;
+        let mut weight_sum = 0.0;
+
+        // PSI CPU (вес 0.3)
+        if let Some(psi_cpu) = global.psi_cpu_some_avg10 {
+            let normalized = (psi_cpu / thresholds.psi_cpu_some_high as f64).min(2.0);
+            problem_score += normalized * 0.3;
+            weight_sum += 0.3;
+        }
+
+        // PSI IO (вес 0.2)
+        if let Some(psi_io) = global.psi_io_some_avg10 {
+            let normalized = (psi_io / thresholds.psi_io_some_high as f64).min(2.0);
+            problem_score += normalized * 0.2;
+            weight_sum += 0.2;
+        }
+
+        // Scheduling latency (вес 0.3)
+        if let Some(sched_p99) = self.sched_latency_p99_ms {
+            let normalized = (sched_p99 / thresholds.sched_latency_p99_threshold_ms).min(2.0);
+            problem_score += normalized * 0.3;
+            weight_sum += 0.3;
+        }
+
+        // XRUN (вес 0.1, бинарный: есть/нет)
+        if let Some(xruns) = self.audio_xruns_delta {
+            if xruns > 0 {
+                problem_score += 1.0 * 0.1;
+            }
+            weight_sum += 0.1;
+        }
+
+        // UI latency (вес 0.1, если есть)
+        if let Some(ui_p95) = self.ui_loop_p95_ms {
+            let normalized = (ui_p95 / 16.67).min(2.0);
+            problem_score += normalized * 0.1;
+            weight_sum += 0.1;
+        }
+
+        // Вычисляем финальный score: 1.0 - нормализованный problem_score
+        if weight_sum > 0.0 {
+            let normalized_problem = problem_score / weight_sum;
+            self.responsiveness_score = Some((1.0 - normalized_problem.min(1.0)).max(0.0));
+        } else {
+            // Если нет доступных метрик, считаем score = 1.0 (хорошая отзывчивость)
+            self.responsiveness_score = Some(1.0);
+        }
+    }
 }
 
 /// Запись о процессе в снапшоте.
@@ -466,6 +575,7 @@ impl SnapshotLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::Thresholds;
     use tempfile::NamedTempFile;
 
     fn create_test_snapshot() -> Snapshot {
@@ -550,7 +660,7 @@ mod tests {
             responsiveness: ResponsivenessMetrics {
                 sched_latency_p95_ms: Some(5.0),
                 sched_latency_p99_ms: Some(10.0),
-                audio_xruns_delta: None,
+                audio_xruns_delta: Some(0),
                 ui_loop_p95_ms: None,
                 frame_jank_ratio: None,
                 bad_responsiveness: false,
@@ -607,5 +717,217 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM snapshots", [], |row| row.get(0))
             .expect("count snapshots");
         assert_eq!(count, 2);
+    }
+
+    fn create_test_thresholds() -> Thresholds {
+        Thresholds {
+            psi_cpu_some_high: 0.6,
+            psi_io_some_high: 0.4,
+            user_idle_timeout_sec: 120,
+            interactive_build_grace_sec: 10,
+            noisy_neighbour_cpu_share: 0.7,
+            crit_interactive_percentile: 0.9,
+            interactive_percentile: 0.6,
+            normal_percentile: 0.3,
+            background_percentile: 0.1,
+            sched_latency_p99_threshold_ms: 10.0,
+        }
+    }
+
+    #[test]
+    fn test_compute_responsiveness_good_conditions() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1), // 0.1 / 0.6 = 0.167
+            psi_io_some_avg10: Some(0.2),  // 0.2 / 0.4 = 0.5
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0), // 5.0 / 10.0 = 0.5
+            audio_xruns_delta: Some(0),      // нет XRUN
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(!responsiveness.bad_responsiveness);
+        assert!(responsiveness.responsiveness_score.is_some());
+        let score = responsiveness.responsiveness_score.unwrap();
+        // При хороших условиях score должен быть > 0.5 (все метрики ниже порогов)
+        assert!(
+            score > 0.5,
+            "score should be reasonable for good conditions, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_psi_cpu_high() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.8), // Выше порога 0.6
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0),
+            audio_xruns_delta: Some(0),
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness due to high PSI CPU"
+        );
+        assert!(responsiveness.responsiveness_score.is_some());
+        let score = responsiveness.responsiveness_score.unwrap();
+        assert!(
+            score < 0.8,
+            "score should be lower due to high PSI CPU, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_psi_io_high() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1),
+            psi_io_some_avg10: Some(0.5), // Выше порога 0.4
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0),
+            audio_xruns_delta: Some(0),
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness due to high PSI IO"
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_sched_latency_high() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1),
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(15.0), // Выше порога 10.0
+            audio_xruns_delta: Some(0),
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness due to high scheduling latency"
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_audio_xruns() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.1),
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(5.0),
+            audio_xruns_delta: Some(1), // Есть XRUN
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness due to audio XRUN"
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_multiple_problems() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.8), // Выше порога
+            psi_io_some_avg10: Some(0.5),  // Выше порога
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(15.0), // Выше порога
+            audio_xruns_delta: Some(2),       // Есть XRUN
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(
+            responsiveness.bad_responsiveness,
+            "should detect bad responsiveness with multiple problems"
+        );
+        assert!(responsiveness.responsiveness_score.is_some());
+        let score = responsiveness.responsiveness_score.unwrap();
+        assert!(
+            score < 0.5,
+            "score should be very low with multiple problems, got {}",
+            score
+        );
+    }
+
+    #[test]
+    fn test_compute_responsiveness_no_metrics() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: None,
+            psi_io_some_avg10: None,
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: None,
+            audio_xruns_delta: None,
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        // Без метрик считаем, что отзывчивость хорошая
+        assert!(!responsiveness.bad_responsiveness);
+        assert_eq!(responsiveness.responsiveness_score, Some(1.0));
+    }
+
+    #[test]
+    fn test_compute_responsiveness_score_range() {
+        let thresholds = create_test_thresholds();
+        let global = GlobalMetrics {
+            psi_cpu_some_avg10: Some(0.3),
+            psi_io_some_avg10: Some(0.2),
+            ..Default::default()
+        };
+        let mut responsiveness = ResponsivenessMetrics {
+            sched_latency_p99_ms: Some(7.0),
+            audio_xruns_delta: Some(0),
+            ..Default::default()
+        };
+
+        responsiveness.compute(&global, &thresholds);
+
+        assert!(responsiveness.responsiveness_score.is_some());
+        let score = responsiveness.responsiveness_score.unwrap();
+        assert!(
+            (0.0..=1.0).contains(&score),
+            "score should be in [0, 1] range, got {}",
+            score
+        );
     }
 }
