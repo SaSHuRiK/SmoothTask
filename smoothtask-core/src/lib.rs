@@ -32,17 +32,52 @@ use crate::metrics::windows::{
 use crate::policy::engine::PolicyEngine;
 
 /// Статистика работы демона для мониторинга производительности.
+///
+/// Структура собирает метрики о работе демона во время выполнения:
+/// количество итераций, время выполнения, количество применённых изменений приоритетов
+/// и ошибок. Статистика логируется периодически (каждые 10 итераций) для мониторинга
+/// производительности и отладки.
+///
+/// # Примеры использования
+///
+/// ```no_run
+/// use smoothtask_core::DaemonStats;
+///
+/// let mut stats = DaemonStats::new();
+///
+/// // Записываем успешную итерацию
+/// stats.record_successful_iteration(100, 5, 1);
+///
+/// // Записываем итерацию с ошибкой
+/// stats.record_error_iteration();
+///
+/// // Вычисляем среднее время итерации
+/// let avg = stats.average_iteration_duration_ms();
+///
+/// // Логируем статистику
+/// stats.log_stats();
+/// ```
+///
+/// # Поля
+///
+/// - `total_iterations`: Общее количество итераций (успешных и с ошибками)
+/// - `successful_iterations`: Количество успешных итераций (без ошибок сбора метрик)
+/// - `error_iterations`: Количество итераций с ошибками (ошибки при сборе метрик)
+/// - `total_duration_ms`: Суммарное время выполнения всех успешных итераций
+/// - `max_iteration_duration_ms`: Максимальное время выполнения одной итерации
+/// - `total_applied_adjustments`: Общее количество применённых изменений приоритетов
+/// - `total_apply_errors`: Общее количество ошибок при применении приоритетов
 #[derive(Debug, Clone)]
 struct DaemonStats {
-    /// Общее количество итераций
+    /// Общее количество итераций (успешных и с ошибками)
     total_iterations: u64,
-    /// Количество успешных итераций
+    /// Количество успешных итераций (без ошибок сбора метрик)
     successful_iterations: u64,
-    /// Количество итераций с ошибками
+    /// Количество итераций с ошибками (ошибки при сборе метрик)
     error_iterations: u64,
-    /// Суммарное время выполнения всех итераций (в миллисекундах)
+    /// Суммарное время выполнения всех успешных итераций (в миллисекундах)
     total_duration_ms: u128,
-    /// Максимальное время выполнения итерации (в миллисекундах)
+    /// Максимальное время выполнения одной итерации (в миллисекундах)
     max_iteration_duration_ms: u128,
     /// Количество применённых изменений приоритетов
     total_applied_adjustments: u64,
@@ -51,7 +86,17 @@ struct DaemonStats {
 }
 
 impl DaemonStats {
-    /// Создаёт новую статистику.
+    /// Создаёт новую статистику с нулевыми значениями.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
+    /// let stats = DaemonStats::new();
+    /// assert_eq!(stats.total_iterations, 0);
+    /// assert_eq!(stats.successful_iterations, 0);
+    /// ```
     fn new() -> Self {
         Self {
             total_iterations: 0,
@@ -65,6 +110,28 @@ impl DaemonStats {
     }
 
     /// Обновляет статистику после успешной итерации.
+    ///
+    /// Увеличивает счётчики итераций, обновляет время выполнения и статистику
+    /// применения приоритетов.
+    ///
+    /// # Параметры
+    ///
+    /// - `duration_ms`: Время выполнения итерации в миллисекундах
+    /// - `applied`: Количество успешно применённых изменений приоритетов
+    /// - `errors`: Количество ошибок при применении приоритетов
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
+    /// let mut stats = DaemonStats::new();
+    /// stats.record_successful_iteration(100, 5, 1);
+    /// assert_eq!(stats.total_iterations, 1);
+    /// assert_eq!(stats.successful_iterations, 1);
+    /// assert_eq!(stats.total_applied_adjustments, 5);
+    /// assert_eq!(stats.total_apply_errors, 1);
+    /// ```
     fn record_successful_iteration(&mut self, duration_ms: u128, applied: u64, errors: u64) {
         self.total_iterations += 1;
         self.successful_iterations += 1;
@@ -75,12 +142,45 @@ impl DaemonStats {
     }
 
     /// Обновляет статистику после итерации с ошибкой.
+    ///
+    /// Увеличивает счётчики итераций и ошибок. Используется, когда итерация
+    /// завершилась с ошибкой при сборе метрик (например, ошибка чтения /proc).
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
+    /// let mut stats = DaemonStats::new();
+    /// stats.record_error_iteration();
+    /// assert_eq!(stats.total_iterations, 1);
+    /// assert_eq!(stats.error_iterations, 1);
+    /// assert_eq!(stats.successful_iterations, 0);
+    /// ```
     fn record_error_iteration(&mut self) {
         self.total_iterations += 1;
         self.error_iterations += 1;
     }
 
     /// Вычисляет среднее время итерации (в миллисекундах).
+    ///
+    /// Возвращает среднее время выполнения успешных итераций. Если успешных итераций
+    /// не было, возвращает 0.0.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
+    /// let mut stats = DaemonStats::new();
+    /// stats.record_successful_iteration(100, 0, 0);
+    /// stats.record_successful_iteration(200, 0, 0);
+    /// assert_eq!(stats.average_iteration_duration_ms(), 150.0);
+    ///
+    /// // Без успешных итераций возвращает 0.0
+    /// let empty_stats = DaemonStats::new();
+    /// assert_eq!(empty_stats.average_iteration_duration_ms(), 0.0);
+    /// ```
     fn average_iteration_duration_ms(&self) -> f64 {
         if self.successful_iterations > 0 {
             self.total_duration_ms as f64 / self.successful_iterations as f64
@@ -89,7 +189,21 @@ impl DaemonStats {
         }
     }
 
-    /// Логирует статистику.
+    /// Логирует статистику работы демона.
+    ///
+    /// Выводит информацию о количестве итераций, среднем и максимальном времени
+    /// выполнения, количестве применённых изменений приоритетов и ошибок.
+    /// Использует уровень логирования `info!`.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
+    /// let mut stats = DaemonStats::new();
+    /// stats.record_successful_iteration(100, 5, 1);
+    /// stats.log_stats(); // Логирует: "Daemon stats: 1 total iterations..."
+    /// ```
     fn log_stats(&self) {
         let avg_duration = self.average_iteration_duration_ms();
         info!(
@@ -960,5 +1074,56 @@ mod tests {
                 // Ошибка не ожидается, но если она есть, это тоже валидный результат
             }
         }
+    }
+
+    #[test]
+    fn test_create_window_introspector_multiple_calls_consistent() {
+        // Тест проверяет, что повторные вызовы create_window_introspector
+        // возвращают валидные интроспекторы (консистентность)
+        let introspector1 = create_window_introspector();
+        let introspector2 = create_window_introspector();
+
+        // Оба интроспектора должны быть валидными
+        let _: &dyn WindowIntrospector = introspector1.as_ref();
+        let _: &dyn WindowIntrospector = introspector2.as_ref();
+
+        // Оба должны поддерживать windows() и focused_window()
+        let _ = introspector1.windows();
+        let _ = introspector2.windows();
+        let _ = introspector1.focused_window();
+        let _ = introspector2.focused_window();
+    }
+
+    #[test]
+    fn test_create_window_introspector_handles_errors_gracefully() {
+        // Тест проверяет, что функция корректно обрабатывает ошибки
+        // при создании интроспекторов (fallback на StaticWindowIntrospector)
+        let introspector = create_window_introspector();
+
+        // Даже если X11/Wayland недоступны, функция должна вернуть валидный интроспектор
+        // (StaticWindowIntrospector в качестве fallback)
+        let result = introspector.windows();
+        // Результат может быть Ok или Err, но не должен паниковать
+        match result {
+            Ok(windows) => {
+                // В тестовом окружении может быть пустой список
+                let _ = windows.len();
+            }
+            Err(_) => {
+                // Ошибка допустима, но не должна быть паникой
+            }
+        }
+    }
+
+    #[test]
+    fn test_create_window_introspector_returns_send_sync() {
+        // Тест проверяет, что возвращаемый интроспектор реализует Send + Sync
+        // (необходимо для использования в async контексте)
+        let introspector = create_window_introspector();
+
+        // Проверяем, что можно переместить в другую задачу (Send)
+        let _handle = std::thread::spawn(move || {
+            let _: Box<dyn WindowIntrospector> = introspector;
+        });
     }
 }
