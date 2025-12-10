@@ -78,8 +78,8 @@ impl Config {
 
     fn validate(&self) -> Result<()> {
         ensure!(
-            self.polling_interval_ms > 0,
-            "polling_interval_ms must be positive (got {})",
+            self.polling_interval_ms >= 100,
+            "polling_interval_ms must be >= 100 ms to prevent excessive system polling (got {})",
             self.polling_interval_ms
         );
         ensure!(
@@ -288,7 +288,7 @@ mod tests {
     fn build_config(snapshot_db_path: &str, patterns_dir: &str) -> String {
         format!(
             r#"
-polling_interval_ms: 10
+polling_interval_ms: 100
 max_candidates: 5
 dry_run_default: true
 
@@ -403,7 +403,7 @@ thresholds:
     fn rejects_invalid_percentile_order() {
         let file = write_temp_config(
             r#"
-polling_interval_ms: 10
+polling_interval_ms: 100
 max_candidates: 1
 dry_run_default: true
 
@@ -479,6 +479,48 @@ thresholds:
         assert!(
             err.to_string()
                 .contains("patterns_dir must point to an existing directory"),
+            "unexpected error: {err:?}"
+        );
+    }
+
+    #[test]
+    fn rejects_polling_interval_too_small() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 50
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("polling_interval_ms must be >= 100"),
             "unexpected error: {err:?}"
         );
     }
@@ -949,7 +991,7 @@ thresholds:
         let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
         assert!(
             err.to_string()
-                .contains("polling_interval_ms must be positive"),
+                .contains("polling_interval_ms must be >= 100"),
             "unexpected error: {err:?}"
         );
     }
@@ -964,7 +1006,7 @@ thresholds:
 
         let file = write_temp_config(&format!(
             r#"
-polling_interval_ms: 1
+polling_interval_ms: 100
 max_candidates: 150
 dry_run_default: false
 
@@ -989,7 +1031,7 @@ thresholds:
         ));
 
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
-        assert_eq!(cfg.polling_interval_ms, 1);
+        assert_eq!(cfg.polling_interval_ms, 100);
     }
 
     #[test]
