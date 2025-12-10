@@ -332,4 +332,212 @@ mod tests {
         }
         // Если трекер не создан (нет устройств), тест просто пропускается
     }
+
+    // Edge case тесты для InputActivityTracker
+
+    #[test]
+    fn test_register_activity() {
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+
+        // До регистрации активности user_active должен быть false
+        let metrics_before = tracker.metrics(now);
+        assert!(!metrics_before.user_active);
+        assert_eq!(metrics_before.time_since_last_input_ms, None);
+
+        // Регистрируем активность
+        tracker.register_activity(now);
+
+        // После регистрации user_active должен быть true
+        let metrics_after = tracker.metrics(now);
+        assert!(metrics_after.user_active);
+        assert_eq!(metrics_after.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_idle_threshold_zero() {
+        // Тест для граничного случая: idle_threshold = 0
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(0));
+        let start = Instant::now();
+        let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        tracker.ingest_events([key].iter(), start);
+
+        // С порогом 0, даже минимальная задержка должна сделать user_active = false
+        let later = start + Duration::from_nanos(1);
+        let metrics = tracker.metrics(later);
+        assert!(!metrics.user_active);
+    }
+
+    #[test]
+    fn test_idle_threshold_very_large() {
+        // Тест для очень большого idle_threshold
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(86400)); // 24 часа
+        let start = Instant::now();
+        let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        tracker.ingest_events([key].iter(), start);
+
+        // Даже через час пользователь должен быть активным
+        let later = start + Duration::from_secs(3600);
+        let metrics = tracker.metrics(later);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(3600000));
+    }
+
+    #[test]
+    fn test_idle_threshold_exact_boundary() {
+        // Тест для точного попадания на границу idle_threshold
+        let mut tracker = InputActivityTracker::new(Duration::from_millis(100));
+        let start = Instant::now();
+        let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        tracker.ingest_events([key].iter(), start);
+
+        // Ровно на пороге - user_active должен быть true
+        let exactly_at_threshold = start + Duration::from_millis(100);
+        let metrics = tracker.metrics(exactly_at_threshold);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(100));
+
+        // Чуть больше порога - user_active должен быть false
+        let just_over_threshold = start + Duration::from_millis(101);
+        let metrics = tracker.metrics(just_over_threshold);
+        assert!(!metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(101));
+    }
+
+    #[test]
+    fn test_multiple_events() {
+        // Тест для множественных событий
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+
+        let key1 = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        let key2 = InputEvent::new(EventType::KEY, Key::KEY_B.code(), 1);
+        let mouse = InputEvent::new(EventType::RELATIVE, 0, 1);
+
+        let metrics = tracker.ingest_events([key1, key2, mouse].iter(), now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_multiple_events_with_syn() {
+        // Тест для множественных событий с SYN (SYN должен игнорироваться)
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+
+        let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        let syn = InputEvent::new(EventType::SYNCHRONIZATION, 0, 0);
+
+        let metrics = tracker.ingest_events([key, syn].iter(), now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_relative_event() {
+        // Тест для RELATIVE событий (мышь)
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+        let mouse = InputEvent::new(EventType::RELATIVE, 0, 1);
+        let metrics = tracker.ingest_events([mouse].iter(), now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_absolute_event() {
+        // Тест для ABSOLUTE событий (тачпад)
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+        let touch = InputEvent::new(EventType::ABSOLUTE, 0, 1);
+        let metrics = tracker.ingest_events([touch].iter(), now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_switch_event() {
+        // Тест для SWITCH событий
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+        let switch = InputEvent::new(EventType::SWITCH, 0, 1);
+        let metrics = tracker.ingest_events([switch].iter(), now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_misc_event() {
+        // Тест для MISC событий
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+        let misc = InputEvent::new(EventType::MISC, 0, 1);
+        let metrics = tracker.ingest_events([misc].iter(), now);
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+    }
+
+    #[test]
+    fn test_reserved_key_ignored() {
+        // Тест для зарезервированных кодов клавиш (должны игнорироваться)
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let now = Instant::now();
+        let reserved = InputEvent::new(EventType::KEY, Key::KEY_RESERVED.code(), 1);
+        let metrics = tracker.ingest_events([reserved].iter(), now);
+        assert!(!metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, None);
+    }
+
+    #[test]
+    fn test_activity_renewal() {
+        // Тест для обновления активности (новое событие должно обновить время)
+        let mut tracker = InputActivityTracker::new(Duration::from_millis(100));
+        let start = Instant::now();
+        let key1 = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        tracker.ingest_events([key1].iter(), start);
+
+        // Прошло 50 мс - пользователь активен
+        let mid = start + Duration::from_millis(50);
+        let metrics_mid = tracker.metrics(mid);
+        assert!(metrics_mid.user_active);
+
+        // Новое событие обновляет время
+        let key2 = InputEvent::new(EventType::KEY, Key::KEY_B.code(), 1);
+        tracker.ingest_events([key2].iter(), mid);
+
+        // Ещё через 50 мс (от нового события) - пользователь всё ещё активен
+        let later = mid + Duration::from_millis(50);
+        let metrics_later = tracker.metrics(later);
+        assert!(metrics_later.user_active);
+        assert_eq!(metrics_later.time_since_last_input_ms, Some(50));
+    }
+
+    #[test]
+    fn test_time_since_last_input_accuracy() {
+        // Тест для точности вычисления time_since_last_input_ms
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let start = Instant::now();
+        let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        tracker.ingest_events([key].iter(), start);
+
+        // Проверяем точность для разных интервалов
+        let intervals = vec![
+            (Duration::from_millis(0), 0),
+            (Duration::from_millis(1), 1),
+            (Duration::from_millis(100), 100),
+            (Duration::from_secs(1), 1000),
+            (Duration::from_secs(2), 2000),
+        ];
+
+        for (duration, expected_ms) in intervals {
+            let time = start + duration;
+            let metrics = tracker.metrics(time);
+            assert_eq!(
+                metrics.time_since_last_input_ms,
+                Some(expected_ms),
+                "Failed for duration {:?}",
+                duration
+            );
+        }
+    }
 }
