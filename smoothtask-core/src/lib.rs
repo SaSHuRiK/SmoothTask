@@ -20,11 +20,11 @@ use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::Patte
 use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
+use crate::metrics::input::EvdevInputTracker;
 use crate::metrics::input::InputTracker;
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
-use crate::metrics::input::EvdevInputTracker;
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
     X11Introspector,
@@ -34,11 +34,29 @@ use crate::policy::engine::PolicyEngine;
 /// Проверить доступность необходимых системных утилит и устройств.
 ///
 /// Проверяет доступность:
+/// - X11 сервер (для window метрик через X11)
+/// - Wayland композитор (для window метрик через Wayland)
 /// - `pw-dump` (для PipeWire метрик)
 /// - evdev устройств (для метрик ввода пользователя)
 ///
 /// Логирует предупреждения, если утилиты или устройства недоступны.
 pub fn check_system_utilities() {
+    // Проверка X11 сервера
+    let x11_available = X11Introspector::is_available();
+    if !x11_available {
+        debug!("X11 server not available (this is normal on Wayland-only systems)");
+    } else {
+        debug!("X11 server is available");
+    }
+
+    // Проверка Wayland композитора
+    let wayland_available = is_wayland_available();
+    if !wayland_available {
+        debug!("Wayland compositor not available (this is normal on X11-only systems)");
+    } else {
+        debug!("Wayland compositor is available");
+    }
+
     // Проверка pw-dump
     let pw_dump_available = std::process::Command::new("pw-dump")
         .arg("--version")
@@ -372,10 +390,14 @@ async fn collect_snapshot(
 
     // Сбор системных метрик (блокирующая операция - оборачиваем в spawn_blocking)
     let proc_paths_clone = proc_paths.clone();
-    let system_metrics = tokio::task::spawn_blocking(move || collect_system_metrics(&proc_paths_clone))
-        .await
-        .context("Failed to join system metrics task")?
-        .context("Failed to collect system metrics: unable to read /proc filesystem (stat, meminfo, PSI)")?;
+    let system_metrics = tokio::task::spawn_blocking(move || {
+        collect_system_metrics(&proc_paths_clone)
+    })
+    .await
+    .context("Failed to join system metrics task")?
+    .context(
+        "Failed to collect system metrics: unable to read /proc filesystem (stat, meminfo, PSI)",
+    )?;
 
     // Вычисление дельт CPU
     let cpu_usage = if let Some(ref prev) = prev_cpu_times {
@@ -389,7 +411,9 @@ async fn collect_snapshot(
     let mut processes = tokio::task::spawn_blocking(|| collect_process_metrics())
         .await
         .context("Failed to join process metrics task")?
-        .context("Failed to collect process metrics: unable to read process information from /proc")?;
+        .context(
+            "Failed to collect process metrics: unable to read process information from /proc",
+        )?;
 
     // Сбор метрик окон (может быть блокирующим для X11 - оборачиваем в spawn_blocking)
     let window_introspector_clone = Arc::clone(window_introspector);
@@ -400,11 +424,17 @@ async fn collect_snapshot(
     {
         Ok(Ok(map)) => map,
         Ok(Err(e)) => {
-            warn!("Failed to collect window metrics: {}. Continuing without window information.", e);
+            warn!(
+                "Failed to collect window metrics: {}. Continuing without window information.",
+                e
+            );
             HashMap::new()
         }
         Err(e) => {
-            warn!("Failed to join window metrics task: {}. Continuing without window information.", e);
+            warn!(
+                "Failed to join window metrics task: {}. Continuing without window information.",
+                e
+            );
             HashMap::new()
         }
     };
@@ -423,12 +453,18 @@ async fn collect_snapshot(
     let (audio_metrics, audio_clients) = match tokio::task::spawn_blocking(move || {
         let mut introspector = audio_introspector_clone.lock().unwrap();
         let metrics = introspector.audio_metrics().unwrap_or_else(|e| {
-            warn!("Audio introspector failed to collect metrics: {}. Using empty metrics.", e);
+            warn!(
+                "Audio introspector failed to collect metrics: {}. Using empty metrics.",
+                e
+            );
             use std::time::SystemTime;
             AudioMetrics::empty(SystemTime::now(), SystemTime::now())
         });
         let clients = introspector.clients().unwrap_or_else(|e| {
-            warn!("Audio introspector failed to collect clients: {}. Using empty client list.", e);
+            warn!(
+                "Audio introspector failed to collect clients: {}. Using empty client list.",
+                e
+            );
             Vec::new()
         });
         (metrics, clients)
@@ -437,9 +473,15 @@ async fn collect_snapshot(
     {
         Ok(result) => result,
         Err(e) => {
-            warn!("Failed to join audio metrics task: {}. Continuing without audio information.", e);
+            warn!(
+                "Failed to join audio metrics task: {}. Continuing without audio information.",
+                e
+            );
             use std::time::SystemTime;
-            (AudioMetrics::empty(SystemTime::now(), SystemTime::now()), Vec::new())
+            (
+                AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
+                Vec::new(),
+            )
         }
     };
     let audio_client_pids: std::collections::HashSet<u32> =
@@ -464,7 +506,10 @@ async fn collect_snapshot(
     {
         Ok(metrics) => metrics,
         Err(e) => {
-            warn!("Failed to join input metrics task: {}. Using default input metrics.", e);
+            warn!(
+                "Failed to join input metrics task: {}. Using default input metrics.",
+                e
+            );
             use crate::metrics::input::InputMetrics;
             InputMetrics {
                 user_active: false,
@@ -540,6 +585,14 @@ mod tests {
         check_system_utilities();
         // Если утилиты недоступны, должны быть логи предупреждений
         // Но мы не можем проверить логи в unit-тестах, поэтому просто проверяем, что функция выполняется
+    }
+
+    #[test]
+    fn test_check_system_utilities_checks_x11_and_wayland() {
+        // Тест проверяет, что функция проверяет доступность X11 и Wayland
+        // Функция должна корректно обрабатывать случаи, когда оба доступны или недоступны
+        check_system_utilities();
+        // Функция не должна паниковать независимо от доступности X11/Wayland
     }
 
     #[test]
