@@ -1,0 +1,247 @@
+"""Тесты для тюнинга параметров политики."""
+
+import sqlite3
+import tempfile
+from datetime import datetime, timezone
+from pathlib import Path
+
+import pytest
+import yaml
+
+from smoothtask_trainer.tune_policy import tune_policy
+
+
+def create_test_db(db_path: Path, num_snapshots: int = 5) -> None:
+    """Создаёт тестовую БД с несколькими снапшотами для тюнинга."""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    # Создаём схему
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            cpu_user REAL,
+            cpu_system REAL,
+            cpu_idle REAL,
+            cpu_iowait REAL,
+            mem_total_kb INTEGER,
+            mem_used_kb INTEGER,
+            mem_available_kb INTEGER,
+            swap_total_kb INTEGER,
+            swap_used_kb INTEGER,
+            load_avg_one REAL,
+            load_avg_five REAL,
+            load_avg_fifteen REAL,
+            psi_cpu_some_avg10 REAL,
+            psi_cpu_some_avg60 REAL,
+            psi_io_some_avg10 REAL,
+            psi_mem_some_avg10 REAL,
+            psi_mem_full_avg10 REAL,
+            user_active INTEGER,
+            time_since_last_input_ms INTEGER,
+            sched_latency_p95_ms REAL,
+            sched_latency_p99_ms REAL,
+            audio_xruns_delta INTEGER,
+            ui_loop_p95_ms REAL,
+            frame_jank_ratio REAL,
+            bad_responsiveness INTEGER,
+            responsiveness_score REAL
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            ppid INTEGER,
+            app_group_id TEXT,
+            exe_path TEXT,
+            cgroup_path TEXT,
+            process_type TEXT,
+            tags TEXT,
+            cpu_share REAL,
+            io_read_bytes INTEGER,
+            io_write_bytes INTEGER,
+            rss_mb REAL,
+            has_tty INTEGER,
+            has_gui_window INTEGER,
+            is_focused_window INTEGER,
+            env_has_display INTEGER,
+            env_has_wayland INTEGER,
+            env_ssh INTEGER,
+            is_audio_client INTEGER,
+            has_active_stream INTEGER,
+            FOREIGN KEY (snapshot_id) REFERENCES snapshots(snapshot_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            root_pid INTEGER,
+            process_ids TEXT,
+            app_name TEXT,
+            total_cpu_share REAL,
+            total_io_read_bytes INTEGER,
+            total_io_write_bytes INTEGER,
+            total_rss_mb REAL,
+            has_gui_window INTEGER,
+            is_focused_group INTEGER,
+            tags TEXT,
+            priority_class TEXT,
+            FOREIGN KEY (snapshot_id) REFERENCES snapshots(snapshot_id)
+        )
+        """
+    )
+
+    # Вставляем тестовые данные
+    base_time = datetime.now(timezone.utc)
+    for i in range(num_snapshots):
+        timestamp = (base_time.timestamp() + i * 60) * 1000
+        snapshot_id = int(timestamp)
+
+        # Вставляем снапшот с различными метриками отзывчивости
+        cursor.execute(
+            """
+            INSERT INTO snapshots (
+                snapshot_id, timestamp, cpu_user, cpu_system, cpu_idle, cpu_iowait,
+                mem_total_kb, mem_used_kb, mem_available_kb, swap_total_kb, swap_used_kb,
+                load_avg_one, load_avg_five, load_avg_fifteen,
+                psi_cpu_some_avg10, psi_cpu_some_avg60, psi_io_some_avg10,
+                psi_mem_some_avg10, psi_mem_full_avg10,
+                user_active, time_since_last_input_ms,
+                sched_latency_p95_ms, sched_latency_p99_ms,
+                audio_xruns_delta, ui_loop_p95_ms, frame_jank_ratio,
+                bad_responsiveness, responsiveness_score
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                snapshot_id,
+                datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc).isoformat(),
+                0.3 + i * 0.1,  # cpu_user
+                0.1,  # cpu_system
+                0.5,  # cpu_idle
+                0.1,  # cpu_iowait
+                16_384_256,  # mem_total_kb
+                8_000_000,  # mem_used_kb
+                8_384_256,  # mem_available_kb
+                8_192_000,  # swap_total_kb
+                1_000_000,  # swap_used_kb
+                1.5,  # load_avg_one
+                1.2,  # load_avg_five
+                1.0,  # load_avg_fifteen
+                0.1 + i * 0.05,  # psi_cpu_some_avg10
+                0.15,  # psi_cpu_some_avg60
+                0.2,  # psi_io_some_avg10
+                0.05,  # psi_mem_some_avg10
+                None,  # psi_mem_full_avg10
+                1,  # user_active
+                5000,  # time_since_last_input_ms
+                5.0,  # sched_latency_p95_ms
+                10.0 + i * 2.0,  # sched_latency_p99_ms (увеличиваем для теста)
+                0,  # audio_xruns_delta
+                16.67,  # ui_loop_p95_ms
+                0.0,  # frame_jank_ratio
+                0 if i < 2 else 1,  # bad_responsiveness (первые 2 хорошие, остальные плохие)
+                0.9 - i * 0.1,  # responsiveness_score
+            ),
+        )
+
+    conn.commit()
+    conn.close()
+
+
+def create_test_config(config_path: Path) -> None:
+    """Создаёт тестовый конфиг."""
+    config = {
+        "polling_interval_ms": 500,
+        "max_candidates": 150,
+        "dry_run_default": False,
+        "policy_mode": "rules-only",
+        "paths": {
+            "snapshot_db_path": "/tmp/test_snapshots.sqlite",
+            "patterns_dir": "/etc/smoothtask/patterns",
+        },
+        "thresholds": {
+            "psi_cpu_some_high": 0.6,
+            "psi_io_some_high": 0.4,
+            "user_idle_timeout_sec": 120,
+            "interactive_build_grace_sec": 10,
+            "noisy_neighbour_cpu_share": 0.7,
+            "crit_interactive_percentile": 0.9,
+            "interactive_percentile": 0.6,
+            "normal_percentile": 0.3,
+            "background_percentile": 0.1,
+            "sched_latency_p99_threshold_ms": 10.0,
+            "ui_loop_p95_threshold_ms": 16.67,
+        },
+    }
+
+    with open(config_path, "w") as f:
+        yaml.dump(config, f)
+
+
+def test_tune_policy_not_implemented():
+    """Тест, что функция пока не реализована."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        config_path = Path(tmpdir) / "config.yml"
+
+        create_test_db(db_path, num_snapshots=5)
+        create_test_config(config_path)
+
+        with pytest.raises(NotImplementedError, match="TODO: реализовать тюнинг политики"):
+            tune_policy(db_path, config_path)
+
+
+def test_tune_policy_signature():
+    """Тест, что функция принимает правильные параметры."""
+    import inspect
+
+    sig = inspect.signature(tune_policy)
+    params = list(sig.parameters.keys())
+
+    assert len(params) == 2, "tune_policy должна принимать 2 параметра"
+    assert params[0] == "db_path", "Первый параметр должен быть db_path"
+    assert params[1] == "config_out", "Второй параметр должен быть config_out"
+
+    # Проверяем типы параметров
+    assert sig.parameters["db_path"].annotation == Path or sig.parameters["db_path"].annotation == inspect.Parameter.empty
+    assert sig.parameters["config_out"].annotation == Path or sig.parameters["config_out"].annotation == inspect.Parameter.empty
+
+
+def test_tune_policy_with_nonexistent_db():
+    """Тест обработки несуществующей БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "nonexistent.db"
+        config_path = Path(tmpdir) / "config.yml"
+
+        create_test_config(config_path)
+
+        # Функция пока не реализована, но проверяем, что она существует
+        with pytest.raises(NotImplementedError):
+            tune_policy(db_path, config_path)
+
+
+def test_tune_policy_with_empty_db():
+    """Тест обработки пустой БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "empty.db"
+        config_path = Path(tmpdir) / "config.yml"
+
+        # Создаём пустую БД
+        conn = sqlite3.connect(db_path)
+        conn.close()
+
+        create_test_config(config_path)
+
+        # Функция пока не реализована, но проверяем, что она существует
+        with pytest.raises(NotImplementedError):
+            tune_policy(db_path, config_path)
