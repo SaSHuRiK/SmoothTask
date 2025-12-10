@@ -9,6 +9,7 @@ pub mod policy;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use config::Config;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
@@ -31,7 +32,7 @@ use crate::policy::engine::PolicyEngine;
 pub async fn run_daemon(
     config: Config,
     dry_run: bool,
-    mut shutdown_rx: watch::Receiver<()>,
+    mut shutdown_rx: watch::Receiver<bool>,
 ) -> Result<()> {
     info!("Initializing SmoothTask daemon (dry_run = {})", dry_run);
 
@@ -50,8 +51,9 @@ pub async fn run_daemon(
 
     // Инициализация интроспекторов
     // Пробуем использовать X11Introspector, если X-сервер доступен
-    let window_introspector: Box<dyn WindowIntrospector> = {
-        if X11Introspector::is_available() {
+    // Используем Arc для возможности использования в spawn_blocking
+    let window_introspector: Arc<dyn WindowIntrospector> = {
+        let introspector: Box<dyn WindowIntrospector> = if X11Introspector::is_available() {
             match X11Introspector::new() {
                 Ok(introspector) => {
                     info!("Using X11Introspector for window metrics");
@@ -65,29 +67,33 @@ pub async fn run_daemon(
         } else {
             warn!("X11 server not available, using StaticWindowIntrospector");
             Box::new(StaticWindowIntrospector::new(Vec::new()))
-        }
+        };
+        Arc::from(introspector)
     };
 
     // Инициализация PipeWire интроспектора с fallback на статический, если PipeWire недоступен
-    let mut audio_introspector: Box<dyn AudioIntrospector> = {
+    // Используем Arc<Mutex<...>> для возможности использования в spawn_blocking
+    let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> = {
         // Проверяем доступность pw-dump
         let pw_dump_available = std::process::Command::new("pw-dump")
             .arg("--version")
             .output()
             .is_ok();
 
-        if pw_dump_available {
+        let introspector: Box<dyn AudioIntrospector> = if pw_dump_available {
             info!("Using PipeWireIntrospector for audio metrics");
             Box::new(PipeWireIntrospector::new())
         } else {
             warn!("pw-dump not available, falling back to StaticAudioIntrospector");
             Box::new(StaticAudioIntrospector::empty())
-        }
+        };
+        Arc::new(Mutex::new(introspector))
     };
 
     // Инициализация трекера активности пользователя
+    // Используем Arc<Mutex<...>> для возможности использования в spawn_blocking
     let idle_threshold = Duration::from_secs(config.thresholds.user_idle_timeout_sec);
-    let mut input_tracker = InputTracker::new(idle_threshold);
+    let input_tracker = Arc::new(Mutex::new(InputTracker::new(idle_threshold)));
 
     // Загрузка базы паттернов для классификации
     let pattern_db = PatternDatabase::load(&config.paths.patterns_dir)
@@ -104,7 +110,8 @@ pub async fn run_daemon(
     let mut iteration = 0u64;
     loop {
         // Проверяем сигнал завершения перед началом итерации
-        if shutdown_rx.has_changed().unwrap_or(false) {
+        // Используем borrow_and_update() для обновления внутреннего состояния
+        if *shutdown_rx.borrow_and_update() {
             info!("Shutdown signal received, exiting main loop");
             break;
         }
@@ -114,19 +121,37 @@ pub async fn run_daemon(
 
         debug!("Starting iteration {}", iteration);
 
-        // Сбор снапшота
+        // Проверяем shutdown перед сбором снапшота (может быть долгим)
+        if *shutdown_rx.borrow_and_update() {
+            info!("Shutdown signal received before snapshot collection, exiting main loop");
+            break;
+        }
+
+        // Сбор снапшота (async, использует spawn_blocking для блокирующих операций)
         let snapshot = match collect_snapshot(
             &proc_paths,
-            window_introspector.as_ref(),
-            &mut audio_introspector,
-            &mut input_tracker,
+            &window_introspector,
+            &audio_introspector,
+            &input_tracker,
             &mut prev_cpu_times,
             &config.thresholds,
-        ) {
+        )
+        .await
+        {
             Ok(snap) => snap,
             Err(e) => {
                 error!("Failed to collect snapshot: {}", e);
+                // Проверяем shutdown перед sleep
+                if *shutdown_rx.borrow_and_update() {
+                    info!("Shutdown signal received, exiting main loop");
+                    break;
+                }
                 tokio::time::sleep(Duration::from_millis(config.polling_interval_ms)).await;
+                // Проверяем shutdown после sleep
+                if *shutdown_rx.borrow_and_update() {
+                    info!("Shutdown signal received, exiting main loop");
+                    break;
+                }
                 continue;
             }
         };
@@ -205,15 +230,26 @@ pub async fn run_daemon(
         };
 
         if sleep_duration.as_millis() > 0 {
-            // Используем tokio::select! для ожидания либо sleep, либо shutdown сигнала
-            tokio::select! {
-                _ = tokio::time::sleep(sleep_duration) => {
-                    // Продолжаем цикл
-                }
-                _ = shutdown_rx.changed() => {
+            // Разбиваем sleep на маленькие интервалы для проверки shutdown
+            let chunk_duration = Duration::from_millis(50); // Проверяем каждые 50ms
+            let mut remaining = sleep_duration;
+
+            while remaining > Duration::from_millis(0) {
+                // Проверяем shutdown перед каждым маленьким sleep
+                if *shutdown_rx.borrow_and_update() {
                     info!("Shutdown signal received during sleep, exiting main loop");
                     break;
                 }
+
+                let sleep_chunk = remaining.min(chunk_duration);
+                tokio::time::sleep(sleep_chunk).await;
+                remaining = remaining.saturating_sub(sleep_chunk);
+            }
+
+            // Финальная проверка shutdown после sleep
+            if *shutdown_rx.borrow_and_update() {
+                info!("Shutdown signal received after sleep, exiting main loop");
+                break;
             }
         } else {
             warn!(
@@ -230,11 +266,14 @@ pub async fn run_daemon(
 }
 
 /// Собрать полный снапшот системы.
-fn collect_snapshot(
+///
+/// Использует `spawn_blocking` для блокирующих операций (чтение из /proc),
+/// чтобы не блокировать async runtime и позволить проверять shutdown сигналы.
+async fn collect_snapshot(
     proc_paths: &ProcPaths,
-    window_introspector: &dyn WindowIntrospector,
-    audio_introspector: &mut Box<dyn AudioIntrospector>,
-    input_tracker: &mut InputTracker,
+    window_introspector: &Arc<dyn WindowIntrospector>,
+    audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
+    input_tracker: &Arc<Mutex<InputTracker>>,
     prev_cpu_times: &mut Option<SystemMetrics>,
     thresholds: &crate::config::Thresholds,
 ) -> Result<Snapshot> {
@@ -242,9 +281,13 @@ fn collect_snapshot(
     let timestamp = Utc::now();
     let snapshot_id = timestamp.timestamp_millis() as u64;
 
-    // Сбор системных метрик
+    // Сбор системных метрик (блокирующая операция - оборачиваем в spawn_blocking)
+    let proc_paths_clone = proc_paths.clone();
     let system_metrics =
-        collect_system_metrics(proc_paths).context("Failed to collect system metrics")?;
+        tokio::task::spawn_blocking(move || collect_system_metrics(&proc_paths_clone))
+            .await
+            .context("Failed to join system metrics task")?
+            .context("Failed to collect system metrics")?;
 
     // Вычисление дельт CPU
     let cpu_usage = if let Some(ref prev) = prev_cpu_times {
@@ -254,12 +297,20 @@ fn collect_snapshot(
     };
     *prev_cpu_times = Some(system_metrics.clone());
 
-    // Сбор метрик процессов
-    let mut processes = collect_process_metrics().context("Failed to collect process metrics")?;
+    // Сбор метрик процессов (блокирующая операция - оборачиваем в spawn_blocking)
+    let mut processes = tokio::task::spawn_blocking(|| collect_process_metrics())
+        .await
+        .context("Failed to join process metrics task")?
+        .context("Failed to collect process metrics")?;
 
-    // Сбор метрик окон
-    let pid_to_window =
-        crate::metrics::windows::build_pid_to_window_map(window_introspector).unwrap_or_default();
+    // Сбор метрик окон (может быть блокирующим для X11 - оборачиваем в spawn_blocking)
+    let window_introspector_clone = Arc::clone(window_introspector);
+    let pid_to_window = tokio::task::spawn_blocking(move || {
+        crate::metrics::windows::build_pid_to_window_map(window_introspector_clone.as_ref())
+    })
+    .await
+    .context("Failed to join window metrics task")?
+    .unwrap_or_default();
 
     // Обновление информации об окнах в процессах
     for process in &mut processes {
@@ -270,12 +321,19 @@ fn collect_snapshot(
         }
     }
 
-    // Сбор метрик аудио
-    let audio_metrics = audio_introspector.audio_metrics().unwrap_or_else(|_| {
-        use std::time::SystemTime;
-        AudioMetrics::empty(SystemTime::now(), SystemTime::now())
-    });
-    let audio_clients = audio_introspector.clients().unwrap_or_default();
+    // Сбор метрик аудио (может быть блокирующим для PipeWire - оборачиваем в spawn_blocking)
+    let audio_introspector_clone = Arc::clone(audio_introspector);
+    let (audio_metrics, audio_clients) = tokio::task::spawn_blocking(move || {
+        let mut introspector = audio_introspector_clone.lock().unwrap();
+        let metrics = introspector.audio_metrics().unwrap_or_else(|_| {
+            use std::time::SystemTime;
+            AudioMetrics::empty(SystemTime::now(), SystemTime::now())
+        });
+        let clients = introspector.clients().unwrap_or_default();
+        (metrics, clients)
+    })
+    .await
+    .context("Failed to join audio metrics task")?;
     let audio_client_pids: std::collections::HashSet<u32> =
         audio_clients.iter().map(|c| c.pid).collect();
 
@@ -287,8 +345,15 @@ fn collect_snapshot(
         }
     }
 
-    // Сбор метрик ввода (обновляем трекер для чтения новых событий из evdev, если доступно)
-    let input_metrics = input_tracker.update(now);
+    // Сбор метрик ввода (может быть блокирующим для evdev - оборачиваем в spawn_blocking)
+    // InputTracker::update() может читать из /dev/input, что является блокирующей операцией
+    let input_tracker_clone = Arc::clone(input_tracker);
+    let input_metrics = tokio::task::spawn_blocking(move || {
+        let mut tracker = input_tracker_clone.lock().unwrap();
+        tracker.update(now)
+    })
+    .await
+    .context("Failed to join input metrics task")?;
 
     // Построение GlobalMetrics
     let global = GlobalMetrics {
@@ -332,4 +397,3 @@ fn collect_snapshot(
         responsiveness,
     })
 }
-

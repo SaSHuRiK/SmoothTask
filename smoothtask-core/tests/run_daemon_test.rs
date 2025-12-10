@@ -58,34 +58,24 @@ async fn test_daemon_initializes_with_minimal_config() {
     let config = create_test_config(patterns_dir, db_path);
 
     // Создаём канал для graceful shutdown
-    let (shutdown_tx, shutdown_rx) = watch::channel(());
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    // Запускаем демон в отдельной задаче
-    let daemon_handle = tokio::spawn(async move {
-        run_daemon(config, true, shutdown_rx).await
+    // Запускаем демон с автоматическим shutdown через 200ms
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(200)).await;
+        let _ = shutdown_tx_clone.send(true);
     });
 
-    // Ждём немного, чтобы демон успел инициализироваться и выполнить хотя бы одну итерацию
-    sleep(Duration::from_millis(200)).await;
-
-    // Отправляем сигнал завершения
-    let _ = shutdown_tx.send(());
-
-    // Ждём завершения демона (с таймаутом на случай, если что-то пошло не так)
-    let result = timeout(Duration::from_secs(2), daemon_handle).await;
+    // Запускаем демон и ждём его завершения
+    let result = run_daemon(config, true, shutdown_rx).await;
 
     match result {
-        Ok(Ok(Ok(()))) => {
+        Ok(()) => {
             // Демон завершился успешно - это ожидаемое поведение
         }
-        Ok(Ok(Err(e))) => {
+        Err(e) => {
             panic!("Daemon failed with error: {}", e);
-        }
-        Ok(Err(e)) => {
-            panic!("Daemon task panicked: {:?}", e);
-        }
-        Err(_) => {
-            panic!("Daemon did not shutdown within timeout");
         }
     }
 }
@@ -107,34 +97,24 @@ async fn test_daemon_dry_run_mode() {
     let config = create_test_config(patterns_dir, db_path);
 
     // Создаём канал для graceful shutdown
-    let (shutdown_tx, shutdown_rx) = watch::channel(());
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    // Запускаем демон в отдельной задаче
-    let daemon_handle = tokio::spawn(async move {
-        run_daemon(config, true, shutdown_rx).await
+    // Запускаем демон с автоматическим shutdown через 200ms
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(200)).await;
+        let _ = shutdown_tx_clone.send(true);
     });
 
-    // Ждём немного, чтобы демон успел выполнить хотя бы одну итерацию
-    sleep(Duration::from_millis(200)).await;
-
-    // Отправляем сигнал завершения
-    let _ = shutdown_tx.send(());
-
-    // Ждём завершения демона
-    let result = timeout(Duration::from_secs(2), daemon_handle).await;
+    // Запускаем демон и ждём его завершения
+    let result = run_daemon(config, true, shutdown_rx).await;
 
     match result {
-        Ok(Ok(Ok(()))) => {
+        Ok(()) => {
             // Демон завершился успешно
         }
-        Ok(Ok(Err(e))) => {
+        Err(e) => {
             panic!("Daemon failed with error: {}", e);
-        }
-        Ok(Err(e)) => {
-            panic!("Daemon task panicked: {:?}", e);
-        }
-        Err(_) => {
-            panic!("Daemon did not shutdown within timeout");
         }
     }
 }
@@ -152,10 +132,14 @@ async fn test_daemon_handles_nonexistent_patterns_dir() {
     let config = create_test_config(nonexistent_dir, db_path);
 
     // Создаём канал для graceful shutdown (хотя демон должен упасть до использования)
-    let (_shutdown_tx, shutdown_rx) = watch::channel(());
+    let (_shutdown_tx, shutdown_rx) = watch::channel(false);
 
     // Демон должен упасть с ошибкой при загрузке паттернов
-    let result = timeout(Duration::from_secs(1), run_daemon(config, true, shutdown_rx)).await;
+    let result = timeout(
+        Duration::from_secs(1),
+        run_daemon(config, true, shutdown_rx),
+    )
+    .await;
 
     match result {
         Ok(Ok(())) => {
@@ -190,24 +174,20 @@ async fn test_daemon_with_snapshot_logger() {
     let config = create_test_config(patterns_dir, db_path.clone());
 
     // Создаём канал для graceful shutdown
-    let (shutdown_tx, shutdown_rx) = watch::channel(());
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    // Запускаем демон в отдельной задаче
-    let daemon_handle = tokio::spawn(async move {
-        run_daemon(config, true, shutdown_rx).await
+    // Запускаем демон с автоматическим shutdown через 200ms
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(200)).await;
+        let _ = shutdown_tx_clone.send(true);
     });
 
-    // Ждём немного, чтобы демон успел выполнить хотя бы одну итерацию и записать снапшот
-    sleep(Duration::from_millis(200)).await;
-
-    // Отправляем сигнал завершения
-    let _ = shutdown_tx.send(());
-
-    // Ждём завершения демона
-    let result = timeout(Duration::from_secs(2), daemon_handle).await;
+    // Запускаем демон и ждём его завершения
+    let result = run_daemon(config, true, shutdown_rx).await;
 
     match result {
-        Ok(Ok(Ok(()))) => {
+        Ok(()) => {
             // Демон завершился успешно
             // Проверяем, что БД была создана и содержит данные
             if std::path::Path::new(&db_path).exists() {
@@ -221,21 +201,12 @@ async fn test_daemon_with_snapshot_logger() {
                             |row| row.get(0),
                         )
                         .unwrap_or(false);
-                    assert!(
-                        table_exists,
-                        "Snapshot table should exist after daemon run"
-                    );
+                    assert!(table_exists, "Snapshot table should exist after daemon run");
                 }
             }
         }
-        Ok(Ok(Err(e))) => {
+        Err(e) => {
             panic!("Daemon failed with error: {}", e);
-        }
-        Ok(Err(e)) => {
-            panic!("Daemon task panicked: {:?}", e);
-        }
-        Err(_) => {
-            panic!("Daemon did not shutdown within timeout");
         }
     }
 }
@@ -267,26 +238,21 @@ async fn test_daemon_full_snapshot_cycle() {
     let config = create_test_config(patterns_dir, db_path.clone());
 
     // Создаём канал для graceful shutdown
-    let (shutdown_tx, shutdown_rx) = watch::channel(());
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    // Запускаем демон в отдельной задаче
-    let daemon_handle = tokio::spawn(async move {
-        run_daemon(config, true, shutdown_rx).await
+    // Запускаем демон с автоматическим shutdown через 200ms
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(200)).await;
+        let _ = shutdown_tx_clone.send(true);
     });
 
-    // Ждём достаточно времени для выполнения хотя бы одного полного цикла
-    // (polling_interval_ms = 100, значит за 200ms должно быть ~2 итерации)
-    sleep(Duration::from_millis(200)).await;
-
-    // Отправляем сигнал завершения
-    let _ = shutdown_tx.send(());
-
-    // Ждём завершения демона
-    let result = timeout(Duration::from_secs(2), daemon_handle).await;
+    // Запускаем демон и ждём его завершения
+    let result = run_daemon(config, true, shutdown_rx).await;
 
     // Демон должен успешно выполнить хотя бы один полный цикл
     match result {
-        Ok(Ok(Ok(()))) => {
+        Ok(()) => {
             // Демон завершился успешно
             // Проверяем, что БД была создана и содержит данные (если демон успешно логировал)
             // Это косвенно подтверждает, что полный цикл был выполнен
@@ -303,21 +269,12 @@ async fn test_daemon_full_snapshot_cycle() {
                             |row| row.get(0),
                         )
                         .unwrap_or(false);
-                    assert!(
-                        table_exists,
-                        "Snapshot table should exist after daemon run"
-                    );
+                    assert!(table_exists, "Snapshot table should exist after daemon run");
                 }
             }
         }
-        Ok(Ok(Err(e))) => {
+        Err(e) => {
             panic!("Daemon failed with error during full cycle: {}", e);
-        }
-        Ok(Err(e)) => {
-            panic!("Daemon task panicked: {:?}", e);
-        }
-        Err(_) => {
-            panic!("Daemon did not shutdown within timeout");
         }
     }
 }

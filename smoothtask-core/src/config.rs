@@ -265,7 +265,13 @@ thresholds:
 
     #[test]
     fn loads_config_with_hybrid_mode() {
-        let file = write_temp_config(
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
             r#"
 polling_interval_ms: 500
 max_candidates: 150
@@ -273,8 +279,8 @@ dry_run_default: false
 policy_mode: hybrid
 
 paths:
-  snapshot_db_path: "/var/lib/smoothtask/snapshots.sqlite"
-  patterns_dir: "/etc/smoothtask/patterns"
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
 
 thresholds:
   psi_cpu_some_high: 0.6
@@ -289,7 +295,9 @@ thresholds:
   background_percentile: 0.1
   sched_latency_p99_threshold_ms: 10.0
         "#,
-        );
+            snapshot_db_path.to_str().unwrap(),
+            patterns_dir.to_str().unwrap()
+        ));
 
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
         assert_eq!(cfg.policy_mode, PolicyMode::Hybrid);
@@ -373,8 +381,7 @@ thresholds:
 
         let err = Config::load(file.path().to_str().unwrap()).unwrap_err();
         assert!(
-            err
-                .to_string()
+            err.to_string()
                 .contains("patterns_dir must point to an existing directory"),
             "unexpected error: {err:?}"
         );
