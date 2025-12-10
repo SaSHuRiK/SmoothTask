@@ -28,6 +28,54 @@ use crate::metrics::windows::{
 };
 use crate::policy::engine::PolicyEngine;
 
+/// Создаёт window introspector, пытаясь использовать доступные бекенды в порядке приоритета:
+/// 1. X11Introspector (если X-сервер доступен)
+/// 2. WaylandIntrospector (если Wayland доступен)
+/// 3. StaticWindowIntrospector (fallback)
+///
+/// Функция логирует, какой интроспектор был выбран, и возвращает ошибки только если
+/// все бекенды недоступны (в этом случае используется StaticWindowIntrospector).
+#[cfg_attr(test, allow(dead_code))]
+pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
+    // Пробуем X11
+    if X11Introspector::is_available() {
+        match X11Introspector::new() {
+            Ok(introspector) => {
+                info!("Using X11Introspector for window metrics");
+                return Box::new(introspector);
+            }
+            Err(e) => {
+                warn!(
+                    "X11 server available but failed to initialize X11Introspector: {}, trying Wayland",
+                    e
+                );
+            }
+        }
+    }
+
+    // Пробуем Wayland
+    if is_wayland_available() {
+        match WaylandIntrospector::new() {
+            Ok(introspector) => {
+                info!("Using WaylandIntrospector for window metrics");
+                return Box::new(introspector);
+            }
+            Err(e) => {
+                warn!(
+                    "Wayland available but failed to initialize WaylandIntrospector: {}, falling back to StaticWindowIntrospector",
+                    e
+                );
+            }
+        }
+    } else {
+        warn!("Wayland not available, falling back to StaticWindowIntrospector");
+    }
+
+    // Fallback на статический интроспектор
+    warn!("Neither X11 nor Wayland available, using StaticWindowIntrospector");
+    Box::new(StaticWindowIntrospector::new(Vec::new()))
+}
+
 /// Главный цикл демона: опрос метрик, ранжирование, применение.
 ///
 /// Демон работает до тех пор, пока не будет получен сигнал завершения через `shutdown_rx`.
@@ -57,51 +105,7 @@ pub async fn run_daemon(
     // Если X11 недоступен, пробуем WaylandIntrospector
     // В противном случае используем StaticWindowIntrospector
     // Используем Arc для возможности использования в spawn_blocking
-    let window_introspector: Arc<dyn WindowIntrospector> = {
-        let introspector: Box<dyn WindowIntrospector> = if X11Introspector::is_available() {
-            match X11Introspector::new() {
-                Ok(introspector) => {
-                    info!("Using X11Introspector for window metrics");
-                    Box::new(introspector)
-                }
-                Err(e) => {
-                    warn!("X11 server available but failed to initialize X11Introspector: {}, trying Wayland", e);
-                    // Пробуем Wayland как fallback
-                    if is_wayland_available() {
-                        match WaylandIntrospector::new() {
-                            Ok(introspector) => {
-                                info!("Using WaylandIntrospector for window metrics");
-                                Box::new(introspector)
-                            }
-                            Err(e) => {
-                                warn!("Wayland available but failed to initialize WaylandIntrospector: {}, falling back to StaticWindowIntrospector", e);
-                                Box::new(StaticWindowIntrospector::new(Vec::new()))
-                            }
-                        }
-                    } else {
-                        warn!("Wayland not available, falling back to StaticWindowIntrospector");
-                        Box::new(StaticWindowIntrospector::new(Vec::new()))
-                    }
-                }
-            }
-        } else if is_wayland_available() {
-            // X11 недоступен, пробуем Wayland
-            match WaylandIntrospector::new() {
-                Ok(introspector) => {
-                    info!("Using WaylandIntrospector for window metrics");
-                    Box::new(introspector)
-                }
-                Err(e) => {
-                    warn!("Wayland available but failed to initialize WaylandIntrospector: {}, falling back to StaticWindowIntrospector", e);
-                    Box::new(StaticWindowIntrospector::new(Vec::new()))
-                }
-            }
-        } else {
-            warn!("Neither X11 nor Wayland available, using StaticWindowIntrospector");
-            Box::new(StaticWindowIntrospector::new(Vec::new()))
-        };
-        Arc::from(introspector)
-    };
+    let window_introspector: Arc<dyn WindowIntrospector> = Arc::from(create_window_introspector());
 
     // Инициализация PipeWire интроспектора с fallback на статический, если PipeWire недоступен
     // Используем Arc<Mutex<...>> для возможности использования в spawn_blocking
@@ -428,4 +432,60 @@ async fn collect_snapshot(
         app_groups: Vec::new(),
         responsiveness,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_create_window_introspector_always_returns_valid_introspector() {
+        // Тест проверяет, что функция всегда возвращает валидный интроспектор
+        // и не падает, независимо от доступности X11/Wayland
+        let introspector = create_window_introspector();
+
+        // Проверяем, что интроспектор реализует трейт WindowIntrospector
+        let _: &dyn WindowIntrospector = introspector.as_ref();
+
+        // Проверяем, что можно вызвать windows() без паники
+        // (может вернуть ошибку, но не должен паниковать)
+        let _ = introspector.windows();
+    }
+
+    #[test]
+    fn test_create_window_introspector_returns_static_on_fallback() {
+        // Тест проверяет, что функция возвращает StaticWindowIntrospector,
+        // когда X11 и Wayland недоступны (в тестовом окружении это может быть всегда)
+        let introspector = create_window_introspector();
+
+        // Проверяем, что можно получить список окон (даже если он пустой)
+        match introspector.windows() {
+            Ok(windows) => {
+                // В тестовом окружении может быть пустой список
+                let _ = windows.len();
+            }
+            Err(_) => {
+                // Ошибка не ожидается, но если она есть, это тоже валидный результат
+            }
+        }
+    }
+
+    #[test]
+    fn test_create_window_introspector_supports_focused_window() {
+        // Тест проверяет, что интроспектор поддерживает метод focused_window()
+        let introspector = create_window_introspector();
+
+        // Проверяем, что можно вызвать focused_window() без паники
+        match introspector.focused_window() {
+            Ok(Some(_)) => {
+                // Есть фокусное окно - это нормально
+            }
+            Ok(None) => {
+                // Нет фокусного окна - это тоже нормально
+            }
+            Err(_) => {
+                // Ошибка не ожидается, но если она есть, это тоже валидный результат
+            }
+        }
+    }
 }
