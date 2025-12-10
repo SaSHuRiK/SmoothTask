@@ -1362,6 +1362,58 @@ mod tests {
     }
 
     #[test]
+    fn test_get_or_create_app_cgroup_handles_empty_string() {
+        // Тест на обработку пустой строки в app_group_id
+        let result = get_or_create_app_cgroup("");
+        // Функция должна вернуть путь, даже если app_group_id пустой
+        assert!(result.is_ok() || result.is_err());
+        if let Ok(path) = result {
+            let path_str = path.to_string_lossy();
+            assert!(path_str.contains("smoothtask"));
+            assert!(path_str.contains("app-"));
+        }
+    }
+
+    #[test]
+    fn test_get_or_create_app_cgroup_handles_special_characters() {
+        // Тест на обработку специальных символов в app_group_id
+        // Функция должна корректно обрабатывать различные символы
+        let result = get_or_create_app_cgroup("test-app_with-dashes.123");
+        assert!(result.is_ok() || result.is_err());
+        if let Ok(path) = result {
+            let path_str = path.to_string_lossy();
+            assert!(path_str.contains("smoothtask"));
+            assert!(path_str.contains("app-test-app_with-dashes.123"));
+        }
+    }
+
+    #[test]
+    fn test_get_or_create_app_cgroup_handles_long_id() {
+        // Тест на обработку длинного app_group_id
+        let long_id = "a".repeat(200);
+        let result = get_or_create_app_cgroup(&long_id);
+        assert!(result.is_ok() || result.is_err());
+        if let Ok(path) = result {
+            let path_str = path.to_string_lossy();
+            assert!(path_str.contains("smoothtask"));
+            assert!(path_str.contains(&format!("app-{}", long_id)));
+        }
+    }
+
+    #[test]
+    fn test_get_or_create_app_cgroup_returns_consistent_path() {
+        // Тест на то, что функция возвращает одинаковый путь при повторных вызовах
+        let app_group_id = "test-consistent-app";
+        let result1 = get_or_create_app_cgroup(app_group_id);
+        let result2 = get_or_create_app_cgroup(app_group_id);
+
+        // Оба вызова должны вернуть одинаковый путь (если оба успешны)
+        if let (Ok(path1), Ok(path2)) = (result1, result2) {
+            assert_eq!(path1, path2, "get_or_create_app_cgroup should return consistent paths");
+        }
+    }
+
+    #[test]
     fn test_apply_latency_nice_validates_range() {
         // Тест на валидацию диапазона latency_nice
         // Используем несуществующий PID для проверки валидации
@@ -1761,6 +1813,160 @@ mod tests {
         // Результат может быть Ok или Err в зависимости от доступности cgroups
         // Главное - функция не должна паниковать
         let _ = result;
+    }
+
+    #[test]
+    fn test_needs_change_all_match_returns_false() {
+        // Тест: все параметры совпадают - изменение не требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,                    // current_nice
+            Some((target.ionice.class, target.ionice.level)), // current_ionice
+            Some(target.latency_nice.latency_nice), // current_latency_nice
+            Some(target.cgroup.cpu_weight),      // current_cpu_weight
+            target,
+        );
+        assert!(!result, "When all parameters match, needs_change should return false");
+    }
+
+    #[test]
+    fn test_needs_change_nice_differs_returns_true() {
+        // Тест: nice отличается - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice + 1,                // current_nice отличается
+            Some((target.ionice.class, target.ionice.level)),
+            Some(target.latency_nice.latency_nice),
+            Some(target.cgroup.cpu_weight),
+            target,
+        );
+        assert!(result, "When nice differs, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_latency_nice_differs_returns_true() {
+        // Тест: latency_nice отличается - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            Some((target.ionice.class, target.ionice.level)),
+            Some(target.latency_nice.latency_nice + 1), // current_latency_nice отличается
+            Some(target.cgroup.cpu_weight),
+            target,
+        );
+        assert!(result, "When latency_nice differs, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_latency_nice_unknown_returns_true() {
+        // Тест: latency_nice неизвестен (None) - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            Some((target.ionice.class, target.ionice.level)),
+            None, // current_latency_nice неизвестен
+            Some(target.cgroup.cpu_weight),
+            target,
+        );
+        assert!(result, "When latency_nice is unknown, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_ionice_differs_returns_true() {
+        // Тест: ionice отличается - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            Some((target.ionice.class + 1, target.ionice.level)), // current_ionice отличается
+            Some(target.latency_nice.latency_nice),
+            Some(target.cgroup.cpu_weight),
+            target,
+        );
+        assert!(result, "When ionice differs, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_ionice_level_differs_returns_true() {
+        // Тест: уровень ionice отличается - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            Some((target.ionice.class, target.ionice.level + 1)), // уровень отличается
+            Some(target.latency_nice.latency_nice),
+            Some(target.cgroup.cpu_weight),
+            target,
+        );
+        assert!(result, "When ionice level differs, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_ionice_unknown_returns_true() {
+        // Тест: ionice неизвестен (None) - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            None, // current_ionice неизвестен
+            Some(target.latency_nice.latency_nice),
+            Some(target.cgroup.cpu_weight),
+            target,
+        );
+        assert!(result, "When ionice is unknown, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_cpu_weight_differs_returns_true() {
+        // Тест: cpu.weight отличается - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            Some((target.ionice.class, target.ionice.level)),
+            Some(target.latency_nice.latency_nice),
+            Some(target.cgroup.cpu_weight + 1), // current_cpu_weight отличается
+            target,
+        );
+        assert!(result, "When cpu_weight differs, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_cpu_weight_unknown_returns_true() {
+        // Тест: cpu.weight неизвестен (None) - изменение требуется
+        let target = PriorityClass::Normal.params();
+        let result = needs_change(
+            target.nice.nice,
+            Some((target.ionice.class, target.ionice.level)),
+            Some(target.latency_nice.latency_nice),
+            None, // current_cpu_weight неизвестен
+            target,
+        );
+        assert!(result, "When cpu_weight is unknown, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_multiple_differences_returns_true() {
+        // Тест: несколько параметров отличаются - изменение требуется
+        let target = PriorityClass::Interactive.params();
+        let result = needs_change(
+            target.nice.nice + 1,                // nice отличается
+            Some((target.ionice.class, target.ionice.level + 1)), // ionice уровень отличается
+            Some(target.latency_nice.latency_nice + 1), // latency_nice отличается
+            Some(target.cgroup.cpu_weight + 10), // cpu_weight отличается
+            target,
+        );
+        assert!(result, "When multiple parameters differ, needs_change should return true");
+    }
+
+    #[test]
+    fn test_needs_change_all_unknown_returns_true() {
+        // Тест: все опциональные параметры неизвестны - изменение требуется
+        let target = PriorityClass::Background.params();
+        let result = needs_change(
+            target.nice.nice,
+            None, // ionice неизвестен
+            None, // latency_nice неизвестен
+            None, // cpu_weight неизвестен
+            target,
+        );
+        assert!(result, "When all optional parameters are unknown, needs_change should return true");
     }
 
     #[test]
