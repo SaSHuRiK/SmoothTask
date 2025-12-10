@@ -1095,6 +1095,50 @@ mod tests {
     }
 
     #[test]
+    fn test_daemon_stats_log_stats_with_empty_stats() {
+        // Тест проверяет, что log_stats() не паникует при пустой статистике
+        let stats = DaemonStats::new();
+        // Функция должна корректно обработать случай, когда нет успешных итераций
+        stats.log_stats();
+        // Проверяем, что среднее время = 0.0 (нет успешных итераций)
+        assert_eq!(stats.average_iteration_duration_ms(), 0.0);
+    }
+
+    #[test]
+    fn test_daemon_stats_log_stats_with_only_errors() {
+        // Тест проверяет, что log_stats() корректно обрабатывает случай, когда есть только ошибки
+        let mut stats = DaemonStats::new();
+        stats.record_error_iteration();
+        stats.record_error_iteration();
+        // Функция должна корректно обработать случай, когда нет успешных итераций
+        stats.log_stats();
+        // Проверяем, что среднее время = 0.0 (нет успешных итераций)
+        assert_eq!(stats.average_iteration_duration_ms(), 0.0);
+        assert_eq!(stats.total_iterations, 2);
+        assert_eq!(stats.error_iterations, 2);
+        assert_eq!(stats.successful_iterations, 0);
+    }
+
+    #[test]
+    fn test_daemon_stats_log_stats_with_mixed_iterations() {
+        // Тест проверяет, что log_stats() корректно обрабатывает смешанные итерации (успешные и ошибки)
+        let mut stats = DaemonStats::new();
+        stats.record_successful_iteration(100, 5, 1);
+        stats.record_error_iteration();
+        stats.record_successful_iteration(200, 3, 0);
+        stats.record_error_iteration();
+        // Функция должна корректно обработать смешанные итерации
+        stats.log_stats();
+        // Проверяем, что среднее время вычисляется только для успешных итераций
+        assert!((stats.average_iteration_duration_ms() - 150.0).abs() < 0.01); // (100 + 200) / 2 = 150
+        assert_eq!(stats.total_iterations, 4);
+        assert_eq!(stats.error_iterations, 2);
+        assert_eq!(stats.successful_iterations, 2);
+        assert_eq!(stats.total_applied_adjustments, 8); // 5 + 3
+        assert_eq!(stats.total_apply_errors, 1); // только из первой успешной итерации
+    }
+
+    #[test]
     fn test_check_system_utilities_does_not_panic() {
         // Тест проверяет, что функция check_system_utilities не паникует
         // независимо от доступности утилит

@@ -496,7 +496,10 @@ mod tests {
         let result = is_wayland_available();
         // Проверяем, что функция вернула true для пустой строки
         // (так как env::var("WAYLAND_DISPLAY").is_ok() вернёт true даже для пустой строки)
-        assert!(result, "Empty WAYLAND_DISPLAY should be treated as available (variable is set)");
+        assert!(
+            result,
+            "Empty WAYLAND_DISPLAY should be treated as available (variable is set)"
+        );
 
         // Восстанавливаем переменные окружения
         std::env::remove_var("WAYLAND_DISPLAY");
