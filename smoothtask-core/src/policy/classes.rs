@@ -291,7 +291,10 @@ mod tests {
         assert_eq!(PriorityClass::from_str("CRIT_INTERACTIV"), None);
         assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE_EXTRA"), None);
         assert_eq!(PriorityClass::from_str("CRIT"), None);
-        assert_eq!(PriorityClass::from_str("INTERACTIVE"), Some(PriorityClass::Interactive));
+        assert_eq!(
+            PriorityClass::from_str("INTERACTIVE"),
+            Some(PriorityClass::Interactive)
+        );
 
         // Unicode символы
         assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE\u{200B}"), None); // zero-width space
@@ -319,9 +322,12 @@ mod tests {
 
         for class in classes {
             let json = serde_json::to_string(&class).expect("serialize");
-            let deserialized: PriorityClass =
-                serde_json::from_str(&json).expect("deserialize");
-            assert_eq!(deserialized, class, "serde roundtrip failed for {:?}", class);
+            let deserialized: PriorityClass = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(
+                deserialized, class,
+                "serde roundtrip failed for {:?}",
+                class
+            );
         }
     }
 
