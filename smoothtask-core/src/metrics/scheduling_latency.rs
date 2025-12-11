@@ -214,15 +214,14 @@ impl LatencyCollector {
 
     /// Очищает все измерения.
     pub fn clear(&self) {
-        if let Err(e) = self.samples.lock() {
-            warn!(
-                "LatencyCollector mutex is poisoned: {}. Cannot clear samples.",
-                e
-            );
-            return;
-        }
-        if let Ok(mut guard) = self.samples.lock() {
-            guard.clear();
+        match self.samples.lock() {
+            Ok(mut guard) => guard.clear(),
+            Err(e) => {
+                warn!(
+                    "LatencyCollector mutex is poisoned: {}. Cannot clear samples.",
+                    e
+                );
+            }
         }
     }
 }
