@@ -152,6 +152,34 @@ pub struct StaticWindowIntrospector {
 }
 
 impl StaticWindowIntrospector {
+    /// Создаёт новый StaticWindowIntrospector с заданным списком окон.
+    ///
+    /// Этот интроспектор используется для тестирования и отладки, возвращая
+    /// заранее подготовленный список окон без подключения к реальному композитору.
+    ///
+    /// # Аргументы
+    ///
+    /// * `windows` - список окон, который будет возвращаться при вызове `windows()`
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::windows::{StaticWindowIntrospector, WindowInfo, WindowState};
+    ///
+    /// let windows = vec![
+    ///     WindowInfo::new(
+    ///         Some("firefox".to_string()),
+    ///         Some("Mozilla Firefox".to_string()),
+    ///         Some(1),
+    ///         WindowState::Focused,
+    ///         Some(1234),
+    ///         1.0,
+    ///     ),
+    /// ];
+    /// let introspector = StaticWindowIntrospector::new(windows);
+    /// let result = introspector.windows().unwrap();
+    /// assert_eq!(result.len(), 1);
+    /// ```
     pub fn new(windows: Vec<WindowInfo>) -> Self {
         Self { windows }
     }
