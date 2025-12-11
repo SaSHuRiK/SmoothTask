@@ -328,18 +328,16 @@ async fn patterns_handler(State(state): State<ApiState>) -> Result<Json<Value>, 
         Some(pattern_db) => {
             let patterns_by_category: std::collections::HashMap<_, _> =
                 pattern_db.all_patterns().iter().fold(
-                    std::collections::HashMap::new(),
+                    std::collections::HashMap::<String, Vec<serde_json::Value>>::new(),
                     |mut acc, (category, pattern)| {
-                        acc.entry(category.0.clone())
-                            .or_insert_with(Vec::new)
-                            .push(json!({
-                                "name": pattern.name,
-                                "label": pattern.label,
-                                "exe_patterns": pattern.exe_patterns,
-                                "desktop_patterns": pattern.desktop_patterns,
-                                "cgroup_patterns": pattern.cgroup_patterns,
-                                "tags": pattern.tags,
-                            }));
+                        acc.entry(category.0.clone()).or_default().push(json!({
+                            "name": pattern.name,
+                            "label": pattern.label,
+                            "exe_patterns": pattern.exe_patterns,
+                            "desktop_patterns": pattern.desktop_patterns,
+                            "cgroup_patterns": pattern.cgroup_patterns,
+                            "tags": pattern.tags,
+                        }));
                         acc
                     },
                 );
@@ -749,6 +747,7 @@ impl ApiServer {
     /// - `responsiveness_metrics`: Метрики отзывчивости (опционально)
     /// - `config`: Конфигурация демона (опционально)
     /// - `pattern_database`: База данных паттернов для классификации процессов (опционально)
+    #[allow(clippy::too_many_arguments)]
     pub fn with_all_and_responsiveness_and_config_and_patterns(
         addr: std::net::SocketAddr,
         daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
@@ -1805,5 +1804,261 @@ apps:
         assert!(firefox_pattern["desktop_patterns"].is_array());
         assert!(firefox_pattern["cgroup_patterns"].is_array());
         assert!(firefox_pattern["tags"].is_array());
+    }
+
+    #[test]
+    fn test_api_server_with_all() {
+        let addr: SocketAddr = "127.0.0.1:8084".parse().unwrap();
+        let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
+        use crate::metrics::system::{
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+        };
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100,
+                nice: 20,
+                system: 50,
+                idle: 200,
+                iowait: 10,
+                irq: 5,
+                softirq: 5,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+        let metrics_arc = Arc::new(RwLock::new(metrics));
+        let processes = Arc::new(RwLock::new(vec![]));
+        let app_groups = Arc::new(RwLock::new(vec![]));
+        let server = ApiServer::with_all(
+            addr,
+            Some(stats),
+            Some(metrics_arc),
+            Some(processes),
+            Some(app_groups),
+        );
+        // Проверяем, что сервер создан
+        let _ = server;
+    }
+
+    #[test]
+    fn test_api_server_with_all_and_responsiveness_and_config() {
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::logging::snapshots::ResponsivenessMetrics;
+        let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        let responsiveness_metrics = ResponsivenessMetrics {
+            sched_latency_p95_ms: Some(5.0),
+            sched_latency_p99_ms: Some(10.0),
+            audio_xruns_delta: Some(0),
+            ui_loop_p95_ms: Some(16.0),
+            frame_jank_ratio: None,
+            bad_responsiveness: false,
+            responsiveness_score: Some(0.9),
+        };
+        let metrics_arc = Arc::new(RwLock::new(responsiveness_metrics));
+        let server = ApiServer::with_all_and_responsiveness_and_config(
+            addr,
+            None,
+            None,
+            None,
+            None,
+            Some(metrics_arc),
+            Some(config_arc),
+        );
+        // Проверяем, что сервер создан
+        let _ = server;
+    }
+
+    #[test]
+    fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
+        use crate::classify::rules::PatternDatabase;
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        // Создаём временную директорию для паттернов
+        let temp_dir = std::env::temp_dir().join("smoothtask_test_patterns");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let pattern_db = PatternDatabase::load(&temp_dir).unwrap();
+        let pattern_db_arc = Arc::new(pattern_db);
+        let server = ApiServer::with_all_and_responsiveness_and_config_and_patterns(
+            addr,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(config_arc),
+            Some(pattern_db_arc),
+        );
+        // Проверяем, что сервер создан
+        let _ = server;
+    }
+
+    #[test]
+    fn test_api_state_with_all_and_responsiveness_and_config() {
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::logging::snapshots::ResponsivenessMetrics;
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        let responsiveness_metrics = ResponsivenessMetrics {
+            sched_latency_p95_ms: Some(5.0),
+            sched_latency_p99_ms: Some(10.0),
+            audio_xruns_delta: Some(0),
+            ui_loop_p95_ms: Some(16.0),
+            frame_jank_ratio: None,
+            bad_responsiveness: false,
+            responsiveness_score: Some(0.9),
+        };
+        let metrics_arc = Arc::new(RwLock::new(responsiveness_metrics));
+        let state = ApiState::with_all_and_responsiveness_and_config(
+            None,
+            None,
+            None,
+            None,
+            Some(metrics_arc),
+            Some(config_arc),
+        );
+        assert!(state.config.is_some());
+        assert!(state.responsiveness_metrics.is_some());
+        assert!(state.pattern_database.is_none());
+    }
+
+    #[test]
+    fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
+        use crate::classify::rules::PatternDatabase;
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        // Создаём временную директорию для паттернов
+        let temp_dir = std::env::temp_dir().join("smoothtask_test_patterns");
+        std::fs::create_dir_all(&temp_dir).unwrap();
+        let pattern_db = PatternDatabase::load(&temp_dir).unwrap();
+        let pattern_db_arc = Arc::new(pattern_db);
+        let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(config_arc),
+            Some(pattern_db_arc),
+        );
+        assert!(state.config.is_some());
+        assert!(state.pattern_database.is_some());
+        assert!(state.responsiveness_metrics.is_none());
     }
 }
