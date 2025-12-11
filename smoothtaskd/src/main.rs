@@ -1,3 +1,5 @@
+mod systemd;
+
 use anyhow::Result;
 use clap::Parser;
 use smoothtask_core::{config::Config, run_daemon};
@@ -40,6 +42,26 @@ async fn main() -> Result<()> {
         let _ = shutdown_tx_clone.send(true);
     });
 
-    // Запускаем демон с каналом shutdown
-    run_daemon(config, args.dry_run, shutdown_rx).await
+    // Запускаем демон с каналом shutdown и callback для systemd notify
+    let on_ready = Box::new(|| {
+        if let Err(e) = systemd::notify_ready() {
+            tracing::debug!(
+                "Failed to notify systemd (not running under systemd?): {}",
+                e
+            );
+        } else {
+            tracing::info!("Notified systemd: READY=1");
+        }
+    });
+    let on_status_update = Box::new(|status: &str| {
+        systemd::notify_status(status);
+    });
+    run_daemon(
+        config,
+        args.dry_run,
+        shutdown_rx,
+        Some(on_ready),
+        Some(on_status_update),
+    )
+    .await
 }

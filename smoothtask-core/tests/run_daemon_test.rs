@@ -69,7 +69,7 @@ async fn test_daemon_initializes_with_minimal_config() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx).await;
+    let result = run_daemon(config, true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -108,7 +108,7 @@ async fn test_daemon_dry_run_mode() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx).await;
+    let result = run_daemon(config, true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -138,7 +138,7 @@ async fn test_daemon_handles_nonexistent_patterns_dir() {
     // Демон должен упасть с ошибкой при загрузке паттернов
     let result = timeout(
         Duration::from_secs(1),
-        run_daemon(config, true, shutdown_rx),
+        run_daemon(config, true, shutdown_rx, None, None),
     )
     .await;
 
@@ -185,7 +185,7 @@ async fn test_daemon_with_snapshot_logger() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx).await;
+    let result = run_daemon(config, true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -242,7 +242,7 @@ async fn test_daemon_without_snapshot_logging() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx).await;
+    let result = run_daemon(config, true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -310,7 +310,7 @@ async fn test_daemon_full_snapshot_cycle() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx).await;
+    let result = run_daemon(config, true, shutdown_rx, None, None).await;
 
     // Демон должен успешно выполнить хотя бы один полный цикл
     match result {

@@ -5,7 +5,8 @@ After=network.target
 Wants=network.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=all
 ExecStart=/usr/local/bin/smoothtaskd --config /etc/smoothtask/smoothtask.yml
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure

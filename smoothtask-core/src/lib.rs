@@ -401,6 +401,8 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 /// - `config`: Конфигурация демона (пороги, пути, режимы работы)
 /// - `dry_run`: Если `true`, демон только планирует изменения приоритетов, но не применяет их
 /// - `shutdown_rx`: Канал для получения сигнала завершения работы демона
+/// - `on_ready`: Опциональный callback, вызываемый после успешной инициализации всех компонентов
+/// - `on_status_update`: Опциональный callback для периодического обновления статуса (например, для systemd STATUS)
 ///
 /// # Возвращаемое значение
 ///
@@ -420,7 +422,7 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 ///
 /// // Запускаем демон в фоновой задаче
 /// let daemon_handle = tokio::spawn(async move {
-///     run_daemon(config, false, shutdown_rx).await
+///     run_daemon(config, false, shutdown_rx, None, None).await
 /// });
 ///
 /// // Позже отправляем сигнал завершения
@@ -450,7 +452,7 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 /// // });
 ///
 /// // Запускаем демон
-/// run_daemon(config, false, shutdown_rx).await?;
+/// run_daemon(config, false, shutdown_rx, None, None).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -466,7 +468,7 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
 ///
 /// // Запускаем демон в dry-run режиме (не применяет изменения)
-/// run_daemon(config, true, shutdown_rx).await?;
+/// run_daemon(config, true, shutdown_rx, None, None).await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -492,6 +494,8 @@ pub async fn run_daemon(
     config: Config,
     dry_run: bool,
     mut shutdown_rx: watch::Receiver<bool>,
+    on_ready: Option<Box<dyn Fn() + Send + Sync>>,
+    on_status_update: Option<Box<dyn Fn(&str) + Send + Sync>>,
 ) -> Result<()> {
     info!("Initializing SmoothTask daemon (dry_run = {})", dry_run);
 
@@ -589,6 +593,11 @@ pub async fn run_daemon(
     let mut prev_cpu_times: Option<SystemMetrics> = None;
 
     info!("SmoothTask daemon started, entering main loop");
+
+    // Вызываем callback уведомления о готовности (например, для systemd notify)
+    if let Some(ref callback) = on_ready {
+        callback();
+    }
 
     let mut iteration = 0u64;
     let mut stats = DaemonStats::new();
@@ -720,6 +729,16 @@ pub async fn run_daemon(
         // Логируем статистику периодически
         if iteration % STATS_LOG_INTERVAL == 0 {
             stats.log_stats();
+            // Обновляем статус для systemd (если callback предоставлен)
+            if let Some(ref status_callback) = on_status_update {
+                let status_msg = format!(
+                    "Running: {} iterations, avg {:.1}ms/iter, {} adjustments applied",
+                    stats.total_iterations,
+                    stats.average_iteration_duration_ms(),
+                    stats.total_applied_adjustments
+                );
+                status_callback(&status_msg);
+            }
         }
 
         let sleep_duration = if elapsed_ms < config.polling_interval_ms as u128 {
