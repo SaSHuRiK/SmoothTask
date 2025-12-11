@@ -1136,13 +1136,17 @@ mod tests {
                 }
             }
             // Проверяем, что причина указана
-            assert!(!result.reason.is_empty(), "Result for {} should have a reason", app_group_id);
+            assert!(
+                !result.reason.is_empty(),
+                "Result for {} should have a reason",
+                app_group_id
+            );
         }
 
         // Проверяем, что группы без фокуса используют ML-ранкер
         let medium_result = results.get("medium_priority").unwrap();
         let low_result = results.get("low_priority").unwrap();
-        
+
         // Группы без фокуса должны использовать ML-ранкер в hybrid режиме
         assert!(
             medium_result.reason.contains("ml-ranker") || medium_result.reason.contains("semantic"),
