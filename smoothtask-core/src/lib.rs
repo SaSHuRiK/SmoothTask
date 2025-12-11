@@ -1,4 +1,5 @@
 pub mod actuator;
+pub mod api;
 pub mod classify;
 pub mod config;
 pub mod logging;
@@ -29,6 +30,13 @@ use crate::metrics::windows::{
     X11Introspector,
 };
 use crate::policy::engine::PolicyEngine;
+
+/// Callback функция для уведомления о готовности демона (например, для systemd notify).
+pub type ReadyCallback = Box<dyn Fn() + Send + Sync>;
+
+/// Callback функция для обновления статуса демона (например, для systemd notify).
+pub type StatusCallback = Box<dyn Fn(&str) + Send + Sync>;
+
 ///
 /// Структура собирает метрики о работе демона во время выполнения:
 /// количество итераций, время выполнения, количество применённых изменений приоритетов
@@ -494,8 +502,8 @@ pub async fn run_daemon(
     config: Config,
     dry_run: bool,
     mut shutdown_rx: watch::Receiver<bool>,
-    on_ready: Option<Box<dyn Fn() + Send + Sync>>,
-    on_status_update: Option<Box<dyn Fn(&str) + Send + Sync>>,
+    on_ready: Option<ReadyCallback>,
+    on_status_update: Option<StatusCallback>,
 ) -> Result<()> {
     info!("Initializing SmoothTask daemon (dry_run = {})", dry_run);
 

@@ -33,6 +33,11 @@ chrono = { version = "0.4", features = ["serde"] }
 
 anyhow = "1"
 
+# HTTP API
+axum = { version = "0.7", features = ["json"] }
+tower = "0.4"
+tower-http = { version = "0.5", features = ["cors"] }
+
 [dev-dependencies]
 tempfile = "3"
 
