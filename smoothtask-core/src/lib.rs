@@ -271,6 +271,36 @@ impl Default for DaemonStats {
 /// - Демон продолжит работу даже при отсутствии некоторых компонентов, используя fallback-решения
 ///   (например, `StaticWindowIntrospector` вместо X11/Wayland)
 pub fn check_system_utilities() {
+    // Проверка доступности /proc файловой системы (критично для работы демона)
+    let proc_available =
+        std::path::Path::new("/proc").exists() && std::path::Path::new("/proc/stat").exists();
+    if !proc_available {
+        error!(
+            "/proc filesystem is not available. This is critical for daemon operation. \
+            Ensure you are running on a Linux system with /proc mounted."
+        );
+    } else {
+        debug!("/proc filesystem is available");
+    }
+
+    // Проверка доступности cgroups v2 (желательно, но не критично)
+    let cgroup_v2_available = {
+        let candidates = ["/sys/fs/cgroup", "/sys/fs/cgroup/unified"];
+        candidates.iter().any(|candidate| {
+            std::path::Path::new(candidate)
+                .join("cgroup.controllers")
+                .exists()
+        })
+    };
+    if !cgroup_v2_available {
+        warn!(
+            "cgroups v2 not available. CPU weight adjustments will be limited. \
+            Ensure cgroups v2 is mounted at /sys/fs/cgroup."
+        );
+    } else {
+        debug!("cgroups v2 is available");
+    }
+
     // Проверка X11 сервера
     let x11_available = X11Introspector::is_available();
     if !x11_available {
@@ -470,14 +500,25 @@ pub async fn run_daemon(
 
     // Инициализация подсистем
     let mut snapshot_logger = if !config.paths.snapshot_db_path.is_empty() {
+        info!(
+            "Initializing snapshot logger at: {}",
+            config.paths.snapshot_db_path
+        );
         Some(
-            SnapshotLogger::new(&config.paths.snapshot_db_path)
-                .context("Failed to initialize snapshot logger")?,
+            SnapshotLogger::new(&config.paths.snapshot_db_path).with_context(|| {
+                format!(
+                    "Failed to initialize snapshot logger at {}. \
+                    Ensure the parent directory exists and is writable.",
+                    config.paths.snapshot_db_path
+                )
+            })?,
         )
     } else {
+        debug!("Snapshot logging is disabled (snapshot_db_path is empty)");
         None
     };
 
+    info!("Initializing policy engine");
     let policy_engine = PolicyEngine::new(config.clone());
     let mut hysteresis = HysteresisTracker::new();
 
@@ -520,8 +561,21 @@ pub async fn run_daemon(
         LatencyProbe::new(Arc::clone(&latency_collector), sleep_interval_ms, 5000);
 
     // Загрузка базы паттернов для классификации
-    let pattern_db = PatternDatabase::load(&config.paths.patterns_dir)
-        .context("Failed to load pattern database")?;
+    info!(
+        "Loading pattern database from: {}",
+        config.paths.patterns_dir
+    );
+    let pattern_db = PatternDatabase::load(&config.paths.patterns_dir).with_context(|| {
+        format!(
+            "Failed to load pattern database from {}. \
+            Ensure the directory exists and is readable, and contains valid YAML pattern files.",
+            config.paths.patterns_dir
+        )
+    })?;
+    info!(
+        "Loaded {} patterns from database",
+        pattern_db.all_patterns().len()
+    );
 
     // Инициализация путей для чтения /proc
     let proc_paths = ProcPaths::default();
