@@ -1,4 +1,5 @@
 """Тесты для построения фич тренера."""
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -207,3 +208,26 @@ def test_build_feature_matrix_cat_indices_order():
         X.columns.get_loc("tags_joined"),
     ]
     assert cat_idx == expected_cat_idx
+
+
+def test_build_feature_matrix_fillna_without_downcast_warning():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [0.5, 0.6],
+            "cpu_share_1s": pd.Series([pd.NA, 0.2], dtype="object"),
+            "has_tty": pd.Series([True, pd.NA], dtype="object"),
+            "app_name": pd.Series([pd.NA, "player"], dtype="object"),
+        }
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        X, _, _, _ = build_feature_matrix(df)
+
+    assert list(X["cpu_share_1s"]) == [pytest.approx(0.0), pytest.approx(0.2)]
+    assert X["cpu_share_1s"].dtype == float
+    assert list(X["has_tty"]) == [1, 0]
+    assert X["has_tty"].dtype == int
+    assert list(X["app_name"]) == ["unknown", "player"]
+    assert pd.api.types.is_string_dtype(X["app_name"])

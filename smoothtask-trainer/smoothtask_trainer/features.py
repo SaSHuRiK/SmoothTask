@@ -188,8 +188,8 @@ def build_feature_matrix(
 
     # Числовые фичи
     for col in _NUMERIC_COLS:
-        series = _ensure_column(work_df, col, 0.0)
-        features[col] = series.fillna(0).astype(float)
+        series = pd.to_numeric(_ensure_column(work_df, col, 0.0), errors="coerce")
+        features[col] = series.fillna(0.0).astype(float)
         column_order.append(col)
 
     # Булевые фичи -> 0/1
@@ -209,10 +209,8 @@ def build_feature_matrix(
     # Категориальные фичи
     cat_feature_indices: list[int] = []
     for col in _CAT_COLS:
-        series = (
-            _ensure_column(work_df, col, "unknown").fillna("unknown").astype("string")
-        )
-        features[col] = series
+        series = _ensure_column(work_df, col, "unknown").astype("string")
+        features[col] = series.fillna("unknown")
         cat_feature_indices.append(len(column_order))
         column_order.append(col)
 
