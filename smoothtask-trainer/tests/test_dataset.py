@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from smoothtask_trainer.dataset import load_snapshots_as_frame
+from smoothtask_trainer.dataset import _json_list, _to_bool, load_snapshots_as_frame
 
 
 def create_test_db(db_path: Path) -> None:
@@ -422,3 +422,33 @@ def test_load_snapshots_as_frame_multiple_snapshots():
 
     finally:
         db_path.unlink(missing_ok=True)
+
+
+def test_json_list_handles_empty_and_none():
+    """_json_list должен безопасно обрабатывать None и пустые строки."""
+    assert _json_list(None) == []
+    assert _json_list("") == []
+    assert _json_list("   ") == []
+    assert _json_list("[1, 2, 3]") == [1, 2, 3]
+
+
+def test_json_list_rejects_non_list_payload():
+    """_json_list должен отдавать ValueError, если JSON не список."""
+    with pytest.raises(ValueError):
+        _json_list('{"key": "value"}')
+
+
+def test_to_bool_converts_present_columns_only():
+    """_to_bool конвертирует только существующие колонки, сохраняя NaN."""
+    df = pd.DataFrame(
+        {
+            "flag_int": [1, 0, None],
+            "already_bool": [True, False, None],
+        }
+    )
+
+    _to_bool(df, ["flag_int", "missing"])
+
+    assert df["flag_int"].dtype == "boolean"
+    assert list(df["flag_int"]) == [True, False, pd.NA]
+    assert list(df["already_bool"]) == [True, False, None]

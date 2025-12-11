@@ -39,6 +39,9 @@ def _json_list(value: str | None) -> list:
     """
     if value is None:
         return []
+    if isinstance(value, str) and value.strip() == "":
+        return []
+
     parsed = json.loads(value)
     if isinstance(parsed, list):
         return parsed
