@@ -24,6 +24,24 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-140: Улучшение обработки ошибок в scheduling_latency.rs: замена unwrap() на lock() и partial_cmp() на более безопасную обработку
+  - Тип: Rust / core / error handling
+  - Критерии готовности:
+    - [x] Заменены все unwrap() на lock() в add_sample(), percentile(), len(), is_empty(), clear();
+    - [x] Улучшена обработка partial_cmp() в percentile() для случаев с NaN;
+    - [x] Добавлено логирование предупреждений при отравленных мьютексах;
+    - [x] Все тесты проходят успешно (334 теста).
+  - Примечания: улучшена обработка ошибок в LatencyCollector - все unwrap() на lock() заменены на безопасную обработку с логированием предупреждений при отравленных мьютексах. Улучшена обработка partial_cmp() в percentile() для случаев с NaN значениями. Все 334 теста проходят успешно.
+
+- [x] ST-138: Улучшение обработки ошибок в lib.rs: замена unwrap() на lock() для audio_introspector и input_tracker на более безопасную обработку
+  - Тип: Rust / core / error handling
+  - Критерии готовности:
+    - [x] Заменены unwrap() на lock() для audio_introspector в collect_snapshot();
+    - [x] Заменены unwrap() на lock() для input_tracker в collect_snapshot();
+    - [x] Добавлено логирование предупреждений при отравленных мьютексах;
+    - [x] Все тесты проходят успешно (334 теста).
+  - Примечания: улучшена обработка ошибок в collect_snapshot() - все unwrap() на lock() для audio_introspector и input_tracker заменены на безопасную обработку с логированием предупреждений при отравленных мьютексах. Функция теперь корректно обрабатывает случаи, когда мьютекс отравился, используя дефолтные значения. Все 334 теста проходят успешно.
+
 - [x] ST-137: Исправление падающих doctest'ов в других модулях (logging/snapshots.rs, metrics/audio.rs, policy/engine.rs, windows.rs, grouper.rs)
   - Тип: Rust / core / documentation / tests
   - Примечания: исправлены doctest'ы в logging/snapshots.rs (ResponsivenessMetrics::compute), metrics/audio.rs (AudioMetrics::empty, validate_period), policy/engine.rs (PolicyEngine, evaluate_snapshot - замена Snapshot::default() на todo!()), windows.rs (StaticWindowIntrospector::new - добавлен импорт WindowIntrospector), grouper.rs (normalize_cgroup - сделана публичной). Все doctest'ы теперь компилируются и проходят (65 passed, 0 failed).

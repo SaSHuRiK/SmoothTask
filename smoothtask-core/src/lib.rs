@@ -879,7 +879,20 @@ pub async fn collect_snapshot(
     // Сбор метрик аудио (может быть блокирующим для PipeWire - оборачиваем в spawn_blocking)
     let audio_introspector_clone = Arc::clone(audio_introspector);
     let (audio_metrics, audio_clients) = match tokio::task::spawn_blocking(move || {
-        let mut introspector = audio_introspector_clone.lock().unwrap();
+        let mut introspector = match audio_introspector_clone.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "Audio introspector mutex is poisoned: {}. Using empty metrics and clients.",
+                    e
+                );
+                use std::time::SystemTime;
+                return (
+                    AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
+                    Vec::new(),
+                );
+            }
+        };
         let metrics = introspector.audio_metrics().unwrap_or_else(|e| {
             warn!(
                 "Audio introspector failed to collect metrics: {}. Using empty metrics.",
@@ -927,7 +940,20 @@ pub async fn collect_snapshot(
     // InputTracker::update() может читать из /dev/input, что является блокирующей операцией
     let input_tracker_clone = Arc::clone(input_tracker);
     let input_metrics = match tokio::task::spawn_blocking(move || {
-        let mut tracker = input_tracker_clone.lock().unwrap();
+        let mut tracker = match input_tracker_clone.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "Input tracker mutex is poisoned: {}. Using default input metrics.",
+                    e
+                );
+                use crate::metrics::input::InputMetrics;
+                return InputMetrics {
+                    user_active: false,
+                    time_since_last_input_ms: None,
+                };
+            }
+        };
         tracker.update(now)
     })
     .await

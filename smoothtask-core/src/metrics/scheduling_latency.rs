@@ -60,7 +60,16 @@ impl LatencyCollector {
     /// collector.add_sample(3.1);
     /// ```
     pub fn add_sample(&self, latency_ms: f64) {
-        let mut samples = self.samples.lock().unwrap();
+        let mut samples = match self.samples.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "LatencyCollector mutex is poisoned: {}. Skipping sample.",
+                    e
+                );
+                return;
+            }
+        };
         if samples.len() >= self.max_samples {
             samples.pop_front();
         }
@@ -108,14 +117,34 @@ impl LatencyCollector {
             return None;
         }
 
-        let samples = self.samples.lock().unwrap();
+        let samples = match self.samples.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "LatencyCollector mutex is poisoned: {}. Cannot compute percentile.",
+                    e
+                );
+                return None;
+            }
+        };
         if samples.len() < 2 {
             return None;
         }
 
         // Копируем измерения в вектор и сортируем
         let mut sorted: Vec<f64> = samples.iter().copied().collect();
-        sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        sorted.sort_by(|a, b| {
+            a.partial_cmp(b).unwrap_or_else(|| {
+                // Если сравнение невозможно (NaN), считаем, что a < b
+                if a.is_nan() {
+                    std::cmp::Ordering::Less
+                } else if b.is_nan() {
+                    std::cmp::Ordering::Greater
+                } else {
+                    std::cmp::Ordering::Equal
+                }
+            })
+        });
 
         // Вычисляем индекс перцентиля
         // Для percentile = 0.0: index = 0 (минимальное значение)
@@ -157,17 +186,44 @@ impl LatencyCollector {
 
     /// Возвращает количество измерений в окне.
     pub fn len(&self) -> usize {
-        self.samples.lock().unwrap().len()
+        match self.samples.lock() {
+            Ok(guard) => guard.len(),
+            Err(e) => {
+                warn!(
+                    "LatencyCollector mutex is poisoned: {}. Returning 0 for len().",
+                    e
+                );
+                0
+            }
+        }
     }
 
     /// Проверяет, пусто ли окно измерений.
     pub fn is_empty(&self) -> bool {
-        self.samples.lock().unwrap().is_empty()
+        match self.samples.lock() {
+            Ok(guard) => guard.is_empty(),
+            Err(e) => {
+                warn!(
+                    "LatencyCollector mutex is poisoned: {}. Returning true for is_empty().",
+                    e
+                );
+                true
+            }
+        }
     }
 
     /// Очищает все измерения.
     pub fn clear(&self) {
-        self.samples.lock().unwrap().clear();
+        if let Err(e) = self.samples.lock() {
+            warn!(
+                "LatencyCollector mutex is poisoned: {}. Cannot clear samples.",
+                e
+            );
+            return;
+        }
+        if let Ok(mut guard) = self.samples.lock() {
+            guard.clear();
+        }
     }
 }
 
