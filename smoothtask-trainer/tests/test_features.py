@@ -231,3 +231,42 @@ def test_build_feature_matrix_fillna_without_downcast_warning():
     assert X["has_tty"].dtype == int
     assert list(X["app_name"]) == ["unknown", "player"]
     assert pd.api.types.is_string_dtype(X["app_name"])
+
+
+def test_build_feature_matrix_numeric_mixed_types_without_warnings():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [0.5, 0.6],
+            "cpu_share_1s": pd.Series(["0.1", 2], dtype="object"),
+            "io_read_bytes": pd.Series([None, "3"], dtype="object"),
+        }
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", FutureWarning)
+        X, _, _, _ = build_feature_matrix(df)
+
+    assert X["cpu_share_1s"].tolist() == [
+        pytest.approx(0.1),
+        pytest.approx(2.0),
+    ]
+    assert X["io_read_bytes"].tolist() == [
+        pytest.approx(0.0),
+        pytest.approx(3.0),
+    ]
+    assert X["cpu_share_1s"].dtype == float
+    assert X["io_read_bytes"].dtype == float
+
+
+def test_build_feature_matrix_numeric_invalid_values_raise_error():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [0.5, 0.6],
+            "cpu_share_1s": ["ok", "bad"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="cpu_share_1s.*(ok|bad)"):
+        build_feature_matrix(df)

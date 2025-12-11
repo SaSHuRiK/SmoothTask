@@ -11,19 +11,19 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-311: Проверить fillna/astype в trainer на предупреждения
+- [ ] ST-313: Архивировать старые DONE-задачи в PLAN.md
+  - Тип: Документация / планирование
+  - Критерии готовности:
+    - В разделе Recently Done осталось не более 10 задач;
+    - Остальные перенесены в `docs/history/PLAN_DONE_archive.md` (или новый файл);
+    - В PLAN.md оставлена ссылка на актуальный архив.
+
+- [ ] ST-314: Проверить astype в tune_policy/dataset на предупреждения
   - Тип: Python / trainer / maintenance
   - Критерии готовности:
-    - Просмотрены все использования fillna/astype в trainer;
-    - Удалены источники FutureWarning без неявного downcast;
+    - Просмотрены astype-конверсии в tune_policy.py и dataset.py;
+    - Устранены FutureWarning/неявные downcast при int/boolean конверсии;
     - Добавлены/обновлены тесты; прогнан `uv run pytest smoothtask-trainer/tests`.
-
-- [ ] ST-312: Усилить валидацию типов числовых колонок в build_feature_matrix
-  - Тип: Python / trainer / features
-  - Критерии готовности:
-    - Нецифровые значения в числовых колонках корректно коэрсятся или дают понятную ошибку;
-    - Добавлен тест на смешанные типы в числовых колонках;
-    - Прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
 
 ## 2. Бэклог
 
@@ -50,6 +50,14 @@
   - Примечания: полностью реализован HTTP API для просмотра текущего состояния демона. Все подзадачи выполнены. API сервер интегрирован в главный цикл демона, данные обновляются при каждой итерации. Добавлена полная документация API в docs/API.md. Все 82 теста проходят успешно.
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-312: Усилить валидацию типов числовых колонок в build_feature_matrix
+  - Тип: Python / trainer / features
+  - Примечания: numeric-колонки валидируются перед fillna; нечисловые значения приводят к понятной ValueError с примерами значений. Строковые числа коэрсятся в float без предупреждений. Добавлены тесты на смешанные типы и ошибки; прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-311: Проверить fillna/astype в trainer на предупреждения
+  - Тип: Python / trainer / maintenance
+  - Примечания: проверены конверсии в build_feature_matrix; добавлен тест, гарантирующий отсутствие FutureWarning при fillna/astype с object/pd.NA и смешанными типами. Поддержан стабильный dtype для числовых и булевых колонок; прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
 
 - [x] ST-310: Устранить FutureWarning fillna в features
   - Тип: Python / trainer / maintenance

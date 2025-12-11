@@ -188,8 +188,16 @@ def build_feature_matrix(
 
     # Числовые фичи
     for col in _NUMERIC_COLS:
-        series = pd.to_numeric(_ensure_column(work_df, col, 0.0), errors="coerce")
-        features[col] = series.fillna(0.0).astype(float)
+        series = _ensure_column(work_df, col, 0.0)
+        numeric_series = pd.to_numeric(series, errors="coerce")
+        invalid_mask = series.notna() & numeric_series.isna()
+        if invalid_mask.any():
+            invalid_values = pd.unique(series[invalid_mask])
+            sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+            raise ValueError(
+                f"Колонка '{col}' содержит нечисловые значения: {sample_values}"
+            )
+        features[col] = numeric_series.fillna(0.0).astype(float)
         column_order.append(col)
 
     # Булевые фичи -> 0/1
