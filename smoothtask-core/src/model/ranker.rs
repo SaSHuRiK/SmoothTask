@@ -7,6 +7,58 @@ use crate::logging::snapshots::AppGroupRecord;
 use crate::model::features::build_features;
 
 /// Результат ранжирования для одной AppGroup.
+///
+/// Структура содержит результаты ранжирования группы приложений:
+/// score (важность группы), rank (позиция среди всех групп) и percentile
+/// (нормализованный score в диапазоне [0.0, 1.0]).
+///
+/// # Поля
+///
+/// - `score`: Абсолютный score от ранкера (чем выше, тем важнее группа).
+///   Обычно в диапазоне [0.0, 1.0], но может быть любым числом в зависимости
+///   от реализации ранкера.
+/// - `rank`: Позиция группы среди всех групп (1 = самый важный, 2 = второй по важности и т.д.).
+///   Группы с одинаковым score могут иметь одинаковый rank.
+/// - `percentile`: Нормализованный score в диапазоне [0.0, 1.0], где 1.0 = самый важный.
+///   Вычисляется на основе позиции группы среди всех групп.
+///
+/// # Примеры использования
+///
+/// ```ignore
+/// use smoothtask_core::model::ranker::{Ranker, StubRanker, RankingResult};
+/// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
+///
+/// let ranker = StubRanker::new();
+/// let snapshot: Snapshot = /* ... */;
+/// let app_groups: Vec<AppGroupRecord> = /* ... */;
+///
+/// // Ранжирование групп
+/// let results = ranker.rank(&app_groups, &snapshot);
+///
+/// // Использование результатов
+/// for (app_group_id, result) in &results {
+///     println!("Group {}: score={:.2}, rank={}, percentile={:.2}",
+///              app_group_id, result.score, result.rank, result.percentile);
+///
+///     // Использование percentile для определения приоритета
+///     if result.percentile > 0.8 {
+///         println!("  -> High priority group");
+///     } else if result.percentile > 0.5 {
+///         println!("  -> Medium priority group");
+///     } else {
+///         println!("  -> Low priority group");
+///     }
+/// }
+/// ```
+///
+/// # Примечания
+///
+/// - `score` и `percentile` могут различаться: score - это абсолютное значение
+///   от ранкера, а percentile - это нормализованная позиция среди всех групп.
+/// - Группы с одинаковым score могут иметь разные percentile, если они имеют
+///   разные позиции после сортировки.
+/// - Percentile вычисляется как `1.0 - (rank - 1) / (total - 1)` для более
+///   чем одной группы, и `1.0` для единственной группы.
 #[derive(Debug, Clone)]
 pub struct RankingResult {
     /// Score от ранкера (чем выше, тем важнее группа).

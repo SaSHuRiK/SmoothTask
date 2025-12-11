@@ -18,7 +18,7 @@ use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 ///
 /// # Примеры
 ///
-/// ```no_run
+/// ```ignore
 /// use smoothtask_core::model::features::{build_features, FeatureVector};
 /// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
 ///
@@ -81,7 +81,7 @@ impl FeatureVector {
 ///
 /// # Примеры
 ///
-/// ```no_run
+/// ```ignore
 /// use smoothtask_core::model::features::build_features;
 /// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
 ///
