@@ -883,4 +883,149 @@ SwapFree:        4096000 kB
         assert!(metrics.pressure.io.some.is_none());
         assert!(metrics.pressure.memory.some.is_none());
     }
+
+    #[test]
+    fn test_proc_paths_new() {
+        // Тест проверяет, что ProcPaths::new корректно создаёт пути
+        let paths = ProcPaths::new("/test/proc");
+        assert_eq!(paths.stat, PathBuf::from("/test/proc/stat"));
+        assert_eq!(paths.meminfo, PathBuf::from("/test/proc/meminfo"));
+        assert_eq!(paths.loadavg, PathBuf::from("/test/proc/loadavg"));
+        assert_eq!(paths.pressure_cpu, PathBuf::from("/test/proc/pressure/cpu"));
+        assert_eq!(paths.pressure_io, PathBuf::from("/test/proc/pressure/io"));
+        assert_eq!(
+            paths.pressure_memory,
+            PathBuf::from("/test/proc/pressure/memory")
+        );
+    }
+
+    #[test]
+    fn test_proc_paths_default() {
+        // Тест проверяет, что ProcPaths::default() создаёт пути к /proc
+        let paths = ProcPaths::default();
+        assert_eq!(paths.stat, PathBuf::from("/proc/stat"));
+        assert_eq!(paths.meminfo, PathBuf::from("/proc/meminfo"));
+        assert_eq!(paths.loadavg, PathBuf::from("/proc/loadavg"));
+        assert_eq!(paths.pressure_cpu, PathBuf::from("/proc/pressure/cpu"));
+        assert_eq!(paths.pressure_io, PathBuf::from("/proc/pressure/io"));
+        assert_eq!(
+            paths.pressure_memory,
+            PathBuf::from("/proc/pressure/memory")
+        );
+    }
+
+    #[test]
+    fn test_system_metrics_cpu_usage_since() {
+        // Тест проверяет, что cpu_usage_since корректно делегирует к delta
+        let prev_metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100,
+                nice: 20,
+                system: 50,
+                idle: 200,
+                iowait: 10,
+                irq: 5,
+                softirq: 5,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+
+        let cur_metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 150,
+                nice: 30,
+                system: 80,
+                idle: 260,
+                iowait: 20,
+                irq: 10,
+                softirq: 10,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: prev_metrics.memory,
+            load_avg: prev_metrics.load_avg,
+            pressure: prev_metrics.pressure.clone(),
+        };
+
+        let usage = cur_metrics.cpu_usage_since(&prev_metrics);
+        assert!(usage.is_some());
+        let usage = usage.unwrap();
+        assert!(usage.user > 0.0);
+        assert!(usage.system > 0.0);
+        assert!(usage.idle > 0.0);
+        assert!(usage.iowait > 0.0);
+    }
+
+    #[test]
+    fn test_system_metrics_cpu_usage_since_none_on_overflow() {
+        // Тест проверяет, что cpu_usage_since возвращает None при переполнении
+        let prev_metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 200,
+                nice: 0,
+                system: 0,
+                idle: 0,
+                iowait: 0,
+                irq: 0,
+                softirq: 0,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+
+        let cur_metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100, // меньше, чем prev - переполнение
+                nice: 0,
+                system: 0,
+                idle: 0,
+                iowait: 0,
+                irq: 0,
+                softirq: 0,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: prev_metrics.memory,
+            load_avg: prev_metrics.load_avg,
+            pressure: prev_metrics.pressure.clone(),
+        };
+
+        let usage = cur_metrics.cpu_usage_since(&prev_metrics);
+        assert!(usage.is_none(), "Should return None on counter overflow");
+    }
 }

@@ -342,6 +342,50 @@ mod tests {
     }
 
     #[test]
+    fn test_convenience_methods_all_classes() {
+        // Проверяем convenience методы для всех классов приоритета
+        // CritInteractive
+        let class = PriorityClass::CritInteractive;
+        assert_eq!(class.nice(), -8);
+        assert_eq!(class.latency_nice(), -15);
+        assert_eq!(class.ionice().class, 2);
+        assert_eq!(class.ionice().level, 0);
+        assert_eq!(class.cpu_weight(), 200);
+
+        // Interactive
+        let class = PriorityClass::Interactive;
+        assert_eq!(class.nice(), -4);
+        assert_eq!(class.latency_nice(), -10);
+        assert_eq!(class.ionice().class, 2);
+        assert_eq!(class.ionice().level, 2);
+        assert_eq!(class.cpu_weight(), 150);
+
+        // Normal
+        let class = PriorityClass::Normal;
+        assert_eq!(class.nice(), 0);
+        assert_eq!(class.latency_nice(), 0);
+        assert_eq!(class.ionice().class, 2);
+        assert_eq!(class.ionice().level, 4);
+        assert_eq!(class.cpu_weight(), 100);
+
+        // Background
+        let class = PriorityClass::Background;
+        assert_eq!(class.nice(), 5);
+        assert_eq!(class.latency_nice(), 10);
+        assert_eq!(class.ionice().class, 2);
+        assert_eq!(class.ionice().level, 6);
+        assert_eq!(class.cpu_weight(), 50);
+
+        // Idle
+        let class = PriorityClass::Idle;
+        assert_eq!(class.nice(), 10);
+        assert_eq!(class.latency_nice(), 15);
+        assert_eq!(class.ionice().class, 3); // idle class
+        assert_eq!(class.ionice().level, 0);
+        assert_eq!(class.cpu_weight(), 25);
+    }
+
+    #[test]
     fn test_as_str_from_str_consistency() {
         // Проверяем, что для каждого класса from_str(as_str()) возвращает Some(class)
         let classes = vec![
