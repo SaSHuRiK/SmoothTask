@@ -72,7 +72,7 @@ pub type StatusCallback = Box<dyn Fn(&str) + Send + Sync>;
 /// - `max_iteration_duration_ms`: Максимальное время выполнения одной итерации
 /// - `total_applied_adjustments`: Общее количество применённых изменений приоритетов
 /// - `total_apply_errors`: Общее количество ошибок при применении приоритетов
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize)]
 pub struct DaemonStats {
     /// Общее количество итераций (успешных и с ошибками)
     total_iterations: u64,

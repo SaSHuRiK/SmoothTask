@@ -12,14 +12,19 @@ use tracing::{error, info};
 #[derive(Clone)]
 pub struct ApiState {
     /// Статистика работы демона (опционально, если демон не запущен)
-    _daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+    daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
 }
 
 impl ApiState {
     /// Создаёт новое состояние API сервера.
     pub fn new() -> Self {
+        Self { daemon_stats: None }
+    }
+
+    /// Создаёт новое состояние API сервера с переданной статистикой демона.
+    pub fn with_daemon_stats(daemon_stats: Arc<RwLock<crate::DaemonStats>>) -> Self {
         Self {
-            _daemon_stats: None,
+            daemon_stats: Some(daemon_stats),
         }
     }
 }
@@ -52,12 +57,20 @@ fn create_router(state: ApiState) -> Router {
 ///
 /// Возвращает статистику работы демона (если доступна).
 async fn stats_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
-    // TODO: реализовать получение статистики из state
-    // Пока возвращаем заглушку
-    Ok(Json(json!({
-        "message": "Stats endpoint not yet implemented",
-        "daemon_stats_available": state._daemon_stats.is_some()
-    })))
+    match &state.daemon_stats {
+        Some(stats_arc) => {
+            let stats = stats_arc.read().await;
+            Ok(Json(json!({
+                "status": "ok",
+                "daemon_stats": *stats
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "ok",
+            "daemon_stats": null,
+            "message": "Daemon stats not available (daemon may not be running)"
+        }))),
+    }
 }
 
 /// HTTP API сервер для SmoothTask.
@@ -101,6 +114,22 @@ impl ApiServer {
         Self {
             addr,
             state: ApiState::new(),
+        }
+    }
+
+    /// Создаёт новый API сервер с переданной статистикой демона.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `daemon_stats`: Статистика работы демона для отображения через API
+    pub fn with_daemon_stats(
+        addr: std::net::SocketAddr,
+        daemon_stats: Arc<RwLock<crate::DaemonStats>>,
+    ) -> Self {
+        Self {
+            addr,
+            state: ApiState::with_daemon_stats(daemon_stats),
         }
     }
 
@@ -189,13 +218,64 @@ mod tests {
     #[test]
     fn test_api_state_new() {
         let state = ApiState::new();
-        assert!(state._daemon_stats.is_none());
+        assert!(state.daemon_stats.is_none());
     }
 
     #[test]
     fn test_api_state_default() {
         let state = ApiState::default();
-        assert!(state._daemon_stats.is_none());
+        assert!(state.daemon_stats.is_none());
+    }
+
+    #[test]
+    fn test_api_state_with_daemon_stats() {
+        let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
+        let state = ApiState::with_daemon_stats(stats.clone());
+        assert!(state.daemon_stats.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_stats_handler_without_stats() {
+        let state = ApiState::new();
+        let result = stats_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["daemon_stats"], Value::Null);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_stats_handler_with_stats() {
+        let mut stats = crate::DaemonStats::new();
+        stats.record_successful_iteration(100, 5, 1);
+        stats.record_error_iteration();
+        let stats_arc = Arc::new(RwLock::new(stats));
+        let state = ApiState::with_daemon_stats(stats_arc);
+        let result = stats_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["daemon_stats"].is_object());
+        let daemon_stats = &value["daemon_stats"];
+        assert_eq!(daemon_stats["total_iterations"], 2);
+        assert_eq!(daemon_stats["successful_iterations"], 1);
+        assert_eq!(daemon_stats["error_iterations"], 1);
+        assert_eq!(daemon_stats["total_duration_ms"], 100);
+        assert_eq!(daemon_stats["max_iteration_duration_ms"], 100);
+        assert_eq!(daemon_stats["total_applied_adjustments"], 5);
+        assert_eq!(daemon_stats["total_apply_errors"], 1);
+    }
+
+    #[test]
+    fn test_api_server_with_daemon_stats() {
+        let addr: SocketAddr = "127.0.0.1:8081".parse().unwrap();
+        let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
+        let server = ApiServer::with_daemon_stats(addr, stats);
+        // Проверяем, что сервер создан (нет способа проверить внутренние поля без pub)
+        let _ = server;
     }
 
     #[test]

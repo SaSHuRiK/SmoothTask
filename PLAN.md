@@ -19,12 +19,9 @@
   - Тип: Rust / core / api
   - Примечания: создан модуль `api` в `smoothtask-core` с базовой структурой HTTP сервера на основе `axum`. Добавлены зависимости `axum`, `tower` и `tower-http` в Cargo.toml. Реализованы структуры `ApiServer` и `ApiServerHandle` для управления HTTP сервером. Добавлены endpoints `/health` и `/api/stats` (заглушка). Добавлены unit-тесты для проверки создания сервера и состояния API. Все тесты проходят успешно.
 
-- [ ] ST-214: Добавить endpoint для просмотра статистики демона (DaemonStats)
+- [x] ST-214: Добавить endpoint для просмотра статистики демона (DaemonStats)
   - Тип: Rust / core / api
-  - Критерии готовности:
-    - Реализован endpoint `/api/stats` для просмотра DaemonStats;
-    - Endpoint возвращает JSON с текущей статистикой демона;
-    - Добавлены unit-тесты для endpoint.
+  - Примечания: реализован endpoint `/api/stats` для просмотра DaemonStats. Добавлен `Serialize` derive к `DaemonStats` для JSON сериализации. Обновлён `ApiState` для хранения и доступа к `DaemonStats` через метод `with_daemon_stats()`. Реализован `stats_handler` для возврата реальных данных статистики демона в формате JSON. Добавлен метод `ApiServer::with_daemon_stats()` для создания сервера с переданной статистикой. Добавлены unit-тесты для проверки endpoint с наличием и отсутствием статистики. Все 82 теста проходят успешно.
 
 ## 2. Бэклог
 
@@ -54,6 +51,10 @@
     - Добавлены бенчмарки для проверки улучшений.
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-214: Добавить endpoint для просмотра статистики демона (DaemonStats)
+  - Тип: Rust / core / api
+  - Примечания: реализован endpoint `/api/stats` для просмотра DaemonStats. Добавлен `Serialize` derive к `DaemonStats` для JSON сериализации. Обновлён `ApiState` для хранения и доступа к `DaemonStats` через метод `with_daemon_stats()`. Реализован `stats_handler` для возврата реальных данных статистики демона в формате JSON. Добавлен метод `ApiServer::with_daemon_stats()` для создания сервера с переданной статистикой. Добавлены unit-тесты для проверки endpoint с наличием и отсутствием статистики. Все 82 теста проходят успешно.
 
 - [x] ST-213: Добавить базовую структуру для Control API (HTTP сервер, модуль api)
   - Тип: Rust / core / api
