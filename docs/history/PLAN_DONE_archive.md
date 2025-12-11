@@ -1,3 +1,13 @@
+## Перенос из PLAN.md (ST-337–ST-336, 2025-12-11)
+
+- [x] ST-337: build_feature_matrix отклоняет inf в snapshot_id
+  - Тип: Python / trainer / features
+  - Примечания: добавлена проверка на бесконечные значения snapshot_id с информативной ошибкой и юнит-тестом; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-336: Запретить бесконечные значения в SQLite снапшотах
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame валидирует inf в числовых колонках snapshots/processes/app_groups и выдаёт понятные ValueError; покрыто тремя новыми тестами; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 ## Перенос из PLAN.md (ST-335–ST-334, 2025-12-11)
 
 - [x] ST-335: Нормализовать JSON tags в processes/app_groups

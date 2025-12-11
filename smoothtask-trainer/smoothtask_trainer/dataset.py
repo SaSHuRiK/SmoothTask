@@ -351,6 +351,31 @@ def _ensure_no_nan(
             )
 
 
+def _ensure_datetime_column(
+    df: pd.DataFrame,
+    table: str,
+    column: str,
+    *,
+    sample_size: int = 5,
+) -> None:
+    """
+    Проверяет наличие колонки с датой/временем без пропусков и NaT.
+    """
+    if column not in df.columns:
+        raise ValueError(f"В таблице '{table}' отсутствует обязательный столбец: {column}")
+
+    coerced = pd.to_datetime(df[column], errors="coerce")
+    invalid_mask = coerced.isna()
+    if invalid_mask.any():
+        raw_values = df[column][invalid_mask].head(sample_size)
+        sample_indices = ", ".join(str(idx) for idx in raw_values.index)
+        sample_values = ", ".join(repr(v) for v in raw_values)
+        raise ValueError(
+            f"В таблице '{table}' колонка '{column}' содержит некорректные или пустые даты "
+            f"(строки: {sample_indices}, примеры: {sample_values})"
+        )
+
+
 def _ensure_no_infinite(
     df: pd.DataFrame, table: str, columns: Iterable[str], sample_size: int = 5
 ) -> None:
@@ -462,7 +487,7 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
         processes = _load_table(conn, "processes")
         app_groups = _load_table(conn, "app_groups")
 
-    _ensure_required_columns("snapshots", snapshots, {"snapshot_id"})
+    _ensure_required_columns("snapshots", snapshots, {"snapshot_id", "timestamp"})
     _ensure_required_columns("processes", processes, {"snapshot_id", "pid"})
     _ensure_required_columns("app_groups", app_groups, {"snapshot_id", "app_group_id"})
     if snapshots.empty:
@@ -472,6 +497,11 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
     _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
     _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})
+    _ensure_datetime_column(
+        snapshots,
+        table="snapshots",
+        column="timestamp",
+    )
     _ensure_non_empty_strings(
         app_groups,
         table="app_groups",

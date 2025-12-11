@@ -326,7 +326,14 @@ def test_load_snapshots_as_frame_basic():
 def _create_minimal_db_with_tables(path: Path) -> sqlite3.Connection:
     conn = sqlite3.connect(path)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE snapshots (snapshot_id INTEGER PRIMARY KEY)")
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT
+        )
+        """
+    )
     cursor.execute(
         """
         CREATE TABLE processes (
@@ -352,7 +359,8 @@ def test_load_snapshots_as_frame_rejects_missing_snapshot_reference(tmp_path: Pa
     db_path = tmp_path / "missing_snapshot.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (2, 100))
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 101))
     conn.commit()
@@ -366,7 +374,8 @@ def test_load_snapshots_as_frame_rejects_duplicate_process_keys(tmp_path: Path):
     db_path = tmp_path / "duplicate_process.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.executemany(
         "INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)",
         [(1, 10), (1, 10)],
@@ -382,7 +391,8 @@ def test_load_snapshots_as_frame_rejects_duplicate_app_group_keys(tmp_path: Path
     db_path = tmp_path / "duplicate_group.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 10))
     cursor.executemany(
         "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
@@ -399,12 +409,23 @@ def test_load_snapshots_as_frame_rejects_duplicate_snapshot_ids(tmp_path: Path):
     db_path = tmp_path / "duplicate_snapshot.sqlite"
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE snapshots (snapshot_id INTEGER)")
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER,
+            timestamp TEXT
+        )
+        """
+    )
     cursor.execute("CREATE TABLE processes (snapshot_id INTEGER NOT NULL, pid INTEGER NOT NULL)")
     cursor.execute(
         "CREATE TABLE app_groups (snapshot_id INTEGER NOT NULL, app_group_id TEXT NOT NULL, process_ids TEXT)"
     )
-    cursor.executemany("INSERT INTO snapshots (snapshot_id) VALUES (?)", [(1,), (1,)])
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.executemany(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        [(1, ts), (1, ts)],
+    )
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 10))
     conn.commit()
     conn.close()
@@ -417,7 +438,8 @@ def test_load_snapshots_as_frame_rejects_missing_process_ids_in_groups(tmp_path:
     db_path = tmp_path / "missing_process_ids.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.executemany(
         "INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)",
         [(1, 10), (1, 11)],
@@ -437,7 +459,8 @@ def test_load_snapshots_as_frame_rejects_non_integer_keys(tmp_path: Path):
     db_path = tmp_path / "non_integer_keys.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", ("1.5", "abc"))
     cursor.execute(
         "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)", ("oops", "g1")
@@ -453,7 +476,8 @@ def test_load_snapshots_as_frame_rejects_negative_keys(tmp_path: Path):
     db_path = tmp_path / "negative_keys.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, -10))
     conn.commit()
     conn.close()
@@ -466,7 +490,8 @@ def test_load_snapshots_as_frame_rejects_app_groups_without_snapshots(tmp_path: 
     db_path = tmp_path / "missing_app_group_snapshots.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 10))
     cursor.execute(
         "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
@@ -483,10 +508,11 @@ def test_load_snapshots_as_frame_rejects_nan_snapshot_id(tmp_path: Path):
     db_path = tmp_path / "nan_snapshot_id.sqlite"
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE snapshots (snapshot_id REAL)")
+    cursor.execute("CREATE TABLE snapshots (snapshot_id REAL, timestamp TEXT)")
     cursor.execute("CREATE TABLE processes (snapshot_id REAL, pid REAL, app_group_id REAL)")
     cursor.execute("CREATE TABLE app_groups (snapshot_id REAL, app_group_id REAL)")
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (?)", (float("nan"),))
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (float("nan"), ts))
     cursor.execute(
         "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
         (float("nan"), 10, "g1"),
@@ -506,10 +532,11 @@ def test_load_snapshots_as_frame_rejects_nan_pid_and_app_group_id(tmp_path: Path
     db_path = tmp_path / "nan_pid.sqlite"
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
-    cursor.execute("CREATE TABLE snapshots (snapshot_id REAL)")
+    cursor.execute("CREATE TABLE snapshots (snapshot_id REAL, timestamp TEXT)")
     cursor.execute("CREATE TABLE processes (snapshot_id REAL, pid REAL, app_group_id REAL)")
     cursor.execute("CREATE TABLE app_groups (snapshot_id REAL, app_group_id REAL)")
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute(
         "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
         (1, float("nan"), "g1"),
@@ -525,11 +552,59 @@ def test_load_snapshots_as_frame_rejects_nan_pid_and_app_group_id(tmp_path: Path
         load_snapshots_as_frame(db_path)
 
 
+def test_load_snapshots_as_frame_rejects_missing_timestamp(tmp_path: Path):
+    db_path = tmp_path / "missing_timestamp.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, None)
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 10, "g1"),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        (1, "g1"),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="timestamp.*некорректные"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_invalid_timestamp_string(tmp_path: Path):
+    db_path = tmp_path / "invalid_timestamp.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        (1, "not-a-date"),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 20, "g2"),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        (1, "g2"),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="timestamp.*некорректные"):
+        load_snapshots_as_frame(db_path)
+
+
 def test_load_snapshots_as_frame_rejects_empty_app_group_id(tmp_path: Path):
     db_path = tmp_path / "empty_group_id.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)", (1, 10, None))
     cursor.execute(
         "INSERT INTO app_groups (snapshot_id, app_group_id, process_ids) VALUES (?, ?, ?)",
@@ -546,7 +621,8 @@ def test_load_snapshots_as_frame_requires_app_group_records(tmp_path: Path):
     db_path = tmp_path / "missing_app_group_records.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute("INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)", (1, "keep"))
     cursor.execute(
         "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
@@ -567,7 +643,8 @@ def test_load_snapshots_as_frame_allows_missing_app_group_id(tmp_path: Path):
     db_path = tmp_path / "process_without_group.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    ts = datetime.now(timezone.utc).isoformat()
+    cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
     cursor.execute(
         "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
         (1, 42, None),
@@ -594,7 +671,7 @@ def test_load_snapshots_as_frame_empty_db():
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         cursor.execute(
-            "CREATE TABLE IF NOT EXISTS snapshots (snapshot_id INTEGER PRIMARY KEY)"
+            "CREATE TABLE IF NOT EXISTS snapshots (snapshot_id INTEGER PRIMARY KEY, timestamp TEXT)"
         )
         cursor.execute(
             "CREATE TABLE IF NOT EXISTS processes (snapshot_id INTEGER, pid INTEGER)"
@@ -971,7 +1048,8 @@ def test_load_snapshots_as_frame_missing_required_columns():
         cursor.execute(
             """
             CREATE TABLE snapshots (
-                snapshot_id INTEGER PRIMARY KEY
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT
             )
             """
         )
@@ -991,7 +1069,8 @@ def test_load_snapshots_as_frame_missing_required_columns():
             """
         )
 
-        cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (?)", (1,))
+        ts = datetime.now(timezone.utc).isoformat()
+        cursor.execute("INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)", (1, ts))
         cursor.execute("INSERT INTO processes (snapshot_id) VALUES (?)", (1,))
         cursor.execute(
             "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",

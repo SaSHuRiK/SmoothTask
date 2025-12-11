@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-347: Отклонять невалидные timestamp строки в snapshots
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame валидирует timestamp и падает с ValueError, если дата не парсится; добавлен юнит-тест на строку "not-a-date". Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-346: Валидировать timestamp снапшотов при загрузке SQLite
+  - Тип: Python / trainer / dataset
+  - Примечания: добавлена обязательность timestamp и проверка NaN/NaT с указанием строк и примеров; новые тесты на пустой timestamp и invalid строки проходят. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 - [x] ST-345: Запретить отрицательные PID в process_ids групп
   - Тип: Python / trainer / dataset
   - Примечания: `_parse_process_ids` теперь отклоняет отрицательные и бесконечные PID с понятным ValueError; добавлен unit-тест на ошибку и проверено сохранение дедупликации. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
@@ -70,14 +78,6 @@
 - [x] ST-338: Валидировать целочисленные ключи snapshot_id/pid в load_snapshots_as_frame
   - Тип: Python / trainer / dataset
   - Примечания: добавлена проверка целочисленности и отсутствия inf в ключах snapshots/processes/app_groups с выборкой примеров; добавлен тест на строки и дробные значения в ключах. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-337: build_feature_matrix отклоняет inf в snapshot_id
-  - Тип: Python / trainer / features
-  - Примечания: добавлена проверка на бесконечные значения snapshot_id с информативной ошибкой и юнит-тестом; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-336: Запретить бесконечные значения в SQLite снапшотах
-  - Тип: Python / trainer / dataset
-  - Примечания: load_snapshots_as_frame валидирует inf в числовых колонках snapshots/processes/app_groups и выдаёт понятные ValueError; покрыто тремя новыми тестами; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 
