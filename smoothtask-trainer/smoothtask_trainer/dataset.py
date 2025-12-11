@@ -121,6 +121,12 @@ def _parse_process_ids(value: str | None) -> list[int]:
     process_ids: list[int] = []
     invalid_values: list[object] = []
 
+    def _try_add_pid(pid: int, original: object) -> None:
+        if pid < 0:
+            invalid_values.append(original)
+        else:
+            process_ids.append(pid)
+
     for item in parsed:
         if item is None or (isinstance(item, float) and np.isnan(item)):
             continue
@@ -128,11 +134,11 @@ def _parse_process_ids(value: str | None) -> list[int]:
             invalid_values.append(item)
             continue
         if isinstance(item, (int, np.integer)):
-            process_ids.append(int(item))
+            _try_add_pid(int(item), item)
             continue
         if isinstance(item, (float, np.floating)):
             if np.isfinite(item) and float(item).is_integer():
-                process_ids.append(int(item))
+                _try_add_pid(int(item), item)
             else:
                 invalid_values.append(item)
             continue
@@ -148,7 +154,7 @@ def _parse_process_ids(value: str | None) -> list[int]:
             if not number.is_integer():
                 invalid_values.append(item)
                 continue
-            process_ids.append(int(number))
+            _try_add_pid(int(number), item)
             continue
 
         invalid_values.append(item)
@@ -399,6 +405,34 @@ def _ensure_integer_like(
             )
 
 
+def _ensure_non_empty_strings(
+    df: pd.DataFrame,
+    table: str,
+    columns: Iterable[str],
+    *,
+    sample_size: int = 5,
+) -> None:
+    """
+    Проверяет, что указанные столбцы содержат непустые строковые значения.
+    """
+    for col in columns:
+        if col not in df.columns:
+            continue
+
+        series = df[col]
+        invalid_mask = series.map(
+            lambda v: pd.isna(v) or not isinstance(v, str) or v.strip() == ""
+        )
+
+        if invalid_mask.any():
+            samples = series[invalid_mask].head(sample_size)
+            formatted = ", ".join(repr(v) for v in samples)
+            raise ValueError(
+                f"Колонка '{col}' в таблице '{table}' должна содержать непустые строки, "
+                f"примеры некорректных: {formatted}"
+            )
+
+
 def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
@@ -438,6 +472,11 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
     _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
     _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})
+    _ensure_non_empty_strings(
+        app_groups,
+        table="app_groups",
+        columns={"app_group_id"},
+    )
     _ensure_unique_keys(snapshots, table="snapshots", keys=["snapshot_id"])
     _ensure_integer_like(
         snapshots,

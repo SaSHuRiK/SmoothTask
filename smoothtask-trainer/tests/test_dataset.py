@@ -525,6 +525,23 @@ def test_load_snapshots_as_frame_rejects_nan_pid_and_app_group_id(tmp_path: Path
         load_snapshots_as_frame(db_path)
 
 
+def test_load_snapshots_as_frame_rejects_empty_app_group_id(tmp_path: Path):
+    db_path = tmp_path / "empty_group_id.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)", (1, 10, None))
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id, process_ids) VALUES (?, ?, ?)",
+        (1, "   ", json.dumps([10])),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="app_group_id.*непустые строки"):
+        load_snapshots_as_frame(db_path)
+
+
 def test_load_snapshots_as_frame_requires_app_group_records(tmp_path: Path):
     db_path = tmp_path / "missing_app_group_records.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
@@ -1399,6 +1416,14 @@ def test_parse_process_ids_deduplicates_preserving_order():
     value = json.dumps([1, "1", 2, 1.0, " 2 ", 3, 2])
 
     assert _parse_process_ids(value) == [1, 2, 3]
+
+
+def test_parse_process_ids_rejects_negative_values():
+    """Отрицательные pid должны вызывать ошибку."""
+    value = json.dumps([1, -5, " -1 ", 2, float("inf")])
+
+    with pytest.raises(ValueError, match="process_ids.*-5"):
+        _parse_process_ids(value)
 
 
 def test_load_snapshots_as_frame_rejects_invalid_process_ids(tmp_path: Path):

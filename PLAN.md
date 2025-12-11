@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-345: Запретить отрицательные PID в process_ids групп
+  - Тип: Python / trainer / dataset
+  - Примечания: `_parse_process_ids` теперь отклоняет отрицательные и бесконечные PID с понятным ValueError; добавлен unit-тест на ошибку и проверено сохранение дедупликации. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-344: Валидировать app_group_id как непустое строковое значение
+  - Тип: Python / trainer / dataset
+  - Примечания: `load_snapshots_as_frame` проверяет app_group_id в app_groups на непустые строки, выдаёт ошибку с примерами некорректных значений; добавлен тест на пустой app_group_id. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 - [x] ST-343: Удалять дубликаты process_ids при парсинге app_groups
   - Тип: Python / trainer / dataset
   - Примечания: _parse_process_ids убирает дубликаты с сохранением порядка; добавлен unit-тест на стабильное множество pid и обновлён интеграционный тест на process_ids.
@@ -70,14 +78,6 @@
 - [x] ST-336: Запретить бесконечные значения в SQLite снапшотах
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame валидирует inf в числовых колонках snapshots/processes/app_groups и выдаёт понятные ValueError; покрыто тремя новыми тестами; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-335: Нормализовать JSON tags в processes/app_groups
-  - Тип: Python / trainer / dataset
-  - Примечания: tags приводятся к списку строк с обрезкой пробелов и отбрасыванием пустых значений; сложные элементы вызывают ValueError. Добавлены тесты на валидные и невалидные tags. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-334: Валидировать process_ids в app_groups в `load_snapshots_as_frame`
-  - Тип: Python / trainer / dataset
-  - Примечания: process_ids приводятся к спискам целых чисел; нечисловые элементы вызывают ValueError. Добавлены тесты на успешный и ошибочный сценарии. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

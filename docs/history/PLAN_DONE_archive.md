@@ -1,3 +1,13 @@
+## Перенос из PLAN.md (ST-335–ST-334, 2025-12-11)
+
+- [x] ST-335: Нормализовать JSON tags в processes/app_groups
+  - Тип: Python / trainer / dataset
+  - Примечания: tags приводятся к списку строк с обрезкой пробелов и отбрасыванием пустых значений; сложные элементы вызывают ValueError. Добавлены тесты на валидные и невалидные tags. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-334: Валидировать process_ids в app_groups в `load_snapshots_as_frame`
+  - Тип: Python / trainer / dataset
+  - Примечания: process_ids приводятся к спискам целых чисел; нечисловые элементы вызывают ValueError. Добавлены тесты на успешный и ошибочный сценарии. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 ## Перенос из PLAN.md (ST-329–ST-326, 2025-12-11)
 
 - [x] ST-329: Проверка уникальности ключей в таблицах снапшотов
