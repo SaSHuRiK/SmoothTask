@@ -76,7 +76,13 @@ impl LatencyCollector {
     /// # Возвращает
     ///
     /// * `Some(value)` - значение перцентиля в миллисекундах, если есть измерения
-    /// * `None` - если измерений недостаточно (меньше 2)
+    /// * `None` - если измерений недостаточно (меньше 2) или percentile вне диапазона [0.0, 1.0]
+    ///
+    /// # Обработка граничных случаев
+    ///
+    /// * `percentile = 0.0` - возвращает минимальное значение (первый элемент после сортировки)
+    /// * `percentile = 1.0` - возвращает максимальное значение (последний элемент после сортировки)
+    /// * `percentile < 0.0` или `percentile > 1.0` - возвращает `None` (невалидное значение)
     ///
     /// # Пример
     ///
@@ -90,8 +96,18 @@ impl LatencyCollector {
     ///
     /// let p95 = collector.percentile(0.95);
     /// assert!(p95.is_some());
+    ///
+    /// // Граничные случаи
+    /// let min = collector.percentile(0.0); // Минимальное значение
+    /// let max = collector.percentile(1.0); // Максимальное значение
+    /// let invalid = collector.percentile(1.5); // None (невалидное значение)
     /// ```
     pub fn percentile(&self, percentile: f64) -> Option<f64> {
+        // Валидация: percentile должен быть в диапазоне [0.0, 1.0]
+        if !(0.0..=1.0).contains(&percentile) {
+            return None;
+        }
+
         let samples = self.samples.lock().unwrap();
         if samples.len() < 2 {
             return None;
@@ -102,8 +118,19 @@ impl LatencyCollector {
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
 
         // Вычисляем индекс перцентиля
-        let index = (sorted.len() as f64 * percentile).ceil() as usize - 1;
-        let index = index.min(sorted.len() - 1);
+        // Для percentile = 0.0: index = 0 (минимальное значение)
+        // Для percentile = 1.0: index = len - 1 (максимальное значение)
+        let index = if percentile == 0.0 {
+            0
+        } else {
+            let computed = (sorted.len() as f64 * percentile).ceil() as usize;
+            // Защита от переполнения: если computed == 0, используем 0
+            if computed == 0 {
+                0
+            } else {
+                (computed - 1).min(sorted.len() - 1)
+            }
+        };
 
         Some(sorted[index])
     }
@@ -423,6 +450,101 @@ mod tests {
         assert!((p95 - 950.0).abs() < 10.0);
         // P99 должен быть около 990
         assert!((p99 - 990.0).abs() < 10.0);
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_boundary_zero() {
+        let collector = LatencyCollector::new(100);
+        collector.add_sample(5.0);
+        collector.add_sample(10.0);
+        collector.add_sample(15.0);
+
+        // percentile = 0.0 должен вернуть минимальное значение
+        let p0 = collector.percentile(0.0);
+        assert!(p0.is_some());
+        assert_eq!(p0.unwrap(), 5.0); // Минимальное значение
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_boundary_one() {
+        let collector = LatencyCollector::new(100);
+        collector.add_sample(5.0);
+        collector.add_sample(10.0);
+        collector.add_sample(15.0);
+
+        // percentile = 1.0 должен вернуть максимальное значение
+        let p100 = collector.percentile(1.0);
+        assert!(p100.is_some());
+        assert_eq!(p100.unwrap(), 15.0); // Максимальное значение
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_negative() {
+        let collector = LatencyCollector::new(100);
+        collector.add_sample(5.0);
+        collector.add_sample(10.0);
+        collector.add_sample(15.0);
+
+        // Отрицательный percentile должен вернуть None
+        assert_eq!(collector.percentile(-0.1), None);
+        assert_eq!(collector.percentile(-1.0), None);
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_greater_than_one() {
+        let collector = LatencyCollector::new(100);
+        collector.add_sample(5.0);
+        collector.add_sample(10.0);
+        collector.add_sample(15.0);
+
+        // percentile > 1.0 должен вернуть None
+        assert_eq!(collector.percentile(1.1), None);
+        assert_eq!(collector.percentile(2.0), None);
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_nan() {
+        let collector = LatencyCollector::new(100);
+        collector.add_sample(5.0);
+        collector.add_sample(10.0);
+        collector.add_sample(15.0);
+
+        // NaN percentile должен вернуть None (так как NaN не находится в диапазоне [0.0, 1.0])
+        let nan_percentile = f64::NAN;
+        assert_eq!(collector.percentile(nan_percentile), None);
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_infinity() {
+        let collector = LatencyCollector::new(100);
+        collector.add_sample(5.0);
+        collector.add_sample(10.0);
+        collector.add_sample(15.0);
+
+        // Infinity percentile должен вернуть None
+        assert_eq!(collector.percentile(f64::INFINITY), None);
+        assert_eq!(collector.percentile(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn test_latency_collector_percentile_edge_cases_with_many_samples() {
+        let collector = LatencyCollector::new(100);
+        // Добавляем 100 значений от 1.0 до 100.0
+        for i in 1..=100 {
+            collector.add_sample(i as f64);
+        }
+
+        // P0 должен быть минимальным (1.0)
+        let p0 = collector.percentile(0.0).unwrap();
+        assert_eq!(p0, 1.0);
+
+        // P100 должен быть максимальным (100.0)
+        let p100 = collector.percentile(1.0).unwrap();
+        assert_eq!(p100, 100.0);
+
+        // P50 должен быть около 50
+        let p50 = collector.percentile(0.5).unwrap();
+        assert!((p50 - 50.0).abs() < 2.0);
     }
 
     #[test]
