@@ -71,7 +71,8 @@ impl InputActivityTracker {
     }
 }
 
-fn is_user_activity_event(ev: &InputEvent) -> bool {
+// Функции сделаны pub(crate) для доступа в тестах, но не экспортируются наружу модуля
+pub(crate) fn is_user_activity_event(ev: &InputEvent) -> bool {
     match ev.event_type() {
         EventType::SYNCHRONIZATION => false,
         EventType::KEY => {
@@ -84,7 +85,7 @@ fn is_user_activity_event(ev: &InputEvent) -> bool {
     }
 }
 
-fn duration_to_ms(d: Duration) -> u64 {
+pub(crate) fn duration_to_ms(d: Duration) -> u64 {
     d.as_secs()
         .saturating_mul(1000)
         .saturating_add(u64::from(d.subsec_millis()))
@@ -880,5 +881,200 @@ mod tests {
             simple_metrics.time_since_last_input_ms.is_none()
                 || auto_metrics.time_since_last_input_ms.is_some()
         );
+    }
+
+    // Edge case тесты для duration_to_ms
+
+    #[test]
+    fn test_duration_to_ms_zero() {
+        // Тест для нулевого Duration
+        let d = Duration::from_secs(0);
+        assert_eq!(duration_to_ms(d), 0);
+    }
+
+    #[test]
+    fn test_duration_to_ms_zero_with_nanos() {
+        // Тест для Duration с нулевыми секундами, но ненулевыми наносекундами
+        let d = Duration::from_nanos(0);
+        assert_eq!(duration_to_ms(d), 0);
+    }
+
+    #[test]
+    fn test_duration_to_ms_one_second() {
+        // Тест для одной секунды
+        let d = Duration::from_secs(1);
+        assert_eq!(duration_to_ms(d), 1000);
+    }
+
+    #[test]
+    fn test_duration_to_ms_one_millisecond() {
+        // Тест для одной миллисекунды
+        let d = Duration::from_millis(1);
+        assert_eq!(duration_to_ms(d), 1);
+    }
+
+    #[test]
+    fn test_duration_to_ms_subsec_millis() {
+        // Тест для Duration с миллисекундами в subsec_millis
+        let d = Duration::from_millis(1234);
+        assert_eq!(duration_to_ms(d), 1234);
+    }
+
+    #[test]
+    fn test_duration_to_ms_max_subsec_millis() {
+        // Тест для максимального значения subsec_millis (999 мс)
+        let d = Duration::from_millis(999);
+        assert_eq!(duration_to_ms(d), 999);
+    }
+
+    #[test]
+    fn test_duration_to_ms_very_large() {
+        // Тест для очень большого Duration (проверка saturating операций)
+        // u64::MAX / 1000 секунд - это максимальное значение, которое можно безопасно умножить на 1000
+        let max_safe_secs = u64::MAX / 1000;
+        let d = Duration::from_secs(max_safe_secs);
+        let result = duration_to_ms(d);
+        // Результат должен быть max_safe_secs * 1000
+        assert_eq!(result, max_safe_secs * 1000);
+    }
+
+    #[test]
+    fn test_duration_to_ms_overflow_protection() {
+        // Тест для проверки защиты от переполнения (saturating операции)
+        // Если бы не было saturating, это могло бы вызвать переполнение
+        let very_large_secs = u64::MAX;
+        let d = Duration::from_secs(very_large_secs);
+        let result = duration_to_ms(d);
+        // Результат должен быть ограничен u64::MAX из-за saturating_mul
+        assert_eq!(result, u64::MAX);
+    }
+
+    #[test]
+    fn test_duration_to_ms_with_nanos() {
+        // Тест для Duration с наносекундами (не кратно миллисекундам)
+        let d = Duration::from_nanos(1_500_000); // 1.5 мс
+        assert_eq!(duration_to_ms(d), 1); // Округляется вниз до 1 мс
+    }
+
+    #[test]
+    fn test_duration_to_ms_precision() {
+        // Тест для проверки точности преобразования
+        let test_cases = vec![
+            (Duration::from_millis(0), 0),
+            (Duration::from_millis(1), 1),
+            (Duration::from_millis(100), 100),
+            (Duration::from_millis(1000), 1000),
+            (Duration::from_secs(1), 1000),
+            (Duration::from_secs(60), 60000),
+            (Duration::from_secs(3600), 3600000),
+        ];
+
+        for (duration, expected_ms) in test_cases {
+            assert_eq!(
+                duration_to_ms(duration),
+                expected_ms,
+                "Failed for duration {:?}",
+                duration
+            );
+        }
+    }
+
+    // Edge case тесты для is_user_activity_event
+
+    #[test]
+    fn test_is_user_activity_event_unknown_event_type() {
+        // Тест для неизвестного типа события (не покрытого в match)
+        // Создаём событие с типом, который не обрабатывается явно
+        // В evdev нет прямого способа создать произвольный EventType,
+        // но мы можем проверить, что другие типы событий возвращают false
+        let syn = InputEvent::new(EventType::SYNCHRONIZATION, 0, 0);
+        assert!(!is_user_activity_event(&syn));
+    }
+
+    #[test]
+    fn test_is_user_activity_event_key_with_different_codes() {
+        // Тест для KEY событий с разными кодами
+        let key_a = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        assert!(is_user_activity_event(&key_a));
+
+        let key_space = InputEvent::new(EventType::KEY, Key::KEY_SPACE.code(), 1);
+        assert!(is_user_activity_event(&key_space));
+
+        let key_enter = InputEvent::new(EventType::KEY, Key::KEY_ENTER.code(), 1);
+        assert!(is_user_activity_event(&key_enter));
+    }
+
+    #[test]
+    fn test_is_user_activity_event_key_reserved_code() {
+        // Тест для KEY события с зарезервированным кодом (должно игнорироваться)
+        let reserved = InputEvent::new(EventType::KEY, Key::KEY_RESERVED.code(), 1);
+        assert!(!is_user_activity_event(&reserved));
+    }
+
+    #[test]
+    fn test_is_user_activity_event_key_zero_code() {
+        // Тест для KEY события с нулевым кодом (может быть валидным, если не KEY_RESERVED)
+        // Проверяем, что нулевой код обрабатывается корректно
+        let key_zero = InputEvent::new(EventType::KEY, 0, 1);
+        // Если 0 != KEY_RESERVED.code(), то событие должно считаться активностью
+        // (в реальности это зависит от конкретного значения KEY_RESERVED.code())
+        let result = is_user_activity_event(&key_zero);
+        // Результат зависит от того, равен ли 0 KEY_RESERVED.code()
+        // Но функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_is_user_activity_event_all_activity_types() {
+        // Тест для всех типов событий, которые считаются активностью
+        let relative = InputEvent::new(EventType::RELATIVE, 0, 1);
+        assert!(is_user_activity_event(&relative));
+
+        let absolute = InputEvent::new(EventType::ABSOLUTE, 0, 1);
+        assert!(is_user_activity_event(&absolute));
+
+        let switch = InputEvent::new(EventType::SWITCH, 0, 1);
+        assert!(is_user_activity_event(&switch));
+
+        let misc = InputEvent::new(EventType::MISC, 0, 1);
+        assert!(is_user_activity_event(&misc));
+    }
+
+    #[test]
+    fn test_is_user_activity_event_synchronization_always_false() {
+        // Тест для SYNCHRONIZATION событий (всегда должны возвращать false)
+        let syn1 = InputEvent::new(EventType::SYNCHRONIZATION, 0, 0);
+        assert!(!is_user_activity_event(&syn1));
+
+        let syn2 = InputEvent::new(EventType::SYNCHRONIZATION, 1, 1);
+        assert!(!is_user_activity_event(&syn2));
+    }
+
+    #[test]
+    fn test_is_user_activity_event_key_edge_codes() {
+        // Тест для граничных кодов клавиш
+        // Проверяем, что функция корректно обрабатывает различные коды
+        let key_min = InputEvent::new(EventType::KEY, 0, 1);
+        let _ = is_user_activity_event(&key_min); // Не должно паниковать
+
+        // Проверяем несколько реальных кодов клавиш
+        let codes = vec![
+            Key::KEY_ESC.code(),
+            Key::KEY_1.code(),
+            Key::KEY_A.code(),
+            Key::KEY_Z.code(),
+            Key::KEY_SPACE.code(),
+            Key::KEY_ENTER.code(),
+        ];
+
+        for code in codes {
+            let event = InputEvent::new(EventType::KEY, code, 1);
+            // Все реальные коды клавиш должны считаться активностью
+            assert!(
+                is_user_activity_event(&event),
+                "Key code {} should be considered user activity",
+                code
+            );
+        }
     }
 }

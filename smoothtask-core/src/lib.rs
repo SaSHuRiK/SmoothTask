@@ -405,19 +405,20 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 ///
 /// ```no_run
 /// use smoothtask_core::{config::Config, run_daemon};
-/// use tokio::signal;
 /// use tokio::sync::watch;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let config = Config::load("configs/smoothtask.yml")?;
 /// let (shutdown_tx, shutdown_rx) = watch::channel(false);
 ///
-/// // Обработка SIGINT/SIGTERM
-/// let shutdown_tx_clone = shutdown_tx.clone();
-/// tokio::spawn(async move {
-///     let _ = signal::ctrl_c().await;
-///     let _ = shutdown_tx_clone.send(true);
-/// });
+/// // Обработка SIGINT/SIGTERM (требует tokio с feature "signal")
+/// // В реальном использовании можно использовать nix::sys::signal или
+/// // tokio::signal::unix::SignalKind для обработки сигналов
+/// // let shutdown_tx_clone = shutdown_tx.clone();
+/// // tokio::spawn(async move {
+/// //     // Обработка сигналов здесь
+/// //     let _ = shutdown_tx_clone.send(true);
+/// // });
 ///
 /// // Запускаем демон
 /// run_daemon(config, false, shutdown_rx).await?;
