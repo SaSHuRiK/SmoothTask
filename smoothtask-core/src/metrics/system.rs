@@ -33,6 +33,80 @@ pub struct CpuUsage {
 
 impl CpuTimes {
     /// Рассчитать доли использования CPU относительно предыдущего снимка.
+    ///
+    /// Вычисляет разницу между текущими и предыдущими счетчиками CPU и нормализует
+    /// их в проценты использования (user, system, idle, iowait).
+    ///
+    /// # Возвращаемое значение
+    ///
+    /// - `Some(CpuUsage)` - если удалось вычислить использование CPU
+    /// - `None` - если произошло переполнение счетчиков (prev > cur) или total = 0
+    ///
+    /// # Граничные случаи
+    ///
+    /// - **Переполнение счетчиков**: Если какой-либо счетчик в `prev` больше, чем в `self`,
+    ///   это может означать переполнение счетчика (на долгоживущих системах) или некорректные данные.
+    ///   В этом случае функция возвращает `None`.
+    ///
+    /// - **Нулевой total**: Если сумма всех дельт равна нулю (все счетчики не изменились),
+    ///   функция возвращает `None`, так как невозможно вычислить проценты.
+    ///
+    /// - **Все счетчики равны**: Если все счетчики в `prev` и `self` равны, функция вернет `None`.
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::CpuTimes;
+    ///
+    /// let prev = CpuTimes {
+    ///     user: 100, nice: 20, system: 50, idle: 200,
+    ///     iowait: 10, irq: 5, softirq: 5, steal: 0,
+    ///     guest: 0, guest_nice: 0,
+    /// };
+    ///
+    /// let cur = CpuTimes {
+    ///     user: 150, nice: 30, system: 80, idle: 260,
+    ///     iowait: 20, irq: 10, softirq: 10, steal: 0,
+    ///     guest: 0, guest_nice: 0,
+    /// };
+    ///
+    /// let usage = cur.delta(&prev).expect("должно быть Some");
+    /// assert!(usage.user > 0.0);
+    /// assert!(usage.idle > 0.0);
+    /// ```
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::CpuTimes;
+    ///
+    /// // Переполнение счетчиков
+    /// let prev = CpuTimes {
+    ///     user: 200, nice: 0, system: 0, idle: 0,
+    ///     iowait: 0, irq: 0, softirq: 0, steal: 0,
+    ///     guest: 0, guest_nice: 0,
+    /// };
+    ///
+    /// let cur = CpuTimes {
+    ///     user: 100, nice: 0, system: 0, idle: 0,
+    ///     iowait: 0, irq: 0, softirq: 0, steal: 0,
+    ///     guest: 0, guest_nice: 0,
+    /// };
+    ///
+    /// assert!(cur.delta(&prev).is_none()); // переполнение
+    /// ```
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::CpuTimes;
+    ///
+    /// // Нулевой total (все счетчики равны)
+    /// let prev = CpuTimes {
+    ///     user: 100, nice: 0, system: 0, idle: 0,
+    ///     iowait: 0, irq: 0, softirq: 0, steal: 0,
+    ///     guest: 0, guest_nice: 0,
+    /// };
+    ///
+    /// let cur = prev; // все счетчики равны
+    /// assert!(cur.delta(&prev).is_none()); // total = 0
+    /// ```
     pub fn delta(&self, prev: &CpuTimes) -> Option<CpuUsage> {
         let user = self.user.checked_sub(prev.user)?;
         let nice = self.nice.checked_sub(prev.nice)?;
@@ -417,6 +491,156 @@ SwapFree:        4096000 kB
     }
 
     #[test]
+    fn cpu_delta_handles_overflow() {
+        // Тест проверяет, что функция корректно обрабатывает переполнение счетчиков
+        // (когда prev > cur, что может произойти на долгоживущих системах)
+        let prev = CpuTimes {
+            user: 200,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+        let cur = CpuTimes {
+            user: 100, // меньше prev - переполнение
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+
+        assert!(cur.delta(&prev).is_none());
+    }
+
+    #[test]
+    fn cpu_delta_handles_zero_total() {
+        // Тест проверяет, что функция возвращает None, когда все счетчики равны (total = 0)
+        let prev = CpuTimes {
+            user: 100,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+        let cur = prev; // все счетчики равны
+
+        assert!(cur.delta(&prev).is_none());
+    }
+
+    #[test]
+    fn cpu_delta_handles_all_zero() {
+        // Тест проверяет, что функция корректно обрабатывает случай, когда все счетчики равны нулю
+        let prev = CpuTimes {
+            user: 0,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+        let cur = CpuTimes {
+            user: 0,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+
+        assert!(cur.delta(&prev).is_none());
+    }
+
+    #[test]
+    fn cpu_delta_handles_partial_overflow() {
+        // Тест проверяет, что функция корректно обрабатывает частичное переполнение
+        // (когда только некоторые счетчики переполнились)
+        let prev = CpuTimes {
+            user: 100,
+            nice: 50,
+            system: 200, // переполнение
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+        let cur = CpuTimes {
+            user: 150,
+            nice: 60,
+            system: 100, // меньше prev - переполнение
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+
+        assert!(cur.delta(&prev).is_none());
+    }
+
+    #[test]
+    fn cpu_delta_handles_boundary_values() {
+        // Тест проверяет граничные случаи с минимальными изменениями
+        let prev = CpuTimes {
+            user: 100,
+            nice: 0,
+            system: 0,
+            idle: 1000,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+        let cur = CpuTimes {
+            user: 101, // минимальное изменение
+            nice: 0,
+            system: 0,
+            idle: 1001,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        };
+
+        let usage = cur.delta(&prev).expect("должно быть Some");
+        let total = usage.user + usage.system + usage.idle + usage.iowait;
+        assert!((total - 1.0).abs() < 1e-9);
+        assert!(usage.user > 0.0);
+        assert!(usage.idle > 0.0);
+    }
+
+    #[test]
     fn parse_cpu_times_ok() {
         let parsed = parse_cpu_times(PROC_STAT).expect("parsed");
         assert_eq!(parsed.user, 2255);
@@ -435,6 +659,124 @@ SwapFree:        4096000 kB
         assert_eq!(mem.swap_free_kb, 4_096_000);
         assert_eq!(mem.mem_used_kb(), 16_384_256 - 9_876_543);
         assert_eq!(mem.swap_used_kb(), 4_096_000);
+    }
+
+    #[test]
+    fn mem_used_kb_handles_overflow() {
+        // Тест проверяет, что mem_used_kb корректно обрабатывает случай,
+        // когда mem_available_kb > mem_total_kb (используется saturating_sub)
+        let mem = MemoryInfo {
+            mem_total_kb: 1000,
+            mem_available_kb: 2000, // больше total - некорректные данные
+            mem_free_kb: 500,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
+        };
+
+        // saturating_sub должен вернуть 0, а не переполнение
+        assert_eq!(mem.mem_used_kb(), 0);
+    }
+
+    #[test]
+    fn mem_used_kb_handles_zero_values() {
+        // Тест проверяет, что mem_used_kb корректно обрабатывает нулевые значения
+        let mem = MemoryInfo {
+            mem_total_kb: 0,
+            mem_available_kb: 0,
+            mem_free_kb: 0,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
+        };
+
+        assert_eq!(mem.mem_used_kb(), 0);
+    }
+
+    #[test]
+    fn mem_used_kb_handles_normal_case() {
+        // Тест проверяет нормальный случай использования
+        let mem = MemoryInfo {
+            mem_total_kb: 16_384_256,
+            mem_available_kb: 9_876_543,
+            mem_free_kb: 1_234_567,
+            buffers_kb: 345_678,
+            cached_kb: 2_345_678,
+            swap_total_kb: 8_192_000,
+            swap_free_kb: 4_096_000,
+        };
+
+        let expected = 16_384_256 - 9_876_543;
+        assert_eq!(mem.mem_used_kb(), expected);
+    }
+
+    #[test]
+    fn swap_used_kb_handles_overflow() {
+        // Тест проверяет, что swap_used_kb корректно обрабатывает случай,
+        // когда swap_free_kb > swap_total_kb (используется saturating_sub)
+        let mem = MemoryInfo {
+            mem_total_kb: 0,
+            mem_available_kb: 0,
+            mem_free_kb: 0,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 1000,
+            swap_free_kb: 2000, // больше total - некорректные данные
+        };
+
+        // saturating_sub должен вернуть 0, а не переполнение
+        assert_eq!(mem.swap_used_kb(), 0);
+    }
+
+    #[test]
+    fn swap_used_kb_handles_zero_values() {
+        // Тест проверяет, что swap_used_kb корректно обрабатывает нулевые значения
+        let mem = MemoryInfo {
+            mem_total_kb: 0,
+            mem_available_kb: 0,
+            mem_free_kb: 0,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
+        };
+
+        assert_eq!(mem.swap_used_kb(), 0);
+    }
+
+    #[test]
+    fn swap_used_kb_handles_normal_case() {
+        // Тест проверяет нормальный случай использования
+        let mem = MemoryInfo {
+            mem_total_kb: 0,
+            mem_available_kb: 0,
+            mem_free_kb: 0,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 8_192_000,
+            swap_free_kb: 4_096_000,
+        };
+
+        let expected = 8_192_000 - 4_096_000;
+        assert_eq!(mem.swap_used_kb(), expected);
+    }
+
+    #[test]
+    fn swap_used_kb_handles_full_swap() {
+        // Тест проверяет случай, когда весь swap используется
+        let mem = MemoryInfo {
+            mem_total_kb: 0,
+            mem_available_kb: 0,
+            mem_free_kb: 0,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 8_192_000,
+            swap_free_kb: 0, // весь swap используется
+        };
+
+        assert_eq!(mem.swap_used_kb(), 8_192_000);
     }
 
     #[test]
