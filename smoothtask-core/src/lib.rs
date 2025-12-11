@@ -30,8 +30,6 @@ use crate::metrics::windows::{
     X11Introspector,
 };
 use crate::policy::engine::PolicyEngine;
-
-/// Статистика работы демона для мониторинга производительности.
 ///
 /// Структура собирает метрики о работе демона во время выполнения:
 /// количество итераций, время выполнения, количество применённых изменений приоритетов
@@ -41,8 +39,6 @@ use crate::policy::engine::PolicyEngine;
 /// # Примеры использования
 ///
 /// ```no_run
-/// use smoothtask_core::DaemonStats;
-///
 /// let mut stats = DaemonStats::new();
 ///
 /// // Записываем успешную итерацию
@@ -68,7 +64,7 @@ use crate::policy::engine::PolicyEngine;
 /// - `total_applied_adjustments`: Общее количество применённых изменений приоритетов
 /// - `total_apply_errors`: Общее количество ошибок при применении приоритетов
 #[derive(Debug, Clone)]
-struct DaemonStats {
+pub struct DaemonStats {
     /// Общее количество итераций (успешных и с ошибками)
     total_iterations: u64,
     /// Количество успешных итераций (без ошибок сбора метрик)
@@ -91,13 +87,11 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
-    /// use smoothtask_core::DaemonStats;
-    ///
     /// let stats = DaemonStats::new();
     /// assert_eq!(stats.total_iterations, 0);
     /// assert_eq!(stats.successful_iterations, 0);
     /// ```
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             total_iterations: 0,
             successful_iterations: 0,
@@ -123,8 +117,6 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
-    /// use smoothtask_core::DaemonStats;
-    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_successful_iteration(100, 5, 1);
     /// assert_eq!(stats.total_iterations, 1);
@@ -132,7 +124,7 @@ impl DaemonStats {
     /// assert_eq!(stats.total_applied_adjustments, 5);
     /// assert_eq!(stats.total_apply_errors, 1);
     /// ```
-    fn record_successful_iteration(&mut self, duration_ms: u128, applied: u64, errors: u64) {
+    pub fn record_successful_iteration(&mut self, duration_ms: u128, applied: u64, errors: u64) {
         self.total_iterations += 1;
         self.successful_iterations += 1;
         self.total_duration_ms += duration_ms;
@@ -149,15 +141,13 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
-    /// use smoothtask_core::DaemonStats;
-    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_error_iteration();
     /// assert_eq!(stats.total_iterations, 1);
     /// assert_eq!(stats.error_iterations, 1);
     /// assert_eq!(stats.successful_iterations, 0);
     /// ```
-    fn record_error_iteration(&mut self) {
+    pub fn record_error_iteration(&mut self) {
         self.total_iterations += 1;
         self.error_iterations += 1;
     }
@@ -170,8 +160,6 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
-    /// use smoothtask_core::DaemonStats;
-    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_successful_iteration(100, 0, 0);
     /// stats.record_successful_iteration(200, 0, 0);
@@ -181,7 +169,7 @@ impl DaemonStats {
     /// let empty_stats = DaemonStats::new();
     /// assert_eq!(empty_stats.average_iteration_duration_ms(), 0.0);
     /// ```
-    fn average_iteration_duration_ms(&self) -> f64 {
+    pub fn average_iteration_duration_ms(&self) -> f64 {
         if self.successful_iterations > 0 {
             self.total_duration_ms as f64 / self.successful_iterations as f64
         } else {
@@ -198,13 +186,11 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
-    /// use smoothtask_core::DaemonStats;
-    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_successful_iteration(100, 5, 1);
     /// stats.log_stats(); // Логирует: "Daemon stats: 1 total iterations..."
     /// ```
-    fn log_stats(&self) {
+    pub fn log_stats(&self) {
         let avg_duration = self.average_iteration_duration_ms();
         info!(
             "Daemon stats: {} total iterations ({} successful, {} errors), \

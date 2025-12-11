@@ -11,7 +11,26 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-*(Пока нет новых задач. Добавьте задачи из бэклога или создайте новые.)*
+- [~] ST-135: Исправление падающих doctest'ов в lib.rs (DaemonStats)
+  - Тип: Rust / core / documentation / tests
+  - Критерии готовности:
+    - Все doctest'ы для DaemonStats компилируются и проходят;
+    - Структура и методы доступны в doctest'ах;
+    - Все существующие тесты проходят.
+
+- [ ] ST-136: Исправление падающих doctest'ов в actuator.rs (plan_priority_changes, apply_priority_adjustments)
+  - Тип: Rust / core / documentation / tests
+  - Критерии готовности:
+    - Все doctest'ы для plan_priority_changes и apply_priority_adjustments компилируются;
+    - Исправлено использование Snapshot::default() на корректное создание снапшотов;
+    - Все существующие тесты проходят.
+
+- [ ] ST-137: Исправление падающих doctest'ов в других модулях (logging/snapshots.rs, metrics/audio.rs, policy/engine.rs, windows.rs, grouper.rs)
+  - Тип: Rust / core / documentation / tests
+  - Критерии готовности:
+    - Все doctest'ы компилируются и проходят;
+    - Исправлены проблемы с импортами и использованием типов;
+    - Все существующие тесты проходят.
 
 ## 2. Бэклог
 
@@ -23,6 +42,10 @@
     - Добавлены бенчмарки для проверки улучшений.
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-134: Исправление падающих doctest'ов в classify/rules.rs (PatternDatabase::load)
+  - Тип: Rust / core / documentation / tests
+  - Примечания: исправлены doctest'ы для PatternDatabase и PatternDatabase::load, добавлены `fn main() -> Result<...>` для поддержки оператора `?`. Все doctest'ы для classify/rules.rs теперь компилируются.
 
 - [x] ST-133: Улучшение документации для FeatureVector::total_features() с примерами использования
   - Тип: Rust / core / model / documentation

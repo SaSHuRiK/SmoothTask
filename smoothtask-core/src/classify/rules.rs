@@ -98,6 +98,7 @@ pub struct PatternFile {
 /// use smoothtask_core::classify::rules::PatternDatabase;
 /// use std::path::Path;
 ///
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// // Загрузка паттернов из директории
 /// let db = PatternDatabase::load(Path::new("/path/to/patterns"))?;
 ///
@@ -111,6 +112,8 @@ pub struct PatternFile {
 /// for (category, pattern) in matches {
 ///     println!("Found pattern: {} in category {}", pattern.name, category.0);
 /// }
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug, Clone)]
 pub struct PatternDatabase {
@@ -140,7 +143,10 @@ impl PatternDatabase {
     /// use smoothtask_core::classify::rules::PatternDatabase;
     /// use std::path::Path;
     ///
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     /// let db = PatternDatabase::load(Path::new("configs/patterns"))?;
+    /// # Ok(())
+    /// # }
     /// ```
     ///
     /// # Ошибки

@@ -83,9 +83,10 @@ pub struct PriorityAdjustment {
 /// use std::collections::HashMap;
 /// use smoothtask_core::policy::engine::PolicyResult;
 ///
-/// # let snapshot = Snapshot::default();
-/// # let policy_results = HashMap::new();
-/// let adjustments = plan_priority_changes(&snapshot, &policy_results);
+/// // Создайте snapshot и policy_results из реальных данных
+/// # let snapshot: &Snapshot = todo!();
+/// # let policy_results: &HashMap<String, PolicyResult> = &HashMap::new();
+/// let adjustments = plan_priority_changes(snapshot, policy_results);
 /// // adjustments содержит все процессы, требующие изменения приоритетов
 /// ```
 pub fn plan_priority_changes(
@@ -1085,9 +1086,10 @@ pub struct ApplyResult {
 /// use std::collections::HashMap;
 /// use smoothtask_core::policy::engine::PolicyResult;
 ///
-/// # let snapshot = Snapshot::default();
-/// # let policy_results = HashMap::<String, PolicyResult>::new();
-/// let adjustments = plan_priority_changes(&snapshot, &policy_results);
+/// // Создайте snapshot и policy_results из реальных данных
+/// # let snapshot: &Snapshot = todo!();
+/// # let policy_results: &HashMap<String, PolicyResult> = &HashMap::new();
+/// let adjustments = plan_priority_changes(snapshot, policy_results);
 /// let mut hysteresis = HysteresisTracker::new();
 ///
 /// let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
