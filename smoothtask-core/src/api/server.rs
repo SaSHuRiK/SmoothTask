@@ -76,6 +76,9 @@ impl Default for ApiState {
     }
 }
 
+/// Версия демона SmoothTask.
+const DAEMON_VERSION: &str = env!("CARGO_PKG_VERSION");
+
 /// Обработчик для endpoint `/health`.
 ///
 /// Возвращает статус работоспособности API сервера.
@@ -86,10 +89,22 @@ async fn health_handler() -> Json<Value> {
     }))
 }
 
+/// Обработчик для endpoint `/api/version`.
+///
+/// Возвращает версию демона SmoothTask.
+async fn version_handler() -> Json<Value> {
+    Json(json!({
+        "status": "ok",
+        "version": DAEMON_VERSION,
+        "service": "smoothtaskd"
+    }))
+}
+
 /// Создаёт роутер для API.
 fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
+        .route("/api/version", get(version_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
         .route("/api/processes", get(processes_handler))
@@ -739,5 +754,16 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert!(value["app_groups"].is_array());
         assert_eq!(value["count"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_version_handler() {
+        let result = version_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["service"], "smoothtaskd");
+        assert!(json["version"].is_string());
+        // Проверяем, что версия соответствует версии из Cargo.toml
+        assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
     }
 }

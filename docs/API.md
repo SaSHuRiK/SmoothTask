@@ -39,6 +39,34 @@ curl http://127.0.0.1:8080/health
 
 ---
 
+### GET /api/version
+
+Получение версии демона SmoothTask.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/version
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "version": "0.0.1",
+  "service": "smoothtaskd"
+}
+```
+
+**Поля:**
+- `status` (string) - статус ответа (всегда "ok")
+- `version` (string) - версия демона (соответствует версии из Cargo.toml)
+- `service` (string) - имя сервиса (всегда "smoothtaskd")
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
 ### GET /api/stats
 
 Получение статистики работы демона.
