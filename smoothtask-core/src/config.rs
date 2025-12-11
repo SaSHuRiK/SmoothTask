@@ -2726,7 +2726,11 @@ thresholds:
     #[test]
     fn default_sched_latency_p99_threshold_returns_expected_value() {
         let default = default_sched_latency_p99_threshold();
-        assert!((default - 20.0).abs() < f64::EPSILON, "Expected 20.0, got {}", default);
+        assert!(
+            (default - 20.0).abs() < f64::EPSILON,
+            "Expected 20.0, got {}",
+            default
+        );
     }
 
     #[test]

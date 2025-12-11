@@ -553,4 +553,70 @@ mod tests {
         assert_eq!(result1.rank, result2.rank);
         assert_eq!(result1.percentile, result2.percentile);
     }
+
+    #[test]
+    fn test_stub_ranker_build_features_consistency() {
+        // Тест проверяет, что build_features вызывается корректно для всех групп
+        // и не падает даже при отсутствующих данных
+        let ranker = StubRanker::new();
+        let mut snapshot = create_test_snapshot();
+
+        // Создаём группы с различными характеристиками
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "group1".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: Some("app1".to_string()),
+                total_cpu_share: Some(0.5),
+                total_io_read_bytes: Some(1024 * 1024),
+                total_io_write_bytes: Some(512 * 1024),
+                total_rss_mb: Some(200),
+                has_gui_window: true,
+                is_focused_group: true,
+                tags: vec!["browser".to_string()],
+                priority_class: Some("INTERACTIVE".to_string()),
+            },
+            AppGroupRecord {
+                app_group_id: "group2".to_string(),
+                root_pid: 2000,
+                process_ids: vec![2000],
+                app_name: None,
+                total_cpu_share: None,
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: None,
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        snapshot.app_groups = app_groups.clone();
+
+        // Ранжирование не должно падать, даже если build_features вызывается для групп
+        // с отсутствующими процессами или данными
+        let results = ranker.rank(&app_groups, &snapshot);
+
+        // Проверяем, что результаты есть для всех групп
+        assert_eq!(results.len(), 2);
+        assert!(results.contains_key("group1"));
+        assert!(results.contains_key("group2"));
+
+        // Проверяем, что результаты валидны
+        let result1 = results.get("group1").unwrap();
+        let result2 = results.get("group2").unwrap();
+
+        // Фокусная группа должна иметь более высокий score
+        assert!(result1.score > result2.score);
+        assert_eq!(result1.rank, 1);
+        assert_eq!(result2.rank, 2);
+
+        // Проверяем диапазоны
+        assert!((0.0..=1.0).contains(&result1.score));
+        assert!((0.0..=1.0).contains(&result2.score));
+        assert!((0.0..=1.0).contains(&result1.percentile));
+        assert!((0.0..=1.0).contains(&result2.percentile));
+    }
 }
