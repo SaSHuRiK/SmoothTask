@@ -1513,8 +1513,10 @@ mod tests {
             // Проверяем, что снапшот собран корректно с дефолтными значениями
             assert!(snapshot.snapshot_id > 0);
             // GlobalMetrics должны быть построены (даже с дефолтными значениями)
+            // Примечание: mem_total_kb имеет тип u64, поэтому проверка >= 0 не нужна (u64 всегда >= 0)
+            // Проверяем, что GlobalMetrics существует, проверяя наличие других полей
             assert!(
-                snapshot.global.mem_total_kb >= 0,
+                snapshot.global.load_avg_one >= 0.0,
                 "GlobalMetrics should be built even when optional components fail"
             );
             // ResponsivenessMetrics должны быть построены

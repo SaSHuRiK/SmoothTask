@@ -114,8 +114,8 @@ pub fn build_features(snapshot: &Snapshot, app_group: &AppGroupRecord) -> Featur
     let representative_process = group_processes.first();
 
     // Числовые фичи (в порядке _NUMERIC_COLS)
-    #[allow(clippy::vec_init_then_push)]
-    let mut numeric = Vec::new();
+    // Используем with_capacity для оптимизации (33 числовых фичи)
+    let mut numeric = Vec::with_capacity(33);
 
     // Процессные метрики
     numeric.push(
