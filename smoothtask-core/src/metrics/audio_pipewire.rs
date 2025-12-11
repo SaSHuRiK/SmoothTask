@@ -136,6 +136,38 @@ fn parse_buffer_size(props: &Map<String, Value>) -> Option<u32> {
     None
 }
 
+/// Парсит значение из JSON в `u32`.
+///
+/// Поддерживает два формата входных данных:
+/// - Числовые значения (u64): конвертируются в u32 с проверкой переполнения
+/// - Строковые значения: парсятся как десятичное число с обрезкой пробелов
+///
+/// # Примеры
+///
+/// ```
+/// use serde_json::json;
+/// # fn parse_u32(value: &serde_json::Value) -> Option<u32> {
+/// #     if let Some(n) = value.as_u64() {
+/// #         return u32::try_from(n).ok();
+/// #     }
+/// #     value.as_str().and_then(|s| s.trim().parse::<u32>().ok())
+/// # }
+///
+/// // Парсинг из числа
+/// assert_eq!(parse_u32(&json!(123)), Some(123));
+/// assert_eq!(parse_u32(&json!(0)), Some(0));
+///
+/// // Парсинг из строки
+/// assert_eq!(parse_u32(&json!("456")), Some(456));
+/// assert_eq!(parse_u32(&json!("  789  ")), Some(789));
+///
+/// // Переполнение u32
+/// assert_eq!(parse_u32(&json!(4294967296u64)), None);
+///
+/// // Некорректные значения
+/// assert_eq!(parse_u32(&json!("abc")), None);
+/// assert_eq!(parse_u32(&json!("-123")), None);
+/// ```
 fn parse_u32(value: &Value) -> Option<u32> {
     if let Some(n) = value.as_u64() {
         return u32::try_from(n).ok();
@@ -143,6 +175,36 @@ fn parse_u32(value: &Value) -> Option<u32> {
     value.as_str().and_then(|s| s.trim().parse::<u32>().ok())
 }
 
+/// Парсит строку частоты дискретизации из JSON значения.
+///
+/// Извлекает числовое значение из строки, которая может содержать формат "rate/period".
+/// Берётся только первая часть до разделителя '/', если он присутствует.
+///
+/// # Примеры
+///
+/// ```
+/// use serde_json::json;
+/// # fn parse_rate_string(value: &serde_json::Value) -> Option<u32> {
+/// #     let s = value.as_str()?;
+/// #     s.split('/')
+/// #         .next()
+/// #         .and_then(|part| part.trim().parse::<u32>().ok())
+/// # }
+///
+/// // Простая строка с частотой
+/// assert_eq!(parse_rate_string(&json!("48000")), Some(48000));
+///
+/// // Формат с разделителем (берётся только первая часть)
+/// assert_eq!(parse_rate_string(&json!("48000/1024")), Some(48000));
+/// assert_eq!(parse_rate_string(&json!("44100/512")), Some(44100));
+///
+/// // С пробелами
+/// assert_eq!(parse_rate_string(&json!("  48000  ")), Some(48000));
+///
+/// // Некорректные значения
+/// assert_eq!(parse_rate_string(&json!("abc")), None);
+/// assert_eq!(parse_rate_string(&json!("")), None);
+/// ```
 fn parse_rate_string(value: &Value) -> Option<u32> {
     let s = value.as_str()?;
     s.split('/')
@@ -150,6 +212,43 @@ fn parse_rate_string(value: &Value) -> Option<u32> {
         .and_then(|part| part.trim().parse::<u32>().ok())
 }
 
+/// Парсит строку задержки в формате "frames/rate" из строки.
+///
+/// Извлекает пару (frames, rate) из строки, которая может содержать несколько токенов.
+/// Берётся первый токен, содержащий разделитель '/', остальные токены (например, флаги) игнорируются.
+///
+/// # Формат
+///
+/// Ожидаемый формат: `"frames/rate"` или `"frames/rate flags"` или `"before frames/rate after"`.
+/// Если в строке несколько токенов с '/', берётся первый найденный.
+///
+/// # Примеры
+///
+/// ```
+/// # fn parse_latency_string(s: &str) -> Option<(u32, u32)> {
+/// #     let token = s.split_whitespace().find(|piece| piece.contains('/'))?;
+/// #     let mut parts = token.split('/');
+/// #     let frames: u32 = parts.next()?.trim().parse().ok()?;
+/// #     let rate: u32 = parts.next()?.trim().parse().ok()?;
+/// #     Some((frames, rate))
+/// # }
+///
+/// // Базовый формат
+/// assert_eq!(parse_latency_string("256/48000"), Some((256, 48000)));
+/// assert_eq!(parse_latency_string("1024/44100"), Some((1024, 44100)));
+///
+/// // С дополнительными флагами
+/// assert_eq!(parse_latency_string("256/48000 0"), Some((256, 48000)));
+/// assert_eq!(parse_latency_string("before 256/48000 after"), Some((256, 48000)));
+///
+/// // С пробелами
+/// assert_eq!(parse_latency_string("  256/48000  "), Some((256, 48000)));
+///
+/// // Некорректные форматы
+/// assert_eq!(parse_latency_string("256"), None); // нет разделителя
+/// assert_eq!(parse_latency_string("256/"), None); // нет rate
+/// assert_eq!(parse_latency_string(""), None); // пустая строка
+/// ```
 fn parse_latency_string(s: &str) -> Option<(u32, u32)> {
     // Берём первый токен с разделителем '/', остальные (например, флаги) игнорируем.
     let token = s.split_whitespace().find(|piece| piece.contains('/'))?;
