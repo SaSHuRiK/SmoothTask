@@ -695,6 +695,139 @@ curl http://127.0.0.1:8080/api/config
 
 ---
 
+### GET /api/classes
+
+Получение информации о всех доступных классах QoS (Quality of Service) и их параметрах приоритета.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/classes
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "classes": [
+    {
+      "class": "CRIT_INTERACTIVE",
+      "name": "CRIT_INTERACTIVE",
+      "description": "Критически интерактивные процессы (фокус + аудио/игра)",
+      "params": {
+        "nice": -8,
+        "latency_nice": -15,
+        "ionice": {
+          "class": 2,
+          "level": 0,
+          "class_description": "best-effort"
+        },
+        "cgroup": {
+          "cpu_weight": 200
+        }
+      }
+    },
+    {
+      "class": "INTERACTIVE",
+      "name": "INTERACTIVE",
+      "description": "Обычные интерактивные процессы (UI/CLI)",
+      "params": {
+        "nice": -4,
+        "latency_nice": -10,
+        "ionice": {
+          "class": 2,
+          "level": 2,
+          "class_description": "best-effort"
+        },
+        "cgroup": {
+          "cpu_weight": 150
+        }
+      }
+    },
+    {
+      "class": "NORMAL",
+      "name": "NORMAL",
+      "description": "Дефолтный приоритет",
+      "params": {
+        "nice": 0,
+        "latency_nice": 0,
+        "ionice": {
+          "class": 2,
+          "level": 4,
+          "class_description": "best-effort"
+        },
+        "cgroup": {
+          "cpu_weight": 100
+        }
+      }
+    },
+    {
+      "class": "BACKGROUND",
+      "name": "BACKGROUND",
+      "description": "Фоновые процессы (batch/maintenance)",
+      "params": {
+        "nice": 5,
+        "latency_nice": 10,
+        "ionice": {
+          "class": 2,
+          "level": 6,
+          "class_description": "best-effort"
+        },
+        "cgroup": {
+          "cpu_weight": 50
+        }
+      }
+    },
+    {
+      "class": "IDLE",
+      "name": "IDLE",
+      "description": "Процессы, которые можно выполнять \"на остатке\"",
+      "params": {
+        "nice": 10,
+        "latency_nice": 15,
+        "ionice": {
+          "class": 3,
+          "level": 0,
+          "class_description": "idle"
+        },
+        "cgroup": {
+          "cpu_weight": 25
+        }
+      }
+    }
+  ],
+  "count": 5
+}
+```
+
+**Поля:**
+- `status` (string) - статус ответа (всегда "ok")
+- `classes` (array) - массив объектов с информацией о классах QoS
+  - `class` (string) - имя класса в формате SCREAMING_SNAKE_CASE
+  - `name` (string) - строковое представление класса (то же, что и `class`)
+  - `description` (string) - описание класса и его назначения
+  - `params` (object) - параметры приоритета для класса
+    - `nice` (integer) - значение nice (от -20 до +19, в SmoothTask используется диапазон -8..+10)
+    - `latency_nice` (integer) - значение latency_nice (от -20 до +19)
+      - -20 = максимальная чувствительность к задержке (UI, аудио, игры)
+      - +19 = безразличие к задержке (batch, индексация)
+    - `ionice` (object) - параметры IO приоритета
+      - `class` (integer) - класс IO: 1 (realtime), 2 (best-effort), 3 (idle)
+      - `level` (integer) - уровень приоритета внутри класса (0-7 для best-effort)
+      - `class_description` (string) - текстовое описание класса IO
+    - `cgroup` (object) - параметры cgroup v2
+      - `cpu_weight` (integer) - вес CPU для cgroup (от 1 до 10000, в SmoothTask используется диапазон 25-200)
+- `count` (integer) - количество классов (всегда 5)
+
+**Примечания:**
+- Endpoint всегда возвращает все 5 классов QoS, независимо от состояния демона
+- Параметры классов фиксированы и соответствуют настройкам в `policy::classes`
+- Классы отсортированы по убыванию важности: CRIT_INTERACTIVE > INTERACTIVE > NORMAL > BACKGROUND > IDLE
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
 ## Обновление данных
 
 Данные в API обновляются при каждой итерации демона (согласно `polling_interval_ms` в конфигурации). Это означает, что:
@@ -735,6 +868,9 @@ curl http://127.0.0.1:8080/api/appgroups | jq
 
 # Получение конфигурации демона
 curl http://127.0.0.1:8080/api/config | jq
+
+# Получение информации о классах QoS
+curl http://127.0.0.1:8080/api/classes | jq
 
 # Получение списка всех доступных endpoints
 curl http://127.0.0.1:8080/api/endpoints | jq

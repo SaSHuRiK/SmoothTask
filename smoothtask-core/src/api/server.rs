@@ -218,9 +218,69 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/config",
                 "method": "GET",
                 "description": "Получение текущей конфигурации демона (без секретов)"
+            },
+            {
+                "path": "/api/classes",
+                "method": "GET",
+                "description": "Получение информации о всех доступных классах QoS и их параметрах приоритета"
             }
         ],
-        "count": 11
+        "count": 12
+    }))
+}
+
+/// Обработчик для endpoint `/api/classes`.
+///
+/// Возвращает информацию о всех доступных классах QoS (Quality of Service)
+/// и их параметрах приоритета (nice, latency_nice, ionice, cpu.weight).
+async fn classes_handler() -> Json<Value> {
+    use crate::policy::classes::PriorityClass;
+
+    let classes: Vec<Value> = vec![
+        PriorityClass::CritInteractive,
+        PriorityClass::Interactive,
+        PriorityClass::Normal,
+        PriorityClass::Background,
+        PriorityClass::Idle,
+    ]
+    .into_iter()
+    .map(|class| {
+        let params = class.params();
+        json!({
+            "class": class,
+            "name": class.as_str(),
+            "description": match class {
+                PriorityClass::CritInteractive => "Критически интерактивные процессы (фокус + аудио/игра)",
+                PriorityClass::Interactive => "Обычные интерактивные процессы (UI/CLI)",
+                PriorityClass::Normal => "Дефолтный приоритет",
+                PriorityClass::Background => "Фоновые процессы (batch/maintenance)",
+                PriorityClass::Idle => "Процессы, которые можно выполнять \"на остатке\"",
+            },
+            "params": {
+                "nice": params.nice.nice,
+                "latency_nice": params.latency_nice.latency_nice,
+                "ionice": {
+                    "class": params.ionice.class,
+                    "level": params.ionice.level,
+                    "class_description": match params.ionice.class {
+                        1 => "realtime",
+                        2 => "best-effort",
+                        3 => "idle",
+                        _ => "unknown",
+                    }
+                },
+                "cgroup": {
+                    "cpu_weight": params.cgroup.cpu_weight,
+                }
+            }
+        })
+    })
+    .collect();
+
+    Json(json!({
+        "status": "ok",
+        "classes": classes,
+        "count": classes.len()
     }))
 }
 
@@ -238,6 +298,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
+        .route("/api/classes", get(classes_handler))
         .with_state(state)
 }
 
@@ -1441,10 +1502,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 11);
+        assert_eq!(json["count"], 12);
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 11);
+        assert_eq!(endpoints.len(), 12);
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -1463,6 +1524,7 @@ mod tests {
         assert!(endpoint_paths.contains(&"/api/appgroups"));
         assert!(endpoint_paths.contains(&"/api/appgroups/:id"));
         assert!(endpoint_paths.contains(&"/api/config"));
+        assert!(endpoint_paths.contains(&"/api/classes"));
 
         // Проверяем структуру endpoint
         let first_endpoint = &endpoints[0];
@@ -1470,5 +1532,56 @@ mod tests {
         assert!(first_endpoint["method"].is_string());
         assert!(first_endpoint["description"].is_string());
         assert_eq!(first_endpoint["method"], "GET");
+    }
+
+    #[tokio::test]
+    async fn test_classes_handler() {
+        let result = classes_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["classes"].is_array());
+        assert_eq!(json["count"], 5);
+
+        let classes = json["classes"].as_array().unwrap();
+        assert_eq!(classes.len(), 5);
+
+        // Проверяем наличие всех классов
+        let class_names: Vec<&str> = classes
+            .iter()
+            .map(|c| c["name"].as_str().unwrap())
+            .collect();
+
+        assert!(class_names.contains(&"CRIT_INTERACTIVE"));
+        assert!(class_names.contains(&"INTERACTIVE"));
+        assert!(class_names.contains(&"NORMAL"));
+        assert!(class_names.contains(&"BACKGROUND"));
+        assert!(class_names.contains(&"IDLE"));
+
+        // Проверяем структуру класса
+        let crit_interactive = classes
+            .iter()
+            .find(|c| c["name"] == "CRIT_INTERACTIVE")
+            .unwrap();
+
+        assert_eq!(crit_interactive["class"], "CRIT_INTERACTIVE");
+        assert!(crit_interactive["description"].is_string());
+        assert!(crit_interactive["params"].is_object());
+
+        let params = &crit_interactive["params"];
+        assert!(params["nice"].is_number());
+        assert_eq!(params["nice"], -8);
+        assert!(params["latency_nice"].is_number());
+        assert_eq!(params["latency_nice"], -15);
+        assert!(params["ionice"].is_object());
+        assert_eq!(params["ionice"]["class"], 2);
+        assert_eq!(params["ionice"]["level"], 0);
+        assert_eq!(params["ionice"]["class_description"], "best-effort");
+        assert!(params["cgroup"].is_object());
+        assert_eq!(params["cgroup"]["cpu_weight"], 200);
+
+        // Проверяем параметры для Idle класса (должен иметь class 3)
+        let idle = classes.iter().find(|c| c["name"] == "IDLE").unwrap();
+        assert_eq!(idle["params"]["ionice"]["class"], 3);
+        assert_eq!(idle["params"]["ionice"]["class_description"], "idle");
     }
 }
