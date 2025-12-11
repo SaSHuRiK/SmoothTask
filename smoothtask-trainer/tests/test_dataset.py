@@ -327,7 +327,13 @@ def _create_minimal_db_with_tables(path: Path) -> sqlite3.Connection:
     cursor = conn.cursor()
     cursor.execute("CREATE TABLE snapshots (snapshot_id INTEGER PRIMARY KEY)")
     cursor.execute(
-        "CREATE TABLE processes (snapshot_id INTEGER NOT NULL, pid INTEGER NOT NULL)"
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            app_group_id TEXT
+        )
+        """
     )
     cursor.execute(
         "CREATE TABLE app_groups (snapshot_id INTEGER NOT NULL, app_group_id TEXT NOT NULL)"
@@ -380,6 +386,65 @@ def test_load_snapshots_as_frame_rejects_duplicate_app_group_keys(tmp_path: Path
 
     with pytest.raises(ValueError, match="app_groups.*дубликаты"):
         load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_app_groups_without_snapshots(tmp_path: Path):
+    db_path = tmp_path / "missing_app_group_snapshots.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 10))
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        (2, "ghost"),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="app_groups.*snapshots"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_requires_app_group_records(tmp_path: Path):
+    db_path = tmp_path / "missing_app_group_records.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)", (1, "keep"))
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 10, "keep"),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 11, "missing"),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="app_group_id.*app_groups"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_allows_missing_app_group_id(tmp_path: Path):
+    db_path = tmp_path / "process_without_group.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 42, None),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        (1, "g1"),
+    )
+    conn.commit()
+    conn.close()
+
+    df = load_snapshots_as_frame(db_path)
+    assert len(df) == 1
+    assert pd.isna(df.loc[0, "app_group_id"])
 
 
 def test_load_snapshots_as_frame_empty_db():
@@ -611,6 +676,14 @@ def test_load_snapshots_as_frame_multiple_snapshots():
             "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
             (2000, 200, "app2"),
         )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+            (1000, "app1"),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+            (2000, "app2"),
+        )
 
         conn.commit()
         conn.close()
@@ -687,6 +760,14 @@ def test_load_snapshots_as_frame_sorted_by_snapshot_and_pid():
         cursor.execute(
             "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
             (2, 19, "b"),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+            (1, "a"),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+            (2, "b"),
         )
 
         conn.commit()

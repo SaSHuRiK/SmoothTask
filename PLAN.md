@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-331: Проверка ссылочной целостности app_group_id процессов
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame проверяет наличие записей в app_groups для app_group_id процессов (кроме NULL); добавлены тесты на ошибку и допустимое отсутствие app_group_id; все сценарии сортировки сохраняются.
+
+- [x] ST-330: Проверка snapshot_id в app_groups в `load_snapshots_as_frame`
+  - Тип: Python / trainer / dataset
+  - Примечания: добавлена валидация наличия snapshot_id app_groups в snapshots с понятным ValueError; покрыто unit-тестом.
+
 - [x] ST-329: Проверка уникальности ключей в таблицах снапшотов
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame валидирует дубликаты по ключам (snapshot_id, pid) и (snapshot_id, app_group_id) с понятным ValueError и примерами ключей. Добавлены тесты на оба случая.
@@ -70,22 +78,6 @@
 - [x] ST-322: Стабилизировать порядок строк в `load_snapshots_as_frame`
   - Тип: Python / trainer / dataset
   - Примечания: результат сортируется по snapshot_id/pid; добавлен тест на стабильный порядок при несортированных вставках. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-321: Проверка числовых таргетов teacher/responsiveness
-  - Тип: Python / trainer / features
-  - Примечания: build_feature_matrix валидирует целевой столбец, выдавая понятный ValueError при нечисловых значениях; числовые строки коэрсятся без предупреждений. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-320: Валидация snapshot_id в build_feature_matrix
-  - Тип: Python / trainer / features
-  - Примечания: snapshot_id приводится к Int64, NaN/None или нечисловые значения вызывают ValueError; group_id сохраняет целочисленный тип после фильтрации таргета. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-319: Добавить unit-тесты для `_ensure_column` (дефолты и dtype)
-  - Тип: Python / trainer / features / tests
-  - Примечания: добавлен тест на сохранение индекса и приведение dtype при существующей колонке и создании новой с дефолтами; проверены boolean и float сценарии; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-318: Добавить unit-тесты для `_prepare_tags_column` в `features`
-  - Тип: Python / trainer / features / tests
-  - Примечания: покрыты списки/множества/кортежи/скаляры/NaN/None и пустые коллекции, обеспечена сортировка тегов и возврат "unknown" для отсутствующих значений; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

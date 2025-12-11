@@ -1,3 +1,21 @@
+## Перенос из PLAN.md (ST-321–ST-318, 2025-12-11)
+
+- [x] ST-321: Проверка числовых таргетов teacher/responsiveness
+  - Тип: Python / trainer / features
+  - Примечания: build_feature_matrix валидирует целевой столбец, выдавая понятный ValueError при нечисловых значениях; числовые строки коэрсятся без предупреждений. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-320: Валидация snapshot_id в build_feature_matrix
+  - Тип: Python / trainer / features
+  - Примечания: snapshot_id приводится к Int64, NaN/None или нечисловые значения вызывают ValueError; group_id сохраняет целочисленный тип после фильтрации таргета. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-319: Добавить unit-тесты для `_ensure_column` (дефолты и dtype)
+  - Тип: Python / trainer / features / tests
+  - Примечания: добавлен тест на сохранение индекса и приведение dtype при существующей колонке и создании новой с дефолтами; проверены boolean и float сценарии; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-318: Добавить unit-тесты для `_prepare_tags_column` в `features`
+  - Тип: Python / trainer / features / tests
+  - Примечания: покрыты списки/множества/кортежи/скаляры/NaN/None и пустые коллекции, обеспечена сортировка тегов и возврат "unknown" для отсутствующих значений; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 ## Перенос из PLAN.md (ST-317–ST-316, 2025-12-11)
 
 - [x] ST-317: export_model создаёт директории и валидирует выходной путь

@@ -225,6 +225,36 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_unique_keys(processes, table="processes", keys=["snapshot_id", "pid"])
     _ensure_unique_keys(app_groups, table="app_groups", keys=["snapshot_id", "app_group_id"])
 
+    app_group_snapshot_ids = set(app_groups["snapshot_id"].dropna().unique())
+    missing_group_snapshots = sorted(app_group_snapshot_ids.difference(snapshot_ids))
+    if missing_group_snapshots:
+        missing_preview = ", ".join(str(sid) for sid in missing_group_snapshots[:5])
+        raise ValueError(
+            f"В таблице 'app_groups' найдены snapshot_id без записей в 'snapshots': {missing_preview}"
+        )
+
+    if "app_group_id" in processes.columns:
+        process_groups = processes[["snapshot_id", "app_group_id"]].dropna(
+            subset=["app_group_id"]
+        )
+        if not process_groups.empty:
+            app_group_keys = {
+                (row.snapshot_id, row.app_group_id)
+                for row in app_groups.dropna(subset=["snapshot_id", "app_group_id"]).itertuples(index=False)
+            }
+            process_group_keys = {
+                (row.snapshot_id, row.app_group_id) for row in process_groups.itertuples(index=False)
+            }
+            missing_pairs = sorted(process_group_keys.difference(app_group_keys))
+            if missing_pairs:
+                formatted = "; ".join(
+                    f"(snapshot_id={sid}, app_group_id={gid})" for sid, gid in missing_pairs[:5]
+                )
+                raise ValueError(
+                    "В таблице 'processes' есть app_group_id без записей в 'app_groups': "
+                    f"{formatted}"
+                )
+
     if processes.empty:
         return pd.DataFrame()
 
