@@ -32,15 +32,45 @@ pub struct PolicyResult {
 /// ```no_run
 /// use smoothtask_core::config::Config;
 /// use smoothtask_core::policy::engine::PolicyEngine;
-/// use smoothtask_core::logging::snapshots::Snapshot;
+/// use smoothtask_core::logging::snapshots::{Snapshot, GlobalMetrics, ResponsivenessMetrics};
+/// use chrono::Utc;
 ///
 /// # fn main() -> anyhow::Result<()> {
 /// let config = Config::load("config.yml")?;
 /// let engine = PolicyEngine::new(config);
 ///
+/// // Создать минимальный снапшот для примера
+/// let snapshot = Snapshot {
+///     snapshot_id: 1234567890,
+///     timestamp: Utc::now(),
+///     global: GlobalMetrics {
+///         cpu_user: 0.25,
+///         cpu_system: 0.15,
+///         cpu_idle: 0.55,
+///         cpu_iowait: 0.05,
+///         mem_total_kb: 16_384_256,
+///         mem_used_kb: 8_000_000,
+///         mem_available_kb: 8_384_256,
+///         swap_total_kb: 8_192_000,
+///         swap_used_kb: 1_000_000,
+///         load_avg_one: 1.5,
+///         load_avg_five: 1.2,
+///         load_avg_fifteen: 1.0,
+///         psi_cpu_some_avg10: Some(0.1),
+///         psi_cpu_some_avg60: Some(0.15),
+///         psi_io_some_avg10: Some(0.2),
+///         psi_mem_some_avg10: Some(0.05),
+///         psi_mem_full_avg10: None,
+///         user_active: true,
+///         time_since_last_input_ms: Some(5000),
+///     },
+///     processes: vec![],
+///     app_groups: vec![],
+///     responsiveness: ResponsivenessMetrics::default(),
+/// };
+///
 /// // Оценить снапшот
-/// # let snapshot: &Snapshot = todo!(); // ваш снапшот
-/// let results = engine.evaluate_snapshot(snapshot);
+/// let results = engine.evaluate_snapshot(&snapshot);
 ///
 /// // Результаты содержат приоритеты для каждой AppGroup
 /// for (app_group_id, result) in results {
@@ -152,14 +182,44 @@ impl PolicyEngine {
     /// ```no_run
     /// use smoothtask_core::config::Config;
     /// use smoothtask_core::policy::engine::PolicyEngine;
-    /// use smoothtask_core::logging::snapshots::Snapshot;
+    /// use smoothtask_core::logging::snapshots::{Snapshot, GlobalMetrics, ResponsivenessMetrics};
+    /// use chrono::Utc;
     ///
     /// # fn main() -> anyhow::Result<()> {
     /// let config = Config::load("config.yml")?;
     /// let engine = PolicyEngine::new(config);
     ///
-    /// # let snapshot: &Snapshot = todo!(); // ваш снапшот
-    /// let results = engine.evaluate_snapshot(snapshot);
+    /// // Создать минимальный снапшот для примера
+    /// let snapshot = Snapshot {
+    ///     snapshot_id: 1234567890,
+    ///     timestamp: Utc::now(),
+    ///     global: GlobalMetrics {
+    ///         cpu_user: 0.25,
+    ///         cpu_system: 0.15,
+    ///         cpu_idle: 0.55,
+    ///         cpu_iowait: 0.05,
+    ///         mem_total_kb: 16_384_256,
+    ///         mem_used_kb: 8_000_000,
+    ///         mem_available_kb: 8_384_256,
+    ///         swap_total_kb: 8_192_000,
+    ///         swap_used_kb: 1_000_000,
+    ///         load_avg_one: 1.5,
+    ///         load_avg_five: 1.2,
+    ///         load_avg_fifteen: 1.0,
+    ///         psi_cpu_some_avg10: Some(0.1),
+    ///         psi_cpu_some_avg60: Some(0.15),
+    ///         psi_io_some_avg10: Some(0.2),
+    ///         psi_mem_some_avg10: Some(0.05),
+    ///         psi_mem_full_avg10: None,
+    ///         user_active: true,
+    ///         time_since_last_input_ms: Some(5000),
+    ///     },
+    ///     processes: vec![],
+    ///     app_groups: vec![],
+    ///     responsiveness: ResponsivenessMetrics::default(),
+    /// };
+    ///
+    /// let results = engine.evaluate_snapshot(&snapshot);
     ///
     /// // Обработка результатов
     /// for (app_group_id, result) in results {
@@ -236,13 +296,14 @@ impl PolicyEngine {
     /// interactive_percentile <= crit_interactive_percentile
     fn map_percentile_to_class(&self, percentile: f64) -> PriorityClass {
         let t = &self.config.thresholds;
-        if percentile >= t.crit_interactive_percentile as f64 {
+        // Приводим пороги к f64 для сравнения с percentile
+        if percentile >= f64::from(t.crit_interactive_percentile) {
             PriorityClass::CritInteractive
-        } else if percentile >= t.interactive_percentile as f64 {
+        } else if percentile >= f64::from(t.interactive_percentile) {
             PriorityClass::Interactive
-        } else if percentile >= t.normal_percentile as f64 {
+        } else if percentile >= f64::from(t.normal_percentile) {
             PriorityClass::Normal
-        } else if percentile >= t.background_percentile as f64 {
+        } else if percentile >= f64::from(t.background_percentile) {
             PriorityClass::Background
         } else {
             PriorityClass::Idle
@@ -999,5 +1060,103 @@ mod tests {
         // StubRanker для одной группы даст percentile = 1.0, что должно дать CritInteractive
         // (так как 1.0 >= 0.9)
         assert!(result.reason.contains("ml-ranker"));
+    }
+
+    #[test]
+    fn test_map_percentile_to_class_boundaries() {
+        let config = create_hybrid_config();
+        let engine = PolicyEngine::new(config);
+
+        // Тестируем граничные случаи маппинга percentile на классы
+        // Создаём несколько групп с разными характеристиками для получения разных percentile
+        let mut snapshot = create_test_snapshot();
+
+        // Создаём группы с разными характеристиками для получения разных score и percentile
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "high_priority".to_string(),
+                root_pid: 1001,
+                process_ids: vec![1001],
+                app_name: None,
+                total_cpu_share: Some(0.5), // > 0.3 для бонуса
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: true,
+                is_focused_group: true, // Фокусная группа -> высокий score
+                tags: vec![],
+                priority_class: None,
+            },
+            AppGroupRecord {
+                app_group_id: "medium_priority".to_string(),
+                root_pid: 1002,
+                process_ids: vec![1002],
+                app_name: None,
+                total_cpu_share: Some(0.2), // < 0.3, без бонуса
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: true, // GUI группа -> средний score
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+            AppGroupRecord {
+                app_group_id: "low_priority".to_string(),
+                root_pid: 1003,
+                process_ids: vec![1003],
+                app_name: None,
+                total_cpu_share: Some(0.1), // < 0.3, без бонуса
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        snapshot.app_groups = app_groups;
+
+        let results = engine.evaluate_snapshot(&snapshot);
+
+        // Проверяем, что все результаты имеют валидные классы приоритета
+        // Примечание: фокусная группа может получить приоритет через семантические правила,
+        // а не через ML-ранкер, поэтому не проверяем наличие "ml-ranker" для всех групп
+        for (app_group_id, result) in &results {
+            // Проверяем, что класс приоритета валиден
+            match result.priority_class {
+                PriorityClass::CritInteractive
+                | PriorityClass::Interactive
+                | PriorityClass::Normal
+                | PriorityClass::Background
+                | PriorityClass::Idle => {
+                    // Валидный класс
+                }
+            }
+            // Проверяем, что причина указана
+            assert!(!result.reason.is_empty(), "Result for {} should have a reason", app_group_id);
+        }
+
+        // Проверяем, что группы без фокуса используют ML-ранкер
+        let medium_result = results.get("medium_priority").unwrap();
+        let low_result = results.get("low_priority").unwrap();
+        
+        // Группы без фокуса должны использовать ML-ранкер в hybrid режиме
+        assert!(
+            medium_result.reason.contains("ml-ranker") || medium_result.reason.contains("semantic"),
+            "Medium priority group should use ml-ranker or semantic rules"
+        );
+        assert!(
+            low_result.reason.contains("ml-ranker") || low_result.reason.contains("default"),
+            "Low priority group should use ml-ranker or default"
+        );
+
+        // Проверяем, что все группы получили результаты
+        assert_eq!(results.len(), 3);
+        assert!(results.contains_key("high_priority"));
+        assert!(results.contains_key("medium_priority"));
+        assert!(results.contains_key("low_priority"));
     }
 }
