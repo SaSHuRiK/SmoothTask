@@ -11,7 +11,9 @@ import yaml
 from smoothtask_trainer.tune_policy import (
     compute_policy_correlations,
     load_snapshots_for_tuning,
+    optimize_latency_thresholds,
     optimize_psi_thresholds,
+    save_optimized_config,
     tune_policy,
     _count_snapshots,
     _validate_db_path,
@@ -196,19 +198,29 @@ def create_test_config(config_path: Path) -> None:
         yaml.dump(config, f)
 
 
-def test_tune_policy_not_implemented():
-    """Тест, что функция пока не реализована."""
+def test_tune_policy_basic():
+    """Тест базового тюнинга политики."""
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "test.db"
         config_path = Path(tmpdir) / "config.yml"
 
         # Создаём БД с достаточным количеством снапшотов для прохождения валидации
         create_test_db(db_path, num_snapshots=150)
-        create_test_config(config_path)
 
-        # Функция должна пройти валидацию и выбросить NotImplementedError
-        with pytest.raises(NotImplementedError, match="TODO: реализовать тюнинг политики"):
-            tune_policy(db_path, config_path)
+        # Функция должна успешно выполниться
+        tune_policy(db_path, config_path)
+
+        # Проверяем, что конфиг создан
+        assert config_path.exists()
+
+        # Проверяем содержимое конфига
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+            assert 'thresholds' in config
+            assert 'psi_cpu_some_high' in config['thresholds']
+            assert 'psi_io_some_high' in config['thresholds']
+            assert 'sched_latency_p99_threshold_ms' in config['thresholds']
+            assert 'ui_loop_p95_threshold_ms' in config['thresholds']
 
 
 def test_tune_policy_signature():
@@ -218,13 +230,13 @@ def test_tune_policy_signature():
     sig = inspect.signature(tune_policy)
     params = list(sig.parameters.keys())
 
-    assert len(params) == 2, "tune_policy должна принимать 2 параметра"
+    assert len(params) == 3, "tune_policy должна принимать 3 параметра"
     assert params[0] == "db_path", "Первый параметр должен быть db_path"
     assert params[1] == "config_out", "Второй параметр должен быть config_out"
+    assert params[2] == "config_in", "Третий параметр должен быть config_in"
 
-    # Проверяем типы параметров
-    assert sig.parameters["db_path"].annotation == Path or sig.parameters["db_path"].annotation == inspect.Parameter.empty
-    assert sig.parameters["config_out"].annotation == Path or sig.parameters["config_out"].annotation == inspect.Parameter.empty
+    # Проверяем, что config_in опциональный (имеет значение по умолчанию)
+    assert sig.parameters["config_in"].default is not inspect.Parameter.empty, "config_in должен быть опциональным параметром"
 
 
 def test_tune_policy_with_nonexistent_db():
@@ -232,8 +244,6 @@ def test_tune_policy_with_nonexistent_db():
     with tempfile.TemporaryDirectory() as tmpdir:
         db_path = Path(tmpdir) / "nonexistent.db"
         config_path = Path(tmpdir) / "config.yml"
-
-        create_test_config(config_path)
 
         # Функция должна выбросить FileNotFoundError при валидации
         with pytest.raises(FileNotFoundError, match="База данных не найдена"):
@@ -249,8 +259,6 @@ def test_tune_policy_with_empty_db():
         # Создаём пустую БД
         conn = sqlite3.connect(db_path)
         conn.close()
-
-        create_test_config(config_path)
 
         # Функция должна выбросить ValueError из-за отсутствия необходимых таблиц
         with pytest.raises(ValueError, match="База данных не содержит необходимые таблицы"):
@@ -377,9 +385,8 @@ def test_tune_policy_with_insufficient_snapshots():
         config_path = Path(tmpdir) / "config.yml"
         
         create_test_db(db_path, num_snapshots=50)  # Меньше минимума (100)
-        create_test_config(config_path)
         
-        # Функция должна выбросить ValueError перед NotImplementedError
+        # Функция должна выбросить ValueError
         with pytest.raises(ValueError, match="Недостаточно данных для тюнинга"):
             tune_policy(db_path, config_path)
 
@@ -391,11 +398,12 @@ def test_tune_policy_with_sufficient_snapshots():
         config_path = Path(tmpdir) / "config.yml"
         
         create_test_db(db_path, num_snapshots=150)  # Больше минимума (100)
-        create_test_config(config_path)
         
-        # Функция должна пройти валидацию и выбросить NotImplementedError
-        with pytest.raises(NotImplementedError, match="TODO: реализовать тюнинг политики"):
-            tune_policy(db_path, config_path)
+        # Функция должна успешно выполниться
+        tune_policy(db_path, config_path)
+        
+        # Проверяем, что конфиг создан
+        assert config_path.exists()
 
 
 def test_compute_policy_correlations_basic():
@@ -679,3 +687,314 @@ def test_optimize_psi_thresholds_with_real_data():
         assert 'psi_io_some_high' in thresholds
         assert 0.0 <= thresholds['psi_cpu_some_high'] <= 1.0
         assert 0.0 <= thresholds['psi_io_some_high'] <= 1.0
+
+
+def test_optimize_latency_thresholds_basic():
+    """Тест базовой оптимизации порогов latency."""
+    import pandas as pd
+    
+    # Создаём тестовый DataFrame с хорошими условиями
+    df = pd.DataFrame({
+        'sched_latency_p99_ms': [5.0, 10.0, 15.0, 20.0, 25.0],
+        'ui_loop_p95_ms': [10.0, 12.0, 14.0, 16.0, 18.0],
+        'bad_responsiveness': [0, 0, 0, 0, 0],
+    })
+    
+    thresholds = optimize_latency_thresholds(df, percentile=0.95, multiplier=1.5)
+    
+    # Проверяем, что пороги вычислены
+    assert 'sched_latency_p99_threshold_ms' in thresholds
+    assert 'ui_loop_p95_threshold_ms' in thresholds
+    
+    # Проверяем, что пороги находятся в допустимом диапазоне [1.0, 1000.0] мс
+    assert 1.0 <= thresholds['sched_latency_p99_threshold_ms'] <= 1000.0
+    assert 1.0 <= thresholds['ui_loop_p95_threshold_ms'] <= 1000.0
+    
+    # Проверяем, что P99 >= P95 (логическая валидация)
+    assert thresholds['sched_latency_p99_threshold_ms'] >= thresholds['ui_loop_p95_threshold_ms']
+    
+    # Проверяем, что пороги выше реальных значений (multiplier = 1.5)
+    assert thresholds['sched_latency_p99_threshold_ms'] > 25.0
+    assert thresholds['ui_loop_p95_threshold_ms'] > 18.0
+
+
+def test_optimize_latency_thresholds_empty_dataframe():
+    """Тест оптимизации порогов latency для пустого DataFrame."""
+    import pandas as pd
+    
+    df = pd.DataFrame()
+    thresholds = optimize_latency_thresholds(df)
+    
+    # Должны вернуться значения по умолчанию
+    assert thresholds['sched_latency_p99_threshold_ms'] == 20.0
+    assert thresholds['ui_loop_p95_threshold_ms'] == 16.67
+
+
+def test_optimize_latency_thresholds_no_good_responsiveness():
+    """Тест оптимизации порогов latency когда нет моментов с хорошими условиями."""
+    import pandas as pd
+    
+    # Создаём DataFrame только с плохими условиями
+    df = pd.DataFrame({
+        'sched_latency_p99_ms': [30.0, 40.0, 50.0, 60.0],
+        'ui_loop_p95_ms': [20.0, 25.0, 30.0, 35.0],
+        'bad_responsiveness': [1, 1, 1, 1],
+    })
+    
+    thresholds = optimize_latency_thresholds(df)
+    
+    # Должны вернуться значения по умолчанию
+    assert thresholds['sched_latency_p99_threshold_ms'] == 20.0
+    assert thresholds['ui_loop_p95_threshold_ms'] == 16.67
+
+
+def test_optimize_latency_thresholds_missing_columns():
+    """Тест оптимизации порогов latency при отсутствии некоторых колонок."""
+    import pandas as pd
+    
+    # DataFrame без колонки ui_loop_p95_ms
+    df = pd.DataFrame({
+        'sched_latency_p99_ms': [5.0, 10.0, 15.0, 20.0, 25.0],
+        'bad_responsiveness': [0, 0, 0, 0, 0],
+    })
+    
+    thresholds = optimize_latency_thresholds(df)
+    
+    # sched_latency_p99_threshold_ms должен быть вычислен
+    assert 'sched_latency_p99_threshold_ms' in thresholds
+    assert 1.0 <= thresholds['sched_latency_p99_threshold_ms'] <= 1000.0
+    
+    # ui_loop_p95_threshold_ms должен быть значением по умолчанию
+    assert thresholds['ui_loop_p95_threshold_ms'] == 16.67
+
+
+def test_optimize_latency_thresholds_with_nulls():
+    """Тест оптимизации порогов latency при наличии NULL значений."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'sched_latency_p99_ms': [5.0, 10.0, None, 20.0, 25.0],
+        'ui_loop_p95_ms': [10.0, None, 14.0, 16.0, 18.0],
+        'bad_responsiveness': [0, 0, 0, 0, 0],
+    })
+    
+    thresholds = optimize_latency_thresholds(df)
+    
+    # Функция должна корректно обработать NULL значения (dropna перед вычислением)
+    assert 1.0 <= thresholds['sched_latency_p99_threshold_ms'] <= 1000.0
+    assert 1.0 <= thresholds['ui_loop_p95_threshold_ms'] <= 1000.0
+
+
+def test_optimize_latency_thresholds_percentile():
+    """Тест оптимизации порогов latency с различными перцентилями."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'sched_latency_p99_ms': [5.0, 10.0, 15.0, 20.0, 25.0],
+        'ui_loop_p95_ms': [10.0, 12.0, 14.0, 16.0, 18.0],
+        'bad_responsiveness': [0, 0, 0, 0, 0],
+    })
+    
+    # Тестируем с различными перцентилями
+    thresholds_p50 = optimize_latency_thresholds(df, percentile=0.5, multiplier=1.5)
+    thresholds_p95 = optimize_latency_thresholds(df, percentile=0.95, multiplier=1.5)
+    thresholds_p99 = optimize_latency_thresholds(df, percentile=0.99, multiplier=1.5)
+    
+    # P95 должен быть выше или равен P50
+    assert thresholds_p95['sched_latency_p99_threshold_ms'] >= thresholds_p50['sched_latency_p99_threshold_ms']
+    assert thresholds_p95['ui_loop_p95_threshold_ms'] >= thresholds_p50['ui_loop_p95_threshold_ms']
+    
+    # P99 должен быть выше или равен P95
+    assert thresholds_p99['sched_latency_p99_threshold_ms'] >= thresholds_p95['sched_latency_p99_threshold_ms']
+    assert thresholds_p99['ui_loop_p95_threshold_ms'] >= thresholds_p95['ui_loop_p95_threshold_ms']
+
+
+def test_optimize_latency_thresholds_multiplier():
+    """Тест оптимизации порогов latency с различными множителями."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'sched_latency_p99_ms': [10.0, 15.0, 20.0],
+        'ui_loop_p95_ms': [12.0, 14.0, 16.0],
+        'bad_responsiveness': [0, 0, 0],
+    })
+    
+    # Тестируем с различными множителями
+    thresholds_1x = optimize_latency_thresholds(df, percentile=0.95, multiplier=1.0)
+    thresholds_1_5x = optimize_latency_thresholds(df, percentile=0.95, multiplier=1.5)
+    thresholds_2x = optimize_latency_thresholds(df, percentile=0.95, multiplier=2.0)
+    
+    # Больший множитель должен давать больший порог
+    assert thresholds_2x['sched_latency_p99_threshold_ms'] >= thresholds_1_5x['sched_latency_p99_threshold_ms']
+    assert thresholds_1_5x['sched_latency_p99_threshold_ms'] >= thresholds_1x['sched_latency_p99_threshold_ms']
+
+
+def test_optimize_latency_thresholds_with_real_data():
+    """Тест оптимизации порогов latency с данными из реальной БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=150)
+        
+        # Загружаем снапшоты
+        df = load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+        
+        # Оптимизируем пороги latency
+        thresholds = optimize_latency_thresholds(df, percentile=0.95, multiplier=1.5)
+        
+        # Проверяем, что пороги вычислены и находятся в допустимом диапазоне
+        assert 'sched_latency_p99_threshold_ms' in thresholds
+        assert 'ui_loop_p95_threshold_ms' in thresholds
+        assert 1.0 <= thresholds['sched_latency_p99_threshold_ms'] <= 1000.0
+        assert 1.0 <= thresholds['ui_loop_p95_threshold_ms'] <= 1000.0
+        assert thresholds['sched_latency_p99_threshold_ms'] >= thresholds['ui_loop_p95_threshold_ms']
+
+
+def test_save_optimized_config_basic():
+    """Тест базового сохранения оптимизированного конфига."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config_path = Path(tmpdir) / "config.yml"
+        
+        optimized = {
+            'thresholds': {
+                'psi_cpu_some_high': 0.7,
+                'psi_io_some_high': 0.5,
+                'sched_latency_p99_threshold_ms': 30.0,
+                'ui_loop_p95_threshold_ms': 20.0,
+            }
+        }
+        
+        save_optimized_config(optimized, config_path)
+        
+        # Проверяем, что конфиг создан
+        assert config_path.exists()
+        
+        # Проверяем содержимое конфига
+        with open(config_path) as f:
+            config = yaml.safe_load(f)
+            assert 'thresholds' in config
+            assert config['thresholds']['psi_cpu_some_high'] == 0.7
+            assert config['thresholds']['psi_io_some_high'] == 0.5
+            assert config['thresholds']['sched_latency_p99_threshold_ms'] == 30.0
+            assert config['thresholds']['ui_loop_p95_threshold_ms'] == 20.0
+
+
+def test_save_optimized_config_with_base_config():
+    """Тест сохранения оптимизированного конфига с сохранением остальных параметров."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base_config_path = Path(tmpdir) / "base_config.yml"
+        optimized_config_path = Path(tmpdir) / "optimized_config.yml"
+        
+        # Создаём базовый конфиг
+        base_config = {
+            'polling_interval_ms': 500,
+            'max_candidates': 150,
+            'dry_run_default': False,
+            'policy_mode': 'rules-only',
+            'paths': {
+                'snapshot_db_path': '/var/lib/smoothtask/snapshots.sqlite',
+                'patterns_dir': '/etc/smoothtask/patterns',
+            },
+            'thresholds': {
+                'psi_cpu_some_high': 0.6,
+                'psi_io_some_high': 0.4,
+                'user_idle_timeout_sec': 120,
+                'interactive_build_grace_sec': 10,
+                'noisy_neighbour_cpu_share': 0.7,
+                'crit_interactive_percentile': 0.9,
+                'interactive_percentile': 0.6,
+                'normal_percentile': 0.3,
+                'background_percentile': 0.1,
+                'sched_latency_p99_threshold_ms': 20.0,
+                'ui_loop_p95_threshold_ms': 16.67,
+            },
+        }
+        
+        with open(base_config_path, 'w') as f:
+            yaml.dump(base_config, f)
+        
+        # Оптимизированные параметры
+        optimized = {
+            'thresholds': {
+                'psi_cpu_some_high': 0.7,
+                'psi_io_some_high': 0.5,
+                'sched_latency_p99_threshold_ms': 30.0,
+                'ui_loop_p95_threshold_ms': 20.0,
+            }
+        }
+        
+        save_optimized_config(optimized, optimized_config_path, config_in=base_config_path)
+        
+        # Проверяем, что конфиг создан
+        assert optimized_config_path.exists()
+        
+        # Проверяем содержимое конфига
+        with open(optimized_config_path) as f:
+            config = yaml.safe_load(f)
+            
+            # Оптимизированные параметры должны быть обновлены
+            assert config['thresholds']['psi_cpu_some_high'] == 0.7
+            assert config['thresholds']['psi_io_some_high'] == 0.5
+            assert config['thresholds']['sched_latency_p99_threshold_ms'] == 30.0
+            assert config['thresholds']['ui_loop_p95_threshold_ms'] == 20.0
+            
+            # Остальные параметры должны быть сохранены
+            assert config['polling_interval_ms'] == 500
+            assert config['max_candidates'] == 150
+            assert config['dry_run_default'] is False
+            assert config['policy_mode'] == 'rules-only'
+            assert config['paths']['snapshot_db_path'] == '/var/lib/smoothtask/snapshots.sqlite'
+            assert config['thresholds']['user_idle_timeout_sec'] == 120
+            assert config['thresholds']['interactive_build_grace_sec'] == 10
+            assert config['thresholds']['noisy_neighbour_cpu_share'] == 0.7
+
+
+def test_save_optimized_config_with_nonexistent_base():
+    """Тест сохранения оптимизированного конфига с несуществующим базовым конфигом."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        base_config_path = Path(tmpdir) / "nonexistent.yml"
+        optimized_config_path = Path(tmpdir) / "optimized_config.yml"
+        
+        optimized = {
+            'thresholds': {
+                'psi_cpu_some_high': 0.7,
+            }
+        }
+        
+        # Функция должна выбросить FileNotFoundError
+        with pytest.raises(FileNotFoundError, match="Исходный конфиг не найден"):
+            save_optimized_config(optimized, optimized_config_path, config_in=base_config_path)
+
+
+def test_tune_policy_with_base_config():
+    """Тест тюнинга политики с сохранением остальных параметров из базового конфига."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        base_config_path = Path(tmpdir) / "base_config.yml"
+        optimized_config_path = Path(tmpdir) / "optimized_config.yml"
+        
+        # Создаём БД с достаточным количеством снапшотов
+        create_test_db(db_path, num_snapshots=150)
+        
+        # Создаём базовый конфиг
+        create_test_config(base_config_path)
+        
+        # Выполняем тюнинг с базовым конфигом
+        tune_policy(db_path, optimized_config_path, config_in=base_config_path)
+        
+        # Проверяем, что конфиг создан
+        assert optimized_config_path.exists()
+        
+        # Проверяем содержимое конфига
+        with open(optimized_config_path) as f:
+            config = yaml.safe_load(f)
+            
+            # Оптимизированные параметры должны быть обновлены
+            assert 'thresholds' in config
+            assert 'psi_cpu_some_high' in config['thresholds']
+            assert 'psi_io_some_high' in config['thresholds']
+            assert 'sched_latency_p99_threshold_ms' in config['thresholds']
+            assert 'ui_loop_p95_threshold_ms' in config['thresholds']
+            
+            # Остальные параметры должны быть сохранены
+            assert config['polling_interval_ms'] == 500
+            assert config['max_candidates'] == 150

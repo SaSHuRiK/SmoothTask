@@ -3,9 +3,10 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 
 import pandas as pd
+import yaml
 
 
 def _validate_db_path(db_path: Path) -> None:
@@ -366,186 +367,222 @@ def optimize_psi_thresholds(
     }
 
 
-def tune_policy(db_path: Path, config_out: Path):
+def optimize_latency_thresholds(
+    snapshots_df: pd.DataFrame, percentile: float = 0.95, multiplier: float = 1.5
+) -> Dict[str, float]:
     """
-    Подбирает оптимальные параметры политики (пороги PSI, percentiles и т.п.)
+    Оптимизирует пороги latency на основе перцентилей реальных значений в хороших условиях.
+    
+    Функция анализирует реальные значения latency (sched_latency_p99_ms, ui_loop_p95_ms)
+    в моменты, когда система была отзывчивой (bad_responsiveness = false), и вычисляет
+    перцентили этих значений. Оптимальные пороги устанавливаются на уровне указанного
+    перцентиля, умноженного на multiplier, чтобы обеспечить запас для предсказания
+    неотзывчивости до того, как она станет критической.
+    
+    Args:
+        snapshots_df: DataFrame со снапшотами из БД (должен содержать колонки:
+                     sched_latency_p99_ms, ui_loop_p95_ms, bad_responsiveness)
+        percentile: Перцентиль для вычисления порогов (по умолчанию 0.95, т.е. P95)
+        multiplier: Множитель для создания запаса над перцентилем (по умолчанию 1.5)
+    
+    Returns:
+        Словарь с оптимальными порогами:
+        - 'sched_latency_p99_threshold_ms': оптимальный порог P99 scheduling latency (float в мс)
+        - 'ui_loop_p95_threshold_ms': оптимальный порог P95 UI loop latency (float в мс)
+        
+        Если данных недостаточно или нет моментов с хорошими условиями, возвращаются
+        значения по умолчанию (20.0 мс для sched_latency_p99, 16.67 мс для ui_loop_p95).
+    
+    Examples:
+        >>> import pandas as pd
+        >>> from smoothtask_trainer.tune_policy import optimize_latency_thresholds
+        >>> 
+        >>> # Создаём тестовый DataFrame с хорошими условиями
+        >>> df = pd.DataFrame({
+        ...     'sched_latency_p99_ms': [5.0, 10.0, 15.0, 20.0, 25.0],
+        ...     'ui_loop_p95_ms': [10.0, 12.0, 14.0, 16.0, 18.0],
+        ...     'bad_responsiveness': [0, 0, 0, 0, 0],
+        ... })
+        >>> 
+        >>> thresholds = optimize_latency_thresholds(df, percentile=0.95, multiplier=1.5)
+        >>> print(f"Sched latency threshold: {thresholds['sched_latency_p99_threshold_ms']:.3f}")
+        >>> print(f"UI loop threshold: {thresholds['ui_loop_p95_threshold_ms']:.3f}")
+    """
+    if snapshots_df.empty:
+        return {
+            'sched_latency_p99_threshold_ms': 20.0,
+            'ui_loop_p95_threshold_ms': 16.67,
+        }
+    
+    # Преобразуем bad_responsiveness в числовой тип, если это необходимо
+    if 'bad_responsiveness' in snapshots_df.columns:
+        if snapshots_df['bad_responsiveness'].dtype == 'object' or snapshots_df['bad_responsiveness'].dtype == 'bool':
+            snapshots_df = snapshots_df.copy()
+            snapshots_df['bad_responsiveness'] = snapshots_df['bad_responsiveness'].astype(int)
+    
+    # Фильтруем снапшоты с хорошими условиями (bad_responsiveness = false)
+    good_snapshots = snapshots_df[snapshots_df['bad_responsiveness'] == 0]
+    
+    # Если нет моментов с хорошими условиями, возвращаем значения по умолчанию
+    if good_snapshots.empty:
+        return {
+            'sched_latency_p99_threshold_ms': 20.0,
+            'ui_loop_p95_threshold_ms': 16.67,
+        }
+    
+    # Вычисляем перцентили latency значений в хороших условиях
+    sched_latency_threshold = 20.0  # значение по умолчанию
+    ui_loop_threshold = 16.67  # значение по умолчанию
+    
+    if 'sched_latency_p99_ms' in good_snapshots.columns:
+        sched_latency_values = good_snapshots['sched_latency_p99_ms'].dropna()
+        if len(sched_latency_values) > 0:
+            percentile_value = float(sched_latency_values.quantile(percentile))
+            sched_latency_threshold = percentile_value * multiplier
+            # Ограничиваем диапазон [1.0, 1000.0] мс
+            sched_latency_threshold = max(1.0, min(1000.0, sched_latency_threshold))
+    
+    if 'ui_loop_p95_ms' in good_snapshots.columns:
+        ui_loop_values = good_snapshots['ui_loop_p95_ms'].dropna()
+        if len(ui_loop_values) > 0:
+            percentile_value = float(ui_loop_values.quantile(percentile))
+            ui_loop_threshold = percentile_value * multiplier
+            # Ограничиваем диапазон [1.0, 1000.0] мс
+            ui_loop_threshold = max(1.0, min(1000.0, ui_loop_threshold))
+    
+    # Логическая валидация: P99 должен быть >= P95
+    if sched_latency_threshold < ui_loop_threshold:
+        sched_latency_threshold = ui_loop_threshold
+    
+    return {
+        'sched_latency_p99_threshold_ms': sched_latency_threshold,
+        'ui_loop_p95_threshold_ms': ui_loop_threshold,
+    }
+
+
+def save_optimized_config(
+    config_dict: Dict, config_out: Path, config_in: Optional[Path] = None
+) -> None:
+    """
+    Сохраняет оптимизированный конфиг в YAML файл.
+    
+    Функция сохраняет оптимизированные параметры в YAML файл, сохраняя остальные
+    параметры из исходного конфига (если он существует). Если исходный конфиг
+    не указан, создаётся новый конфиг только с оптимизированными параметрами.
+    
+    Args:
+        config_dict: Словарь с оптимизированными параметрами (например,
+                    {'psi_cpu_some_high': 0.7, 'sched_latency_p99_threshold_ms': 30.0})
+        config_out: Путь к выходному YAML файлу (будет перезаписан, если существует)
+        config_in: Опциональный путь к исходному YAML файлу для сохранения остальных параметров
+    
+    Raises:
+        FileNotFoundError: если config_in указан, но файл не существует
+        IOError: если не удалось записать config_out
+        PermissionError: если нет прав на запись в config_out
+        yaml.YAMLError: если исходный конфиг имеет некорректный формат YAML
+    
+    Examples:
+        >>> from pathlib import Path
+        >>> from smoothtask_trainer.tune_policy import save_optimized_config
+        >>> 
+        >>> # Сохраняем оптимизированные параметры без исходного конфига
+        >>> optimized = {
+        ...     'thresholds': {
+        ...         'psi_cpu_some_high': 0.7,
+        ...         'psi_io_some_high': 0.5,
+        ...         'sched_latency_p99_threshold_ms': 30.0,
+        ...         'ui_loop_p95_threshold_ms': 20.0,
+        ...     }
+        ... }
+        >>> save_optimized_config(optimized, Path('/tmp/optimized_config.yml'))
+        >>> 
+        >>> # Сохраняем оптимизированные параметры с сохранением остальных из исходного конфига
+        >>> save_optimized_config(
+        ...     optimized,
+        ...     Path('/tmp/optimized_config.yml'),
+        ...     config_in=Path('/etc/smoothtask/config.yml')
+        ... )
+    """
+    # Загружаем исходный конфиг, если он указан
+    base_config = {}
+    if config_in is not None:
+        if not config_in.exists():
+            raise FileNotFoundError(f"Исходный конфиг не найден: {config_in}")
+        
+        with open(config_in, 'r') as f:
+            base_config = yaml.safe_load(f) or {}
+    
+    # Объединяем исходный конфиг с оптимизированными параметрами
+    # Оптимизированные параметры имеют приоритет над исходными
+    merged_config = base_config.copy()
+    
+    # Рекурсивно обновляем вложенные словари
+    def deep_update(base: Dict, updates: Dict) -> Dict:
+        """Рекурсивно обновляет вложенные словари."""
+        result = base.copy()
+        for key, value in updates.items():
+            if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+                result[key] = deep_update(result[key], value)
+            else:
+                result[key] = value
+        return result
+    
+    merged_config = deep_update(merged_config, config_dict)
+    
+    # Сохраняем объединённый конфиг в YAML файл
+    try:
+        with open(config_out, 'w') as f:
+            yaml.dump(merged_config, f, default_flow_style=False, sort_keys=False)
+    except IOError as e:
+        raise IOError(f"Не удалось записать конфиг в {config_out}: {e}") from e
+    except PermissionError as e:
+        raise PermissionError(f"Нет прав на запись в {config_out}: {e}") from e
+
+
+def tune_policy(
+    db_path: Path, config_out: Path, config_in: Optional[Path] = None
+) -> None:
+    """
+    Подбирает оптимальные параметры политики (пороги PSI, latency и т.п.)
     на основе собранных снапшотов и метрик отзывчивости.
     
     Функция анализирует исторические данные из базы снапшотов и подбирает оптимальные
     значения параметров политики для улучшения отзывчивости системы. Оптимизация
-    выполняется на основе корреляции между параметрами политики и метриками
-    отзывчивости (bad_responsiveness, responsiveness_score).
+    выполняется на основе анализа PSI и latency метрик в различных условиях
+    отзывчивости системы.
     
-    # Параметры
+    Args:
+        db_path: Путь к SQLite базе данных со снапшотами (должна содержать таблицы
+                `snapshots`, `processes`, `app_groups` с метриками отзывчивости)
+        config_out: Путь к выходному YAML файлу с оптимизированными параметрами
+                   (будет перезаписан, если существует)
+        config_in: Опциональный путь к исходному YAML файлу для сохранения остальных
+                   параметров (если не указан, создаётся новый конфиг только с
+                   оптимизированными параметрами)
     
-    - `db_path`: Путь к SQLite базе данных со снапшотами (должна содержать таблицы
-      `snapshots`, `processes`, `app_groups` с метриками отзывчивости)
-    - `config_out`: Путь к выходному YAML файлу с оптимизированными параметрами
-      (будет перезаписан, если существует)
+    Returns:
+        None. Результат сохраняется в `config_out`.
     
-    # Возвращаемое значение
+    Raises:
+        FileNotFoundError: Если `db_path` не существует или `config_in` указан, но не существует
+        sqlite3.OperationalError: Если БД имеет некорректный формат или недоступна
+        ValueError: Если данных недостаточно для оптимизации
+        IOError: Если не удалось записать `config_out`
+        PermissionError: Если нет прав на запись в `config_out`
     
-    Функция не возвращает значение (None). Результат сохраняется в `config_out`.
-    
-    # Алгоритм (планируемая реализация)
-    
-    Функция будет реализована в следующих этапах:
-    
-    1. **Загрузка данных**: Чтение снапшотов из БД с фильтрацией по временному диапазону
-       (например, последние 7 дней) и достаточному количеству данных (минимум 100 снапшотов)
-    
-    2. **Анализ корреляций**: Вычисление корреляций между параметрами политики и метриками
-       отзывчивости:
-       - `psi_cpu_some_high` ↔ `bad_responsiveness` (когда PSI CPU высокий, система неотзывчива)
-       - `psi_io_some_high` ↔ `bad_responsiveness` (когда PSI IO высокий, система неотзывчива)
-       - `sched_latency_p99_threshold_ms` ↔ `sched_latency_p99_ms` (порог должен быть выше
-         реальных значений в хороших условиях)
-       - `ui_loop_p95_threshold_ms` ↔ `ui_loop_p95_ms` (порог должен быть выше реальных
-         значений в хороших условиях)
-       - `crit_interactive_percentile`, `interactive_percentile`, `normal_percentile`,
-         `background_percentile` ↔ `responsiveness_score` (оптимальное распределение
-         приоритетов для максимального responsiveness_score)
-    
-    3. **Оптимизация порогов PSI**: Подбор оптимальных значений `psi_cpu_some_high` и
-       `psi_io_some_high` на основе анализа, когда система становится неотзывчивой:
-       - Использование перцентилей PSI значений в моменты `bad_responsiveness = true`
-       - Рекомендуемое значение: P95 или P99 PSI в плохих условиях
-    
-    4. **Оптимизация порогов latency**: Подбор оптимальных значений
-       `sched_latency_p99_threshold_ms` и `ui_loop_p95_threshold_ms`:
-       - Использование перцентилей реальных значений latency в хороших условиях
-       - Рекомендуемое значение: P95 или P99 реальных значений + запас (например, 1.5x)
-    
-    5. **Оптимизация percentiles**: Подбор оптимальных значений percentiles для маппинга
-       ранкера на классы приоритетов:
-       - Анализ распределения `responsiveness_score` для различных комбинаций percentiles
-       - Использование grid search или оптимизации (например, scipy.optimize) для поиска
-         комбинации, максимизирующей средний `responsiveness_score`
-    
-    6. **Валидация результатов**: Проверка, что оптимизированные параметры находятся
-       в допустимых диапазонах (согласно валидации в Config)
-    
-    7. **Сохранение конфига**: Запись оптимизированных параметров в YAML файл `config_out`
-       с сохранением остальных параметров из исходного конфига (если он существует)
-    
-    # Примеры использования
-    
-    ## Базовое использование
-    
-    ```python
-    from pathlib import Path
-    from smoothtask_trainer.tune_policy import tune_policy
-    
-    # Подбираем оптимальные параметры на основе данных за последние 7 дней
-    db_path = Path("/var/lib/smoothtask/snapshots.sqlite")
-    config_out = Path("/etc/smoothtask/tuned_config.yml")
-    
-    tune_policy(db_path, config_out)
-    ```
-    
-    ## Использование с проверкой результата
-    
-    ```python
-    from pathlib import Path
-    import yaml
-    from smoothtask_trainer.tune_policy import tune_policy
-    
-    db_path = Path("/var/lib/smoothtask/snapshots.sqlite")
-    config_out = Path("/tmp/tuned_config.yml")
-    
-    # Выполняем тюнинг
-    tune_policy(db_path, config_out)
-    
-    # Проверяем результат
-    with open(config_out) as f:
-        config = yaml.safe_load(f)
-        print(f"Оптимизированный psi_cpu_some_high: {config['thresholds']['psi_cpu_some_high']}")
-        print(f"Оптимизированный sched_latency_p99_threshold_ms: {config['thresholds']['sched_latency_p99_threshold_ms']}")
-    ```
-    
-    ## Использование в скрипте автоматического тюнинга
-    
-    ```python
-    from pathlib import Path
-    from datetime import datetime
-    from smoothtask_trainer.tune_policy import tune_policy
-    
-    # Еженедельный тюнинг параметров
-    db_path = Path("/var/lib/smoothtask/snapshots.sqlite")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    config_out = Path(f"/etc/smoothtask/tuned_config_{timestamp}.yml")
-    
-    try:
-        tune_policy(db_path, config_out)
-        print(f"Тюнинг завершён успешно, конфиг сохранён в {config_out}")
-    except Exception as e:
-        print(f"Ошибка при тюнинге: {e}")
-    ```
-    
-    # Планируемые параметры оптимизации
-    
-    Функция будет оптимизировать следующие параметры из `Config::thresholds`:
-    
-    - **PSI пороги**:
-      - `psi_cpu_some_high`: Порог PSI CPU для определения неотзывчивости (диапазон: 0.0-1.0)
-      - `psi_io_some_high`: Порог PSI IO для определения неотзывчивости (диапазон: 0.0-1.0)
-    
-    - **Latency пороги**:
-      - `sched_latency_p99_threshold_ms`: Порог P99 scheduling latency (диапазон: 1.0-1000.0 мс)
-      - `ui_loop_p95_threshold_ms`: Порог P95 UI loop latency (диапазон: 1.0-1000.0 мс)
-    
-    - **Percentiles для маппинга ранкера** (только в hybrid mode):
-      - `crit_interactive_percentile`: Перцентиль для критически интерактивных процессов (диапазон: 0.0-1.0)
-      - `interactive_percentile`: Перцентиль для интерактивных процессов (диапазон: 0.0-1.0)
-      - `normal_percentile`: Перцентиль для нормальных процессов (диапазон: 0.0-1.0)
-      - `background_percentile`: Перцентиль для фоновых процессов (диапазон: 0.0-1.0)
-    
-    Остальные параметры (`user_idle_timeout_sec`, `interactive_build_grace_sec`,
-    `noisy_neighbour_cpu_share`) не будут оптимизироваться автоматически, так как они
-    зависят от пользовательских предпочтений и специфики системы.
-    
-    # Обработка ошибок
-    
-    Функция будет обрабатывать следующие ошибки:
-    
-    - **Несуществующая БД**: Вызовет `FileNotFoundError` или `sqlite3.OperationalError`
-    - **Пустая БД**: Вызовет `ValueError` с сообщением о недостаточном количестве данных
-    - **Недостаточно данных**: Вызовет `ValueError`, если снапшотов меньше минимума (100)
-    - **Некорректный формат БД**: Вызовет `sqlite3.OperationalError` при отсутствии
-      необходимых таблиц или колонок
-    - **Ошибка записи конфига**: Вызовет `IOError` или `PermissionError` при невозможности
-      записать `config_out`
-    
-    # Примечания
-    
-    - Функция требует достаточного количества исторических данных (минимум 100 снапшотов
-      за последние 7 дней) для надёжной оптимизации
-    - Оптимизация выполняется оффлайн и не влияет на работу демона во время выполнения
-    - Рекомендуется запускать тюнинг периодически (например, еженедельно) для адаптации
-      к изменениям в использовании системы
-    - Оптимизированные параметры должны быть проверены вручную перед применением в
-      production окружении
-    
-    # TODO
-    
-    - [ ] Реализовать загрузку данных из БД с фильтрацией по временному диапазону
-    - [ ] Реализовать анализ корреляций между параметрами и метриками отзывчивости
-    - [ ] Реализовать оптимизацию порогов PSI на основе перцентилей
-    - [ ] Реализовать оптимизацию порогов latency на основе реальных значений
-    - [ ] Реализовать оптимизацию percentiles через grid search или scipy.optimize
-    - [ ] Добавить валидацию результатов оптимизации
-    - [ ] Реализовать сохранение оптимизированного конфига в YAML
-    - [ ] Добавить логирование процесса оптимизации
-    - [ ] Добавить метрики качества оптимизации (улучшение responsiveness_score)
-    
-    # Raises
-    
-    - `NotImplementedError`: Функция пока не реализована (TODO)
-    - `FileNotFoundError`: Если `db_path` не существует
-    - `sqlite3.OperationalError`: Если БД имеет некорректный формат или недоступна
-    - `ValueError`: Если данных недостаточно для оптимизации
-    - `IOError`: Если не удалось записать `config_out`
-    - `PermissionError`: Если нет прав на запись в `config_out`
+    Examples:
+        >>> from pathlib import Path
+        >>> from smoothtask_trainer.tune_policy import tune_policy
+        >>> 
+        >>> # Базовое использование
+        >>> db_path = Path("/var/lib/smoothtask/snapshots.sqlite")
+        >>> config_out = Path("/etc/smoothtask/tuned_config.yml")
+        >>> tune_policy(db_path, config_out)
+        >>> 
+        >>> # С сохранением остальных параметров из исходного конфига
+        >>> config_in = Path("/etc/smoothtask/config.yml")
+        >>> tune_policy(db_path, config_out, config_in=config_in)
     """
     # Базовая валидация входных данных
     _validate_db_path(db_path)
@@ -561,7 +598,26 @@ def tune_policy(db_path: Path, config_out: Path):
                 "требуется минимум 100 за последние 7 дней"
             )
     
-    # Основная логика тюнинга будет реализована позже
-    raise NotImplementedError("TODO: реализовать тюнинг политики")
+    # Загружаем снапшоты для тюнинга
+    snapshots_df = load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+    
+    # Оптимизируем пороги PSI
+    psi_thresholds = optimize_psi_thresholds(snapshots_df, percentile=0.95)
+    
+    # Оптимизируем пороги latency
+    latency_thresholds = optimize_latency_thresholds(
+        snapshots_df, percentile=0.95, multiplier=1.5
+    )
+    
+    # Формируем словарь с оптимизированными параметрами
+    optimized_config = {
+        'thresholds': {
+            **psi_thresholds,
+            **latency_thresholds,
+        }
+    }
+    
+    # Сохраняем оптимизированный конфиг
+    save_optimized_config(optimized_config, config_out, config_in=config_in)
 
 
