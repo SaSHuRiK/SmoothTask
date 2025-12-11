@@ -10,6 +10,14 @@ pub struct Config {
     pub dry_run_default: bool,
     #[serde(default = "default_policy_mode")]
     pub policy_mode: PolicyMode,
+    /// Флаг включения логирования снапшотов в SQLite.
+    ///
+    /// Если `true`, снапшоты будут записываться в БД, указанную в `paths.snapshot_db_path`.
+    /// Если `false`, логирование снапшотов будет отключено, даже если путь указан.
+    ///
+    /// По умолчанию: `false` (логирование отключено).
+    #[serde(default = "default_enable_snapshot_logging")]
+    pub enable_snapshot_logging: bool,
 
     pub thresholds: Thresholds,
     pub paths: Paths,
@@ -60,6 +68,21 @@ pub enum PolicyMode {
 /// - Дефолтное значение применяется автоматически при загрузке конфигурации, если поле `policy_mode` не указано
 pub(crate) fn default_policy_mode() -> PolicyMode {
     PolicyMode::RulesOnly
+}
+
+/// Возвращает дефолтное значение для `enable_snapshot_logging`.
+///
+/// По умолчанию логирование снапшотов отключено (`false`). Это позволяет избежать
+/// ненужного использования дискового пространства и ресурсов, если логирование не требуется.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_enable_snapshot_logging")]` для поля `enable_snapshot_logging`
+/// - Для включения логирования необходимо явно указать `enable_snapshot_logging: true` в конфигурации
+/// - Даже если флаг установлен в `true`, логирование не будет работать, если `paths.snapshot_db_path` пуст
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации, если поле `enable_snapshot_logging` не указано
+pub(crate) fn default_enable_snapshot_logging() -> bool {
+    false
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -2934,6 +2957,180 @@ thresholds:
             cfg.thresholds.sched_latency_p99_threshold_ms
                 >= cfg.thresholds.ui_loop_p95_threshold_ms,
             "sched_latency_p99_threshold_ms should be >= ui_loop_p95_threshold_ms"
+        );
+    }
+
+    // Тесты для enable_snapshot_logging
+    #[test]
+    fn enable_snapshot_logging_defaults_to_false() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        // enable_snapshot_logging не указан, должен быть дефолтным (false)
+        assert!(!cfg.enable_snapshot_logging);
+    }
+
+    #[test]
+    fn enable_snapshot_logging_accepts_true() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+enable_snapshot_logging: true
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert!(cfg.enable_snapshot_logging);
+    }
+
+    #[test]
+    fn enable_snapshot_logging_accepts_false() {
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+enable_snapshot_logging: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert!(!cfg.enable_snapshot_logging);
+    }
+
+    #[test]
+    fn default_enable_snapshot_logging_returns_false() {
+        assert!(!default_enable_snapshot_logging());
+    }
+
+    #[test]
+    fn config_without_enable_snapshot_logging_uses_default() {
+        // Проверяем, что при отсутствии enable_snapshot_logging в конфиге используется дефолт
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert_eq!(
+            cfg.enable_snapshot_logging,
+            default_enable_snapshot_logging(),
+            "enable_snapshot_logging should use default value"
         );
     }
 }

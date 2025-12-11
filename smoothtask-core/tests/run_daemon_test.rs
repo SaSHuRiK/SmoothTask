@@ -20,6 +20,7 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
         max_candidates: 150,
         dry_run_default: false,
         policy_mode: PolicyMode::RulesOnly,
+        enable_snapshot_logging: true,
         thresholds: Thresholds {
             psi_cpu_some_high: 0.6,
             psi_io_some_high: 0.4,
@@ -202,6 +203,67 @@ async fn test_daemon_with_snapshot_logger() {
                         )
                         .unwrap_or(false);
                     assert!(table_exists, "Snapshot table should exist after daemon run");
+                }
+            }
+        }
+        Err(e) => {
+            panic!("Daemon failed with error: {}", e);
+        }
+    }
+}
+
+/// Тест проверяет, что snapshot logger не инициализируется, когда enable_snapshot_logging = false.
+/// Демон должен успешно работать, но БД не должна быть создана.
+#[tokio::test]
+async fn test_daemon_without_snapshot_logging() {
+    // Создаём временную директорию для patterns
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let patterns_dir = temp_dir.path().to_str().unwrap();
+
+    // Создаём пустую директорию для patterns
+    std::fs::create_dir_all(patterns_dir).expect("Failed to create patterns dir");
+
+    // Создаём временный файл для БД снапшотов
+    let db_file = tempfile::NamedTempFile::new().expect("Failed to create temp db file");
+    let db_path = db_file.path().to_str().unwrap().to_string();
+
+    // Создаём конфиг с отключённым логированием
+    let mut config = create_test_config(patterns_dir, db_path.clone());
+    config.enable_snapshot_logging = false;
+
+    // Создаём канал для graceful shutdown
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Запускаем демон с автоматическим shutdown через 200ms
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(200)).await;
+        let _ = shutdown_tx_clone.send(true);
+    });
+
+    // Запускаем демон и ждём его завершения
+    let result = run_daemon(config, true, shutdown_rx).await;
+
+    match result {
+        Ok(()) => {
+            // Демон завершился успешно
+            // Проверяем, что БД НЕ была создана (snapshot logger не инициализировался)
+            // Примечание: tempfile может создать файл, но он должен быть пустым
+            if std::path::Path::new(&db_path).exists() {
+                use rusqlite::Connection;
+                if let Ok(conn) = Connection::open(&db_path) {
+                    // Проверяем, что таблица snapshots НЕ существует
+                    let table_exists: bool = conn
+                        .query_row(
+                            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='snapshots'",
+                            [],
+                            |row| row.get(0),
+                        )
+                        .unwrap_or(false);
+                    assert!(
+                        !table_exists,
+                        "Snapshot table should NOT exist when enable_snapshot_logging is false"
+                    );
                 }
             }
         }

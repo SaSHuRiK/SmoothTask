@@ -519,6 +519,7 @@ mod tests {
             max_candidates: 150,
             dry_run_default: false,
             policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: false,
             thresholds: Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,
@@ -545,6 +546,7 @@ mod tests {
             max_candidates: 150,
             dry_run_default: false,
             policy_mode: PolicyMode::Hybrid,
+            enable_snapshot_logging: false,
             thresholds: Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,

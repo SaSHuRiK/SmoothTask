@@ -499,24 +499,29 @@ pub async fn run_daemon(
     check_system_utilities();
 
     // Инициализация подсистем
-    let mut snapshot_logger = if !config.paths.snapshot_db_path.is_empty() {
-        info!(
-            "Initializing snapshot logger at: {}",
-            config.paths.snapshot_db_path
-        );
-        Some(
-            SnapshotLogger::new(&config.paths.snapshot_db_path).with_context(|| {
-                format!(
-                    "Failed to initialize snapshot logger at {}. \
+    let mut snapshot_logger =
+        if config.enable_snapshot_logging && !config.paths.snapshot_db_path.is_empty() {
+            info!(
+                "Initializing snapshot logger at: {}",
+                config.paths.snapshot_db_path
+            );
+            Some(
+                SnapshotLogger::new(&config.paths.snapshot_db_path).with_context(|| {
+                    format!(
+                        "Failed to initialize snapshot logger at {}. \
                     Ensure the parent directory exists and is writable.",
-                    config.paths.snapshot_db_path
-                )
-            })?,
-        )
-    } else {
-        debug!("Snapshot logging is disabled (snapshot_db_path is empty)");
-        None
-    };
+                        config.paths.snapshot_db_path
+                    )
+                })?,
+            )
+        } else {
+            if !config.enable_snapshot_logging {
+                debug!("Snapshot logging is disabled (enable_snapshot_logging is false)");
+            } else {
+                debug!("Snapshot logging is disabled (snapshot_db_path is empty)");
+            }
+            None
+        };
 
     info!("Initializing policy engine");
     let policy_engine = PolicyEngine::new(config.clone());
