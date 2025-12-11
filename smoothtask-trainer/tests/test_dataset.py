@@ -322,6 +322,66 @@ def test_load_snapshots_as_frame_basic():
         db_path.unlink(missing_ok=True)
 
 
+def _create_minimal_db_with_tables(path: Path) -> sqlite3.Connection:
+    conn = sqlite3.connect(path)
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE snapshots (snapshot_id INTEGER PRIMARY KEY)")
+    cursor.execute(
+        "CREATE TABLE processes (snapshot_id INTEGER NOT NULL, pid INTEGER NOT NULL)"
+    )
+    cursor.execute(
+        "CREATE TABLE app_groups (snapshot_id INTEGER NOT NULL, app_group_id TEXT NOT NULL)"
+    )
+    return conn
+
+
+def test_load_snapshots_as_frame_rejects_missing_snapshot_reference(tmp_path: Path):
+    db_path = tmp_path / "missing_snapshot.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (2, 100))
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 101))
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="snapshot_id.*snapshots"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_duplicate_process_keys(tmp_path: Path):
+    db_path = tmp_path / "duplicate_process.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.executemany(
+        "INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)",
+        [(1, 10), (1, 10)],
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="processes.*дубликаты"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_duplicate_app_group_keys(tmp_path: Path):
+    db_path = tmp_path / "duplicate_group.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 10))
+    cursor.executemany(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        [(1, "g1"), (1, "g1")],
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="app_groups.*дубликаты"):
+        load_snapshots_as_frame(db_path)
+
+
 def test_load_snapshots_as_frame_empty_db():
     """Тест чтения из пустой БД."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -421,8 +481,8 @@ def test_load_snapshots_as_frame_empty_processes_table_returns_empty():
         db_path.unlink(missing_ok=True)
 
 
-def test_load_snapshots_as_frame_handles_empty_snapshots_without_warnings():
-    """Булевые столбцы должны конвертироваться без предупреждений при пустых snapshots."""
+def test_load_snapshots_as_frame_requires_snapshots_for_processes():
+    """Процессы без соответствующих snapshots должны приводить к ошибке."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = Path(tmp.name)
 
@@ -478,20 +538,8 @@ def test_load_snapshots_as_frame_handles_empty_snapshots_without_warnings():
         conn.commit()
         conn.close()
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("error")
-            df = load_snapshots_as_frame(db_path)
-
-        assert not caught
-        assert len(df) == 1
-        assert df["has_tty"].dtype == "boolean"
-        assert df["has_tty"].iloc[0] == True
-        assert df["has_gui_window"].dtype == "boolean"
-        assert df["has_gui_window"].iloc[0] == False
-        assert df["user_active"].dtype == "boolean"
-        assert df["user_active"].iloc[0] is pd.NA
-        assert df["bad_responsiveness"].dtype == "boolean"
-        assert df["bad_responsiveness"].iloc[0] is pd.NA
+        with pytest.raises(ValueError, match="snapshot_id.*snapshots"):
+            load_snapshots_as_frame(db_path)
 
     finally:
         db_path.unlink(missing_ok=True)

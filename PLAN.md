@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-329: Проверка уникальности ключей в таблицах снапшотов
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame валидирует дубликаты по ключам (snapshot_id, pid) и (snapshot_id, app_group_id) с понятным ValueError и примерами ключей. Добавлены тесты на оба случая.
+
+- [x] ST-328: Валидировать ссылочную целостность snapshot_id в load_snapshots_as_frame
+  - Тип: Python / trainer / dataset
+  - Примечания: добавлена проверка, что все snapshot_id из processes присутствуют в snapshots, с информативной ошибкой. Тест проверяет ошибку на фиктивной БД и обновлён сценарий без snapshots.
+
 - [x] ST-327: Валидация булевых колонок в load_snapshots_as_frame
   - Тип: Python / trainer / dataset
   - Примечания: _to_bool теперь валидирует булевые значения с понятным ValueError, допускает только True/False/0/1/"0"/"1" (включая float 0.0/1.0). Добавлены тесты на ошибочные и валидные значения булевых колонок в snapshots/processes/app_groups. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.

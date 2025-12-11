@@ -154,6 +154,31 @@ def _ensure_required_columns(table: str, df: pd.DataFrame, required: set[str]) -
         )
 
 
+def _ensure_unique_keys(
+    df: pd.DataFrame, table: str, keys: list[str], sample_size: int = 5
+) -> None:
+    """
+    Проверяет отсутствие дубликатов по указанным ключевым столбцам.
+
+    Args:
+        df: DataFrame с данными
+        table: Имя таблицы для сообщения об ошибке
+        keys: Список столбцов, образующих ключ
+        sample_size: Сколько ключей показать в сообщении об ошибке
+    """
+    duplicates = df[df.duplicated(subset=keys, keep=False)]
+    if duplicates.empty:
+        return
+
+    key_samples = duplicates[keys].drop_duplicates().head(sample_size)
+    formatted = "; ".join(
+        "(" + ", ".join(str(row[key]) for key in keys) + ")" for _, row in key_samples.iterrows()
+    )
+    raise ValueError(
+        f"В таблице '{table}' обнаружены дубликаты по ключу {keys}: {formatted}"
+    )
+
+
 def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
@@ -186,6 +211,19 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_required_columns("snapshots", snapshots, {"snapshot_id"})
     _ensure_required_columns("processes", processes, {"snapshot_id", "pid"})
     _ensure_required_columns("app_groups", app_groups, {"snapshot_id", "app_group_id"})
+
+    # Проверяем ссылочную целостность snapshot_id в processes.
+    snapshot_ids = set(snapshots["snapshot_id"].dropna().unique())
+    process_snapshot_ids = set(processes["snapshot_id"].dropna().unique())
+    missing_snapshots = sorted(process_snapshot_ids.difference(snapshot_ids))
+    if missing_snapshots:
+        missing_preview = ", ".join(str(sid) for sid in missing_snapshots[:5])
+        raise ValueError(
+            f"В таблице 'processes' найдены snapshot_id без записей в 'snapshots': {missing_preview}"
+        )
+
+    _ensure_unique_keys(processes, table="processes", keys=["snapshot_id", "pid"])
+    _ensure_unique_keys(app_groups, table="app_groups", keys=["snapshot_id", "app_group_id"])
 
     if processes.empty:
         return pd.DataFrame()
