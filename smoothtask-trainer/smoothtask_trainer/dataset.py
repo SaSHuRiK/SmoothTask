@@ -23,6 +23,59 @@ _PROCESS_BOOL_COLS = {
 _SNAPSHOT_BOOL_COLS = {"user_active", "bad_responsiveness"}
 _APP_GROUP_BOOL_COLS = {"has_gui_window", "is_focused_group"}
 
+_SNAPSHOT_NUMERIC_COLS = {
+    "cpu_user",
+    "cpu_system",
+    "cpu_idle",
+    "cpu_iowait",
+    "mem_total_kb",
+    "mem_used_kb",
+    "mem_available_kb",
+    "swap_total_kb",
+    "swap_used_kb",
+    "load_avg_one",
+    "load_avg_five",
+    "load_avg_fifteen",
+    "psi_cpu_some_avg10",
+    "psi_cpu_some_avg60",
+    "psi_io_some_avg10",
+    "psi_mem_some_avg10",
+    "psi_mem_full_avg10",
+    "time_since_last_input_ms",
+    "sched_latency_p95_ms",
+    "sched_latency_p99_ms",
+    "audio_xruns_delta",
+    "ui_loop_p95_ms",
+    "frame_jank_ratio",
+    "responsiveness_score",
+}
+
+_PROCESS_NUMERIC_COLS = {
+    "start_time",
+    "uptime_sec",
+    "tty_nr",
+    "cpu_share_1s",
+    "cpu_share_10s",
+    "io_read_bytes",
+    "io_write_bytes",
+    "rss_mb",
+    "swap_mb",
+    "voluntary_ctx",
+    "involuntary_ctx",
+    "nice",
+    "ionice_class",
+    "ionice_prio",
+    "teacher_score",
+}
+
+_APP_GROUP_NUMERIC_COLS = {
+    "root_pid",
+    "total_cpu_share",
+    "total_io_read_bytes",
+    "total_io_write_bytes",
+    "total_rss_mb",
+}
+
 
 def _json_list(value: str | None) -> list:
     """
@@ -284,6 +337,24 @@ def _ensure_no_nan(
             )
 
 
+def _ensure_no_infinite(
+    df: pd.DataFrame, table: str, columns: Iterable[str], sample_size: int = 5
+) -> None:
+    """
+    Проверяет отсутствие бесконечных значений в указанных колонках.
+    """
+    for col in columns:
+        if col not in df.columns:
+            continue
+        numeric = pd.to_numeric(df[col], errors="coerce")
+        inf_mask = np.isinf(numeric)
+        if inf_mask.any():
+            sample_indices = ", ".join(str(idx) for idx in numeric[inf_mask].index[:sample_size])
+            raise ValueError(
+                f"В таблице '{table}' колонка '{col}' содержит бесконечные значения (строки: {sample_indices})"
+            )
+
+
 def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
@@ -319,6 +390,21 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
     _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
     _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})
+    _ensure_no_infinite(
+        snapshots,
+        table="snapshots",
+        columns=_SNAPSHOT_NUMERIC_COLS,
+    )
+    _ensure_no_infinite(
+        processes,
+        table="processes",
+        columns=_PROCESS_NUMERIC_COLS,
+    )
+    _ensure_no_infinite(
+        app_groups,
+        table="app_groups",
+        columns=_APP_GROUP_NUMERIC_COLS,
+    )
 
     # Проверяем ссылочную целостность snapshot_id в processes.
     snapshot_ids = set(snapshots["snapshot_id"].dropna().unique())

@@ -233,6 +233,18 @@ def test_build_feature_matrix_rejects_missing_snapshot_values():
         build_feature_matrix(df)
 
 
+def test_build_feature_matrix_rejects_infinite_snapshot_id():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [np.inf, 2],
+            "teacher_score": [0.5, 0.6],
+        }
+    )
+
+    with pytest.raises(ValueError, match="snapshot_id.*бесконечные"):
+        build_feature_matrix(df)
+
+
 def test_build_feature_matrix_coerces_snapshot_id_strings():
     df = pd.DataFrame(
         {

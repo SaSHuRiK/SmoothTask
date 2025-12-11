@@ -205,6 +205,13 @@ def build_feature_matrix(
 
     snapshot_raw = work_df["snapshot_id"]
     snapshot_numeric = pd.to_numeric(snapshot_raw, errors="coerce")
+    snapshot_infinite = np.isinf(snapshot_numeric)
+    if snapshot_infinite.any():
+        invalid_values = pd.unique(snapshot_raw[snapshot_infinite])
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Колонка 'snapshot_id' содержит бесконечные значения: {sample_values}"
+        )
     invalid_snapshot = snapshot_raw.isna() | snapshot_numeric.isna()
     if invalid_snapshot.any():
         invalid_values = pd.unique(snapshot_raw[invalid_snapshot])

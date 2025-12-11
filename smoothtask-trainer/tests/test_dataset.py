@@ -7,6 +7,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import pytest
 from smoothtask_trainer.dataset import _json_list, _to_bool, load_snapshots_as_frame
@@ -1113,6 +1114,155 @@ def test_load_snapshots_as_frame_accepts_numeric_string_booleans():
 
     finally:
         db_path.unlink(missing_ok=True)
+
+
+def test_load_snapshots_as_frame_rejects_infinite_snapshot_metrics(tmp_path: Path):
+    db_path = tmp_path / "inf_snapshot.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL,
+            load_avg_one REAL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            PRIMARY KEY (snapshot_id, pid)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, app_group_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp, load_avg_one) VALUES (?, ?, ?)",
+        (1, datetime.now(timezone.utc).isoformat(), np.inf),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)",
+        (1, 10),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="load_avg_one.*бесконечные"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_infinite_process_metrics(tmp_path: Path):
+    db_path = tmp_path / "inf_process.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            cpu_share_1s REAL,
+            PRIMARY KEY (snapshot_id, pid)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            PRIMARY KEY (snapshot_id, app_group_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        (1, datetime.now(timezone.utc).isoformat()),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, cpu_share_1s) VALUES (?, ?, ?)",
+        (1, 42, np.inf),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="cpu_share_1s.*бесконечные"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_infinite_app_group_metrics(tmp_path: Path):
+    db_path = tmp_path / "inf_app_group.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            app_group_id TEXT,
+            PRIMARY KEY (snapshot_id, pid)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            total_cpu_share REAL,
+            PRIMARY KEY (snapshot_id, app_group_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        (1, datetime.now(timezone.utc).isoformat()),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 100, None),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id, total_cpu_share) VALUES (?, ?, ?)",
+        (1, "g1", np.inf),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="total_cpu_share.*бесконечные"):
+        load_snapshots_as_frame(db_path)
 
 
 def test_load_snapshots_as_frame_process_ids_coerced_to_ints(tmp_path: Path):
