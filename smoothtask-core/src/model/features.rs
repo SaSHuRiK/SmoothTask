@@ -18,6 +18,11 @@ use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 ///
 /// # Примеры
 ///
+/// **Примечание:** Примеры помечены как `ignore`, потому что они требуют создания
+/// сложных структур (`Snapshot`, `AppGroupRecord`) с реальными метриками системы,
+/// что невозможно сделать в doctest'ах без доступа к `/proc` и другим системным ресурсам.
+/// Для реального использования см. интеграционные тесты в `tests/` или примеры в `model/mod.rs`.
+///
 /// ```ignore
 /// use smoothtask_core::model::features::{build_features, FeatureVector};
 /// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
@@ -67,6 +72,11 @@ impl FeatureVector {
     ///
     /// # Примеры
     ///
+    /// **Примечание:** Примеры помечены как `ignore`, потому что они требуют создания
+    /// сложных структур (`Snapshot`, `AppGroupRecord`) с реальными метриками системы,
+    /// что невозможно сделать в doctest'ах без доступа к `/proc` и другим системным ресурсам.
+    /// Для реального использования см. интеграционные тесты в `tests/` или примеры в `model/mod.rs`.
+    ///
     /// ```ignore
     /// use smoothtask_core::model::features::{build_features, FeatureVector};
     /// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
@@ -106,6 +116,11 @@ impl FeatureVector {
 /// `FeatureVector` с нормализованными фичами и дефолтами для отсутствующих значений.
 ///
 /// # Примеры
+///
+/// **Примечание:** Примеры помечены как `ignore`, потому что они требуют создания
+/// сложных структур (`Snapshot`, `AppGroupRecord`) с реальными метриками системы,
+/// что невозможно сделать в doctest'ах без доступа к `/proc` и другим системным ресурсам.
+/// Для реального использования см. интеграционные тесты в `tests/` или примеры в `model/mod.rs`.
 ///
 /// ```ignore
 /// use smoothtask_core::model::features::build_features;

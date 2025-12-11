@@ -24,6 +24,11 @@ use crate::model::features::build_features;
 ///
 /// # Примеры использования
 ///
+/// **Примечание:** Примеры помечены как `ignore`, потому что они требуют создания
+/// сложных структур (`Snapshot`, `AppGroupRecord`) с реальными метриками системы,
+/// что невозможно сделать в doctest'ах без доступа к `/proc` и другим системным ресурсам.
+/// Для реального использования см. интеграционные тесты в `tests/` или примеры в `model/mod.rs`.
+///
 /// ```ignore
 /// use smoothtask_core::model::ranker::{Ranker, StubRanker, RankingResult};
 /// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
