@@ -389,7 +389,7 @@ impl SnapshotLogger {
     /// Инициализировать схему БД (создать таблицы, если их нет).
     fn init_schema(&self) -> Result<()> {
         self.conn.execute(
-            r#"
+            r"
             CREATE TABLE IF NOT EXISTS snapshots (
                 snapshot_id INTEGER PRIMARY KEY,
                 timestamp TEXT NOT NULL,
@@ -420,12 +420,12 @@ impl SnapshotLogger {
                 bad_responsiveness INTEGER,
                 responsiveness_score REAL
             )
-            "#,
+            ",
             [],
         )?;
 
         self.conn.execute(
-            r#"
+            r"
             CREATE TABLE IF NOT EXISTS processes (
                 snapshot_id INTEGER NOT NULL,
                 pid INTEGER NOT NULL,
@@ -469,12 +469,12 @@ impl SnapshotLogger {
                 PRIMARY KEY (snapshot_id, pid),
                 FOREIGN KEY (snapshot_id) REFERENCES snapshots(snapshot_id)
             )
-            "#,
+            ",
             [],
         )?;
 
         self.conn.execute(
-            r#"
+            r"
             CREATE TABLE IF NOT EXISTS app_groups (
                 snapshot_id INTEGER NOT NULL,
                 app_group_id TEXT NOT NULL,
@@ -492,7 +492,7 @@ impl SnapshotLogger {
                 PRIMARY KEY (snapshot_id, app_group_id),
                 FOREIGN KEY (snapshot_id) REFERENCES snapshots(snapshot_id)
             )
-            "#,
+            ",
             [],
         )?;
 
@@ -528,7 +528,7 @@ impl SnapshotLogger {
         let r = &snapshot.responsiveness;
 
         tx.execute(
-            r#"
+            r"
             INSERT INTO snapshots (
                 snapshot_id, timestamp,
                 cpu_user, cpu_system, cpu_idle, cpu_iowait,
@@ -544,7 +544,7 @@ impl SnapshotLogger {
                 ui_loop_p95_ms, frame_jank_ratio,
                 bad_responsiveness, responsiveness_score
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            "#,
+            ",
             params![
                 snapshot.snapshot_id as i64,
                 snapshot.timestamp.to_rfc3339(),
@@ -585,7 +585,7 @@ impl SnapshotLogger {
                 .context("Не удалось сериализовать tags процесса")?;
 
             tx.execute(
-                r#"
+                r"
                 INSERT INTO processes (
                     snapshot_id, pid, ppid, uid, gid,
                     exe, cmdline, cgroup_path, systemd_unit, app_group_id,
@@ -602,7 +602,7 @@ impl SnapshotLogger {
                     nice, ionice_class, ionice_prio,
                     teacher_priority_class, teacher_score
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
+                ",
                 params![
                     snapshot.snapshot_id as i64,
                     proc.pid,
@@ -657,7 +657,7 @@ impl SnapshotLogger {
                 .context("Не удалось сериализовать tags группы")?;
 
             tx.execute(
-                r#"
+                r"
                 INSERT INTO app_groups (
                     snapshot_id, app_group_id, root_pid, process_ids,
                     app_name,
@@ -667,7 +667,7 @@ impl SnapshotLogger {
                     has_gui_window, is_focused_group,
                     tags, priority_class
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                "#,
+                ",
                 params![
                     snapshot.snapshot_id as i64,
                     group.app_group_id,

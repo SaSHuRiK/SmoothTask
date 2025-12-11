@@ -32,10 +32,11 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
 
         match collect_single_process(&proc) {
             Ok(Some(record)) => processes.push(record),
-            Ok(None) => continue, // процесс завершился между итерациями
+            Ok(None) => {
+                // процесс завершился между итерациями
+            }
             Err(e) => {
                 tracing::debug!("Ошибка сбора метрик для PID {}: {}", proc.pid(), e);
-                continue;
             }
         }
     }

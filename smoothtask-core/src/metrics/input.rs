@@ -403,12 +403,12 @@ impl EvdevInputTracker {
             let path = entry.path();
 
             // Проверяем, что это файл event*
-            if let Some(file_name) = path.file_name() {
-                let file_name_str = file_name.to_string_lossy();
-                if !file_name_str.starts_with("event") {
-                    continue;
-                }
-            } else {
+            let file_name = match path.file_name() {
+                Some(name) => name,
+                None => continue,
+            };
+            let file_name_str = file_name.to_string_lossy();
+            if !file_name_str.starts_with("event") {
                 continue;
             }
 
