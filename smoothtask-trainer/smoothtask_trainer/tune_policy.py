@@ -281,6 +281,91 @@ def compute_policy_correlations(snapshots_df: pd.DataFrame) -> Dict[str, float]:
     return correlations
 
 
+def optimize_psi_thresholds(
+    snapshots_df: pd.DataFrame, percentile: float = 0.95
+) -> Dict[str, float]:
+    """
+    Оптимизирует пороги PSI на основе перцентилей PSI значений в моменты bad_responsiveness.
+    
+    Функция анализирует PSI значения (psi_cpu_some_avg10, psi_io_some_avg10) в моменты,
+    когда система была неотзывчивой (bad_responsiveness = true), и вычисляет перцентили
+    этих значений. Оптимальные пороги устанавливаются на уровне указанного перцентиля,
+    чтобы система могла предсказать неотзывчивость до того, как она станет критической.
+    
+    Args:
+        snapshots_df: DataFrame со снапшотами из БД (должен содержать колонки:
+                     psi_cpu_some_avg10, psi_io_some_avg10, bad_responsiveness)
+        percentile: Перцентиль для вычисления порогов (по умолчанию 0.95, т.е. P95)
+    
+    Returns:
+        Словарь с оптимальными порогами:
+        - 'psi_cpu_some_high': оптимальный порог PSI CPU (float в диапазоне [0.0, 1.0])
+        - 'psi_io_some_high': оптимальный порог PSI IO (float в диапазоне [0.0, 1.0])
+        
+        Если данных недостаточно или нет моментов bad_responsiveness, возвращаются
+        значения по умолчанию (0.6 для CPU, 0.4 для IO).
+    
+    Examples:
+        >>> import pandas as pd
+        >>> from smoothtask_trainer.tune_policy import optimize_psi_thresholds
+        >>> 
+        >>> # Создаём тестовый DataFrame с моментами bad_responsiveness
+        >>> df = pd.DataFrame({
+        ...     'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        ...     'psi_io_some_avg10': [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4],
+        ...     'bad_responsiveness': [0, 0, 0, 0, 1, 1, 1, 1],
+        ... })
+        >>> 
+        >>> thresholds = optimize_psi_thresholds(df, percentile=0.95)
+        >>> print(f"PSI CPU threshold: {thresholds['psi_cpu_some_high']:.3f}")
+        >>> print(f"PSI IO threshold: {thresholds['psi_io_some_high']:.3f}")
+    """
+    if snapshots_df.empty:
+        return {
+            'psi_cpu_some_high': 0.6,
+            'psi_io_some_high': 0.4,
+        }
+    
+    # Преобразуем bad_responsiveness в числовой тип, если это необходимо
+    if 'bad_responsiveness' in snapshots_df.columns:
+        if snapshots_df['bad_responsiveness'].dtype == 'object' or snapshots_df['bad_responsiveness'].dtype == 'bool':
+            snapshots_df = snapshots_df.copy()
+            snapshots_df['bad_responsiveness'] = snapshots_df['bad_responsiveness'].astype(int)
+    
+    # Фильтруем снапшоты с bad_responsiveness = true
+    bad_snapshots = snapshots_df[snapshots_df['bad_responsiveness'] == 1]
+    
+    # Если нет моментов bad_responsiveness, возвращаем значения по умолчанию
+    if bad_snapshots.empty:
+        return {
+            'psi_cpu_some_high': 0.6,
+            'psi_io_some_high': 0.4,
+        }
+    
+    # Вычисляем перцентили PSI значений в плохих условиях
+    psi_cpu_threshold = 0.6  # значение по умолчанию
+    psi_io_threshold = 0.4  # значение по умолчанию
+    
+    if 'psi_cpu_some_avg10' in bad_snapshots.columns:
+        psi_cpu_values = bad_snapshots['psi_cpu_some_avg10'].dropna()
+        if len(psi_cpu_values) > 0:
+            psi_cpu_threshold = float(psi_cpu_values.quantile(percentile))
+            # Ограничиваем диапазон [0.0, 1.0]
+            psi_cpu_threshold = max(0.0, min(1.0, psi_cpu_threshold))
+    
+    if 'psi_io_some_avg10' in bad_snapshots.columns:
+        psi_io_values = bad_snapshots['psi_io_some_avg10'].dropna()
+        if len(psi_io_values) > 0:
+            psi_io_threshold = float(psi_io_values.quantile(percentile))
+            # Ограничиваем диапазон [0.0, 1.0]
+            psi_io_threshold = max(0.0, min(1.0, psi_io_threshold))
+    
+    return {
+        'psi_cpu_some_high': psi_cpu_threshold,
+        'psi_io_some_high': psi_io_threshold,
+    }
+
+
 def tune_policy(db_path: Path, config_out: Path):
     """
     Подбирает оптимальные параметры политики (пороги PSI, percentiles и т.п.)

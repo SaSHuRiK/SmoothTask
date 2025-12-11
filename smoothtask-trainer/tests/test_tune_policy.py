@@ -11,6 +11,7 @@ import yaml
 from smoothtask_trainer.tune_policy import (
     compute_policy_correlations,
     load_snapshots_for_tuning,
+    optimize_psi_thresholds,
     tune_policy,
     _count_snapshots,
     _validate_db_path,
@@ -541,3 +542,140 @@ def test_compute_policy_correlations_with_real_data():
         for key, value in correlations.items():
             if not pd.isna(value):
                 assert -1.0 <= value <= 1.0, f"Корреляция {key} = {value} вне диапазона [-1, 1]"
+
+
+def test_optimize_psi_thresholds_basic():
+    """Тест базовой оптимизации порогов PSI."""
+    import pandas as pd
+    
+    # Создаём тестовый DataFrame с моментами bad_responsiveness
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        'psi_io_some_avg10': [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4],
+        'bad_responsiveness': [0, 0, 0, 0, 1, 1, 1, 1],
+    })
+    
+    thresholds = optimize_psi_thresholds(df, percentile=0.95)
+    
+    # Проверяем, что пороги вычислены
+    assert 'psi_cpu_some_high' in thresholds
+    assert 'psi_io_some_high' in thresholds
+    
+    # Проверяем, что пороги находятся в допустимом диапазоне [0.0, 1.0]
+    assert 0.0 <= thresholds['psi_cpu_some_high'] <= 1.0
+    assert 0.0 <= thresholds['psi_io_some_high'] <= 1.0
+    
+    # Проверяем, что пороги выше значений в хороших условиях
+    # (в плохих условиях PSI выше, поэтому порог должен быть выше среднего)
+    assert thresholds['psi_cpu_some_high'] > 0.4  # выше среднего значения в плохих условиях
+    assert thresholds['psi_io_some_high'] > 0.2  # выше среднего значения в плохих условиях
+
+
+def test_optimize_psi_thresholds_empty_dataframe():
+    """Тест оптимизации порогов PSI для пустого DataFrame."""
+    import pandas as pd
+    
+    df = pd.DataFrame()
+    thresholds = optimize_psi_thresholds(df)
+    
+    # Должны вернуться значения по умолчанию
+    assert thresholds['psi_cpu_some_high'] == 0.6
+    assert thresholds['psi_io_some_high'] == 0.4
+
+
+def test_optimize_psi_thresholds_no_bad_responsiveness():
+    """Тест оптимизации порогов PSI когда нет моментов bad_responsiveness."""
+    import pandas as pd
+    
+    # Создаём DataFrame только с хорошими условиями
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4],
+        'psi_io_some_avg10': [0.05, 0.1, 0.15, 0.2],
+        'bad_responsiveness': [0, 0, 0, 0],
+    })
+    
+    thresholds = optimize_psi_thresholds(df)
+    
+    # Должны вернуться значения по умолчанию
+    assert thresholds['psi_cpu_some_high'] == 0.6
+    assert thresholds['psi_io_some_high'] == 0.4
+
+
+def test_optimize_psi_thresholds_missing_columns():
+    """Тест оптимизации порогов PSI при отсутствии некоторых колонок."""
+    import pandas as pd
+    
+    # DataFrame без колонки psi_io_some_avg10
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        'bad_responsiveness': [0, 0, 0, 0, 1, 1, 1, 1],
+    })
+    
+    thresholds = optimize_psi_thresholds(df)
+    
+    # psi_cpu_some_high должен быть вычислен
+    assert 'psi_cpu_some_high' in thresholds
+    assert 0.0 <= thresholds['psi_cpu_some_high'] <= 1.0
+    
+    # psi_io_some_high должен быть значением по умолчанию
+    assert thresholds['psi_io_some_high'] == 0.4
+
+
+def test_optimize_psi_thresholds_with_nulls():
+    """Тест оптимизации порогов PSI при наличии NULL значений."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, None, 0.4, 0.5, 0.6, 0.7, 0.8],
+        'psi_io_some_avg10': [0.05, None, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4],
+        'bad_responsiveness': [0, 0, 0, 0, 1, 1, 1, 1],
+    })
+    
+    thresholds = optimize_psi_thresholds(df)
+    
+    # Функция должна корректно обработать NULL значения (dropna перед вычислением)
+    assert 0.0 <= thresholds['psi_cpu_some_high'] <= 1.0
+    assert 0.0 <= thresholds['psi_io_some_high'] <= 1.0
+
+
+def test_optimize_psi_thresholds_percentile():
+    """Тест оптимизации порогов PSI с различными перцентилями."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        'psi_io_some_avg10': [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4],
+        'bad_responsiveness': [0, 0, 0, 0, 1, 1, 1, 1],
+    })
+    
+    # Тестируем с различными перцентилями
+    thresholds_p50 = optimize_psi_thresholds(df, percentile=0.5)
+    thresholds_p95 = optimize_psi_thresholds(df, percentile=0.95)
+    thresholds_p99 = optimize_psi_thresholds(df, percentile=0.99)
+    
+    # P95 должен быть выше P50
+    assert thresholds_p95['psi_cpu_some_high'] >= thresholds_p50['psi_cpu_some_high']
+    assert thresholds_p95['psi_io_some_high'] >= thresholds_p50['psi_io_some_high']
+    
+    # P99 должен быть выше или равен P95
+    assert thresholds_p99['psi_cpu_some_high'] >= thresholds_p95['psi_cpu_some_high']
+    assert thresholds_p99['psi_io_some_high'] >= thresholds_p95['psi_io_some_high']
+
+
+def test_optimize_psi_thresholds_with_real_data():
+    """Тест оптимизации порогов PSI с данными из реальной БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=150)
+        
+        # Загружаем снапшоты
+        df = load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+        
+        # Оптимизируем пороги PSI
+        thresholds = optimize_psi_thresholds(df, percentile=0.95)
+        
+        # Проверяем, что пороги вычислены и находятся в допустимом диапазоне
+        assert 'psi_cpu_some_high' in thresholds
+        assert 'psi_io_some_high' in thresholds
+        assert 0.0 <= thresholds['psi_cpu_some_high'] <= 1.0
+        assert 0.0 <= thresholds['psi_io_some_high'] <= 1.0
