@@ -604,14 +604,61 @@ mod tests {
     #[test]
     fn test_is_wayland_available_multiple_calls_consistent() {
         // Тест проверяет консистентность при повторных вызовах
+        // Сохраняем текущие переменные окружения для изоляции теста
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+        let old_runtime_dir = std::env::var("XDG_RUNTIME_DIR").ok();
+
+        // Убеждаемся, что переменные окружения не меняются между вызовами
+        // (восстанавливаем их, если они были изменены другими тестами)
+        if let Some(val) = old_wayland_display.as_ref() {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        } else {
+            std::env::remove_var("WAYLAND_DISPLAY");
+        }
+        if let Some(val) = old_xdg_session.as_ref() {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        } else {
+            std::env::remove_var("XDG_SESSION_TYPE");
+        }
+        if let Some(val) = old_runtime_dir.as_ref() {
+            std::env::set_var("XDG_RUNTIME_DIR", val);
+        } else {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
+
+        // Вызываем функцию несколько раз подряд
         let result1 = is_wayland_available();
         let result2 = is_wayland_available();
         let result3 = is_wayland_available();
 
         // Результаты должны быть одинаковыми при повторных вызовах
         // (если окружение не меняется)
-        assert_eq!(result1, result2);
-        assert_eq!(result2, result3);
+        assert_eq!(
+            result1, result2,
+            "Первый и второй вызовы должны давать одинаковый результат"
+        );
+        assert_eq!(
+            result2, result3,
+            "Второй и третий вызовы должны давать одинаковый результат"
+        );
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        } else {
+            std::env::remove_var("WAYLAND_DISPLAY");
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        } else {
+            std::env::remove_var("XDG_SESSION_TYPE");
+        }
+        if let Some(val) = old_runtime_dir {
+            std::env::set_var("XDG_RUNTIME_DIR", val);
+        } else {
+            std::env::remove_var("XDG_RUNTIME_DIR");
+        }
     }
 
     #[test]
