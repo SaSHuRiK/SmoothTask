@@ -57,6 +57,32 @@ pub struct FeatureVector {
 
 impl FeatureVector {
     /// Получить общее количество фич (numeric + bool + categorical).
+    ///
+    /// Возвращает сумму длин всех трёх векторов фич: числовых, булевых и категориальных.
+    /// Обычно это 33 + 12 + 6 = 51 фича, но может отличаться в зависимости от реализации.
+    ///
+    /// # Возвращает
+    ///
+    /// Общее количество фич в векторе (numeric.len() + bool.len() + categorical.len()).
+    ///
+    /// # Примеры
+    ///
+    /// ```ignore
+    /// use smoothtask_core::model::features::{build_features, FeatureVector};
+    /// use smoothtask_core::logging::snapshots::{Snapshot, AppGroupRecord};
+    ///
+    /// let snapshot: Snapshot = /* ... */;
+    /// let app_group: AppGroupRecord = /* ... */;
+    ///
+    /// let features = build_features(&snapshot, &app_group);
+    ///
+    /// // Получение общего количества фич
+    /// let total = features.total_features();
+    /// println!("Total features: {}", total); // Обычно 51
+    ///
+    /// // Проверка структуры фич
+    /// assert_eq!(total, features.numeric.len() + features.bool.len() + features.categorical.len());
+    /// ```
     pub fn total_features(&self) -> usize {
         self.numeric.len() + self.bool.len() + self.categorical.len()
     }
@@ -560,5 +586,203 @@ mod tests {
         for (i, &idx) in features.cat_feature_indices.iter().enumerate() {
             assert_eq!(idx, expected_first_cat_idx + i);
         }
+    }
+
+    #[test]
+    fn test_build_features_empty_process_list() {
+        // Тест для группы, у которой нет процессов в снапшоте
+        let mut snapshot = create_test_snapshot();
+        snapshot.processes.clear(); // Удаляем все процессы
+
+        let app_group = AppGroupRecord {
+            app_group_id: "empty-group".to_string(),
+            root_pid: 9999,
+            process_ids: vec![9999],
+            app_name: Some("empty".to_string()),
+            total_cpu_share: None,
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: None,
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        };
+
+        let features = build_features(&snapshot, &app_group);
+
+        // Процессные фичи (первые 6) должны быть 0.0 (дефолты)
+        // Индексы: 0=cpu_share_1s, 1=cpu_share_10s, 2=io_read_bytes, 3=io_write_bytes, 4=rss_mb, 5=swap_mb
+        assert_eq!(features.numeric[0], 0.0); // cpu_share_1s
+        assert_eq!(features.numeric[1], 0.0); // cpu_share_10s
+        assert_eq!(features.numeric[2], 0.0); // io_read_bytes
+        assert_eq!(features.numeric[3], 0.0); // io_write_bytes
+        assert_eq!(features.numeric[4], 0.0); // rss_mb
+        assert_eq!(features.numeric[5], 0.0); // swap_mb
+
+        // Групповые метрики (последние 4 числовые фичи) должны быть 0.0
+        // Индексы: 29=total_cpu_share, 30=total_io_read_bytes, 31=total_io_write_bytes, 32=total_rss_mb
+        assert_eq!(features.numeric[29], 0.0); // total_cpu_share
+        assert_eq!(features.numeric[30], 0.0); // total_io_read_bytes
+        assert_eq!(features.numeric[31], 0.0); // total_io_write_bytes
+        assert_eq!(features.numeric[32], 0.0); // total_rss_mb
+
+        // Глобальные метрики (индексы 11-28) берутся из snapshot.global и не должны быть 0.0
+        // Индексы: 0-5: процессные метрики (cpu_share_1s, cpu_share_10s, io_read_bytes, io_write_bytes, rss_mb, swap_mb)
+        // 6-10: еще процессные метрики (voluntary_ctx, involuntary_ctx, nice, ionice_class, ionice_prio)
+        // 11: load_avg_one, 12: load_avg_five, 13: load_avg_fifteen, ...
+        // Например, load_avg_one = 1.5 из create_test_snapshot()
+        assert_eq!(features.numeric[11], 1.5); // load_avg_one
+
+        // Процессные булевые фичи должны быть 0 (has_tty, has_gui_window, is_focused_window и т.д.)
+        assert_eq!(features.bool[2], 0); // has_tty
+        assert_eq!(features.bool[3], 0); // has_gui_window
+        assert_eq!(features.bool[4], 0); // is_focused_window
+
+        // Категориальные фичи: process_type и tags_joined должны быть "unknown" (нет процесса)
+        // app_name и priority_class берутся из app_group, если указаны
+        assert_eq!(features.categorical[0], "unknown"); // process_type (нет процесса)
+        assert_eq!(features.categorical[1], "empty"); // app_name (из app_group)
+        assert_eq!(features.categorical[2], "unknown"); // priority_class (не указан в app_group)
+        assert_eq!(features.categorical[5], "unknown"); // tags_joined (нет процесса)
+
+        // Проверяем структуру
+        assert_eq!(features.numeric.len(), 33);
+        assert_eq!(features.bool.len(), 12);
+        assert_eq!(features.categorical.len(), 6);
+        assert_eq!(features.total_features(), 33 + 12 + 6);
+    }
+
+    #[test]
+    fn test_build_features_missing_metrics_in_snapshot() {
+        // Тест для снапшота с отсутствующими метриками
+        let mut snapshot = create_test_snapshot();
+        snapshot.global.psi_cpu_some_avg10 = None;
+        snapshot.global.psi_io_some_avg10 = None;
+        snapshot.global.psi_mem_some_avg10 = None;
+        snapshot.responsiveness.sched_latency_p95_ms = None;
+        snapshot.responsiveness.sched_latency_p99_ms = None;
+        snapshot.responsiveness.ui_loop_p95_ms = None;
+
+        let app_group = AppGroupRecord {
+            app_group_id: "test-app".to_string(),
+            root_pid: 1234,
+            process_ids: vec![1234],
+            app_name: Some("test".to_string()),
+            total_cpu_share: Some(0.15),
+            total_io_read_bytes: Some(2 * 1024 * 1024),
+            total_io_write_bytes: Some(1024 * 1024),
+            total_rss_mb: Some(200),
+            has_gui_window: true,
+            is_focused_group: true,
+            tags: vec!["browser".to_string()],
+            priority_class: Some("INTERACTIVE".to_string()),
+        };
+
+        let features = build_features(&snapshot, &app_group);
+
+        // Функция должна корректно обработать отсутствующие метрики
+        // и использовать дефолты (0.0 для числовых)
+        assert_eq!(features.numeric.len(), 33);
+        assert_eq!(features.bool.len(), 12);
+        assert_eq!(features.categorical.len(), 6);
+
+        // Проверяем, что функция не падает и возвращает валидный FeatureVector
+        assert_eq!(features.total_features(), 33 + 12 + 6);
+    }
+
+    #[test]
+    fn test_build_features_multiple_processes() {
+        // Тест для группы с множественными процессами
+        let mut snapshot = create_test_snapshot();
+
+        // Добавляем второй процесс в ту же группу
+        let mut process2 = snapshot.processes[0].clone();
+        process2.pid = 5678;
+        process2.cpu_share_1s = Some(0.05);
+        process2.cpu_share_10s = Some(0.04);
+        process2.io_read_bytes = Some(512 * 1024);
+        process2.io_write_bytes = Some(256 * 1024);
+        process2.rss_mb = Some(50);
+        snapshot.processes.push(process2);
+
+        let app_group = AppGroupRecord {
+            app_group_id: "test-app".to_string(),
+            root_pid: 1234,
+            process_ids: vec![1234, 5678], // Два процесса в группе
+            app_name: Some("test".to_string()),
+            total_cpu_share: Some(0.20), // Сумма обоих процессов
+            total_io_read_bytes: Some(3 * 1024 * 1024),
+            total_io_write_bytes: Some(2 * 1024 * 1024),
+            total_rss_mb: Some(250),
+            has_gui_window: true,
+            is_focused_group: true,
+            tags: vec!["browser".to_string()],
+            priority_class: Some("INTERACTIVE".to_string()),
+        };
+
+        let features = build_features(&snapshot, &app_group);
+
+        // Функция должна использовать первый процесс как representative_process
+        // для процессных фич (cpu_share_1s, cpu_share_10s и т.д.)
+        assert_eq!(features.numeric.len(), 33);
+        assert_eq!(features.bool.len(), 12);
+        assert_eq!(features.categorical.len(), 6);
+
+        // Проверяем, что используются метрики первого процесса (PID 1234)
+        // cpu_share_1s первого процесса = 0.1
+        assert_eq!(features.numeric[0], 0.1);
+        assert_eq!(features.numeric[1], 0.08); // cpu_share_10s первого процесса
+
+        // Проверяем, что функция не падает и возвращает валидный FeatureVector
+        assert_eq!(features.total_features(), 33 + 12 + 6);
+    }
+
+    #[test]
+    fn test_build_features_process_with_missing_fields() {
+        // Тест для процесса с отсутствующими полями
+        let mut snapshot = create_test_snapshot();
+        snapshot.processes[0].cpu_share_1s = None;
+        snapshot.processes[0].cpu_share_10s = None;
+        snapshot.processes[0].io_read_bytes = None;
+        snapshot.processes[0].io_write_bytes = None;
+        snapshot.processes[0].rss_mb = None;
+        snapshot.processes[0].swap_mb = None;
+        snapshot.processes[0].process_type = None;
+        snapshot.processes[0].tags = vec![];
+
+        let app_group = AppGroupRecord {
+            app_group_id: "test-app".to_string(),
+            root_pid: 1234,
+            process_ids: vec![1234],
+            app_name: None,
+            total_cpu_share: None,
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: None,
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        };
+
+        let features = build_features(&snapshot, &app_group);
+
+        // Все отсутствующие числовые фичи должны быть 0.0
+        assert_eq!(features.numeric[0], 0.0); // cpu_share_1s
+        assert_eq!(features.numeric[1], 0.0); // cpu_share_10s
+        assert_eq!(features.numeric[2], 0.0); // io_read_bytes
+        assert_eq!(features.numeric[3], 0.0); // io_write_bytes
+        assert_eq!(features.numeric[4], 0.0); // rss_mb
+        assert_eq!(features.numeric[5], 0.0); // swap_mb
+
+        // Категориальные фичи должны быть "unknown"
+        assert_eq!(features.categorical[0], "unknown"); // process_type
+        assert_eq!(features.categorical[1], "unknown"); // app_name
+        assert_eq!(features.categorical[2], "unknown"); // priority_class
+        assert_eq!(features.categorical[5], "unknown"); // tags_joined
+
+        // Функция должна корректно обработать все отсутствующие поля
+        assert_eq!(features.total_features(), 33 + 12 + 6);
     }
 }
