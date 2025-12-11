@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-343: Удалять дубликаты process_ids при парсинге app_groups
+  - Тип: Python / trainer / dataset
+  - Примечания: _parse_process_ids убирает дубликаты с сохранением порядка; добавлен unit-тест на стабильное множество pid и обновлён интеграционный тест на process_ids.
+
+- [x] ST-342: Не допускать пустых таблиц snapshots/processes в trainer
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame теперь выбрасывает понятный ValueError, если таблицы snapshots или processes пусты; покрыто двумя unit-тестами.
+
 - [x] ST-341: Проверять соответствие process_ids app_groups существующим процессам
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame валидирует, что process_ids каждой группы ссылаются на процессы того же snapshot; сообщение об ошибке содержит app_group_id и недостающие PID. Добавлен тест на отсутствие PID в groups.
@@ -70,14 +78,6 @@
 - [x] ST-334: Валидировать process_ids в app_groups в `load_snapshots_as_frame`
   - Тип: Python / trainer / dataset
   - Примечания: process_ids приводятся к спискам целых чисел; нечисловые элементы вызывают ValueError. Добавлены тесты на успешный и ошибочный сценарии. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-333: build_feature_matrix отвергает NaN в числовых фичах
-  - Тип: Python / trainer / features
-  - Примечания: числовые фичи валидируются на NaN/NA с указанием строк; добавлен тест на ошибку при NaN, существующие сценарии проверены без предупреждений.
-
-- [x] ST-332: Запретить NaN в ключевых колонках SQLite снапшотов
-  - Тип: Python / trainer / dataset
-  - Примечания: load_snapshots_as_frame валидирует отсутствия NaN в snapshot_id/pid/app_group_id и выдаёт понятные ошибки; добавлены unit-тесты на NaN в ключевых таблицах.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

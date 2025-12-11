@@ -159,7 +159,15 @@ def _parse_process_ids(value: str | None) -> list[int]:
             f"Колонка 'process_ids' содержит нецелые значения: {sample_values}"
         )
 
-    return process_ids
+    unique_ids: list[int] = []
+    seen: set[int] = set()
+    for pid in process_ids:
+        if pid in seen:
+            continue
+        seen.add(pid)
+        unique_ids.append(pid)
+
+    return unique_ids
 
 
 def _normalize_tags_list(value: str | None, column: str) -> list[str]:
@@ -423,6 +431,10 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_required_columns("snapshots", snapshots, {"snapshot_id"})
     _ensure_required_columns("processes", processes, {"snapshot_id", "pid"})
     _ensure_required_columns("app_groups", app_groups, {"snapshot_id", "app_group_id"})
+    if snapshots.empty:
+        raise ValueError("Таблица 'snapshots' не содержит записей")
+    if processes.empty:
+        raise ValueError("Таблица 'processes' не содержит записей")
     _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
     _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
     _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})

@@ -10,7 +10,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
-from smoothtask_trainer.dataset import _json_list, _to_bool, load_snapshots_as_frame
+from smoothtask_trainer.dataset import _json_list, _parse_process_ids, _to_bool, load_snapshots_as_frame
 
 
 def create_test_db(db_path: Path) -> None:
@@ -588,15 +588,15 @@ def test_load_snapshots_as_frame_empty_db():
         conn.commit()
         conn.close()
 
-        df = load_snapshots_as_frame(db_path)
-        assert df.empty, "DataFrame должен быть пустым для пустой БД"
+        with pytest.raises(ValueError, match="snapshots.*не содержит записей"):
+            load_snapshots_as_frame(db_path)
 
     finally:
         db_path.unlink(missing_ok=True)
 
 
 def test_load_snapshots_as_frame_empty_processes_table_returns_empty():
-    """Должен вернуться пустой DataFrame, если в processes нет строк."""
+    """Пустая таблица processes должна приводить к ошибке."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
         db_path = Path(tmp.name)
 
@@ -655,12 +655,8 @@ def test_load_snapshots_as_frame_empty_processes_table_returns_empty():
         conn.commit()
         conn.close()
 
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("error")
-            df = load_snapshots_as_frame(db_path)
-
-        assert not caught
-        assert df.empty
+        with pytest.raises(ValueError, match="processes.*не содержит записей"):
+            load_snapshots_as_frame(db_path)
 
     finally:
         db_path.unlink(missing_ok=True)
@@ -723,7 +719,7 @@ def test_load_snapshots_as_frame_requires_snapshots_for_processes():
         conn.commit()
         conn.close()
 
-        with pytest.raises(ValueError, match="snapshot_id.*snapshots"):
+        with pytest.raises(ValueError, match="snapshots.*не содержит записей"):
             load_snapshots_as_frame(db_path)
 
     finally:
@@ -1393,9 +1389,16 @@ def test_load_snapshots_as_frame_process_ids_coerced_to_ints(tmp_path: Path):
 
     df = load_snapshots_as_frame(db_path)
 
-    assert df["process_ids"].iloc[0] == [500, 500, 500, 500]
+    assert df["process_ids"].iloc[0] == [500]
     assert df["tags"].iloc[0] == ["main", "5"]
     assert df["tags_group"].iloc[0] == ["root", "child"]
+
+
+def test_parse_process_ids_deduplicates_preserving_order():
+    """_parse_process_ids возвращает уникальные pid в стабильном порядке."""
+    value = json.dumps([1, "1", 2, 1.0, " 2 ", 3, 2])
+
+    assert _parse_process_ids(value) == [1, 2, 3]
 
 
 def test_load_snapshots_as_frame_rejects_invalid_process_ids(tmp_path: Path):
