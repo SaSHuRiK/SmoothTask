@@ -640,6 +640,11 @@ pub async fn run_daemon(
         Arc::new(tokio::sync::RwLock::new(Vec::new()));
     let app_groups_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>> =
         Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let responsiveness_metrics_arc: Arc<
+        tokio::sync::RwLock<crate::logging::snapshots::ResponsivenessMetrics>,
+    > = Arc::new(tokio::sync::RwLock::new(
+        crate::logging::snapshots::ResponsivenessMetrics::default(),
+    ));
 
     // Запуск API сервера (если указан адрес)
     let mut api_server_handle: Option<ApiServerHandle> = None;
@@ -648,12 +653,13 @@ pub async fn run_daemon(
         match api_addr_str.parse::<std::net::SocketAddr>() {
             Ok(addr) => {
                 info!("Starting API server on {}", addr);
-                let api_server = ApiServer::with_all_and_config(
+                let api_server = ApiServer::with_all_and_responsiveness_and_config(
                     addr,
                     Some(Arc::clone(&stats_arc)),
                     Some(Arc::clone(&system_metrics_arc)),
                     Some(Arc::clone(&processes_arc)),
                     Some(Arc::clone(&app_groups_arc)),
+                    Some(Arc::clone(&responsiveness_metrics_arc)),
                     Some(Arc::clone(&config_arc)),
                 );
                 match api_server.start().await {
@@ -820,6 +826,7 @@ pub async fn run_daemon(
             }
             *processes_arc.write().await = snapshot.processes.clone();
             *app_groups_arc.write().await = snapshot.app_groups.clone();
+            *responsiveness_metrics_arc.write().await = snapshot.responsiveness.clone();
         }
 
         // Логируем статистику периодически

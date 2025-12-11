@@ -25,6 +25,8 @@ pub struct ApiState {
     processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
     /// Последние группы приложений (опционально)
     app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+    /// Последние метрики отзывчивости (опционально)
+    responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>,
     /// Текущая конфигурация демона (опционально)
     config: Option<Arc<crate::config::Config>>,
 }
@@ -37,6 +39,7 @@ impl ApiState {
             system_metrics: None,
             processes: None,
             app_groups: None,
+            responsiveness_metrics: None,
             config: None,
         }
     }
@@ -48,6 +51,7 @@ impl ApiState {
             system_metrics: None,
             processes: None,
             app_groups: None,
+            responsiveness_metrics: None,
             config: None,
         }
     }
@@ -61,6 +65,7 @@ impl ApiState {
             system_metrics: Some(system_metrics),
             processes: None,
             app_groups: None,
+            responsiveness_metrics: None,
             config: None,
         }
     }
@@ -77,6 +82,7 @@ impl ApiState {
             system_metrics,
             processes,
             app_groups,
+            responsiveness_metrics: None,
             config: None,
         }
     }
@@ -94,6 +100,28 @@ impl ApiState {
             system_metrics,
             processes,
             app_groups,
+            responsiveness_metrics: None,
+            config,
+        }
+    }
+
+    /// Создаёт новое состояние API сервера со всеми данными, включая метрики отзывчивости и конфигурацию.
+    pub fn with_all_and_responsiveness_and_config(
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+        responsiveness_metrics: Option<
+            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
+        >,
+        config: Option<Arc<crate::config::Config>>,
+    ) -> Self {
+        Self {
+            daemon_stats,
+            system_metrics,
+            processes,
+            app_groups,
+            responsiveness_metrics,
             config,
         }
     }
@@ -136,6 +164,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/version", get(version_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
+        .route("/api/responsiveness", get(responsiveness_handler))
         .route("/api/processes", get(processes_handler))
         .route("/api/processes/:pid", get(process_by_pid_handler))
         .route("/api/appgroups", get(appgroups_handler))
@@ -288,6 +317,26 @@ async fn appgroup_by_id_handler(
     }
 }
 
+/// Обработчик для endpoint `/api/responsiveness`.
+///
+/// Возвращает последние метрики отзывчивости системы (если доступны).
+async fn responsiveness_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.responsiveness_metrics {
+        Some(metrics_arc) => {
+            let metrics = metrics_arc.read().await;
+            Ok(Json(json!({
+                "status": "ok",
+                "responsiveness_metrics": *metrics
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "ok",
+            "responsiveness_metrics": null,
+            "message": "Responsiveness metrics not available (daemon may not be running or no metrics collected yet)"
+        }))),
+    }
+}
+
 /// Обработчик для endpoint `/api/config`.
 ///
 /// Возвращает текущую конфигурацию демона (без секретов).
@@ -435,6 +484,41 @@ impl ApiServer {
         }
     }
 
+    /// Создаёт новый API сервер со всеми данными, включая метрики отзывчивости и конфигурацию.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `daemon_stats`: Статистика работы демона (опционально)
+    /// - `system_metrics`: Системные метрики (опционально)
+    /// - `processes`: Список процессов (опционально)
+    /// - `app_groups`: Список групп приложений (опционально)
+    /// - `responsiveness_metrics`: Метрики отзывчивости (опционально)
+    /// - `config`: Конфигурация демона (опционально)
+    pub fn with_all_and_responsiveness_and_config(
+        addr: std::net::SocketAddr,
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+        responsiveness_metrics: Option<
+            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
+        >,
+        config: Option<Arc<crate::config::Config>>,
+    ) -> Self {
+        Self {
+            addr,
+            state: ApiState::with_all_and_responsiveness_and_config(
+                daemon_stats,
+                system_metrics,
+                processes,
+                app_groups,
+                responsiveness_metrics,
+                config,
+            ),
+        }
+    }
+
     /// Запускает API сервер в фоновой задаче.
     ///
     /// Возвращает handle для управления сервером (остановка, проверка состояния).
@@ -524,6 +608,7 @@ mod tests {
         assert!(state.system_metrics.is_none());
         assert!(state.processes.is_none());
         assert!(state.app_groups.is_none());
+        assert!(state.responsiveness_metrics.is_none());
         assert!(state.config.is_none());
     }
 
@@ -534,6 +619,7 @@ mod tests {
         assert!(state.system_metrics.is_none());
         assert!(state.processes.is_none());
         assert!(state.app_groups.is_none());
+        assert!(state.responsiveness_metrics.is_none());
         assert!(state.config.is_none());
     }
 
@@ -545,6 +631,7 @@ mod tests {
         assert!(state.system_metrics.is_none());
         assert!(state.processes.is_none());
         assert!(state.app_groups.is_none());
+        assert!(state.responsiveness_metrics.is_none());
         assert!(state.config.is_none());
     }
 
@@ -586,6 +673,7 @@ mod tests {
         let state = ApiState::with_system_metrics(metrics_arc.clone());
         assert!(state.daemon_stats.is_none());
         assert!(state.system_metrics.is_some());
+        assert!(state.responsiveness_metrics.is_none());
         assert!(state.config.is_none());
     }
 
@@ -637,6 +725,7 @@ mod tests {
         assert!(state.system_metrics.is_some());
         assert!(state.processes.is_some());
         assert!(state.app_groups.is_some());
+        assert!(state.responsiveness_metrics.is_none());
         assert!(state.config.is_none());
     }
 
@@ -1002,6 +1091,55 @@ mod tests {
         let config_arc = Arc::new(config);
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
         assert!(state.config.is_some());
+        assert!(state.responsiveness_metrics.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_responsiveness_handler_without_metrics() {
+        let state = ApiState::new();
+        let result = responsiveness_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["responsiveness_metrics"], Value::Null);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_responsiveness_handler_with_metrics() {
+        use crate::logging::snapshots::ResponsivenessMetrics;
+        let metrics = ResponsivenessMetrics {
+            sched_latency_p95_ms: Some(5.0),
+            sched_latency_p99_ms: Some(10.0),
+            audio_xruns_delta: Some(0),
+            ui_loop_p95_ms: Some(16.0),
+            frame_jank_ratio: None,
+            bad_responsiveness: false,
+            responsiveness_score: Some(0.9),
+        };
+        let metrics_arc = Arc::new(RwLock::new(metrics));
+        let state = ApiState::with_all_and_responsiveness_and_config(
+            None,
+            None,
+            None,
+            None,
+            Some(metrics_arc),
+            None,
+        );
+        let result = responsiveness_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["responsiveness_metrics"].is_object());
+        let resp_metrics = &value["responsiveness_metrics"];
+        assert_eq!(resp_metrics["sched_latency_p95_ms"], 5.0);
+        assert_eq!(resp_metrics["sched_latency_p99_ms"], 10.0);
+        assert_eq!(resp_metrics["audio_xruns_delta"], 0);
+        assert_eq!(resp_metrics["ui_loop_p95_ms"], 16.0);
+        assert_eq!(resp_metrics["bad_responsiveness"], false);
+        assert_eq!(resp_metrics["responsiveness_score"], 0.9);
     }
 
     #[test]
