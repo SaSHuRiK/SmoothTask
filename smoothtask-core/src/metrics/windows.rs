@@ -84,10 +84,114 @@ pub trait WindowIntrospector: Send + Sync {
 
 /// Выбрать наиболее релевантное активное окно из списка.
 ///
-/// Правила:
-/// - если есть fullscreen — возвращаем первое fullscreen-окно;
-/// - иначе возвращаем первое окно со статусом Focused;
-/// - если активных нет — None.
+/// Функция реализует двухуровневую стратегию выбора активного окна:
+/// 1. Сначала ищет окна в состоянии `Fullscreen` и выбирает среди них окно с наибольшим `pid_confidence`.
+/// 2. Если fullscreen-окон нет, ищет окна в состоянии `Focused` и выбирает среди них окно с наибольшим `pid_confidence`.
+/// 3. Если активных окон нет (нет ни fullscreen, ни focused) — возвращает `None`.
+///
+/// # Аргументы
+///
+/// * `windows` - срез со списком всех окон для анализа
+///
+/// # Возвращает
+///
+/// * `Some(WindowInfo)` - наиболее релевантное активное окно (fullscreen предпочтительнее focused, среди одинаковых состояний выбирается по максимальному `pid_confidence`)
+/// * `None` - если в списке нет активных окон (fullscreen или focused)
+///
+/// # Алгоритм выбора
+///
+/// При наличии нескольких окон с одинаковым состоянием (например, несколько fullscreen-окон),
+/// функция использует `pick_best_by_confidence` для выбора окна с наибольшим `pid_confidence`.
+/// Если у нескольких окон одинаковый `pid_confidence`, возвращается первое из них (поведение `max_by`).
+///
+/// # Граничные случаи
+///
+/// - **Пустой список**: возвращает `None`
+/// - **Только Background/Minimized окна**: возвращает `None`
+/// - **Несколько fullscreen-окон**: выбирается окно с наибольшим `pid_confidence`
+/// - **Несколько focused-окон**: выбирается окно с наибольшим `pid_confidence`
+/// - **Одинаковые `pid_confidence`**: возвращается первое окно из группы (стабильное, но не гарантированно детерминированное поведение)
+///
+/// # Примеры
+///
+/// ```
+/// use smoothtask_core::metrics::windows::{select_focused_window, WindowInfo, WindowState};
+///
+/// // Fullscreen окно имеет приоритет над focused
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("app1".to_string()),
+///         Some("Focused Window".to_string()),
+///         None,
+///         WindowState::Focused,
+///         Some(100),
+///         0.9,
+///     ),
+///     WindowInfo::new(
+///         Some("app2".to_string()),
+///         Some("Fullscreen Window".to_string()),
+///         None,
+///         WindowState::Fullscreen,
+///         Some(200),
+///         0.5, // даже с меньшим confidence
+///     ),
+/// ];
+/// let selected = select_focused_window(&windows);
+/// assert!(selected.is_some());
+/// assert_eq!(selected.unwrap().state, WindowState::Fullscreen);
+/// ```
+///
+/// ```
+/// use smoothtask_core::metrics::windows::{select_focused_window, WindowInfo, WindowState};
+///
+/// // Среди fullscreen-окон выбирается с наибольшим confidence
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("app1".to_string()),
+///         Some("Window 1".to_string()),
+///         None,
+///         WindowState::Fullscreen,
+///         Some(100),
+///         0.3,
+///     ),
+///     WindowInfo::new(
+///         Some("app2".to_string()),
+///         Some("Window 2".to_string()),
+///         None,
+///         WindowState::Fullscreen,
+///         Some(200),
+///         0.9, // больше confidence
+///     ),
+/// ];
+/// let selected = select_focused_window(&windows);
+/// assert!(selected.is_some());
+/// assert!((selected.unwrap().pid_confidence - 0.9).abs() < f32::EPSILON);
+/// ```
+///
+/// ```
+/// use smoothtask_core::metrics::windows::{select_focused_window, WindowInfo, WindowState};
+///
+/// // Если нет активных окон, возвращается None
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("app1".to_string()),
+///         Some("Background".to_string()),
+///         None,
+///         WindowState::Background,
+///         Some(100),
+///         1.0,
+///     ),
+///     WindowInfo::new(
+///         Some("app2".to_string()),
+///         Some("Minimized".to_string()),
+///         None,
+///         WindowState::Minimized,
+///         Some(200),
+///         1.0,
+///     ),
+/// ];
+/// assert!(select_focused_window(&windows).is_none());
+/// ```
 pub fn select_focused_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
     pick_best_by_confidence(
         windows
@@ -99,19 +203,48 @@ pub fn select_focused_window(windows: &[WindowInfo]) -> Option<WindowInfo> {
 
 /// Выбирает окно с наибольшим `pid_confidence` из итератора кандидатов.
 ///
+/// Функция использует `total_cmp` для сравнения значений `pid_confidence`, что обеспечивает
+/// корректную обработку специальных значений (NaN, отрицательные числа, хотя в нормальных
+/// условиях `pid_confidence` должен быть в диапазоне [0.0, 1.0]).
+///
 /// # Аргументы
 ///
-/// * `candidates` - итератор по кандидатам (окнам)
+/// * `candidates` - итератор по кандидатам (окнам типа `WindowInfo`)
 ///
 /// # Возвращает
 ///
-/// * `Some(WindowInfo)` - окно с наибольшим `pid_confidence`, если кандидаты есть
-/// * `None` - если итератор пуст
+/// * `Some(WindowInfo)` - окно с наибольшим `pid_confidence`, если итератор не пуст
+/// * `None` - если итератор пуст (нет кандидатов)
 ///
-/// # Примеры
+/// # Алгоритм
 ///
-/// Функция используется внутри `select_focused_window` для выбора окна с наибольшим confidence.
-/// Прямое использование в doctest'ах недоступно, так как функция имеет видимость `pub(crate)`.
+/// Функция использует `Iterator::max_by` с компаратором `total_cmp` для сравнения `pid_confidence`.
+/// Это означает:
+/// - NaN значения считаются наибольшими (NaN > любое число)
+/// - Отрицательные числа меньше положительных
+/// - При одинаковых `pid_confidence` возвращается первое окно из группы
+///
+/// # Граничные случаи
+///
+/// - **Пустой итератор**: возвращает `None`
+/// - **NaN значения**: NaN считается наибольшим значением (NaN > любое число)
+/// - **Отрицательные значения**: обрабатываются корректно, но в нормальных условиях `pid_confidence` должен быть в [0.0, 1.0]
+/// - **Одинаковые `pid_confidence`**: возвращается первое окно из группы (стабильное, но не гарантированно детерминированное поведение)
+/// - **Все значения NaN**: возвращается первое окно с NaN
+///
+/// # Примеры использования
+///
+/// Функция используется внутри `select_focused_window` для выбора окна с наибольшим confidence
+/// среди окон с одинаковым состоянием (fullscreen или focused). Например:
+///
+/// - Если есть несколько fullscreen-окон, функция выбирает среди них окно с наибольшим `pid_confidence`.
+/// - Если есть несколько focused-окон (но нет fullscreen), функция выбирает среди них окно с наибольшим `pid_confidence`.
+///
+/// # Примечания
+///
+/// Функция имеет видимость `pub(crate)`, поэтому не доступна для внешнего использования.
+/// Она предназначена для внутреннего использования в модуле `windows` и используется
+/// функцией `select_focused_window` для выбора лучшего кандидата среди окон с одинаковым состоянием.
 pub(crate) fn pick_best_by_confidence<'a>(
     candidates: impl Iterator<Item = &'a WindowInfo>,
 ) -> Option<WindowInfo> {
