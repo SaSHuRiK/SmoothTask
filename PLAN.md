@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-319: Добавить unit-тесты для `_ensure_column` (дефолты и dtype)
+  - Тип: Python / trainer / features / tests
+  - Примечания: добавлен тест на сохранение индекса и приведение dtype при существующей колонке и создании новой с дефолтами; проверены boolean и float сценарии; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-318: Добавить unit-тесты для `_prepare_tags_column` в `features`
+  - Тип: Python / trainer / features / tests
+  - Примечания: покрыты списки/множества/кортежи/скаляры/NaN/None и пустые коллекции, обеспечена сортировка тегов и возврат "unknown" для отсутствующих значений; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 - [x] ST-317: export_model создаёт директории и валидирует выходной путь
   - Тип: Python / trainer / export
   - Примечания: добавлена автосоздающаяся директория для выхода, явная ошибка при сохранении в каталог; покрыто тестами вложенного пути и запретом на каталог; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_export_model.py`.
@@ -70,14 +78,6 @@
 - [x] ST-310: Устранить FutureWarning fillna в features
   - Тип: Python / trainer / maintenance
   - Примечания: build_feature_matrix приводит числовые колонки через `pd.to_numeric` перед `fillna`, категориальные колонки теперь приводятся к `string` до заполнения значений. Добавлен тест, фиксирующий отсутствие FutureWarning при object-колонках и проверяющий типы после заполнения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-309: Прогнать isort/black для trainer и тестов
-  - Тип: Python / trainer / code quality
-  - Примечания: isort и black применены к `smoothtask_trainer` и `smoothtask-trainer/tests`; форматирование обновлено без изменения логики; `uv run python -m pytest smoothtask-trainer/tests` проходит.
-
-- [x] ST-308: Проверить неиспользуемые импорты в trainer и обновить fmt
-  - Тип: Python / trainer / code quality
-  - Примечания: импорты в `dataset.py`, `features.py`, `train_ranker.py` проверены, лишних не обнаружено; форматирование обновлено; прогнан `uv run python -m pytest smoothtask-trainer/tests`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

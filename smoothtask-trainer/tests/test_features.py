@@ -4,7 +4,54 @@ import warnings
 import numpy as np
 import pandas as pd
 import pytest
-from smoothtask_trainer.features import _BOOL_COLS, _CAT_COLS, build_feature_matrix
+from smoothtask_trainer.features import (
+    _BOOL_COLS,
+    _CAT_COLS,
+    _ensure_column,
+    _prepare_tags_column,
+    build_feature_matrix,
+)
+
+
+def test_prepare_tags_column_various_inputs():
+    series = _prepare_tags_column(
+        [
+            ["b", "a"],
+            [],
+            None,
+            pd.NA,
+            "single",
+            {"z", "y"},
+            ("one",),
+            42,
+        ]
+    )
+
+    assert series.tolist() == [
+        "a|b",
+        "unknown",
+        "unknown",
+        "unknown",
+        "single",
+        "y|z",
+        "one",
+        "42",
+    ]
+    assert len(series) == 8
+
+
+def test_ensure_column_existing_and_missing_with_dtype():
+    df = pd.DataFrame({"flag": pd.Series([1, 0, pd.NA], dtype="Int64")})
+
+    existing = _ensure_column(df, "flag", False, dtype="boolean")
+    assert existing.tolist() == [True, False, pd.NA]
+    assert existing.dtype == "boolean"
+    assert existing.index.equals(df.index)
+
+    missing = _ensure_column(df, "missing_flag", 1.5, dtype="float")
+    assert missing.tolist() == [1.5, 1.5, 1.5]
+    assert missing.dtype == float
+    assert missing.index.equals(df.index)
 
 
 def test_build_feature_matrix_basic():

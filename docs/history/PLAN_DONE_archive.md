@@ -1,3 +1,13 @@
+## Перенос из PLAN.md (ST-309–ST-308, 2025-12-11)
+
+- [x] ST-309: Прогнать isort/black для trainer и тестов
+  - Тип: Python / trainer / code quality
+  - Примечания: isort и black применены к `smoothtask_trainer` и `smoothtask-trainer/tests`; форматирование обновлено без изменения логики; `uv run python -m pytest smoothtask-trainer/tests` проходит.
+
+- [x] ST-308: Проверить неиспользуемые импорты в trainer и обновить fmt
+  - Тип: Python / trainer / code quality
+  - Примечания: импорты в `dataset.py`, `features.py`, `train_ranker.py` проверены, лишних не обнаружено; форматирование обновлено; прогнан `uv run python -m pytest smoothtask-trainer/tests`.
+
 ## Перенос из PLAN.md (ST-307–ST-306, 2025-12-11)
 
 - [x] ST-307: Мини-код-ревизия API ответов на пустые паттерны
