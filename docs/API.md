@@ -882,6 +882,67 @@ curl http://127.0.0.1:8080/api/patterns
 ```
 
 **Поля:**
+- `categories` (array) - массив категорий паттернов
+- `total_patterns` (number) - общее количество паттернов
+- `total_categories` (number) - общее количество категорий
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
+### GET /api/system
+
+Получение информации о системе (ядро, архитектура, дистрибутив).
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/system
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "system": {
+    "kernel": {
+      "version_string": "Linux version 6.14.0-36-generic (buildd@lcy02-amd64-001) (gcc (Ubuntu 13.3.0-1ubuntu1) 13.3.0, GNU ld (GNU Binutils for Ubuntu) 2.42) #1-Ubuntu SMP PREEMPT_DYNAMIC Wed Oct 16 10:00:00 UTC 2024",
+      "version": "6.14.0-36-generic"
+    },
+    "architecture": "x86_64",
+    "distribution": {
+      "name": "Ubuntu",
+      "version": "24.04",
+      "id": "ubuntu",
+      "id_like": "debian",
+      "pretty_name": "Ubuntu 24.04 LTS"
+    }
+  }
+}
+```
+
+**Поля `system`:**
+- `kernel` (object) - информация о ядре Linux
+  - `version_string` (string, опционально) - полная строка версии ядра из `/proc/version`
+  - `version` (string, опционально) - версия ядра (извлечённая из version_string)
+- `architecture` (string | null) - архитектура системы (например, "x86_64", "aarch64")
+- `distribution` (object) - информация о дистрибутиве Linux из `/etc/os-release`
+  - `name` (string, опционально) - название дистрибутива
+  - `version` (string, опционально) - версия дистрибутива
+  - `id` (string, опционально) - идентификатор дистрибутива
+  - `id_like` (string, опционально) - похожие дистрибутивы
+  - `pretty_name` (string, опционально) - красивое название дистрибутива
+
+**Примечания:**
+- Информация о ядре читается из `/proc/version`
+- Архитектура читается из `/proc/sys/kernel/arch`
+- Информация о дистрибутиве читается из `/etc/os-release` (может быть недоступна в контейнерах)
+- Если какой-то источник информации недоступен, соответствующие поля могут отсутствовать или быть `null`
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+**Поля:**
 - `status` (string) - статус ответа (всегда "ok")
 - `categories` (array) - массив объектов с категориями паттернов
   - `category` (string) - название категории (например, "browser", "ide", "terminal")

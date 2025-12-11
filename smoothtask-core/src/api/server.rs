@@ -9,6 +9,7 @@ use axum::{
     Router,
 };
 use serde_json::{json, Value};
+use std::fs;
 use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -259,9 +260,14 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/patterns",
                 "method": "GET",
                 "description": "Получение информации о загруженных паттернах для классификации процессов"
+            },
+            {
+                "path": "/api/system",
+                "method": "GET",
+                "description": "Получение информации о системе (ядро, архитектура, дистрибутив)"
             }
         ],
-        "count": 13
+        "count": 14
     }))
 }
 
@@ -317,6 +323,68 @@ async fn classes_handler() -> Json<Value> {
         "status": "ok",
         "classes": classes,
         "count": classes.len()
+    }))
+}
+
+/// Получает информацию о системе (ядро, архитектура, дистрибутив).
+fn get_system_info() -> Value {
+    let mut info = json!({
+        "kernel": {},
+        "architecture": None::<String>,
+        "distribution": {}
+    });
+
+    // Читаем версию ядра из /proc/version
+    if let Ok(version) = fs::read_to_string("/proc/version") {
+        let version = version.trim();
+        info["kernel"]["version_string"] = json!(version);
+
+        // Пытаемся извлечь версию ядра (например, "Linux version 6.14.0-36-generic")
+        if let Some(version_start) = version.find("Linux version ") {
+            let version_part = &version[version_start + 14..];
+            if let Some(version_end) = version_part.find(' ') {
+                info["kernel"]["version"] = json!(version_part[..version_end].to_string());
+            }
+        }
+    }
+
+    // Читаем архитектуру из /proc/sys/kernel/arch
+    if let Ok(arch) = fs::read_to_string("/proc/sys/kernel/arch") {
+        info["architecture"] = json!(arch.trim().to_string());
+    }
+
+    // Читаем информацию о дистрибутиве из /etc/os-release
+    if let Ok(os_release) = fs::read_to_string("/etc/os-release") {
+        let mut dist_info = json!({});
+        for line in os_release.lines() {
+            if let Some((key, value)) = line.split_once('=') {
+                let value = value.trim_matches('"');
+                match key {
+                    "NAME" => dist_info["name"] = json!(value),
+                    "VERSION" => dist_info["version"] = json!(value),
+                    "ID" => dist_info["id"] = json!(value),
+                    "ID_LIKE" => dist_info["id_like"] = json!(value),
+                    "PRETTY_NAME" => dist_info["pretty_name"] = json!(value),
+                    _ => {}
+                }
+            }
+        }
+        if !dist_info.as_object().unwrap().is_empty() {
+            info["distribution"] = dist_info;
+        }
+    }
+
+    info
+}
+
+/// Обработчик для endpoint `/api/system`.
+///
+/// Возвращает информацию о системе (ядро, архитектура, дистрибутив).
+async fn system_handler() -> Json<Value> {
+    let system_info = get_system_info();
+    Json(json!({
+        "status": "ok",
+        "system": system_info
     }))
 }
 
@@ -386,6 +454,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/config", get(config_handler))
         .route("/api/classes", get(classes_handler))
         .route("/api/patterns", get(patterns_handler))
+        .route("/api/system", get(system_handler))
         .with_state(state)
 }
 
@@ -1628,10 +1697,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 13);
+        assert_eq!(json["count"], 14);
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 13);
+        assert_eq!(endpoints.len(), 14);
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -1652,6 +1721,7 @@ mod tests {
         assert!(endpoint_paths.contains(&"/api/config"));
         assert!(endpoint_paths.contains(&"/api/classes"));
         assert!(endpoint_paths.contains(&"/api/patterns"));
+        assert!(endpoint_paths.contains(&"/api/system"));
 
         // Проверяем структуру endpoint
         let first_endpoint = &endpoints[0];
@@ -2060,5 +2130,29 @@ apps:
         assert!(state.config.is_some());
         assert!(state.pattern_database.is_some());
         assert!(state.responsiveness_metrics.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_system_handler() {
+        let result = system_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["system"].is_object());
+
+        let system = &json["system"];
+        assert!(system["kernel"].is_object());
+        assert!(system["distribution"].is_object());
+
+        // Проверяем, что если /proc/version доступен, то версия ядра присутствует
+        if fs::read_to_string("/proc/version").is_ok() {
+            // kernel должен содержать либо version_string, либо version
+            assert!(
+                system["kernel"]["version_string"].is_string()
+                    || system["kernel"]["version"].is_string()
+            );
+        }
+
+        // architecture может быть null или строкой
+        assert!(system["architecture"].is_null() || system["architecture"].is_string());
     }
 }
