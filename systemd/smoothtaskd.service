@@ -1,0 +1,36 @@
+[Unit]
+Description=SmoothTask daemon - автоматическое управление приоритетами процессов
+Documentation=https://github.com/SaSHuRiK/SmoothTask
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/smoothtaskd --config /etc/smoothtask/smoothtask.yml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=30s
+KillMode=mixed
+KillSignal=SIGTERM
+
+# Безопасность
+User=root
+Group=root
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/lib/smoothtask
+ReadOnlyPaths=/etc/smoothtask /proc /sys
+
+# Логирование
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=smoothtaskd
+
+# Ограничения ресурсов (опционально, можно настроить под конкретную систему)
+# CPUQuota=50%
+# MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target
