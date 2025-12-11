@@ -1182,7 +1182,7 @@ mod tests {
 
     #[test]
     fn pick_best_by_confidence_returns_single_window() {
-        let windows = vec![WindowInfo::new(
+        let windows = [WindowInfo::new(
             Some("app1".to_string()),
             Some("Window 1".to_string()),
             None,
@@ -1233,7 +1233,7 @@ mod tests {
 
     #[test]
     fn pick_best_by_confidence_handles_negative_confidence() {
-        let windows = vec![
+        let windows = [
             WindowInfo::new(
                 Some("app1".to_string()),
                 Some("Window 1".to_string()),
@@ -1261,7 +1261,7 @@ mod tests {
 
     #[test]
     fn pick_best_by_confidence_handles_zero_confidence() {
-        let windows = vec![
+        let windows = [
             WindowInfo::new(
                 Some("app1".to_string()),
                 Some("Window 1".to_string()),
@@ -1288,7 +1288,7 @@ mod tests {
 
     #[test]
     fn pick_best_by_confidence_handles_nan_confidence() {
-        let windows = vec![
+        let windows = [
             WindowInfo::new(
                 Some("app1".to_string()),
                 None,
@@ -1314,7 +1314,7 @@ mod tests {
 
     #[test]
     fn pick_best_by_confidence_handles_all_nan_confidence() {
-        let windows = vec![
+        let windows = [
             WindowInfo::new(
                 Some("app1".to_string()),
                 Some("Window 1".to_string()),
@@ -1339,7 +1339,7 @@ mod tests {
 
     #[test]
     fn pick_best_by_confidence_handles_same_confidence() {
-        let windows = vec![
+        let windows = [
             WindowInfo::new(
                 Some("app1".to_string()),
                 Some("Window 1".to_string()),
@@ -1360,7 +1360,7 @@ mod tests {
         // При равных confidence должен вернуть одно из окон
         let result = pick_best_by_confidence(windows.iter());
         assert!(result.is_some());
-        let result = result.unwrap();
+        let _selected_window = result.unwrap();
         // При равных confidence должен вернуть одно из окон (поведение max_by)
         // Проверяем, что функция не падает и возвращает результат
         // total_cmp для f32 может работать не так, как ожидается, поэтому просто проверяем, что результат есть
