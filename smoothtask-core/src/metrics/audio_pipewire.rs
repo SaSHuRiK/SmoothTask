@@ -738,4 +738,145 @@ mod pipewire_introspector_tests {
     // Интеграционные тесты с реальным pw-dump требуют наличия PipeWire в системе
     // и могут быть нестабильными, поэтому оставляем их опциональными
     // Для unit-тестов можно использовать моки или фиктивные данные
+
+    // Edge case тесты для вспомогательных функций парсинга
+
+    #[test]
+    fn test_parse_latency_string_basic() {
+        assert_eq!(parse_latency_string("256/48000"), Some((256, 48000)));
+        assert_eq!(parse_latency_string("1024/44100"), Some((1024, 44100)));
+    }
+
+    #[test]
+    fn test_parse_latency_string_with_whitespace() {
+        assert_eq!(parse_latency_string("  256/48000  "), Some((256, 48000)));
+        assert_eq!(parse_latency_string("256/48000 flags"), Some((256, 48000)));
+        assert_eq!(
+            parse_latency_string("before 256/48000 after"),
+            Some((256, 48000))
+        );
+    }
+
+    #[test]
+    fn test_parse_latency_string_multiple_tokens() {
+        assert_eq!(
+            parse_latency_string("first 256/48000 second 512/96000"),
+            Some((256, 48000))
+        );
+    }
+
+    #[test]
+    fn test_parse_latency_string_empty() {
+        assert_eq!(parse_latency_string(""), None);
+        assert_eq!(parse_latency_string("   "), None);
+    }
+
+    #[test]
+    fn test_parse_latency_string_invalid_format() {
+        assert_eq!(parse_latency_string("256"), None);
+        assert_eq!(parse_latency_string("256/"), None);
+        assert_eq!(parse_latency_string("/48000"), None);
+        assert_eq!(parse_latency_string("abc/def"), None);
+        assert_eq!(parse_latency_string("256/48000/extra"), Some((256, 48000)));
+    }
+
+    #[test]
+    fn test_parse_latency_string_boundary_values() {
+        assert_eq!(parse_latency_string("0/1"), Some((0, 1)));
+        assert_eq!(
+            parse_latency_string("4294967295/4294967295"),
+            Some((4294967295, 4294967295))
+        );
+    }
+
+    #[test]
+    fn test_parse_rate_string_basic() {
+        use serde_json::json;
+        assert_eq!(parse_rate_string(&json!("48000")), Some(48000));
+        assert_eq!(parse_rate_string(&json!("44100")), Some(44100));
+    }
+
+    #[test]
+    fn test_parse_rate_string_with_slash() {
+        use serde_json::json;
+        assert_eq!(parse_rate_string(&json!("48000/1024")), Some(48000));
+        assert_eq!(parse_rate_string(&json!("44100/512")), Some(44100));
+    }
+
+    #[test]
+    fn test_parse_rate_string_with_whitespace() {
+        use serde_json::json;
+        assert_eq!(parse_rate_string(&json!("  48000  ")), Some(48000));
+        assert_eq!(parse_rate_string(&json!("48000 ")), Some(48000));
+    }
+
+    #[test]
+    fn test_parse_rate_string_empty() {
+        use serde_json::json;
+        assert_eq!(parse_rate_string(&json!("")), None);
+        assert_eq!(parse_rate_string(&json!("   ")), None);
+    }
+
+    #[test]
+    fn test_parse_rate_string_invalid() {
+        use serde_json::json;
+        assert_eq!(parse_rate_string(&json!("abc")), None);
+        assert_eq!(parse_rate_string(&json!("123abc")), None);
+        assert_eq!(parse_rate_string(&json!(123)), None); // не строка
+    }
+
+    #[test]
+    fn test_parse_rate_string_no_separator() {
+        use serde_json::json;
+        assert_eq!(parse_rate_string(&json!("48000")), Some(48000));
+    }
+
+    #[test]
+    fn test_parse_u32_from_u64() {
+        use serde_json::json;
+        assert_eq!(parse_u32(&json!(123)), Some(123));
+        assert_eq!(parse_u32(&json!(0)), Some(0));
+        assert_eq!(parse_u32(&json!(4294967295u64)), Some(4294967295));
+    }
+
+    #[test]
+    fn test_parse_u32_overflow() {
+        use serde_json::json;
+        // u64 значение, которое не помещается в u32
+        assert_eq!(parse_u32(&json!(4294967296u64)), None);
+        assert_eq!(parse_u32(&json!(u64::MAX)), None);
+    }
+
+    #[test]
+    fn test_parse_u32_from_string() {
+        use serde_json::json;
+        assert_eq!(parse_u32(&json!("123")), Some(123));
+        assert_eq!(parse_u32(&json!("0")), Some(0));
+        assert_eq!(parse_u32(&json!("4294967295")), Some(4294967295));
+    }
+
+    #[test]
+    fn test_parse_u32_from_string_with_whitespace() {
+        use serde_json::json;
+        assert_eq!(parse_u32(&json!("  123  ")), Some(123));
+        assert_eq!(parse_u32(&json!(" 0 ")), Some(0));
+    }
+
+    #[test]
+    fn test_parse_u32_invalid_string() {
+        use serde_json::json;
+        assert_eq!(parse_u32(&json!("abc")), None);
+        assert_eq!(parse_u32(&json!("-123")), None);
+        assert_eq!(parse_u32(&json!("123.456")), None);
+        assert_eq!(parse_u32(&json!("4294967296")), None); // переполнение
+    }
+
+    #[test]
+    fn test_parse_u32_other_types() {
+        use serde_json::json;
+        assert_eq!(parse_u32(&json!(true)), None);
+        assert_eq!(parse_u32(&json!(null)), None);
+        assert_eq!(parse_u32(&json!([])), None);
+        assert_eq!(parse_u32(&json!({})), None);
+    }
 }
