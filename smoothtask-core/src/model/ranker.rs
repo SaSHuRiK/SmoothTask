@@ -122,7 +122,9 @@ impl Ranker for StubRanker {
         let mut scores: Vec<(String, f64)> = Vec::new();
 
         for app_group in app_groups {
-            let _features = build_features(snapshot, app_group);
+            // Примечание: build_features вызывается для будущего использования фич,
+            // но пока используется только простая эвристика на основе полей AppGroupRecord
+            let _ = build_features(snapshot, app_group);
 
             // Простая эвристика для score:
             // - Базовая оценка: 0.5
@@ -515,5 +517,40 @@ mod tests {
         assert!((0.0..=1.0).contains(&focused_result.percentile));
         assert!((0.0..=1.0).contains(&gui_result.percentile));
         assert!((0.0..=1.0).contains(&background_result.percentile));
+    }
+
+    #[test]
+    fn test_stub_ranker_default() {
+        // Тест проверяет, что Default::default() создаёт такой же ранкер, как StubRanker::new()
+        let ranker1 = StubRanker::new();
+        let ranker2 = StubRanker::default();
+
+        // Оба ранкера должны работать одинаково
+        let snapshot = create_test_snapshot();
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "test".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: Some("test".to_string()),
+            total_cpu_share: Some(0.2),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        }];
+
+        let results1 = ranker1.rank(&app_groups, &snapshot);
+        let results2 = ranker2.rank(&app_groups, &snapshot);
+
+        // Результаты должны быть одинаковыми
+        assert_eq!(results1.len(), results2.len());
+        let result1 = results1.get("test").unwrap();
+        let result2 = results2.get("test").unwrap();
+        assert_eq!(result1.score, result2.score);
+        assert_eq!(result1.rank, result2.rank);
+        assert_eq!(result1.percentile, result2.percentile);
     }
 }
