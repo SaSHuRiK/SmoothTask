@@ -1738,12 +1738,12 @@ mod tests {
             match windows_result {
                 Ok(_windows) => {
                     // Это нормально - StaticWindowIntrospector может вернуть пустой список
-                    assert!(true, "Introspector returned windows list");
+                    // Проверка пройдена, если мы дошли до этой точки без паники
                 }
                 Err(_) => {
                     // Это тоже нормально - интроспектор может вернуть ошибку
                     // Главное - функция не паникует
-                    assert!(true, "Introspector returned error, but did not panic");
+                    // Проверка пройдена, если мы дошли до этой точки без паники
                 }
             }
         }

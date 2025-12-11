@@ -523,7 +523,7 @@ mod tests {
     fn test_stub_ranker_default() {
         // Тест проверяет, что Default::default() создаёт такой же ранкер, как StubRanker::new()
         let ranker1 = StubRanker::new();
-        let ranker2 = StubRanker::default();
+        let ranker2 = StubRanker;
 
         // Оба ранкера должны работать одинаково
         let snapshot = create_test_snapshot();

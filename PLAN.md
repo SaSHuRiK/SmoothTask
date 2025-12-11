@@ -24,6 +24,22 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-174: Исправить предупреждения clippy: удалить assert!(true) в тестах lib.rs (2 места)
+  - Тип: Rust / core / code quality
+  - Критерии готовности:
+    - [x] Удалены бесполезные assert!(true) из тестов;
+    - [x] Clippy не выдаёт предупреждений;
+    - [x] Все тесты проходят успешно (77 тестов).
+  - Примечания: исправлены 2 предупреждения clippy о бесполезных assert!(true) в тесте test_create_window_introspector_fallback_to_static. Assert'ы заменены на комментарии, так как они не несли полезной информации. Все 77 тестов проходят успешно.
+
+- [x] ST-173: Исправить предупреждения clippy: использование default() для unit struct в model/ranker.rs
+  - Тип: Rust / core / code quality
+  - Критерии готовности:
+    - [x] Исправлено использование StubRanker::default() на StubRanker;
+    - [x] Clippy не выдаёт предупреждений;
+    - [x] Все тесты проходят успешно (77 тестов).
+  - Примечания: исправлено предупреждение clippy о бесполезном использовании default() для unit struct в тесте test_stub_ranker_default. StubRanker::default() заменён на StubRanker, так как для unit struct это эквивалентно. Все 77 тестов проходят успешно.
+
 - [x] ST-172: Добавить тесты для create_window_introspector() - проверка выбора правильного бекенда
   - Тип: Rust / core / tests
   - Критерии готовности:
