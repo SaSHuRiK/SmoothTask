@@ -7,7 +7,6 @@ from typing import Iterable, List, Tuple
 import numpy as np
 import pandas as pd
 
-
 _NUMERIC_COLS: list[str] = [
     # Процессные метрики
     "cpu_share_1s",
@@ -77,17 +76,17 @@ def _ensure_column(
 ) -> pd.Series:
     """
     Возвращает столбец из DataFrame или создаёт новый с дефолтным значением.
-    
+
     Если столбец существует в DataFrame, возвращает его (с приведением типа,
     если указан dtype). Если столбца нет, создаёт новый Series с дефолтным
     значением для всех строк.
-    
+
     Args:
         df: DataFrame для извлечения столбца
         column: Имя столбца
         default: Дефолтное значение для создания нового столбца
         dtype: Опциональный тип данных для приведения (например, "boolean", "float")
-        
+
     Returns:
         Series с данными столбца или дефолтными значениями
     """
@@ -103,15 +102,15 @@ def _ensure_column(
 def _prepare_tags_column(series: Iterable[object]) -> pd.Series:
     """
     Преобразует список тегов в строку для категориальной фичи.
-    
+
     Функция принимает итератор, где каждый элемент может быть списком тегов,
     и преобразует его в строку с тегами, разделёнными символом "|".
     Теги сортируются для консистентности. Если значение отсутствует (NaN),
     возвращается строка "unknown".
-    
+
     Args:
         series: Итератор со значениями (списки тегов, строки или None)
-        
+
     Returns:
         Series со строками вида "tag1|tag2|tag3" или "unknown"
     """
@@ -176,7 +175,9 @@ def build_feature_matrix(
 
     valid_mask = target.notna()
     if not valid_mask.any():
-        raise ValueError("Нет доступных таргетов teacher_score или responsiveness_score")
+        raise ValueError(
+            "Нет доступных таргетов teacher_score или responsiveness_score"
+        )
 
     work_df = work_df.loc[valid_mask].reset_index(drop=True)
     target = target.loc[valid_mask].reset_index(drop=True)
@@ -208,7 +209,9 @@ def build_feature_matrix(
     # Категориальные фичи
     cat_feature_indices: list[int] = []
     for col in _CAT_COLS:
-        series = _ensure_column(work_df, col, "unknown").fillna("unknown").astype("string")
+        series = (
+            _ensure_column(work_df, col, "unknown").fillna("unknown").astype("string")
+        )
         features[col] = series
         cat_feature_indices.append(len(column_order))
         column_order.append(col)

@@ -9,7 +9,6 @@ from typing import Iterable
 
 import pandas as pd
 
-
 _PROCESS_BOOL_COLS = {
     "has_tty",
     "has_gui_window",
@@ -27,13 +26,13 @@ _APP_GROUP_BOOL_COLS = {"has_gui_window", "is_focused_group"}
 def _json_list(value: str | None) -> list:
     """
     Парсит JSON-строку в список.
-    
+
     Args:
         value: JSON-строка или None
-        
+
     Returns:
         Список, если value был валидным JSON-массивом, иначе пустой список
-        
+
     Raises:
         ValueError: если value не является JSON-массивом
     """
@@ -51,10 +50,10 @@ def _json_list(value: str | None) -> list:
 def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
     """
     Преобразует указанные столбцы DataFrame в булевый тип.
-    
+
     Преобразование выполняется через промежуточный тип Int64 для корректной
     обработки NaN значений.
-    
+
     Args:
         df: DataFrame для преобразования (изменяется in-place)
         columns: Итератор с именами столбцов для преобразования
@@ -64,15 +63,17 @@ def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
             df[col] = df[col].astype("Int64").astype("boolean")
 
 
-def _load_table(conn: sqlite3.Connection, table: str, parse_dates: list[str] | None = None) -> pd.DataFrame:
+def _load_table(
+    conn: sqlite3.Connection, table: str, parse_dates: list[str] | None = None
+) -> pd.DataFrame:
     """
     Загружает таблицу из SQLite в pandas DataFrame.
-    
+
     Args:
         conn: Соединение с SQLite базой данных
         table: Имя таблицы для загрузки
         parse_dates: Список столбцов для парсинга как даты/время
-        
+
     Returns:
         DataFrame с данными из таблицы
     """
@@ -139,5 +140,3 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
         )
 
     return df
-
-

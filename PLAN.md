@@ -11,12 +11,12 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-308: Проверить неиспользуемые импорты в trainer и обновить fmt
-  - Тип: Python / trainer / code quality
+- [ ] ST-310: Устранить FutureWarning fillna в features
+  - Тип: Python / trainer / maintenance
   - Критерии готовности:
-    - Просмотрены файлы `dataset.py`, `features.py`, `train_ranker.py`;
-    - Удалены неиспользуемые импорты (если найдены);
-    - Запущен `uv run pytest` на изменённых тестах.
+    - Обновлено заполнение NaN без неявного downcast в `features.py`;
+    - Добавлен/обновлён тест, фиксирующий корректный тип после fillna;
+    - Прогнан `uv run pytest smoothtask-trainer/tests`.
 
 ## 2. Бэклог
 
@@ -43,6 +43,14 @@
   - Примечания: полностью реализован HTTP API для просмотра текущего состояния демона. Все подзадачи выполнены. API сервер интегрирован в главный цикл демона, данные обновляются при каждой итерации. Добавлена полная документация API в docs/API.md. Все 82 теста проходят успешно.
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-309: Прогнать isort/black для trainer и тестов
+  - Тип: Python / trainer / code quality
+  - Примечания: isort и black применены к `smoothtask_trainer` и `smoothtask-trainer/tests`; форматирование обновлено без изменения логики; `uv run python -m pytest smoothtask-trainer/tests` проходит.
+
+- [x] ST-308: Проверить неиспользуемые импорты в trainer и обновить fmt
+  - Тип: Python / trainer / code quality
+  - Примечания: импорты в `dataset.py`, `features.py`, `train_ranker.py` проверены, лишних не обнаружено; форматирование обновлено; прогнан `uv run python -m pytest smoothtask-trainer/tests`.
 
 - [x] ST-307: Мини-код-ревизия API ответов на пустые паттерны
   - Тип: Rust / core / api / tests

@@ -3,10 +3,9 @@
 import tempfile
 from pathlib import Path
 
+import numpy as np
 import pytest
 from catboost import CatBoostRanker, Pool
-import numpy as np
-
 from smoothtask_trainer.export_model import export_model
 
 

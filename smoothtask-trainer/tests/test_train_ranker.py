@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pytest
 from catboost import CatBoostRanker
-
 from smoothtask_trainer.dataset import load_snapshots_as_frame
 from smoothtask_trainer.train_ranker import train_ranker
 
@@ -130,7 +129,9 @@ def create_training_db(db_path: Path, num_snapshots: int = 3) -> None:
 
     for snapshot_idx in range(num_snapshots):
         snapshot_id = 1000 + snapshot_idx
-        timestamp = (timestamp_base.replace(microsecond=snapshot_idx * 1000)).isoformat()
+        timestamp = (
+            timestamp_base.replace(microsecond=snapshot_idx * 1000)
+        ).isoformat()
 
         # Снапшот
         cursor.execute(
@@ -421,5 +422,6 @@ def test_train_ranker_with_fallback_target():
         # Ожидаем ошибку из-за отсутствия необходимых фич или недостаточных данных
         # (CatBoost не может обучить модель на константных фичах)
         from catboost import CatBoostError
+
         with pytest.raises((ValueError, KeyError, CatBoostError)):
             train_ranker(db_path, model_json_path, onnx_out=None)

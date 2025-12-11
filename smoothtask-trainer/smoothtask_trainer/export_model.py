@@ -8,12 +8,12 @@ from catboost import CatBoostRanker
 def export_model(model_path: Path, format: str, output_path: Path):
     """
     Экспортирует модель в указанный формат.
-    
+
     Args:
         model_path: путь к обученной модели (поддерживаются форматы: json, cbm)
         format: формат экспорта ('onnx', 'json', 'cbm')
         output_path: путь для сохранения
-    
+
     Raises:
         ValueError: если формат не поддерживается
         FileNotFoundError: если модель не найдена
@@ -41,5 +41,3 @@ def export_model(model_path: Path, format: str, output_path: Path):
 
     # Экспортируем модель
     model.save_model(output_path.as_posix(), format=export_format)
-
-

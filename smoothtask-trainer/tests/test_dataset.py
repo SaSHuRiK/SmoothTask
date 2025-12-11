@@ -8,7 +8,6 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
-
 from smoothtask_trainer.dataset import _json_list, _to_bool, load_snapshots_as_frame
 
 
@@ -331,9 +330,15 @@ def test_load_snapshots_as_frame_empty_db():
         # Создаём пустую БД со схемой
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
-        cursor.execute("CREATE TABLE IF NOT EXISTS snapshots (snapshot_id INTEGER PRIMARY KEY)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS processes (snapshot_id INTEGER, pid INTEGER)")
-        cursor.execute("CREATE TABLE IF NOT EXISTS app_groups (snapshot_id INTEGER, app_group_id TEXT)")
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS snapshots (snapshot_id INTEGER PRIMARY KEY)"
+        )
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS processes (snapshot_id INTEGER, pid INTEGER)"
+        )
+        cursor.execute(
+            "CREATE TABLE IF NOT EXISTS app_groups (snapshot_id INTEGER, app_group_id TEXT)"
+        )
         conn.commit()
         conn.close()
 

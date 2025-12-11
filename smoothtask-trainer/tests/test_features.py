@@ -3,7 +3,6 @@
 import numpy as np
 import pandas as pd
 import pytest
-
 from smoothtask_trainer.features import _BOOL_COLS, _CAT_COLS, build_feature_matrix
 
 
