@@ -24,6 +24,15 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-141: Исправление предупреждения clippy о добавлении Default для DaemonStats
+  - Тип: Rust / core / code quality
+  - Критерии готовности:
+    - [x] Добавлен impl Default for DaemonStats;
+    - [x] Добавлен тест test_daemon_stats_default для проверки Default implementation;
+    - [x] Предупреждение clippy исправлено (0 предупреждений);
+    - [x] Все тесты проходят успешно (335 тестов).
+  - Примечания: добавлен impl Default for DaemonStats, который делегирует к DaemonStats::new(). Добавлен тест test_daemon_stats_default для проверки, что Default::default() создаёт такую же структуру, как DaemonStats::new(). Предупреждение clippy исправлено. Все 335 тестов проходят успешно.
+
 - [x] ST-140: Улучшение обработки ошибок в scheduling_latency.rs: замена unwrap() на lock() и partial_cmp() на более безопасную обработку
   - Тип: Rust / core / error handling
   - Критерии готовности:

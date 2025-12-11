@@ -216,6 +216,12 @@ impl DaemonStats {
     }
 }
 
+impl Default for DaemonStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Проверить доступность необходимых системных утилит и устройств.
 ///
 /// Функция проверяет доступность всех компонентов, необходимых для работы демона,
@@ -1035,6 +1041,31 @@ mod tests {
         assert_eq!(stats.max_iteration_duration_ms, 0);
         assert_eq!(stats.total_applied_adjustments, 0);
         assert_eq!(stats.total_apply_errors, 0);
+    }
+
+    #[test]
+    fn test_daemon_stats_default() {
+        let stats_default = DaemonStats::default();
+        let stats_new = DaemonStats::new();
+        assert_eq!(stats_default.total_iterations, stats_new.total_iterations);
+        assert_eq!(
+            stats_default.successful_iterations,
+            stats_new.successful_iterations
+        );
+        assert_eq!(stats_default.error_iterations, stats_new.error_iterations);
+        assert_eq!(stats_default.total_duration_ms, stats_new.total_duration_ms);
+        assert_eq!(
+            stats_default.max_iteration_duration_ms,
+            stats_new.max_iteration_duration_ms
+        );
+        assert_eq!(
+            stats_default.total_applied_adjustments,
+            stats_new.total_applied_adjustments
+        );
+        assert_eq!(
+            stats_default.total_apply_errors,
+            stats_new.total_apply_errors
+        );
     }
 
     #[test]
