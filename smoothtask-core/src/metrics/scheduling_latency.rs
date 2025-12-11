@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 /// Коллектор для хранения измерений scheduling latency и вычисления перцентилей.
 ///
@@ -272,7 +272,10 @@ impl LatencyProbe {
             .spawn(move || {
                 Self::probe_thread_loop(collector_clone, shutdown_clone, sleep_interval);
             })
-            .expect("Failed to spawn latency probe thread");
+            .unwrap_or_else(|e| {
+                error!("Failed to spawn latency probe thread: {}", e);
+                panic!("Failed to spawn latency probe thread: {}", e);
+            });
 
         info!(
             "Started latency probe thread (sleep_interval={}ms, max_samples={})",

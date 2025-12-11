@@ -252,7 +252,9 @@ impl EvdevInputTracker {
     /// }
     /// ```
     pub fn is_available() -> bool {
-        Self::discover_devices().is_ok() && !Self::discover_devices().unwrap().is_empty()
+        Self::discover_devices()
+            .map(|devices| !devices.is_empty())
+            .unwrap_or(false)
     }
 
     /// Создать новый трекер с автоматическим обнаружением устройств.

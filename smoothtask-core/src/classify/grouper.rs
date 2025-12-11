@@ -107,9 +107,9 @@ impl ProcessGrouper {
 
             // Агрегируем метрики группы
             let mut total_cpu_share = None;
-            let mut total_io_read_bytes = Some(0u64);
-            let mut total_io_write_bytes = Some(0u64);
-            let mut total_rss_mb = Some(0u64);
+            let mut total_io_read_bytes = 0u64;
+            let mut total_io_write_bytes = 0u64;
+            let mut total_rss_mb = 0u64;
             let mut has_gui_window = false;
             let mut is_focused_group = false;
             let mut tags_set = HashSet::new();
@@ -124,13 +124,13 @@ impl ProcessGrouper {
 
                     // IO и память - суммируем
                     if let Some(io_read) = proc.io_read_bytes {
-                        *total_io_read_bytes.as_mut().unwrap() += io_read;
+                        total_io_read_bytes += io_read;
                     }
                     if let Some(io_write) = proc.io_write_bytes {
-                        *total_io_write_bytes.as_mut().unwrap() += io_write;
+                        total_io_write_bytes += io_write;
                     }
                     if let Some(rss) = proc.rss_mb {
-                        *total_rss_mb.as_mut().unwrap() += rss;
+                        total_rss_mb += rss;
                     }
 
                     // GUI и фокус
@@ -148,21 +148,21 @@ impl ProcessGrouper {
                 }
             }
 
-            // Преобразуем суммы IO/RSS обратно в Option, если они остались 0
-            let total_io_read_bytes = if total_io_read_bytes == Some(0) {
+            // Преобразуем суммы IO/RSS в Option (None, если они остались 0)
+            let total_io_read_bytes = if total_io_read_bytes == 0 {
                 None
             } else {
-                total_io_read_bytes
+                Some(total_io_read_bytes)
             };
-            let total_io_write_bytes = if total_io_write_bytes == Some(0) {
+            let total_io_write_bytes = if total_io_write_bytes == 0 {
                 None
             } else {
-                total_io_write_bytes
+                Some(total_io_write_bytes)
             };
-            let total_rss_mb = if total_rss_mb == Some(0) {
+            let total_rss_mb = if total_rss_mb == 0 {
                 None
             } else {
-                total_rss_mb
+                Some(total_rss_mb)
             };
 
             app_groups.push(AppGroupRecord {
@@ -450,7 +450,11 @@ impl ProcessGrouper {
         }
 
         // Если не нашли, возвращаем минимальный PID
-        *pids.iter().min().unwrap()
+        // pids не может быть пустым, так как функция вызывается только для непустых групп
+        pids.iter()
+            .min()
+            .copied()
+            .expect("find_root_pid called with empty pids slice")
     }
 }
 
