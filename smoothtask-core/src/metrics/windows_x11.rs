@@ -44,8 +44,9 @@ impl X11Introspector {
     ///
     /// Возвращает ошибку, если X-сервер недоступен или EWMH не поддерживается.
     pub fn new() -> Result<Self> {
-        let (connection, screen_num) =
-            x11rb::connect(None).context("Failed to connect to X server")?;
+        let (connection, screen_num) = x11rb::connect(None).with_context(|| {
+            "Не удалось подключиться к X-серверу: проверьте, что X-сервер запущен и переменная DISPLAY установлена"
+        })?;
 
         let connection = Arc::new(connection);
         let setup = connection.setup();
@@ -90,11 +91,22 @@ impl X11Introspector {
     }
 
     fn intern_atom(connection: &RustConnection, name: &[u8]) -> Result<Atom> {
+        let atom_name = String::from_utf8_lossy(name);
         let reply = connection
             .intern_atom(false, name)
-            .context("Failed to intern atom")?
+            .with_context(|| {
+                format!(
+                    "Не удалось зарегистрировать X11 атом '{}': проверьте подключение к X-серверу",
+                    atom_name
+                )
+            })?
             .reply()
-            .context("Failed to get atom reply")?;
+            .with_context(|| {
+                format!(
+                    "Не удалось получить ответ от X-сервера для атома '{}': проверьте подключение",
+                    atom_name
+                )
+            })?;
         Ok(reply.atom)
     }
 
@@ -110,13 +122,17 @@ impl X11Introspector {
                 0,
                 u32::MAX,
             )
-            .context("Failed to get _NET_CLIENT_LIST")?
+            .with_context(|| {
+                "Не удалось получить _NET_CLIENT_LIST от X-сервера: проверьте, что оконный менеджер поддерживает EWMH"
+            })?
             .reply()
-            .context("Failed to get _NET_CLIENT_LIST reply")?;
+            .with_context(|| {
+                "Не удалось получить ответ от X-сервера для _NET_CLIENT_LIST: проверьте подключение"
+            })?;
 
         let windows: Vec<Window> = reply
             .value32()
-            .context("_NET_CLIENT_LIST is not a list of windows")?
+            .context("_NET_CLIENT_LIST не является списком окон: ожидается массив идентификаторов окон (u32)")?
             .collect();
         Ok(windows)
     }
@@ -133,13 +149,17 @@ impl X11Introspector {
                 0,
                 1,
             )
-            .context("Failed to get _NET_ACTIVE_WINDOW")?
+            .with_context(|| {
+                "Не удалось получить _NET_ACTIVE_WINDOW от X-сервера: проверьте, что оконный менеджер поддерживает EWMH"
+            })?
             .reply()
-            .context("Failed to get _NET_ACTIVE_WINDOW reply")?;
+            .with_context(|| {
+                "Не удалось получить ответ от X-сервера для _NET_ACTIVE_WINDOW: проверьте подключение"
+            })?;
 
         let windows: Vec<Window> = reply
             .value32()
-            .context("_NET_ACTIVE_WINDOW is not a window")?
+            .context("_NET_ACTIVE_WINDOW не является идентификатором окна: ожидается одно значение типа WINDOW (u32)")?
             .collect();
         Ok(windows.first().copied())
     }
@@ -156,14 +176,19 @@ impl X11Introspector {
                 0,
                 1,
             )
-            .context("Failed to get _NET_WM_PID")?
+            .with_context(|| {
+                format!(
+                    "Не удалось получить _NET_WM_PID для окна {:?}: проверьте, что окно существует и поддерживает EWMH",
+                    window
+                )
+            })?
             .reply()
             .ok();
 
         if let Some(reply) = reply {
             let pids: Vec<u32> = reply
                 .value32()
-                .context("_NET_WM_PID is not a cardinal")?
+                .context("_NET_WM_PID не является числом (CARDINAL): ожидается одно значение типа u32")?
                 .collect();
             Ok(pids.first().copied())
         } else {
@@ -228,14 +253,19 @@ impl X11Introspector {
                 0,
                 1,
             )
-            .context("Failed to get _NET_WM_DESKTOP")?
+            .with_context(|| {
+                format!(
+                    "Не удалось получить _NET_WM_DESKTOP для окна {:?}: проверьте, что окно существует",
+                    window
+                )
+            })?
             .reply()
             .ok();
 
         if let Some(reply) = reply {
             let workspaces: Vec<u32> = reply
                 .value32()
-                .context("_NET_WM_DESKTOP is not a cardinal")?
+                .context("_NET_WM_DESKTOP не является числом (CARDINAL): ожидается одно значение типа u32")?
                 .collect();
             Ok(workspaces.first().copied())
         } else {
@@ -391,7 +421,12 @@ impl WindowIntrospector for X11Introspector {
                 Ok(info) => windows.push(info),
                 Err(e) => {
                     // Логируем ошибку, но продолжаем обработку других окон
-                    tracing::warn!("Failed to get info for window {:?}: {}", window, e);
+                    tracing::warn!(
+                        "Не удалось получить информацию об окне {:?}: {}. \
+                         Продолжаем обработку остальных окон",
+                        window,
+                        e
+                    );
                 }
             }
         }

@@ -16,7 +16,7 @@ use std::fs;
 /// Процессы, к которым нет доступа или которые завершились, пропускаются.
 pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
     let all_procs = procfs::process::all_processes()
-        .context("Не удалось получить список процессов из /proc")?;
+        .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc")?;
 
     let mut processes = Vec::new();
 
@@ -25,7 +25,11 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
             Ok(p) => p,
             Err(ProcError::NotFound(_)) => continue, // процесс завершился
             Err(e) => {
-                tracing::debug!("Ошибка доступа к процессу: {}", e);
+                tracing::debug!(
+                    "Ошибка доступа к процессу при чтении /proc: {}. \
+                     Процесс мог завершиться или нет прав доступа",
+                    e
+                );
                 continue;
             }
         };
@@ -36,7 +40,13 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
                 // процесс завершился между итерациями
             }
             Err(e) => {
-                tracing::debug!("Ошибка сбора метрик для PID {}: {}", proc.pid(), e);
+                tracing::debug!(
+                    "Ошибка сбора метрик для процесса PID {}: {}. \
+                     Процесс мог завершиться или нет прав доступа к /proc/{}/",
+                    proc.pid(),
+                    e,
+                    proc.pid()
+                );
             }
         }
     }
@@ -52,14 +62,30 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let stat = match proc.stat() {
         Ok(s) => s,
         Err(ProcError::NotFound(_)) => return Ok(None),
-        Err(e) => return Err(e.into()),
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Не удалось прочитать /proc/{}/stat: {}. \
+                 Проверьте, что процесс существует и доступен для чтения",
+                proc.pid(),
+                e
+            )
+            .into())
+        }
     };
 
     // Читаем status для UID/GID и дополнительной информации
     let status = match proc.status() {
         Ok(s) => s,
         Err(ProcError::NotFound(_)) => return Ok(None),
-        Err(e) => return Err(e.into()),
+        Err(e) => {
+            return Err(anyhow::anyhow!(
+                "Не удалось прочитать /proc/{}/status: {}. \
+                 Проверьте, что процесс существует и доступен для чтения",
+                proc.pid(),
+                e
+            )
+            .into())
+        }
     };
 
     // Читаем cmdline
@@ -81,7 +107,14 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let cgroup_path = read_cgroup_path(proc.pid()).ok().flatten();
 
     // Определяем uptime_sec на основе start_time
-    let uptime_sec = calculate_uptime(&stat)?;
+    let uptime_sec = calculate_uptime(&stat).with_context(|| {
+        format!(
+            "Не удалось вычислить uptime для процесса PID {}: \
+             проверьте доступность /proc/uptime и корректность start_time в /proc/{}/stat",
+            proc.pid(),
+            proc.pid()
+        )
+    })?;
 
     // Определяем has_tty на основе tty_nr
     let has_tty = stat.tty_nr != 0;
@@ -166,7 +199,17 @@ fn read_cgroup_path(pid: i32) -> Result<Option<String>> {
     let path = format!("/proc/{}/cgroup", pid);
     let contents = match fs::read_to_string(&path) {
         Ok(c) => c,
-        Err(_) => return Ok(None),
+        Err(e) => {
+            // Не критичная ошибка - cgroup может быть недоступен
+            tracing::debug!(
+                "Не удалось прочитать /proc/{}/cgroup: {}. \
+                 Cgroup может быть недоступен для этого процесса. \
+                 Это может быть вызвано отсутствием прав доступа, отсутствием файла или тем, что процесс завершился",
+                pid,
+                e
+            );
+            return Ok(None);
+        }
     };
 
     // Парсим формат cgroup v2: 0::/path/to/cgroup
@@ -213,8 +256,13 @@ fn extract_systemd_unit(cgroup_path: &Option<String>) -> Option<String> {
 fn calculate_uptime(stat: &Stat) -> Result<u64> {
     // start_time в jiffies (обычно 100 Hz, но может быть и 1000 Hz)
     // Нужно получить системный uptime и вычислить разницу
-    let boot_time =
-        procfs::boot_time_secs().context("Не удалось получить время загрузки системы")?;
+    let boot_time = procfs::boot_time_secs().with_context(|| {
+        format!(
+            "Не удалось получить время загрузки системы для вычисления uptime процесса PID {}. \
+             Проверьте доступность /proc/stat",
+            stat.pid
+        )
+    })?;
 
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -234,7 +282,12 @@ fn calculate_uptime(stat: &Stat) -> Result<u64> {
 /// Прочитать UID и GID процесса из /proc/[pid]/status.
 fn read_uid_gid(pid: i32) -> Result<(u32, u32)> {
     let path = format!("/proc/{}/status", pid);
-    let contents = fs::read_to_string(&path).context("Не удалось прочитать /proc/[pid]/status")?;
+    let contents = fs::read_to_string(&path).with_context(|| {
+        format!(
+            "Не удалось прочитать /proc/{}/status: проверьте, что процесс существует и доступен для чтения",
+            pid
+        )
+    })?;
 
     let mut uid = 0;
     let mut gid = 0;
@@ -246,7 +299,13 @@ fn read_uid_gid(pid: i32) -> Result<(u32, u32)> {
             if parts.len() >= 2 {
                 uid = parts[1]
                     .parse::<u32>()
-                    .context("Некорректный UID в /proc/[pid]/status")?;
+                    .with_context(|| {
+                        format!(
+                            "Некорректный UID в /proc/{}/status: ожидается целое число (u32). \
+                             Формат строки: 'Uid: <real> <effective> <saved> <filesystem>'",
+                            pid
+                        )
+                    })?;
             }
         } else if line.starts_with("Gid:") {
             // Формат: Gid: 1000 1000 1000 1000 (real, effective, saved, filesystem)
@@ -254,7 +313,13 @@ fn read_uid_gid(pid: i32) -> Result<(u32, u32)> {
             if parts.len() >= 2 {
                 gid = parts[1]
                     .parse::<u32>()
-                    .context("Некорректный GID в /proc/[pid]/status")?;
+                    .with_context(|| {
+                        format!(
+                            "Некорректный GID в /proc/{}/status: ожидается целое число (u32). \
+                             Формат строки: 'Gid: <real> <effective> <saved> <filesystem>'",
+                            pid
+                        )
+                    })?;
             }
         }
     }
@@ -267,7 +332,16 @@ fn read_env_vars(pid: i32) -> Result<(bool, bool, Option<String>, bool)> {
     let path = format!("/proc/{}/environ", pid);
     let contents = match fs::read_to_string(&path) {
         Ok(c) => c,
-        Err(_) => return Ok((false, false, None, false)),
+        Err(e) => {
+            // Не критичная ошибка - environ может быть недоступен
+            tracing::debug!(
+                "Не удалось прочитать /proc/{}/environ: {}. \
+                 Переменные окружения могут быть недоступны для этого процесса",
+                pid,
+                e
+            );
+            return Ok((false, false, None, false));
+        }
     };
 
     let mut has_display = false;

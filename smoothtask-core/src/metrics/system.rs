@@ -439,25 +439,52 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
 }
 
 fn read_file(path: &Path) -> Result<String> {
-    fs::read_to_string(path).with_context(|| format!("Не удалось прочитать {}", path.display()))
+    fs::read_to_string(path).with_context(|| {
+        format!(
+            "Не удалось прочитать системный файл {}: проверьте, что файл существует и доступен для чтения. Ошибка может быть вызвана отсутствием прав доступа, отсутствием файла или проблемами с файловой системой",
+            path.display()
+        )
+    })
 }
 
 fn parse_cpu_times(contents: &str) -> Result<CpuTimes> {
     let line = contents
         .lines()
         .find(|l| l.starts_with("cpu "))
-        .ok_or_else(|| anyhow!("Нет строки с общими cpu счетчиками"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "Не найдена строка с общими CPU счетчиками в /proc/stat. \
+                 Проверьте, что файл содержит строку, начинающуюся с 'cpu '. \
+                 Ожидаемый формат: 'cpu <user> <nice> <system> <idle> <iowait> <irq> <softirq> <steal> <guest> <guest_nice>'"
+            )
+        })?;
 
     let mut fields = line.split_whitespace();
     let _cpu_label = fields
         .next()
-        .ok_or_else(|| anyhow!("Пустая строка cpu в /proc/stat"))?;
+        .ok_or_else(|| {
+            anyhow!(
+                "Пустая строка CPU в /proc/stat. \
+                 Ожидается строка вида 'cpu <user> <nice> <system> ...'"
+            )
+        })?;
 
     let parse_field = |name: &str, iter: &mut std::str::SplitWhitespace<'_>| -> Result<u64> {
         iter.next()
-            .ok_or_else(|| anyhow!("Поле {} отсутствует в /proc/stat", name))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "Поле '{}' отсутствует в строке CPU в /proc/stat. \
+                     Ожидается формат: 'cpu <user> <nice> <system> <idle> <iowait> ...'",
+                    name
+                )
+            })?
             .parse::<u64>()
-            .with_context(|| format!("Некорректное значение {} в /proc/stat", name))
+            .with_context(|| {
+                format!(
+                    "Некорректное значение поля '{}' в /proc/stat: ожидается целое число (u64)",
+                    name
+                )
+            })
     };
 
     Ok(CpuTimes {
@@ -485,7 +512,12 @@ fn parse_meminfo(contents: &str) -> Result<MemoryInfo> {
         let value = match parts.next() {
             Some(v) => v
                 .parse::<u64>()
-                .with_context(|| format!("Некорректное значение {} в /proc/meminfo", key))?,
+                .with_context(|| {
+                    format!(
+                        "Некорректное значение поля '{}' в /proc/meminfo: ожидается целое число (u64) в килобайтах",
+                        key
+                    )
+                })?,
             None => continue,
         };
         values.insert(key, value);
@@ -495,7 +527,15 @@ fn parse_meminfo(contents: &str) -> Result<MemoryInfo> {
         values
             .get(name)
             .copied()
-            .ok_or_else(|| anyhow!("В /proc/meminfo нет поля {}", name))
+            .ok_or_else(|| {
+                anyhow!(
+                    "В /proc/meminfo отсутствует обязательное поле '{}'. \
+                     Проверьте, что файл содержит строку вида '{}: <значение> kB'. \
+                     Это может быть вызвано нестандартным ядром или отсутствием памяти в системе",
+                    name,
+                    name
+                )
+            })
     };
 
     Ok(MemoryInfo {
@@ -513,19 +553,34 @@ fn parse_loadavg(contents: &str) -> Result<LoadAvg> {
     let mut parts = contents.split_whitespace();
     let one = parts
         .next()
-        .ok_or_else(|| anyhow!("Пустой /proc/loadavg"))?
+        .ok_or_else(|| {
+            anyhow!(
+                "Пустой файл /proc/loadavg. \
+                 Ожидается формат: '<1m> <5m> <15m> <running>/<total> <last_pid>'"
+            )
+        })?
         .parse::<f64>()
-        .context("Некорректное значение loadavg 1m")?;
+        .context("Некорректное значение loadavg за 1 минуту: ожидается число с плавающей точкой")?;
     let five = parts
         .next()
-        .ok_or_else(|| anyhow!("Нет значения loadavg 5m"))?
+        .ok_or_else(|| {
+            anyhow!(
+                "Отсутствует значение loadavg за 5 минут в /proc/loadavg. \
+                 Ожидается формат: '<1m> <5m> <15m> ...'"
+            )
+        })?
         .parse::<f64>()
-        .context("Некорректное значение loadavg 5m")?;
+        .context("Некорректное значение loadavg за 5 минут: ожидается число с плавающей точкой")?;
     let fifteen = parts
         .next()
-        .ok_or_else(|| anyhow!("Нет значения loadavg 15m"))?
+        .ok_or_else(|| {
+            anyhow!(
+                "Отсутствует значение loadavg за 15 минут в /proc/loadavg. \
+                 Ожидается формат: '<1m> <5m> <15m> ...'"
+            )
+        })?
         .parse::<f64>()
-        .context("Некорректное значение loadavg 15m")?;
+        .context("Некорректное значение loadavg за 15 минут: ожидается число с плавающей точкой")?;
 
     Ok(LoadAvg { one, five, fifteen })
 }
@@ -543,7 +598,12 @@ fn parse_pressure(contents: &str) -> Result<Pressure> {
     }
 
     if some.is_none() && full.is_none() {
-        return Err(anyhow!("В файле pressure нет записей some/full"));
+        return Err(anyhow!(
+            "В файле PSI pressure отсутствуют записи 'some' и 'full'. \
+             Ожидается формат: 'some avg10=<value> avg60=<value> avg300=<value> total=<value>' \
+             или 'full avg10=<value> ...'. \
+             Проверьте, что ядро поддерживает PSI и файл содержит корректные данные"
+        ));
     }
 
     Ok(Pressure { some, full })
@@ -559,24 +619,72 @@ fn parse_pressure_record(line: &str) -> Result<PressureRecord> {
         let mut kv = token.split('=');
         let key = kv
             .next()
-            .ok_or_else(|| anyhow!("Некорректный токен pressure: {}", token))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "Некорректный токен в записи PSI pressure: '{}'. \
+                     Ожидается формат 'key=value', например 'avg10=0.01'",
+                    token
+                )
+            })?;
         let value = kv
             .next()
-            .ok_or_else(|| anyhow!("Некорректный токен pressure: {}", token))?;
+            .ok_or_else(|| {
+                anyhow!(
+                    "Некорректный токен в записи PSI pressure: '{}'. \
+                     Ожидается формат 'key=value', но значение отсутствует",
+                    token
+                )
+            })?;
         match key {
-            "avg10" => avg10 = Some(value.parse::<f64>().context("avg10 parse error")?),
-            "avg60" => avg60 = Some(value.parse::<f64>().context("avg60 parse error")?),
-            "avg300" => avg300 = Some(value.parse::<f64>().context("avg300 parse error")?),
-            "total" => total = Some(value.parse::<u64>().context("total parse error")?),
+            "avg10" => {
+                avg10 = Some(value.parse::<f64>().context(
+                    "Некорректное значение avg10 в PSI pressure: ожидается число с плавающей точкой",
+                )?)
+            }
+            "avg60" => {
+                avg60 = Some(value.parse::<f64>().context(
+                    "Некорректное значение avg60 в PSI pressure: ожидается число с плавающей точкой",
+                )?)
+            }
+            "avg300" => {
+                avg300 = Some(value.parse::<f64>().context(
+                    "Некорректное значение avg300 в PSI pressure: ожидается число с плавающей точкой",
+                )?)
+            }
+            "total" => {
+                total = Some(value.parse::<u64>().context(
+                    "Некорректное значение total в PSI pressure: ожидается целое число (u64)",
+                )?)
+            }
             _ => {}
         }
     }
 
     Ok(PressureRecord {
-        avg10: avg10.ok_or_else(|| anyhow!("Нет avg10 в pressure"))?,
-        avg60: avg60.ok_or_else(|| anyhow!("Нет avg60 в pressure"))?,
-        avg300: avg300.ok_or_else(|| anyhow!("Нет avg300 в pressure"))?,
-        total: total.ok_or_else(|| anyhow!("Нет total в pressure"))?,
+        avg10: avg10.ok_or_else(|| {
+            anyhow!(
+                "В записи PSI pressure отсутствует обязательное поле 'avg10'. \
+                 Ожидается формат: 'some avg10=<value> avg60=<value> avg300=<value> total=<value>'"
+            )
+        })?,
+        avg60: avg60.ok_or_else(|| {
+            anyhow!(
+                "В записи PSI pressure отсутствует обязательное поле 'avg60'. \
+                 Ожидается формат: 'some avg10=<value> avg60=<value> avg300=<value> total=<value>'"
+            )
+        })?,
+        avg300: avg300.ok_or_else(|| {
+            anyhow!(
+                "В записи PSI pressure отсутствует обязательное поле 'avg300'. \
+                 Ожидается формат: 'some avg10=<value> avg60=<value> avg300=<value> total=<value>'"
+            )
+        })?,
+        total: total.ok_or_else(|| {
+            anyhow!(
+                "В записи PSI pressure отсутствует обязательное поле 'total'. \
+                 Ожидается формат: 'some avg10=<value> avg60=<value> avg300=<value> total=<value>'"
+            )
+        })?,
     })
 }
 

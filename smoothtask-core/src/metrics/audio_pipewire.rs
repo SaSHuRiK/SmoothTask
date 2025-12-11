@@ -18,9 +18,9 @@ use std::time::SystemTime;
 /// доступные значения sample_rate и buffer_size, чтобы не перезаписывать
 /// более надёжные данные менее точными.
 pub fn parse_pw_dump_clients(json: &str) -> Result<Vec<AudioClientInfo>> {
-    let value: Value = serde_json::from_str(json).context("Не удалось распарсить pw-dump JSON")?;
+    let value: Value = serde_json::from_str(json).context("Не удалось распарсить pw-dump JSON. Проверьте, что вывод pw-dump является корректным JSON и содержит массив объектов")?;
     let items = extract_items_array(&value)
-        .ok_or_else(|| anyhow!("pw-dump не содержит массива объектов"))?;
+        .ok_or_else(|| anyhow!("pw-dump не содержит массива объектов. Ожидается массив объектов в корне JSON или в поле 'objects'"))?;
 
     let mut clients: HashMap<u32, AudioClientInfo> = HashMap::new();
 
@@ -384,9 +384,9 @@ mod tests {
 /// возвращает все узлы с ERR > 0. Для отслеживания новых XRUN нужно
 /// сравнивать ERR между вызовами (это делается в PipeWireIntrospector).
 pub fn parse_pw_dump_xruns(json: &str) -> Result<Vec<(u32, u64)>> {
-    let value: Value = serde_json::from_str(json).context("Не удалось распарсить pw-dump JSON")?;
+    let value: Value = serde_json::from_str(json).context("Не удалось распарсить pw-dump JSON. Проверьте, что вывод pw-dump является корректным JSON и содержит массив объектов")?;
     let items = extract_items_array(&value)
-        .ok_or_else(|| anyhow!("pw-dump не содержит массива объектов"))?;
+        .ok_or_else(|| anyhow!("pw-dump не содержит массива объектов. Ожидается массив объектов в корне JSON или в поле 'objects'"))?;
 
     let mut xruns = Vec::new();
 
@@ -473,14 +473,14 @@ impl PipeWireIntrospector {
     fn call_pw_dump(&self) -> Result<String> {
         let output = Command::new("pw-dump")
             .output()
-            .context("Не удалось выполнить pw-dump. Убедитесь, что PipeWire установлен и pw-dump доступен в PATH")?;
+            .context("Не удалось выполнить pw-dump. Убедитесь, что PipeWire установлен и pw-dump доступен в PATH. Также проверьте, что у текущего пользователя есть права на выполнение pw-dump")?;
 
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow!("pw-dump завершился с ошибкой: {}", stderr));
+            return Err(anyhow!("pw-dump завершился с ошибкой: {}. Проверьте, что PipeWire работает корректно и у вас есть права на доступ к аудио-устройствам", stderr));
         }
 
-        String::from_utf8(output.stdout).context("pw-dump вернул невалидный UTF-8")
+        String::from_utf8(output.stdout).context("pw-dump вернул невалидный UTF-8. Это может быть вызвано проблемами с кодировкой или поврежденным выводом")
     }
 }
 
