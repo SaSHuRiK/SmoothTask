@@ -367,7 +367,7 @@ def test_build_feature_matrix_fillna_without_downcast_warning():
         {
             "snapshot_id": [1, 2],
             "teacher_score": [0.5, 0.6],
-            "cpu_share_1s": pd.Series([pd.NA, 0.2], dtype="object"),
+            "cpu_share_1s": pd.Series(["0.0", 0.2], dtype="object"),
             "has_tty": pd.Series([True, pd.NA], dtype="object"),
             "app_name": pd.Series([pd.NA, "player"], dtype="object"),
         }
@@ -385,13 +385,26 @@ def test_build_feature_matrix_fillna_without_downcast_warning():
     assert pd.api.types.is_string_dtype(X["app_name"])
 
 
+def test_build_feature_matrix_rejects_nan_numeric_feature():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [0.5, 0.6],
+            "cpu_share_1s": [0.1, np.nan],
+        }
+    )
+
+    with pytest.raises(ValueError, match="cpu_share_1s.*NaN/NA"):
+        build_feature_matrix(df)
+
+
 def test_build_feature_matrix_numeric_mixed_types_without_warnings():
     df = pd.DataFrame(
         {
             "snapshot_id": [1, 2],
             "teacher_score": [0.5, 0.6],
             "cpu_share_1s": pd.Series(["0.1", 2], dtype="object"),
-            "io_read_bytes": pd.Series([None, "3"], dtype="object"),
+            "io_read_bytes": pd.Series(["0", "3"], dtype="object"),
         }
     )
 

@@ -274,6 +274,12 @@ def build_feature_matrix(
             raise ValueError(
                 f"Колонка '{col}' содержит бесконечные значения: {sample_values}"
             )
+        nan_mask = numeric_series.isna()
+        if nan_mask.any():
+            sample_indices = ", ".join(str(idx) for idx in numeric_series[nan_mask].index[:5])
+            raise ValueError(
+                f"Колонка '{col}' содержит пропуски (NaN/NA) в строках: {sample_indices}"
+            )
         features[col] = numeric_series.fillna(0.0).astype(float)
         column_order.append(col)
 

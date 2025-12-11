@@ -179,6 +179,21 @@ def _ensure_unique_keys(
     )
 
 
+def _ensure_no_nan(
+    df: pd.DataFrame, table: str, columns: Iterable[str], sample_size: int = 5
+) -> None:
+    """
+    Проверяет отсутствие NaN/NA в обязательных колонках и выбрасывает понятный ValueError.
+    """
+    for col in columns:
+        nan_mask = df[col].isna()
+        if nan_mask.any():
+            sample_indices = ", ".join(str(idx) for idx in nan_mask[nan_mask].index[:sample_size])
+            raise ValueError(
+                f"В таблице '{table}' колонка '{col}' содержит пустые значения (строки: {sample_indices})"
+            )
+
+
 def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
@@ -211,6 +226,9 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_required_columns("snapshots", snapshots, {"snapshot_id"})
     _ensure_required_columns("processes", processes, {"snapshot_id", "pid"})
     _ensure_required_columns("app_groups", app_groups, {"snapshot_id", "app_group_id"})
+    _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
+    _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
+    _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})
 
     # Проверяем ссылочную целостность snapshot_id в processes.
     snapshot_ids = set(snapshots["snapshot_id"].dropna().unique())

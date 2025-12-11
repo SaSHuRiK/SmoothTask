@@ -405,6 +405,52 @@ def test_load_snapshots_as_frame_rejects_app_groups_without_snapshots(tmp_path: 
         load_snapshots_as_frame(db_path)
 
 
+def test_load_snapshots_as_frame_rejects_nan_snapshot_id(tmp_path: Path):
+    db_path = tmp_path / "nan_snapshot_id.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE snapshots (snapshot_id REAL)")
+    cursor.execute("CREATE TABLE processes (snapshot_id REAL, pid REAL, app_group_id REAL)")
+    cursor.execute("CREATE TABLE app_groups (snapshot_id REAL, app_group_id REAL)")
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (?)", (float("nan"),))
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (float("nan"), 10, "g1"),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        (float("nan"), "g1"),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="snapshots.*snapshot_id.*пустые"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_nan_pid_and_app_group_id(tmp_path: Path):
+    db_path = tmp_path / "nan_pid.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE snapshots (snapshot_id REAL)")
+    cursor.execute("CREATE TABLE processes (snapshot_id REAL, pid REAL, app_group_id REAL)")
+    cursor.execute("CREATE TABLE app_groups (snapshot_id REAL, app_group_id REAL)")
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, float("nan"), "g1"),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+        (1, float("nan")),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="(pid|app_group_id).*пустые"):
+        load_snapshots_as_frame(db_path)
+
+
 def test_load_snapshots_as_frame_requires_app_group_records(tmp_path: Path):
     db_path = tmp_path / "missing_app_group_records.sqlite"
     conn = _create_minimal_db_with_tables(db_path)

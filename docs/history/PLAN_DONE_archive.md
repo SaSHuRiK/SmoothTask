@@ -1,3 +1,9 @@
+## Перенос из PLAN.md (ST-323, 2025-12-11)
+
+- [x] ST-323: Улучшить сообщение об ошибке для `_json_list`
+  - Тип: Python / trainer / dataset
+  - Примечания: json.JSONDecodeError оборачивается в ValueError с понятным текстом; добавлен тест на невалидную строку. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 ## Перенос из PLAN.md (ST-321–ST-318, 2025-12-11)
 
 - [x] ST-321: Проверка числовых таргетов teacher/responsiveness

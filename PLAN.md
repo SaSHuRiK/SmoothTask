@@ -11,7 +11,7 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- Нет активных ближайших задач — нужно определить новые при следующей сессии.
+- Нет активных ближайших задач — определить при следующей сессии.
 
 ## 2. Бэклог
 
@@ -38,6 +38,14 @@
   - Примечания: полностью реализован HTTP API для просмотра текущего состояния демона. Все подзадачи выполнены. API сервер интегрирован в главный цикл демона, данные обновляются при каждой итерации. Добавлена полная документация API в docs/API.md. Все 82 теста проходят успешно.
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-333: build_feature_matrix отвергает NaN в числовых фичах
+  - Тип: Python / trainer / features
+  - Примечания: числовые фичи валидируются на NaN/NA с указанием строк; добавлен тест на ошибку при NaN, существующие сценарии проверены без предупреждений.
+
+- [x] ST-332: Запретить NaN в ключевых колонках SQLite снапшотов
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame валидирует отсутствия NaN в snapshot_id/pid/app_group_id и выдаёт понятные ошибки; добавлены unit-тесты на NaN в ключевых таблицах.
 
 - [x] ST-331: Проверка ссылочной целостности app_group_id процессов
   - Тип: Python / trainer / dataset
@@ -70,10 +78,6 @@
 - [x] ST-324: build_feature_matrix отвергает бесконечные таргеты
   - Тип: Python / trainer / features
   - Примечания: teacher_score/responsiveness_score валидируются на +/-inf, выбрасывается понятный ValueError с примерами значений; добавлен тест на бесконечный таргет. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-323: Улучшить сообщение об ошибке для `_json_list`
-  - Тип: Python / trainer / dataset
-  - Примечания: json.JSONDecodeError оборачивается в ValueError с понятным текстом; добавлен тест на невалидную строку. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
 - [x] ST-322: Стабилизировать порядок строк в `load_snapshots_as_frame`
   - Тип: Python / trainer / dataset
