@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-321: Проверка числовых таргетов teacher/responsiveness
+  - Тип: Python / trainer / features
+  - Примечания: build_feature_matrix валидирует целевой столбец, выдавая понятный ValueError при нечисловых значениях; числовые строки коэрсятся без предупреждений. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-320: Валидация snapshot_id в build_feature_matrix
+  - Тип: Python / trainer / features
+  - Примечания: snapshot_id приводится к Int64, NaN/None или нечисловые значения вызывают ValueError; group_id сохраняет целочисленный тип после фильтрации таргета. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 - [x] ST-319: Добавить unit-тесты для `_ensure_column` (дефолты и dtype)
   - Тип: Python / trainer / features / tests
   - Примечания: добавлен тест на сохранение индекса и приведение dtype при существующей колонке и создании новой с дефолтами; проверены boolean и float сценарии; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
@@ -70,14 +78,6 @@
 - [x] ST-312: Усилить валидацию типов числовых колонок в build_feature_matrix
   - Тип: Python / trainer / features
   - Примечания: numeric-колонки валидируются перед fillna; нечисловые значения приводят к понятной ValueError с примерами значений. Строковые числа коэрсятся в float без предупреждений. Добавлены тесты на смешанные типы и ошибки; прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-311: Проверить fillna/astype в trainer на предупреждения
-  - Тип: Python / trainer / maintenance
-  - Примечания: проверены конверсии в build_feature_matrix; добавлен тест, гарантирующий отсутствие FutureWarning при fillna/astype с object/pd.NA и смешанными типами. Поддержан стабильный dtype для числовых и булевых колонок; прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-310: Устранить FutureWarning fillna в features
-  - Тип: Python / trainer / maintenance
-  - Примечания: build_feature_matrix приводит числовые колонки через `pd.to_numeric` перед `fillna`, категориальные колонки теперь приводятся к `string` до заполнения значений. Добавлен тест, фиксирующий отсутствие FutureWarning при object-колонках и проверяющий типы после заполнения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

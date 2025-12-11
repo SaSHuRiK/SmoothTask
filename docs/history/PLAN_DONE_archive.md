@@ -8,6 +8,16 @@
   - Тип: Python / trainer / code quality
   - Примечания: импорты в `dataset.py`, `features.py`, `train_ranker.py` проверены, лишних не обнаружено; форматирование обновлено; прогнан `uv run python -m pytest smoothtask-trainer/tests`.
 
+## Перенос из PLAN.md (ST-311–ST-310, 2025-12-11)
+
+- [x] ST-311: Проверить fillna/astype в trainer на предупреждения
+  - Тип: Python / trainer / maintenance
+  - Примечания: проверены конверсии в build_feature_matrix; добавлен тест, гарантирующий отсутствие FutureWarning при fillna/astype с object/pd.NA и смешанными типами. Поддержан стабильный dtype для числовых и булевых колонок; прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-310: Устранить FutureWarning fillna в features
+  - Тип: Python / trainer / maintenance
+  - Примечания: build_feature_matrix приводит числовые колонки через `pd.to_numeric` перед `fillna`, категориальные колонки теперь приводятся к `string` до заполнения значений. Добавлен тест, фиксирующий отсутствие FutureWarning при object-колонках и проверяющий типы после заполнения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 ## Перенос из PLAN.md (ST-307–ST-306, 2025-12-11)
 
 - [x] ST-307: Мини-код-ревизия API ответов на пустые паттерны

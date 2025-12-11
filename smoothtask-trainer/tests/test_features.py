@@ -190,6 +190,55 @@ def test_build_feature_matrix_requires_snapshot_id():
         build_feature_matrix(df)
 
 
+def test_build_feature_matrix_rejects_missing_snapshot_values():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, None],
+            "teacher_score": [0.5, 0.6],
+        }
+    )
+
+    with pytest.raises(ValueError, match="snapshot_id"):
+        build_feature_matrix(df)
+
+
+def test_build_feature_matrix_coerces_snapshot_id_strings():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": ["10", "11"],
+            "responsiveness_score": [0.1, 0.2],
+        }
+    )
+
+    _, y, group_id, _ = build_feature_matrix(df)
+
+    assert list(group_id) == [10, 11]
+    assert str(group_id.dtype) == "Int64"
+    assert list(y) == [pytest.approx(0.1), pytest.approx(0.2)]
+
+
+def test_build_feature_matrix_targets_numeric_strings_and_invalid_values():
+    good = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": ["0.5", "0.75"],
+        }
+    )
+
+    _, y, _, _ = build_feature_matrix(good)
+    assert list(y) == [pytest.approx(0.5), pytest.approx(0.75)]
+
+    bad = pd.DataFrame(
+        {
+            "snapshot_id": [10, 11],
+            "teacher_score": ["bad", 0.2],
+        }
+    )
+
+    with pytest.raises(ValueError, match="нечисловые значения"):
+        build_feature_matrix(bad)
+
+
 def test_build_feature_matrix_empty_dataframe():
     df = pd.DataFrame()
     with pytest.raises(ValueError):

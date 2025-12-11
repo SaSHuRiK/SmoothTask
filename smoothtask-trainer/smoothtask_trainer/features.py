@@ -160,6 +160,17 @@ def build_feature_matrix(
 
     work_df = df.copy()
 
+    snapshot_raw = work_df["snapshot_id"]
+    snapshot_numeric = pd.to_numeric(snapshot_raw, errors="coerce")
+    invalid_snapshot = snapshot_raw.isna() | snapshot_numeric.isna()
+    if invalid_snapshot.any():
+        invalid_values = pd.unique(snapshot_raw[invalid_snapshot])
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Колонка 'snapshot_id' содержит пустые или нечисловые значения: {sample_values}"
+        )
+    work_df["snapshot_id"] = snapshot_numeric.astype("Int64")
+
     # Выбор таргета: teacher_score в приоритете, иначе responsiveness_score.
     teacher = (
         work_df["teacher_score"]
@@ -172,15 +183,24 @@ def build_feature_matrix(
         else pd.Series(np.nan, index=work_df.index)
     )
     target = teacher.combine_first(resp)
+    target_numeric = pd.to_numeric(target, errors="coerce")
+    invalid_target = target.notna() & target_numeric.isna()
+    if invalid_target.any():
+        invalid_values = pd.unique(target[invalid_target])
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            "Таргет (teacher_score/responsiveness_score) содержит "
+            f"нечисловые значения: {sample_values}"
+        )
 
-    valid_mask = target.notna()
+    valid_mask = target_numeric.notna()
     if not valid_mask.any():
         raise ValueError(
             "Нет доступных таргетов teacher_score или responsiveness_score"
         )
 
     work_df = work_df.loc[valid_mask].reset_index(drop=True)
-    target = target.loc[valid_mask].reset_index(drop=True)
+    target = target_numeric.loc[valid_mask].reset_index(drop=True).astype(float)
     group_id = work_df["snapshot_id"].reset_index(drop=True)
 
     features = {}
