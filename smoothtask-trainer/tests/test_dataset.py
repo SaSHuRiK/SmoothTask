@@ -1,6 +1,7 @@
 """Тесты для чтения снапшотов из SQLite."""
 
 import json
+import warnings
 import sqlite3
 import tempfile
 from datetime import datetime, timezone
@@ -457,3 +458,21 @@ def test_to_bool_converts_present_columns_only():
     assert df["flag_int"].dtype == "boolean"
     assert list(df["flag_int"]) == [True, False, pd.NA]
     assert list(df["already_bool"]) == [True, False, None]
+
+
+def test_to_bool_no_warnings_for_nullable_bools():
+    """_to_bool не должен выдавать предупреждений при nullable boolean."""
+    df = pd.DataFrame(
+        {
+            "flag_int": pd.Series([1, 0, pd.NA], dtype="Int64"),
+            "flag_bool": pd.Series([True, False, pd.NA], dtype="boolean"),
+        }
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("error")
+        _to_bool(df, ["flag_int", "flag_bool"])
+
+    assert not caught
+    assert df["flag_int"].dtype == "boolean"
+    assert df["flag_bool"].dtype == "boolean"

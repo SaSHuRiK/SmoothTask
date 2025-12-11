@@ -60,7 +60,8 @@ def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
     """
     for col in columns:
         if col in df.columns:
-            df[col] = df[col].astype("Int64").astype("boolean")
+            # Явно приводим к nullable boolean, чтобы избежать future warning'ов при двойных astype.
+            df[col] = pd.Series(df[col], copy=False).astype("boolean")
 
 
 def _load_table(

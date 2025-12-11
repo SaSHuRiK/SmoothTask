@@ -9,6 +9,20 @@ import pandas as pd
 import yaml
 
 
+def _to_int_flag(series: pd.Series) -> pd.Series:
+    """
+    Приводит флаг bad_responsiveness к nullable int без предупреждений.
+
+    Args:
+        series: столбец с флагом bad_responsiveness (bool/object/int)
+
+    Returns:
+        Series с dtype Int8, где True/1 -> 1, False/0 -> 0, NA сохраняется.
+    """
+    boolean_series = pd.Series(series, copy=False).astype("boolean")
+    return boolean_series.astype("Int8")
+
+
 def _validate_db_path(db_path: Path) -> None:
     """
     Проверяет существование файла базы данных.
@@ -191,14 +205,10 @@ def compute_policy_correlations(snapshots_df: pd.DataFrame) -> Dict[str, float]:
 
     # Преобразуем bad_responsiveness в числовой тип, если это необходимо
     if "bad_responsiveness" in snapshots_df.columns:
-        if (
-            snapshots_df["bad_responsiveness"].dtype == "object"
-            or snapshots_df["bad_responsiveness"].dtype == "bool"
-        ):
-            snapshots_df = snapshots_df.copy()
-            snapshots_df["bad_responsiveness"] = snapshots_df[
-                "bad_responsiveness"
-            ].astype(int)
+        snapshots_df = snapshots_df.copy()
+        snapshots_df["bad_responsiveness"] = _to_int_flag(
+            snapshots_df["bad_responsiveness"]
+        )
 
     correlations = {}
 
@@ -398,14 +408,10 @@ def optimize_psi_thresholds(
 
     # Преобразуем bad_responsiveness в числовой тип, если это необходимо
     if "bad_responsiveness" in snapshots_df.columns:
-        if (
-            snapshots_df["bad_responsiveness"].dtype == "object"
-            or snapshots_df["bad_responsiveness"].dtype == "bool"
-        ):
-            snapshots_df = snapshots_df.copy()
-            snapshots_df["bad_responsiveness"] = snapshots_df[
-                "bad_responsiveness"
-            ].astype(int)
+        snapshots_df = snapshots_df.copy()
+        snapshots_df["bad_responsiveness"] = _to_int_flag(
+            snapshots_df["bad_responsiveness"]
+        )
 
     # Фильтруем снапшоты с bad_responsiveness = true
     bad_snapshots = snapshots_df[snapshots_df["bad_responsiveness"] == 1]
@@ -490,14 +496,10 @@ def optimize_latency_thresholds(
 
     # Преобразуем bad_responsiveness в числовой тип, если это необходимо
     if "bad_responsiveness" in snapshots_df.columns:
-        if (
-            snapshots_df["bad_responsiveness"].dtype == "object"
-            or snapshots_df["bad_responsiveness"].dtype == "bool"
-        ):
-            snapshots_df = snapshots_df.copy()
-            snapshots_df["bad_responsiveness"] = snapshots_df[
-                "bad_responsiveness"
-            ].astype(int)
+        snapshots_df = snapshots_df.copy()
+        snapshots_df["bad_responsiveness"] = _to_int_flag(
+            snapshots_df["bad_responsiveness"]
+        )
 
     # Фильтруем снапшоты с хорошими условиями (bad_responsiveness = false)
     good_snapshots = snapshots_df[snapshots_df["bad_responsiveness"] == 0]

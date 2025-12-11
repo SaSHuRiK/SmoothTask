@@ -1,6 +1,7 @@
 """Тесты для тюнинга параметров политики."""
 
 import sqlite3
+import warnings
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -575,6 +576,30 @@ def test_compute_policy_correlations_with_real_data():
                 ), f"Корреляция {key} = {value} вне диапазона [-1, 1]"
 
 
+def test_compute_policy_correlations_no_warnings_for_boolean_flag():
+    """Преобразование bad_responsiveness из boolean не должно выдавать warning."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "psi_cpu_some_avg10": [0.1, 0.2, 0.3],
+            "psi_io_some_avg10": [0.05, 0.1, 0.15],
+            "sched_latency_p99_ms": [5.0, 10.0, 15.0],
+            "ui_loop_p95_ms": [10.0, 15.0, 20.0],
+            "bad_responsiveness": pd.Series(
+                [True, False, pd.NA], dtype="boolean"
+            ),
+            "responsiveness_score": [1.0, 0.9, 0.7],
+        }
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("error")
+        compute_policy_correlations(df)
+
+    assert not caught
+
+
 def test_optimize_psi_thresholds_basic():
     """Тест базовой оптимизации порогов PSI."""
     import pandas as pd
@@ -726,6 +751,25 @@ def test_optimize_psi_thresholds_with_real_data():
         assert 0.0 <= thresholds["psi_io_some_high"] <= 1.0
 
 
+def test_optimize_psi_thresholds_no_warnings_for_boolean_flag():
+    """Конверсия bad_responsiveness из boolean не должна предупреждать."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "psi_cpu_some_avg10": [0.1, 0.2, 0.3],
+            "psi_io_some_avg10": [0.05, 0.1, 0.15],
+            "bad_responsiveness": pd.Series([True, False, pd.NA], dtype="boolean"),
+        }
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("error")
+        optimize_psi_thresholds(df, percentile=0.9)
+
+    assert not caught
+
+
 def test_optimize_latency_thresholds_basic():
     """Тест базовой оптимизации порогов latency."""
     import pandas as pd
@@ -831,6 +875,25 @@ def test_optimize_latency_thresholds_with_nulls():
     # Функция должна корректно обработать NULL значения (dropna перед вычислением)
     assert 1.0 <= thresholds["sched_latency_p99_threshold_ms"] <= 1000.0
     assert 1.0 <= thresholds["ui_loop_p95_threshold_ms"] <= 1000.0
+
+
+def test_optimize_latency_thresholds_no_warnings_for_boolean_flag():
+    """Конверсия bad_responsiveness из boolean не должна предупреждать."""
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "sched_latency_p99_ms": [5.0, 10.0, 15.0],
+            "ui_loop_p95_ms": [10.0, 12.0, 14.0],
+            "bad_responsiveness": pd.Series([False, True, pd.NA], dtype="boolean"),
+        }
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("error")
+        optimize_latency_thresholds(df, percentile=0.9, multiplier=1.2)
+
+    assert not caught
 
 
 def test_optimize_latency_thresholds_percentile():
