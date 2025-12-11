@@ -208,39 +208,74 @@ impl MemoryInfo {
     }
 }
 
+/// Средняя нагрузка системы за различные интервалы времени.
+///
+/// Значения загружаются из `/proc/loadavg` и представляют среднее количество
+/// процессов в состоянии выполнения или ожидания выполнения за последние 1, 5 и 15 минут.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct LoadAvg {
+    /// Средняя нагрузка за последнюю минуту
     pub one: f64,
+    /// Средняя нагрузка за последние 5 минут
     pub five: f64,
+    /// Средняя нагрузка за последние 15 минут
     pub fifteen: f64,
 }
 
+/// Запись о давлении (pressure) из PSI (Pressure Stall Information).
+///
+/// PSI предоставляет информацию о нехватке ресурсов (CPU, IO, память).
+/// Значения `avg10`, `avg60`, `avg300` представляют среднее давление за последние
+/// 10 секунд, 1 минуту и 5 минут соответственно.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct PressureRecord {
+    /// Среднее давление за последние 10 секунд
     pub avg10: f64,
+    /// Среднее давление за последние 60 секунд
     pub avg60: f64,
+    /// Среднее давление за последние 300 секунд (5 минут)
     pub avg300: f64,
+    /// Общее количество микросекунд, в течение которых происходило давление
     pub total: u64,
 }
 
+/// Давление ресурса (CPU, IO или память) с двумя типами: some и full.
+///
+/// - `some`: давление, когда хотя бы одна задача ждёт ресурс
+/// - `full`: давление, когда все задачи ждут ресурс
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Pressure {
+    /// Давление типа "some" (хотя бы одна задача ждёт)
     pub some: Option<PressureRecord>,
+    /// Давление типа "full" (все задачи ждут)
     pub full: Option<PressureRecord>,
 }
 
+/// Метрики давления для всех типов ресурсов (CPU, IO, память).
+///
+/// Содержит информацию о давлении для каждого типа ресурса из PSI.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct PressureMetrics {
+    /// Давление CPU
     pub cpu: Pressure,
+    /// Давление IO
     pub io: Pressure,
+    /// Давление памяти
     pub memory: Pressure,
 }
 
+/// Полный набор системных метрик, собранных из `/proc`.
+///
+/// Содержит информацию о CPU, памяти, нагрузке системы и давлении ресурсов.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SystemMetrics {
+    /// Счётчики CPU из `/proc/stat`
     pub cpu_times: CpuTimes,
+    /// Информация о памяти из `/proc/meminfo`
     pub memory: MemoryInfo,
+    /// Средняя нагрузка системы из `/proc/loadavg`
     pub load_avg: LoadAvg,
+    /// Метрики давления из PSI (`/proc/pressure/*`)
     pub pressure: PressureMetrics,
 }
 
