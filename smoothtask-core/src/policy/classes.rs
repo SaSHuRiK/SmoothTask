@@ -261,12 +261,68 @@ mod tests {
     }
 
     #[test]
+    fn test_from_str_edge_cases() {
+        // Пустые строки
+        assert_eq!(PriorityClass::from_str(""), None);
+        assert_eq!(PriorityClass::from_str("   "), None);
+
+        // Разные регистры (должны быть чувствительны к регистру)
+        assert_eq!(PriorityClass::from_str("crit_interactive"), None);
+        assert_eq!(PriorityClass::from_str("Crit_Interactive"), None);
+        assert_eq!(PriorityClass::from_str("CRIT_interactive"), None);
+        assert_eq!(PriorityClass::from_str("interactive"), None);
+        assert_eq!(PriorityClass::from_str("normal"), None);
+        assert_eq!(PriorityClass::from_str("background"), None);
+        assert_eq!(PriorityClass::from_str("idle"), None);
+
+        // Строки с пробелами
+        assert_eq!(PriorityClass::from_str(" CRIT_INTERACTIVE"), None);
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE "), None);
+        assert_eq!(PriorityClass::from_str(" CRIT_INTERACTIVE "), None);
+        assert_eq!(PriorityClass::from_str("CRIT_ INTERACTIVE"), None);
+
+        // Специальные символы
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE!"), None);
+        assert_eq!(PriorityClass::from_str("CRIT-INTERACTIVE"), None);
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE\n"), None);
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE\t"), None);
+
+        // Частичные совпадения
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIV"), None);
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE_EXTRA"), None);
+        assert_eq!(PriorityClass::from_str("CRIT"), None);
+        assert_eq!(PriorityClass::from_str("INTERACTIVE"), Some(PriorityClass::Interactive));
+
+        // Unicode символы
+        assert_eq!(PriorityClass::from_str("CRIT_INTERACTIVE\u{200B}"), None); // zero-width space
+        assert_eq!(PriorityClass::from_str("\u{FEFF}CRIT_INTERACTIVE"), None); // BOM
+    }
+
+    #[test]
     fn test_serde_roundtrip() {
         let class = PriorityClass::CritInteractive;
         let json = serde_json::to_string(&class).expect("serialize");
         assert_eq!(json, "\"CRIT_INTERACTIVE\"");
         let deserialized: PriorityClass = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(deserialized, class);
+    }
+
+    #[test]
+    fn test_serde_roundtrip_all_classes() {
+        let classes = vec![
+            PriorityClass::CritInteractive,
+            PriorityClass::Interactive,
+            PriorityClass::Normal,
+            PriorityClass::Background,
+            PriorityClass::Idle,
+        ];
+
+        for class in classes {
+            let json = serde_json::to_string(&class).expect("serialize");
+            let deserialized: PriorityClass =
+                serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(deserialized, class, "serde roundtrip failed for {:?}", class);
+        }
     }
 
     #[test]
@@ -277,5 +333,30 @@ mod tests {
         assert_eq!(class.ionice().class, 2);
         assert_eq!(class.ionice().level, 2);
         assert_eq!(class.cpu_weight(), 150);
+    }
+
+    #[test]
+    fn test_as_str_from_str_consistency() {
+        // Проверяем, что для каждого класса from_str(as_str()) возвращает Some(class)
+        let classes = vec![
+            PriorityClass::CritInteractive,
+            PriorityClass::Interactive,
+            PriorityClass::Normal,
+            PriorityClass::Background,
+            PriorityClass::Idle,
+        ];
+
+        for class in classes {
+            let str_repr = class.as_str();
+            let parsed = PriorityClass::from_str(str_repr);
+            assert_eq!(
+                parsed,
+                Some(class),
+                "as_str/from_str inconsistency for {:?}: as_str() = {:?}, from_str() = {:?}",
+                class,
+                str_repr,
+                parsed
+            );
+        }
     }
 }
