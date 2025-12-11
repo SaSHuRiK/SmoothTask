@@ -25,6 +25,18 @@ _APP_GROUP_BOOL_COLS = {"has_gui_window", "is_focused_group"}
 
 
 def _json_list(value: str | None) -> list:
+    """
+    Парсит JSON-строку в список.
+    
+    Args:
+        value: JSON-строка или None
+        
+    Returns:
+        Список, если value был валидным JSON-массивом, иначе пустой список
+        
+    Raises:
+        ValueError: если value не является JSON-массивом
+    """
     if value is None:
         return []
     parsed = json.loads(value)
@@ -34,12 +46,33 @@ def _json_list(value: str | None) -> list:
 
 
 def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
+    """
+    Преобразует указанные столбцы DataFrame в булевый тип.
+    
+    Преобразование выполняется через промежуточный тип Int64 для корректной
+    обработки NaN значений.
+    
+    Args:
+        df: DataFrame для преобразования (изменяется in-place)
+        columns: Итератор с именами столбцов для преобразования
+    """
     for col in columns:
         if col in df.columns:
             df[col] = df[col].astype("Int64").astype("boolean")
 
 
 def _load_table(conn: sqlite3.Connection, table: str, parse_dates: list[str] | None = None) -> pd.DataFrame:
+    """
+    Загружает таблицу из SQLite в pandas DataFrame.
+    
+    Args:
+        conn: Соединение с SQLite базой данных
+        table: Имя таблицы для загрузки
+        parse_dates: Список столбцов для парсинга как даты/время
+        
+    Returns:
+        DataFrame с данными из таблицы
+    """
     return pd.read_sql(f"SELECT * FROM {table}", conn, parse_dates=parse_dates or [])
 
 
@@ -47,10 +80,21 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
 
+    Функция загружает данные из трёх таблиц (snapshots, processes, app_groups)
+    и объединяет их в единый DataFrame на уровне процессов. Булевые столбцы
+    преобразуются в dtype boolean, JSON-поля (tags, process_ids) парсятся
+    в списки Python.
+
+    Args:
+        db_path: Путь к SQLite базе данных со снапшотами
+
     Returns:
         DataFrame на уровне процессов с джойном глобальных и групповых метрик.
         Столбцы с булевыми значениями приведены к dtype ``boolean``,
         JSON-поля tags/process_ids распарсены в списки.
+
+    Raises:
+        FileNotFoundError: если файл базы данных не существует
     """
     path = Path(db_path)
     if not path.exists():

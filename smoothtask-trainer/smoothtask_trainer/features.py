@@ -75,7 +75,22 @@ _CAT_COLS: list[str] = [
 def _ensure_column(
     df: pd.DataFrame, column: str, default: object, dtype: str | None = None
 ) -> pd.Series:
-    """Вернуть столбец или дефолт с заданным dtype."""
+    """
+    Возвращает столбец из DataFrame или создаёт новый с дефолтным значением.
+    
+    Если столбец существует в DataFrame, возвращает его (с приведением типа,
+    если указан dtype). Если столбца нет, создаёт новый Series с дефолтным
+    значением для всех строк.
+    
+    Args:
+        df: DataFrame для извлечения столбца
+        column: Имя столбца
+        default: Дефолтное значение для создания нового столбца
+        dtype: Опциональный тип данных для приведения (например, "boolean", "float")
+        
+    Returns:
+        Series с данными столбца или дефолтными значениями
+    """
     if column in df.columns:
         series = df[column]
     else:
@@ -86,7 +101,20 @@ def _ensure_column(
 
 
 def _prepare_tags_column(series: Iterable[object]) -> pd.Series:
-    """Преобразовать список тегов в строку для категориальной фичи."""
+    """
+    Преобразует список тегов в строку для категориальной фичи.
+    
+    Функция принимает итератор, где каждый элемент может быть списком тегов,
+    и преобразует его в строку с тегами, разделёнными символом "|".
+    Теги сортируются для консистентности. Если значение отсутствует (NaN),
+    возвращается строка "unknown".
+    
+    Args:
+        series: Итератор со значениями (списки тегов, строки или None)
+        
+    Returns:
+        Series со строками вида "tag1|tag2|tag3" или "unknown"
+    """
 
     def _join_tags(value: object) -> str:
         if isinstance(value, (list, tuple, set)):
@@ -105,11 +133,24 @@ def build_feature_matrix(
     """
     Строит матрицу фич X, таргеты y, group_id и список категориальных фич.
 
-    Возвращает:
-        X: DataFrame с числовыми/булевыми/категориальными фичами.
-        y: целевая метка (teacher_score или responsiveness_score).
-        group_id: идентификатор запроса (snapshot_id).
-        cat_feature_indices: индексы категориальных колонок в X.
+    Функция преобразует DataFrame со снапшотами в формат, пригодный для
+    обучения CatBoostRanker. Извлекает числовые, булевые и категориальные
+    фичи, выбирает таргет (teacher_score в приоритете, иначе responsiveness_score)
+    и группирует данные по snapshot_id.
+
+    Args:
+        df: DataFrame со снапшотами (должен содержать столбец snapshot_id)
+
+    Returns:
+        Tuple с четырьмя элементами:
+        - X: DataFrame с числовыми/булевыми/категориальными фичами
+        - y: Series с целевой меткой (teacher_score или responsiveness_score)
+        - group_id: Series с идентификатором запроса (snapshot_id)
+        - cat_feature_indices: Список индексов категориальных колонок в X
+
+    Raises:
+        ValueError: если DataFrame пуст или отсутствует столбец snapshot_id,
+                    или если нет доступных таргетов
     """
     if df is None or df.empty:
         raise ValueError("DataFrame с снапшотами пуст")

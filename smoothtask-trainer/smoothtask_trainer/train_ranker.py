@@ -9,7 +9,22 @@ from .features import build_feature_matrix
 
 
 def train_ranker(db_path: Path, model_out: Path, onnx_out: Path | None = None):
-    """Обучает CatBoostRanker на снапшотах и сохраняет модель."""
+    """
+    Обучает CatBoostRanker на снапшотах и сохраняет модель.
+    
+    Функция загружает снапшоты из SQLite базы данных, строит матрицу фич
+    и обучает CatBoostRanker с параметрами по умолчанию (YetiRank loss,
+    depth=6, learning_rate=0.1, iterations=500).
+    
+    Args:
+        db_path: Путь к SQLite базе данных со снапшотами
+        model_out: Путь для сохранения модели в формате JSON
+        onnx_out: Опциональный путь для сохранения модели в формате ONNX
+        
+    Raises:
+        FileNotFoundError: если база данных не существует
+        ValueError: если данные недостаточны для обучения
+    """
     df = load_snapshots_as_frame(db_path)
     X, y, group_id, cat_features = build_feature_matrix(df)
 
