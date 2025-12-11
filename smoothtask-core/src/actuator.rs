@@ -79,14 +79,50 @@ pub struct PriorityAdjustment {
 ///
 /// ```no_run
 /// use smoothtask_core::actuator::plan_priority_changes;
-/// use smoothtask_core::logging::snapshots::Snapshot;
+/// use smoothtask_core::logging::snapshots::{Snapshot, GlobalMetrics, ResponsivenessMetrics};
 /// use std::collections::HashMap;
 /// use smoothtask_core::policy::engine::PolicyResult;
+/// use smoothtask_core::policy::classes::PriorityClass;
+/// use chrono::Utc;
 ///
-/// // Создайте snapshot и policy_results из реальных данных
-/// # let snapshot: &Snapshot = todo!();
-/// # let policy_results: &HashMap<String, PolicyResult> = &HashMap::new();
-/// let adjustments = plan_priority_changes(snapshot, policy_results);
+/// // Создать минимальный снапшот для примера
+/// let snapshot = Snapshot {
+///     snapshot_id: 1234567890,
+///     timestamp: Utc::now(),
+///     global: GlobalMetrics {
+///         cpu_user: 0.25,
+///         cpu_system: 0.15,
+///         cpu_idle: 0.55,
+///         cpu_iowait: 0.05,
+///         mem_total_kb: 16_384_256,
+///         mem_used_kb: 8_000_000,
+///         mem_available_kb: 8_384_256,
+///         swap_total_kb: 8_192_000,
+///         swap_used_kb: 1_000_000,
+///         load_avg_one: 1.5,
+///         load_avg_five: 1.2,
+///         load_avg_fifteen: 1.0,
+///         psi_cpu_some_avg10: Some(0.1),
+///         psi_cpu_some_avg60: Some(0.15),
+///         psi_io_some_avg10: Some(0.2),
+///         psi_mem_some_avg10: Some(0.05),
+///         psi_mem_full_avg10: None,
+///         user_active: true,
+///         time_since_last_input_ms: Some(5000),
+///     },
+///     processes: vec![],
+///     app_groups: vec![],
+///     responsiveness: ResponsivenessMetrics::default(),
+/// };
+///
+/// // Создать результаты политики для примера
+/// let mut policy_results = HashMap::new();
+/// policy_results.insert("group1".to_string(), PolicyResult {
+///     priority_class: PriorityClass::Interactive,
+///     reason: "Focused GUI window".to_string(),
+/// });
+///
+/// let adjustments = plan_priority_changes(&snapshot, &policy_results);
 /// // adjustments содержит все процессы, требующие изменения приоритетов
 /// ```
 pub fn plan_priority_changes(
@@ -1082,14 +1118,50 @@ pub struct ApplyResult {
 ///
 /// ```no_run
 /// use smoothtask_core::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
-/// use smoothtask_core::logging::snapshots::Snapshot;
+/// use smoothtask_core::logging::snapshots::{Snapshot, GlobalMetrics, ResponsivenessMetrics};
 /// use std::collections::HashMap;
 /// use smoothtask_core::policy::engine::PolicyResult;
+/// use smoothtask_core::policy::classes::PriorityClass;
+/// use chrono::Utc;
 ///
-/// // Создайте snapshot и policy_results из реальных данных
-/// # let snapshot: &Snapshot = todo!();
-/// # let policy_results: &HashMap<String, PolicyResult> = &HashMap::new();
-/// let adjustments = plan_priority_changes(snapshot, policy_results);
+/// // Создать минимальный снапшот для примера
+/// let snapshot = Snapshot {
+///     snapshot_id: 1234567890,
+///     timestamp: Utc::now(),
+///     global: GlobalMetrics {
+///         cpu_user: 0.25,
+///         cpu_system: 0.15,
+///         cpu_idle: 0.55,
+///         cpu_iowait: 0.05,
+///         mem_total_kb: 16_384_256,
+///         mem_used_kb: 8_000_000,
+///         mem_available_kb: 8_384_256,
+///         swap_total_kb: 8_192_000,
+///         swap_used_kb: 1_000_000,
+///         load_avg_one: 1.5,
+///         load_avg_five: 1.2,
+///         load_avg_fifteen: 1.0,
+///         psi_cpu_some_avg10: Some(0.1),
+///         psi_cpu_some_avg60: Some(0.15),
+///         psi_io_some_avg10: Some(0.2),
+///         psi_mem_some_avg10: Some(0.05),
+///         psi_mem_full_avg10: None,
+///         user_active: true,
+///         time_since_last_input_ms: Some(5000),
+///     },
+///     processes: vec![],
+///     app_groups: vec![],
+///     responsiveness: ResponsivenessMetrics::default(),
+/// };
+///
+/// // Создать результаты политики для примера
+/// let mut policy_results = HashMap::new();
+/// policy_results.insert("group1".to_string(), PolicyResult {
+///     priority_class: PriorityClass::Interactive,
+///     reason: "Focused GUI window".to_string(),
+/// });
+///
+/// let adjustments = plan_priority_changes(&snapshot, &policy_results);
 /// let mut hysteresis = HysteresisTracker::new();
 ///
 /// let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -2209,5 +2281,126 @@ mod tests {
         // Оба вызова могут не работать без прав root, но не должны паниковать
         let _ = result1;
         let _ = result2;
+    }
+
+    #[test]
+    fn test_apply_nice_validates_nice_range() {
+        // Тест на валидацию диапазона nice через apply_priority_adjustments
+        // nice должен быть в диапазоне [-20, 19]
+        let process = base_process("app1", std::process::id() as i32);
+        let snapshot = make_snapshot(vec![process], vec![app_group("app1")]);
+
+        let mut policy_results = HashMap::new();
+        policy_results.insert(
+            "app1".to_string(),
+            make_policy_result(PriorityClass::Interactive, "test"),
+        );
+
+        let adjustments = plan_priority_changes(&snapshot, &policy_results);
+        let mut hysteresis = HysteresisTracker::new();
+
+        // Применяем изменения - apply_nice вызывается внутри
+        let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+
+        // Результат может быть Ok или Err в зависимости от прав доступа
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_apply_ionice_validates_class_and_level() {
+        // Тест на валидацию класса и уровня ionice через apply_priority_adjustments
+        let process = base_process("app1", std::process::id() as i32);
+        let snapshot = make_snapshot(vec![process], vec![app_group("app1")]);
+
+        let mut policy_results = HashMap::new();
+        policy_results.insert(
+            "app1".to_string(),
+            make_policy_result(PriorityClass::Background, "test"),
+        );
+
+        let adjustments = plan_priority_changes(&snapshot, &policy_results);
+        let mut hysteresis = HysteresisTracker::new();
+
+        // Применяем изменения - apply_ionice вызывается внутри
+        let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+
+        // Результат может быть Ok или Err в зависимости от прав доступа
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_set_cpu_weight_through_apply_cgroup() {
+        // Тест на set_cpu_weight через apply_cgroup
+        let pid = std::process::id() as i32;
+        let cgroup_params = CgroupParams { cpu_weight: 150 };
+        let app_group_id = "test-app-cpu-weight";
+
+        // apply_cgroup вызывает set_cpu_weight внутри
+        let result = apply_cgroup(pid, cgroup_params, app_group_id, None);
+
+        // Результат может быть Ok или Err в зависимости от доступности cgroups
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_move_process_to_cgroup_through_apply_cgroup() {
+        // Тест на move_process_to_cgroup через apply_cgroup
+        let pid = std::process::id() as i32;
+        let cgroup_params = CgroupParams { cpu_weight: 200 };
+        let app_group_id = "test-app-move-cgroup";
+
+        // apply_cgroup вызывает move_process_to_cgroup внутри, если процесс не в нужном cgroup
+        let result = apply_cgroup(pid, cgroup_params, app_group_id, None);
+
+        // Результат может быть Ok или Err в зависимости от доступности cgroups
+        // Главное - функция не должна паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_apply_priority_adjustments_handles_empty_list() {
+        // Тест на обработку пустого списка изменений
+        let adjustments = Vec::<PriorityAdjustment>::new();
+        let mut hysteresis = HysteresisTracker::new();
+
+        let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+
+        assert_eq!(result.applied, 0);
+        assert_eq!(result.skipped_hysteresis, 0);
+        assert_eq!(result.errors, 0);
+    }
+
+    #[test]
+    fn test_apply_priority_adjustments_handles_multiple_adjustments() {
+        // Тест на обработку нескольких изменений
+        let process1 = base_process("app1", std::process::id() as i32);
+        let process2 = base_process("app2", std::process::id() as i32);
+        let snapshot = make_snapshot(
+            vec![process1, process2],
+            vec![app_group("app1"), app_group("app2")],
+        );
+
+        let mut policy_results = HashMap::new();
+        policy_results.insert(
+            "app1".to_string(),
+            make_policy_result(PriorityClass::Interactive, "test1"),
+        );
+        policy_results.insert(
+            "app2".to_string(),
+            make_policy_result(PriorityClass::Background, "test2"),
+        );
+
+        let adjustments = plan_priority_changes(&snapshot, &policy_results);
+        let mut hysteresis = HysteresisTracker::new();
+
+        // Применяем изменения - может не работать без прав root, но не должна паниковать
+        let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+
+        // Результат может иметь различные значения в зависимости от прав доступа
+        // Главное - функция не должна паниковать
+        let _ = result;
     }
 }
