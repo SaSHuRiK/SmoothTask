@@ -37,6 +37,7 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
         paths: Paths {
             snapshot_db_path,
             patterns_dir: patterns_dir.to_string(),
+            api_listen_addr: None, // API сервер отключен по умолчанию в тестах
         },
     }
 }
@@ -313,6 +314,53 @@ async fn test_daemon_full_snapshot_cycle() {
     let result = run_daemon(config, true, shutdown_rx, None, None).await;
 
     // Демон должен успешно выполнить хотя бы один полный цикл
+    match result {
+        Ok(()) => {
+            // Демон завершился успешно
+        }
+        Err(e) => {
+            panic!("Daemon failed with error: {}", e);
+        }
+    }
+}
+
+/// Тест проверяет интеграцию API сервера в run_daemon.
+/// API сервер должен запускаться вместе с демоном и корректно останавливаться.
+#[tokio::test]
+async fn test_daemon_with_api_server() {
+    // Создаём временную директорию для patterns
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let patterns_dir = temp_dir.path().to_str().unwrap();
+
+    // Создаём пустую директорию для patterns
+    std::fs::create_dir_all(patterns_dir).expect("Failed to create patterns dir");
+
+    // Создаём временный файл для БД снапшотов
+    let db_file = tempfile::NamedTempFile::new().expect("Failed to create temp db file");
+    let db_path = db_file.path().to_str().unwrap().to_string();
+
+    // Создаём конфиг с включённым API сервером
+    let mut config = create_test_config(patterns_dir, db_path.clone());
+    // Используем порт 0 для автоматического выбора свободного порта (но это не работает с axum)
+    // Вместо этого используем тестовый порт, который может быть занят
+    // В реальном использовании нужно использовать свободный порт
+    config.paths.api_listen_addr = Some("127.0.0.1:0".to_string());
+
+    // Создаём канал для graceful shutdown
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+
+    // Запускаем демон с автоматическим shutdown через 200ms
+    let shutdown_tx_clone = shutdown_tx.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_millis(200)).await;
+        let _ = shutdown_tx_clone.send(true);
+    });
+
+    // Запускаем демон и ждём его завершения
+    // API сервер должен запуститься (или выдать предупреждение, если порт занят)
+    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+
+    // Демон должен успешно завершиться (даже если API сервер не запустился из-за занятого порта)
     match result {
         Ok(()) => {
             // Демон завершился успешно

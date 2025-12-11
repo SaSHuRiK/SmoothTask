@@ -536,6 +536,7 @@ mod tests {
             paths: Paths {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: None,
             },
         }
     }
@@ -563,6 +564,7 @@ mod tests {
             paths: Paths {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: None,
             },
         }
     }

@@ -17,6 +17,7 @@ use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
+use crate::api::{ApiServer, ApiServerHandle};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
 use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
@@ -24,7 +25,10 @@ use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
-use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
+use crate::metrics::system::{
+    collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, ProcPaths,
+    SystemMetrics,
+};
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
     X11Introspector,
@@ -600,6 +604,77 @@ pub async fn run_daemon(
     // Состояние для вычисления дельт CPU
     let mut prev_cpu_times: Option<SystemMetrics> = None;
 
+    // Инициализация структур данных для API сервера
+    let stats_arc = Arc::new(tokio::sync::RwLock::new(DaemonStats::new()));
+    // Создаём дефолтные SystemMetrics для инициализации API сервера
+    let system_metrics_arc = Arc::new(tokio::sync::RwLock::new(SystemMetrics {
+        cpu_times: CpuTimes {
+            user: 0,
+            nice: 0,
+            system: 0,
+            idle: 0,
+            iowait: 0,
+            irq: 0,
+            softirq: 0,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        },
+        memory: MemoryInfo {
+            mem_total_kb: 0,
+            mem_available_kb: 0,
+            mem_free_kb: 0,
+            buffers_kb: 0,
+            cached_kb: 0,
+            swap_total_kb: 0,
+            swap_free_kb: 0,
+        },
+        load_avg: LoadAvg {
+            one: 0.0,
+            five: 0.0,
+            fifteen: 0.0,
+        },
+        pressure: PressureMetrics::default(),
+    }));
+    let processes_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::ProcessRecord>>> =
+        Arc::new(tokio::sync::RwLock::new(Vec::new()));
+    let app_groups_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>> =
+        Arc::new(tokio::sync::RwLock::new(Vec::new()));
+
+    // Запуск API сервера (если указан адрес)
+    let mut api_server_handle: Option<ApiServerHandle> = None;
+    if let Some(ref api_addr_str) = config.paths.api_listen_addr {
+        match api_addr_str.parse::<std::net::SocketAddr>() {
+            Ok(addr) => {
+                info!("Starting API server on {}", addr);
+                let api_server = ApiServer::with_all(
+                    addr,
+                    Some(Arc::clone(&stats_arc)),
+                    Some(Arc::clone(&system_metrics_arc)),
+                    Some(Arc::clone(&processes_arc)),
+                    Some(Arc::clone(&app_groups_arc)),
+                );
+                match api_server.start().await {
+                    Ok(handle) => {
+                        api_server_handle = Some(handle);
+                        info!("API server started successfully on {}", addr);
+                    }
+                    Err(e) => {
+                        warn!("Failed to start API server: {}. Continuing without API.", e);
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Invalid API listen address '{}': {}. API server will not start.",
+                    api_addr_str, e
+                );
+            }
+        }
+    } else {
+        debug!("API server disabled (api_listen_addr not configured)");
+    }
+
     info!("SmoothTask daemon started, entering main loop");
 
     // Вызываем callback уведомления о готовности (например, для systemd notify)
@@ -734,6 +809,17 @@ pub async fn run_daemon(
         // Обновляем статистику
         stats.record_successful_iteration(elapsed_ms, applied_count as u64, error_count as u64);
 
+        // Обновляем данные для API сервера
+        {
+            *stats_arc.write().await = stats.clone();
+            // Обновляем system_metrics из prev_cpu_times (который обновляется в collect_snapshot)
+            if let Some(ref system_metrics) = prev_cpu_times {
+                *system_metrics_arc.write().await = system_metrics.clone();
+            }
+            *processes_arc.write().await = snapshot.processes.clone();
+            *app_groups_arc.write().await = snapshot.app_groups.clone();
+        }
+
         // Логируем статистику периодически
         if iteration % STATS_LOG_INTERVAL == 0 {
             stats.log_stats();
@@ -794,6 +880,16 @@ pub async fn run_daemon(
 
     // Останавливаем probe-thread перед завершением
     latency_probe.stop();
+
+    // Останавливаем API сервер перед завершением
+    if let Some(handle) = api_server_handle {
+        info!("Stopping API server");
+        if let Err(e) = handle.shutdown().await {
+            warn!("Failed to stop API server gracefully: {}", e);
+        } else {
+            info!("API server stopped successfully");
+        }
+    }
 
     Ok(())
 }

@@ -145,6 +145,18 @@ pub(crate) fn default_ui_loop_p95_threshold() -> f64 {
 pub struct Paths {
     pub snapshot_db_path: String,
     pub patterns_dir: String,
+    /// Адрес для прослушивания API сервера (например, "127.0.0.1:8080").
+    /// Если не указан, API сервер не запускается.
+    #[serde(default = "default_api_listen_addr")]
+    pub api_listen_addr: Option<String>,
+}
+
+/// Возвращает дефолтное значение для `api_listen_addr`.
+///
+/// По умолчанию API сервер запускается на "127.0.0.1:8080".
+/// Если нужно отключить API сервер, можно указать `api_listen_addr: null` в конфиге.
+pub(crate) fn default_api_listen_addr() -> Option<String> {
+    Some("127.0.0.1:8080".to_string())
 }
 
 impl Config {
