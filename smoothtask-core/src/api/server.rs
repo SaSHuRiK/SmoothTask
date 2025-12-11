@@ -29,6 +29,8 @@ pub struct ApiState {
     responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>,
     /// Текущая конфигурация демона (опционально)
     config: Option<Arc<crate::config::Config>>,
+    /// База данных паттернов для классификации процессов (опционально)
+    pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
 }
 
 impl ApiState {
@@ -41,6 +43,7 @@ impl ApiState {
             app_groups: None,
             responsiveness_metrics: None,
             config: None,
+            pattern_database: None,
         }
     }
 
@@ -53,6 +56,7 @@ impl ApiState {
             app_groups: None,
             responsiveness_metrics: None,
             config: None,
+            pattern_database: None,
         }
     }
 
@@ -67,6 +71,7 @@ impl ApiState {
             app_groups: None,
             responsiveness_metrics: None,
             config: None,
+            pattern_database: None,
         }
     }
 
@@ -84,6 +89,7 @@ impl ApiState {
             app_groups,
             responsiveness_metrics: None,
             config: None,
+            pattern_database: None,
         }
     }
 
@@ -102,6 +108,7 @@ impl ApiState {
             app_groups,
             responsiveness_metrics: None,
             config,
+            pattern_database: None,
         }
     }
 
@@ -123,6 +130,30 @@ impl ApiState {
             app_groups,
             responsiveness_metrics,
             config,
+            pattern_database: None,
+        }
+    }
+
+    /// Создаёт новое состояние API сервера со всеми данными, включая метрики отзывчивости, конфигурацию и базу паттернов.
+    pub fn with_all_and_responsiveness_and_config_and_patterns(
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+        responsiveness_metrics: Option<
+            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
+        >,
+        config: Option<Arc<crate::config::Config>>,
+        pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+    ) -> Self {
+        Self {
+            daemon_stats,
+            system_metrics,
+            processes,
+            app_groups,
+            responsiveness_metrics,
+            config,
+            pattern_database,
         }
     }
 }
@@ -223,9 +254,14 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/classes",
                 "method": "GET",
                 "description": "Получение информации о всех доступных классах QoS и их параметрах приоритета"
+            },
+            {
+                "path": "/api/patterns",
+                "method": "GET",
+                "description": "Получение информации о загруженных паттернах для классификации процессов"
             }
         ],
-        "count": 12
+        "count": 13
     }))
 }
 
@@ -284,6 +320,58 @@ async fn classes_handler() -> Json<Value> {
     }))
 }
 
+/// Обработчик для endpoint `/api/patterns`.
+///
+/// Возвращает информацию о загруженных паттернах для классификации процессов (если доступны).
+async fn patterns_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.pattern_database {
+        Some(pattern_db) => {
+            let patterns_by_category: std::collections::HashMap<_, _> =
+                pattern_db.all_patterns().iter().fold(
+                    std::collections::HashMap::new(),
+                    |mut acc, (category, pattern)| {
+                        acc.entry(category.0.clone())
+                            .or_insert_with(Vec::new)
+                            .push(json!({
+                                "name": pattern.name,
+                                "label": pattern.label,
+                                "exe_patterns": pattern.exe_patterns,
+                                "desktop_patterns": pattern.desktop_patterns,
+                                "cgroup_patterns": pattern.cgroup_patterns,
+                                "tags": pattern.tags,
+                            }));
+                        acc
+                    },
+                );
+
+            let categories: Vec<Value> = patterns_by_category
+                .into_iter()
+                .map(|(category, patterns)| {
+                    json!({
+                        "category": category,
+                        "patterns": patterns,
+                        "count": patterns.len()
+                    })
+                })
+                .collect();
+
+            Ok(Json(json!({
+                "status": "ok",
+                "categories": categories,
+                "total_patterns": pattern_db.all_patterns().len(),
+                "total_categories": categories.len()
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "ok",
+            "categories": [],
+            "total_patterns": 0,
+            "total_categories": 0,
+            "message": "Pattern database not available (daemon may not be running or patterns not loaded)"
+        }))),
+    }
+}
+
 /// Создаёт роутер для API.
 fn create_router(state: ApiState) -> Router {
     Router::new()
@@ -299,6 +387,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
         .route("/api/classes", get(classes_handler))
+        .route("/api/patterns", get(patterns_handler))
         .with_state(state)
 }
 
@@ -644,6 +733,44 @@ impl ApiServer {
                 app_groups,
                 responsiveness_metrics,
                 config,
+            ),
+        }
+    }
+
+    /// Создаёт новый API сервер со всеми данными, включая метрики отзывчивости, конфигурацию и базу паттернов.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `daemon_stats`: Статистика работы демона (опционально)
+    /// - `system_metrics`: Системные метрики (опционально)
+    /// - `processes`: Список процессов (опционально)
+    /// - `app_groups`: Список групп приложений (опционально)
+    /// - `responsiveness_metrics`: Метрики отзывчивости (опционально)
+    /// - `config`: Конфигурация демона (опционально)
+    /// - `pattern_database`: База данных паттернов для классификации процессов (опционально)
+    pub fn with_all_and_responsiveness_and_config_and_patterns(
+        addr: std::net::SocketAddr,
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+        responsiveness_metrics: Option<
+            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
+        >,
+        config: Option<Arc<crate::config::Config>>,
+        pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+    ) -> Self {
+        Self {
+            addr,
+            state: ApiState::with_all_and_responsiveness_and_config_and_patterns(
+                daemon_stats,
+                system_metrics,
+                processes,
+                app_groups,
+                responsiveness_metrics,
+                config,
+                pattern_database,
             ),
         }
     }
@@ -1502,10 +1629,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 12);
+        assert_eq!(json["count"], 13);
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 12);
+        assert_eq!(endpoints.len(), 13);
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -1525,6 +1652,7 @@ mod tests {
         assert!(endpoint_paths.contains(&"/api/appgroups/:id"));
         assert!(endpoint_paths.contains(&"/api/config"));
         assert!(endpoint_paths.contains(&"/api/classes"));
+        assert!(endpoint_paths.contains(&"/api/patterns"));
 
         // Проверяем структуру endpoint
         let first_endpoint = &endpoints[0];
@@ -1583,5 +1711,99 @@ mod tests {
         let idle = classes.iter().find(|c| c["name"] == "IDLE").unwrap();
         assert_eq!(idle["params"]["ionice"]["class"], 3);
         assert_eq!(idle["params"]["ionice"]["class_description"], "idle");
+    }
+
+    #[tokio::test]
+    async fn test_patterns_handler_without_patterns() {
+        let state = ApiState::new();
+        let result = patterns_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["total_patterns"], 0);
+        assert_eq!(value["total_categories"], 0);
+        assert!(value["categories"].is_array());
+        assert_eq!(value["categories"].as_array().unwrap().len(), 0);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_patterns_handler_with_patterns() {
+        use crate::classify::rules::PatternDatabase;
+        use tempfile::TempDir;
+
+        // Создаём временную директорию с паттернами
+        let temp_dir = TempDir::new().unwrap();
+        let patterns_dir = temp_dir.path();
+
+        // Создаём тестовый YAML файл с паттернами
+        let pattern_content = r#"
+category: browser
+apps:
+  - name: firefox
+    label: Mozilla Firefox
+    exe_patterns:
+      - "firefox"
+      - "firefox-*-bin"
+    desktop_patterns:
+      - "firefox.desktop"
+    cgroup_patterns:
+      - "*firefox*"
+    tags:
+      - "browser"
+      - "gui"
+  - name: chromium
+    label: Chromium
+    exe_patterns:
+      - "chromium"
+      - "chromium-browser"
+    tags:
+      - "browser"
+      - "gui"
+"#;
+        std::fs::write(patterns_dir.join("browser.yml"), pattern_content).unwrap();
+
+        // Загружаем паттерны
+        let pattern_db = PatternDatabase::load(patterns_dir).unwrap();
+        let pattern_db_arc = Arc::new(pattern_db);
+        let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(pattern_db_arc),
+        );
+
+        let result = patterns_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["total_patterns"], 2);
+        assert_eq!(value["total_categories"], 1);
+        assert!(value["categories"].is_array());
+
+        let categories = value["categories"].as_array().unwrap();
+        assert_eq!(categories.len(), 1);
+
+        let browser_category = &categories[0];
+        assert_eq!(browser_category["category"], "browser");
+        assert_eq!(browser_category["count"], 2);
+        assert!(browser_category["patterns"].is_array());
+
+        let patterns = browser_category["patterns"].as_array().unwrap();
+        assert_eq!(patterns.len(), 2);
+
+        // Проверяем структуру паттерна
+        let firefox_pattern = patterns.iter().find(|p| p["name"] == "firefox").unwrap();
+        assert_eq!(firefox_pattern["name"], "firefox");
+        assert_eq!(firefox_pattern["label"], "Mozilla Firefox");
+        assert!(firefox_pattern["exe_patterns"].is_array());
+        assert!(firefox_pattern["desktop_patterns"].is_array());
+        assert!(firefox_pattern["cgroup_patterns"].is_array());
+        assert!(firefox_pattern["tags"].is_array());
     }
 }

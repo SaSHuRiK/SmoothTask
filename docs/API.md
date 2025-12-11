@@ -828,6 +828,86 @@ curl http://127.0.0.1:8080/api/classes
 
 ---
 
+### GET /api/patterns
+
+Получение информации о загруженных паттернах для классификации процессов.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/patterns
+```
+
+**Ответ (с паттернами):**
+```json
+{
+  "status": "ok",
+  "categories": [
+    {
+      "category": "browser",
+      "patterns": [
+        {
+          "name": "firefox",
+          "label": "Mozilla Firefox",
+          "exe_patterns": ["firefox", "firefox-*-bin"],
+          "desktop_patterns": ["firefox.desktop"],
+          "cgroup_patterns": ["*firefox*"],
+          "tags": ["browser", "gui"]
+        },
+        {
+          "name": "chromium",
+          "label": "Chromium",
+          "exe_patterns": ["chromium", "chromium-browser"],
+          "desktop_patterns": [],
+          "cgroup_patterns": [],
+          "tags": ["browser", "gui"]
+        }
+      ],
+      "count": 2
+    }
+  ],
+  "total_patterns": 2,
+  "total_categories": 1
+}
+```
+
+**Ответ (без паттернов):**
+```json
+{
+  "status": "ok",
+  "categories": [],
+  "total_patterns": 0,
+  "total_categories": 0,
+  "message": "Pattern database not available (daemon may not be running or patterns not loaded)"
+}
+```
+
+**Поля:**
+- `status` (string) - статус ответа (всегда "ok")
+- `categories` (array) - массив объектов с категориями паттернов
+  - `category` (string) - название категории (например, "browser", "ide", "terminal")
+  - `patterns` (array) - массив паттернов в этой категории
+    - `name` (string) - имя паттерна (идентификатор)
+    - `label` (string) - человекочитаемое название приложения
+    - `exe_patterns` (array) - паттерны для сопоставления с именем исполняемого файла (поддерживаются wildcards: `*`, `?`)
+    - `desktop_patterns` (array) - паттерны для сопоставления с desktop-файлом
+    - `cgroup_patterns` (array) - паттерны для сопоставления с путём cgroup
+    - `tags` (array) - теги, которые присваиваются процессу при совпадении
+  - `count` (integer) - количество паттернов в категории
+- `total_patterns` (integer) - общее количество паттернов во всех категориях
+- `total_categories` (integer) - количество категорий
+- `message` (string, опционально) - сообщение об отсутствии данных (если паттерны не загружены)
+
+**Примечания:**
+- Endpoint возвращает все паттерны, загруженные из YAML файлов в директории `patterns_dir` (указана в конфигурации)
+- Паттерны группируются по категориям для удобства просмотра
+- Если паттерны не загружены (демон не запущен или произошла ошибка загрузки), endpoint вернёт пустой список с сообщением
+- Паттерны используются для классификации процессов и определения их типа и тегов
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
 ## Обновление данных
 
 Данные в API обновляются при каждой итерации демона (согласно `polling_interval_ms` в конфигурации). Это означает, что:
@@ -838,6 +918,7 @@ curl http://127.0.0.1:8080/api/classes
 - Список процессов (`/api/processes`) обновляется после каждого сбора снапшота
 - Список групп приложений (`/api/appgroups`) обновляется после каждого сбора снапшота
 - Конфигурация (`/api/config`) устанавливается при запуске демона и не изменяется во время работы
+- Паттерны (`/api/patterns`) загружаются при запуске демона и не изменяются во время работы
 
 ## Обработка ошибок
 
