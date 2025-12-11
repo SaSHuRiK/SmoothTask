@@ -323,6 +323,89 @@ curl http://127.0.0.1:8080/api/processes
 
 ---
 
+### GET /api/processes/:pid
+
+Получение информации о конкретном процессе по PID.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/processes/1234
+```
+
+**Ответ (если процесс найден):**
+```json
+{
+  "status": "ok",
+  "process": {
+    "pid": 1234,
+    "ppid": 1,
+    "uid": 1000,
+    "gid": 1000,
+    "exe": "/usr/bin/firefox",
+    "cmdline": "firefox",
+    "cgroup_path": "/user.slice/user-1000.slice/session-2.scope",
+    "systemd_unit": "session-2.scope",
+    "app_group_id": "firefox-1234",
+    "state": "S",
+    "start_time": 1234567890,
+    "uptime_sec": 3600,
+    "tty_nr": 0,
+    "has_tty": false,
+    "cpu_share_1s": 0.1,
+    "cpu_share_10s": 0.05,
+    "io_read_bytes": 1000000,
+    "io_write_bytes": 500000,
+    "rss_mb": 500,
+    "swap_mb": 0,
+    "voluntary_ctx": 1000,
+    "involuntary_ctx": 100,
+    "has_gui_window": true,
+    "is_focused_window": true,
+    "window_state": "Focused",
+    "env_has_display": true,
+    "env_has_wayland": false,
+    "env_term": null,
+    "env_ssh": false,
+    "is_audio_client": false,
+    "has_active_stream": false,
+    "process_type": "gui",
+    "tags": ["browser"],
+    "nice": 0,
+    "ionice_class": null,
+    "ionice_prio": null,
+    "teacher_priority_class": null,
+    "teacher_score": null
+  }
+}
+```
+
+**Ответ (если процесс не найден):**
+```json
+{
+  "status": "error",
+  "error": "not_found",
+  "message": "Process with PID 1234 not found"
+}
+```
+
+**Ответ (если процессы недоступны):**
+```json
+{
+  "status": "error",
+  "error": "not_available",
+  "message": "Processes not available (daemon may not be running or no processes collected yet)"
+}
+```
+
+**Параметры пути:**
+- `pid` (integer) - идентификатор процесса
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно (процесс найден или недоступен)
+- В случае ошибки возвращается JSON с полем `status: "error"` и описанием ошибки
+
+---
+
 ### GET /api/appgroups
 
 Получение списка последних групп приложений.
@@ -382,6 +465,63 @@ curl http://127.0.0.1:8080/api/appgroups
 
 **Статус коды:**
 - `200 OK` - запрос выполнен успешно
+
+---
+
+### GET /api/appgroups/:id
+
+Получение информации о конкретной группе приложений по ID.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/appgroups/firefox-1234
+```
+
+**Ответ (если группа найдена):**
+```json
+{
+  "status": "ok",
+  "app_group": {
+    "app_group_id": "firefox-1234",
+    "root_pid": 1234,
+    "process_ids": [1234, 1235, 1236],
+    "app_name": "firefox",
+    "total_cpu_share": 0.15,
+    "total_io_read_bytes": 5000000,
+    "total_io_write_bytes": 2000000,
+    "total_rss_mb": 1500,
+    "has_gui_window": true,
+    "is_focused_group": true,
+    "tags": ["browser", "gui"],
+    "priority_class": "interactive"
+  }
+}
+```
+
+**Ответ (если группа не найдена):**
+```json
+{
+  "status": "error",
+  "error": "not_found",
+  "message": "App group with ID 'firefox-1234' not found"
+}
+```
+
+**Ответ (если группы недоступны):**
+```json
+{
+  "status": "error",
+  "error": "not_available",
+  "message": "App groups not available (daemon may not be running or no groups collected yet)"
+}
+```
+
+**Параметры пути:**
+- `id` (string) - идентификатор группы приложений
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно (группа найдена или недоступна)
+- В случае ошибки возвращается JSON с полем `status: "error"` и описанием ошибки
 
 ---
 

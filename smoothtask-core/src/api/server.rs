@@ -1,7 +1,13 @@
 //! HTTP сервер для Control API.
 
 use anyhow::{Context, Result};
-use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::Json,
+    routing::get,
+    Router,
+};
 use serde_json::{json, Value};
 use std::sync::Arc;
 use tokio::net::TcpListener;
@@ -131,7 +137,9 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
         .route("/api/processes", get(processes_handler))
+        .route("/api/processes/:pid", get(process_by_pid_handler))
         .route("/api/appgroups", get(appgroups_handler))
+        .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
         .with_state(state)
 }
@@ -215,6 +223,66 @@ async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>,
             "status": "ok",
             "app_groups": null,
             "count": 0,
+            "message": "App groups not available (daemon may not be running or no groups collected yet)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/processes/:pid`.
+///
+/// Возвращает информацию о конкретном процессе по PID (если доступен).
+async fn process_by_pid_handler(
+    Path(pid): Path<i32>,
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
+    match &state.processes {
+        Some(processes_arc) => {
+            let processes = processes_arc.read().await;
+            match processes.iter().find(|p| p.pid == pid) {
+                Some(process) => Ok(Json(json!({
+                    "status": "ok",
+                    "process": process
+                }))),
+                None => Ok(Json(json!({
+                    "status": "error",
+                    "error": "not_found",
+                    "message": format!("Process with PID {} not found", pid)
+                }))),
+            }
+        }
+        None => Ok(Json(json!({
+            "status": "error",
+            "error": "not_available",
+            "message": "Processes not available (daemon may not be running or no processes collected yet)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/appgroups/:id`.
+///
+/// Возвращает информацию о конкретной группе приложений по ID (если доступна).
+async fn appgroup_by_id_handler(
+    Path(id): Path<String>,
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
+    match &state.app_groups {
+        Some(app_groups_arc) => {
+            let app_groups = app_groups_arc.read().await;
+            match app_groups.iter().find(|g| g.app_group_id == id) {
+                Some(app_group) => Ok(Json(json!({
+                    "status": "ok",
+                    "app_group": app_group
+                }))),
+                None => Ok(Json(json!({
+                    "status": "error",
+                    "error": "not_found",
+                    "message": format!("App group with ID '{}' not found", id)
+                }))),
+            }
+        }
+        None => Ok(Json(json!({
+            "status": "error",
+            "error": "not_available",
             "message": "App groups not available (daemon may not be running or no groups collected yet)"
         }))),
     }
@@ -969,5 +1037,195 @@ mod tests {
         let server = ApiServer::with_all_and_config(addr, None, None, None, None, Some(config_arc));
         // Проверяем, что сервер создан
         let _ = server;
+    }
+
+    #[tokio::test]
+    async fn test_process_by_pid_handler_without_processes() {
+        let state = ApiState::new();
+        let result = process_by_pid_handler(Path(1), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "not_available");
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_process_by_pid_handler_process_not_found() {
+        use crate::logging::snapshots::ProcessRecord;
+        let processes = vec![ProcessRecord {
+            pid: 1,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: Some("/sbin/init".to_string()),
+            cmdline: Some("init".to_string()),
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: Some(0.1),
+            cpu_share_10s: Some(0.05),
+            io_read_bytes: Some(1000),
+            io_write_bytes: Some(500),
+            rss_mb: Some(10),
+            swap_mb: Some(0),
+            voluntary_ctx: Some(100),
+            involuntary_ctx: Some(10),
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: vec![],
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        }];
+        let processes_arc = Arc::new(RwLock::new(processes));
+        let state = ApiState::with_all(None, None, Some(processes_arc), None);
+        let result = process_by_pid_handler(Path(999), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "not_found");
+        assert!(value["message"].as_str().unwrap().contains("999"));
+    }
+
+    #[tokio::test]
+    async fn test_process_by_pid_handler_process_found() {
+        use crate::logging::snapshots::ProcessRecord;
+        let processes = vec![ProcessRecord {
+            pid: 1,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: Some("/sbin/init".to_string()),
+            cmdline: Some("init".to_string()),
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: Some(0.1),
+            cpu_share_10s: Some(0.05),
+            io_read_bytes: Some(1000),
+            io_write_bytes: Some(500),
+            rss_mb: Some(10),
+            swap_mb: Some(0),
+            voluntary_ctx: Some(100),
+            involuntary_ctx: Some(10),
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: vec![],
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        }];
+        let processes_arc = Arc::new(RwLock::new(processes));
+        let state = ApiState::with_all(None, None, Some(processes_arc), None);
+        let result = process_by_pid_handler(Path(1), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["process"].is_object());
+        let process = &value["process"];
+        assert_eq!(process["pid"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_appgroup_by_id_handler_without_appgroups() {
+        let state = ApiState::new();
+        let result = appgroup_by_id_handler(Path("group-1".to_string()), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "not_available");
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_appgroup_by_id_handler_group_not_found() {
+        use crate::logging::snapshots::AppGroupRecord;
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "group-1".to_string(),
+            root_pid: 1,
+            process_ids: vec![1, 2, 3],
+            app_name: Some("test-app".to_string()),
+            total_cpu_share: Some(0.5),
+            total_io_read_bytes: Some(10000),
+            total_io_write_bytes: Some(5000),
+            total_rss_mb: Some(100),
+            has_gui_window: true,
+            is_focused_group: false,
+            tags: vec!["gui".to_string()],
+            priority_class: None,
+        }];
+        let app_groups_arc = Arc::new(RwLock::new(app_groups));
+        let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
+        let result = appgroup_by_id_handler(Path("group-999".to_string()), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "not_found");
+        assert!(value["message"].as_str().unwrap().contains("group-999"));
+    }
+
+    #[tokio::test]
+    async fn test_appgroup_by_id_handler_group_found() {
+        use crate::logging::snapshots::AppGroupRecord;
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "group-1".to_string(),
+            root_pid: 1,
+            process_ids: vec![1, 2, 3],
+            app_name: Some("test-app".to_string()),
+            total_cpu_share: Some(0.5),
+            total_io_read_bytes: Some(10000),
+            total_io_write_bytes: Some(5000),
+            total_rss_mb: Some(100),
+            has_gui_window: true,
+            is_focused_group: false,
+            tags: vec!["gui".to_string()],
+            priority_class: None,
+        }];
+        let app_groups_arc = Arc::new(RwLock::new(app_groups));
+        let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
+        let result = appgroup_by_id_handler(Path("group-1".to_string()), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["app_group"].is_object());
+        let app_group = &value["app_group"];
+        assert_eq!(app_group["app_group_id"], "group-1");
     }
 }
