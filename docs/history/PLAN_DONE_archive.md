@@ -4,6 +4,20 @@
   - Тип: Python / trainer / dataset
   - Примечания: json.JSONDecodeError оборачивается в ValueError с понятным текстом; добавлен тест на невалидную строку. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
+## Перенос из PLAN.md (ST-325–ST-322, 2025-12-11)
+
+- [x] ST-325: build_feature_matrix валидирует бесконечные числовые фичи
+  - Тип: Python / trainer / features
+  - Примечания: все числовые колонки проверяются на +/-inf с ValueError, добавлен тест на бесконечное значение в cpu_share_1s. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-324: build_feature_matrix отвергает бесконечные таргеты
+  - Тип: Python / trainer / features
+  - Примечания: teacher_score/responsiveness_score валидируются на +/-inf, выбрасывается понятный ValueError с примерами значений; добавлен тест на бесконечный таргет. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-322: Стабилизировать порядок строк в `load_snapshots_as_frame`
+  - Тип: Python / trainer / dataset
+  - Примечания: результат сортируется по snapshot_id/pid; добавлен тест на стабильный порядок при несортированных вставках. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 ## Перенос из PLAN.md (ST-321–ST-318, 2025-12-11)
 
 - [x] ST-321: Проверка числовых таргетов teacher/responsiveness

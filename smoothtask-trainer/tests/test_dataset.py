@@ -1113,3 +1113,174 @@ def test_load_snapshots_as_frame_accepts_numeric_string_booleans():
 
     finally:
         db_path.unlink(missing_ok=True)
+
+
+def test_load_snapshots_as_frame_process_ids_coerced_to_ints(tmp_path: Path):
+    """process_ids должны приводиться к списку целых чисел."""
+    db_path = tmp_path / "process_ids.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            app_group_id TEXT,
+            tags TEXT,
+            PRIMARY KEY (snapshot_id, pid)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            process_ids TEXT,
+            tags TEXT,
+            PRIMARY KEY (snapshot_id, app_group_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        (1, datetime.now(timezone.utc).isoformat()),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id, tags) VALUES (?, ?, ?, ?)",
+        (1, 500, "g1", json.dumps([" main ", "", None, 5])),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id, process_ids, tags) VALUES (?, ?, ?, ?)",
+        (1, "g1", json.dumps(["1", 2, 3.0, " 4 "]), json.dumps([" root ", "", "child"])),
+    )
+
+    conn.commit()
+    conn.close()
+
+    df = load_snapshots_as_frame(db_path)
+
+    assert df["process_ids"].iloc[0] == [1, 2, 3, 4]
+    assert df["tags"].iloc[0] == ["main", "5"]
+    assert df["tags_group"].iloc[0] == ["root", "child"]
+
+
+def test_load_snapshots_as_frame_rejects_invalid_process_ids(tmp_path: Path):
+    """Невалидные process_ids должны приводить к ValueError."""
+    db_path = tmp_path / "process_ids_invalid.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            app_group_id TEXT,
+            PRIMARY KEY (snapshot_id, pid)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            process_ids TEXT,
+            PRIMARY KEY (snapshot_id, app_group_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        (1, datetime.now(timezone.utc).isoformat()),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+        (1, 42, "g1"),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id, process_ids) VALUES (?, ?, ?)",
+        (1, "g1", json.dumps(["ok", 1.5, {"bad": 1}])),
+    )
+
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="process_ids"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_nested_tags(tmp_path: Path):
+    """Сложные элементы в tags должны выдавать ValueError."""
+    db_path = tmp_path / "tags_invalid.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        CREATE TABLE snapshots (
+            snapshot_id INTEGER PRIMARY KEY,
+            timestamp TEXT NOT NULL
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE processes (
+            snapshot_id INTEGER NOT NULL,
+            pid INTEGER NOT NULL,
+            app_group_id TEXT,
+            tags TEXT,
+            PRIMARY KEY (snapshot_id, pid)
+        )
+        """
+    )
+    cursor.execute(
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            tags TEXT,
+            PRIMARY KEY (snapshot_id, app_group_id)
+        )
+        """
+    )
+
+    cursor.execute(
+        "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+        (1, datetime.now(timezone.utc).isoformat()),
+    )
+    cursor.execute(
+        "INSERT INTO processes (snapshot_id, pid, app_group_id, tags) VALUES (?, ?, ?, ?)",
+        (1, 101, "g1", json.dumps(["ok", ["nested"]])),
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id, tags) VALUES (?, ?, ?)",
+        (1, "g1", json.dumps([{"bad": "tag"}])),
+    )
+
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="tags"):
+        load_snapshots_as_frame(db_path)

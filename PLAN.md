@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-335: Нормализовать JSON tags в processes/app_groups
+  - Тип: Python / trainer / dataset
+  - Примечания: tags приводятся к списку строк с обрезкой пробелов и отбрасыванием пустых значений; сложные элементы вызывают ValueError. Добавлены тесты на валидные и невалидные tags. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-334: Валидировать process_ids в app_groups в `load_snapshots_as_frame`
+  - Тип: Python / trainer / dataset
+  - Примечания: process_ids приводятся к спискам целых чисел; нечисловые элементы вызывают ValueError. Добавлены тесты на успешный и ошибочный сценарии. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 - [x] ST-333: build_feature_matrix отвергает NaN в числовых фичах
   - Тип: Python / trainer / features
   - Примечания: числовые фичи валидируются на NaN/NA с указанием строк; добавлен тест на ошибку при NaN, существующие сценарии проверены без предупреждений.
@@ -70,18 +78,6 @@
 - [x] ST-326: Валидация булевых фич в build_feature_matrix
   - Тип: Python / trainer / features
   - Примечания: булевые фичи принимают только True/False/0/1 (включая строковые "0"/"1" и float 0.0/1.0); при иных значениях выбрасывается понятный ValueError. Добавлены тесты на ошибочные и корректные значения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-325: build_feature_matrix валидирует бесконечные числовые фичи
-  - Тип: Python / trainer / features
-  - Примечания: все числовые колонки проверяются на +/-inf с ValueError, добавлен тест на бесконечное значение в cpu_share_1s. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-324: build_feature_matrix отвергает бесконечные таргеты
-  - Тип: Python / trainer / features
-  - Примечания: teacher_score/responsiveness_score валидируются на +/-inf, выбрасывается понятный ValueError с примерами значений; добавлен тест на бесконечный таргет. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-322: Стабилизировать порядок строк в `load_snapshots_as_frame`
-  - Тип: Python / trainer / dataset
-  - Примечания: результат сортируется по snapshot_id/pid; добавлен тест на стабильный порядок при несортированных вставках. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

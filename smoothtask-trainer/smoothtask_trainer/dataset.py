@@ -54,6 +54,96 @@ def _json_list(value: str | None) -> list:
     raise ValueError(f"Ожидался JSON-массив, получено: {type(parsed)}")
 
 
+def _parse_process_ids(value: str | None) -> list[int]:
+    """
+    Приводит process_ids к списку целых чисел с валидацией.
+
+    Допускаются числа или строковые представления чисел. Пустые строки и NaN
+    игнорируются. При других значениях выбрасывается ValueError с примерами.
+    """
+    parsed = _json_list(value)
+    if not parsed:
+        return []
+
+    process_ids: list[int] = []
+    invalid_values: list[object] = []
+
+    for item in parsed:
+        if item is None or (isinstance(item, float) and np.isnan(item)):
+            continue
+        if isinstance(item, (list, dict, set, tuple, bool)):
+            invalid_values.append(item)
+            continue
+        if isinstance(item, (int, np.integer)):
+            process_ids.append(int(item))
+            continue
+        if isinstance(item, (float, np.floating)):
+            if np.isfinite(item) and float(item).is_integer():
+                process_ids.append(int(item))
+            else:
+                invalid_values.append(item)
+            continue
+        if isinstance(item, str):
+            stripped = item.strip()
+            if stripped == "":
+                continue
+            try:
+                number = float(stripped)
+            except ValueError:
+                invalid_values.append(item)
+                continue
+            if not number.is_integer():
+                invalid_values.append(item)
+                continue
+            process_ids.append(int(number))
+            continue
+
+        invalid_values.append(item)
+
+    if invalid_values:
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Колонка 'process_ids' содержит нецелые значения: {sample_values}"
+        )
+
+    return process_ids
+
+
+def _normalize_tags_list(value: str | None, column: str) -> list[str]:
+    """
+    Приводит tags к списку строк, убирая пустые элементы и валидируя типы.
+
+    Допускаются скалярные значения (строки, числа, bool). Пустые строки и NaN
+    отбрасываются. Сложные структуры (list/dict/set/tuple) приводят к
+    ValueError.
+    """
+    parsed = _json_list(value)
+    if not parsed:
+        return []
+
+    normalized: list[str] = []
+    invalid_values: list[object] = []
+
+    for item in parsed:
+        if item is None or (isinstance(item, float) and np.isnan(item)):
+            continue
+        if isinstance(item, (list, dict, set, tuple)):
+            invalid_values.append(item)
+            continue
+        text = str(item).strip()
+        if text == "":
+            continue
+        normalized.append(text)
+
+    if invalid_values:
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Колонка '{column}' содержит некорректные элементы tags: {sample_values}"
+        )
+
+    return normalized
+
+
 def _coerce_bool_column(
     series: pd.Series, column: str, table: str
 ) -> pd.Series:
@@ -282,11 +372,15 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _to_bool(app_groups, _APP_GROUP_BOOL_COLS, table="app_groups")
 
     if "tags" in processes.columns:
-        processes["tags"] = processes["tags"].apply(_json_list)
+        processes["tags"] = processes["tags"].apply(
+            lambda value: _normalize_tags_list(value, column="tags")
+        )
     if "tags" in app_groups.columns:
-        app_groups["tags"] = app_groups["tags"].apply(_json_list)
+        app_groups["tags"] = app_groups["tags"].apply(
+            lambda value: _normalize_tags_list(value, column="tags")
+        )
     if "process_ids" in app_groups.columns:
-        app_groups["process_ids"] = app_groups["process_ids"].apply(_json_list)
+        app_groups["process_ids"] = app_groups["process_ids"].apply(_parse_process_ids)
 
     df = processes.merge(
         snapshots,
