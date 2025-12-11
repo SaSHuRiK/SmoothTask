@@ -129,8 +129,9 @@ def create_training_db(db_path: Path, num_snapshots: int = 3) -> None:
 
     for snapshot_idx in range(num_snapshots):
         snapshot_id = 1000 + snapshot_idx
+        # Создаём уникальные timestamp с разными секундами
         timestamp = (
-            timestamp_base.replace(microsecond=snapshot_idx * 1000)
+            timestamp_base.replace(second=timestamp_base.second + snapshot_idx)
         ).isoformat()
 
         # Снапшот
@@ -171,7 +172,7 @@ def create_training_db(db_path: Path, num_snapshots: int = 3) -> None:
                 0.15,
                 0.2,
                 0.05,
-                None,
+                0.0,  # psi_mem_full_avg10 = 0.0
                 1,  # user_active = True
                 5000 - snapshot_idx * 100,  # time_since_last_input_ms
                 5.0,
@@ -226,7 +227,7 @@ def create_training_db(db_path: Path, num_snapshots: int = 3) -> None:
                 1024 * 1024 * (snapshot_idx + 1),
                 512 * 1024 * (snapshot_idx + 1),
                 100 + snapshot_idx * 10,  # rss_mb
-                None,
+                0,  # swap_mb = 0
                 1000 + snapshot_idx * 100,
                 50 + snapshot_idx * 10,
                 0,  # has_gui_window = False
@@ -363,7 +364,7 @@ def test_train_ranker_with_empty_db():
         conn.close()
 
         # Ожидаем ошибку при попытке обучения на пустой БД
-        with pytest.raises(ValueError, match="DataFrame с снапшотами пуст"):
+        with pytest.raises(ValueError, match="не содержит записей"):
             train_ranker(db_path, model_json_path, onnx_out=None)
 
 
@@ -425,3 +426,69 @@ def test_train_ranker_with_fallback_target():
 
         with pytest.raises((ValueError, KeyError, CatBoostError)):
             train_ranker(db_path, model_json_path, onnx_out=None)
+
+
+def test_train_ranker_validates_db_path():
+    """Тест валидации пути к базе данных."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        nonexistent_db = Path(tmpdir) / "nonexistent.db"
+
+        # Ожидаем FileNotFoundError для несуществующей БД
+        with pytest.raises(FileNotFoundError, match="База данных не найдена"):
+            train_ranker(nonexistent_db, model_json_path, onnx_out=None)
+
+
+def test_train_ranker_validates_db_is_file():
+    """Тест валидации, что путь к БД указывает на файл."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        db_dir = Path(tmpdir) / "db_dir"
+        db_dir.mkdir()
+
+        # Ожидаем ValueError для директории вместо файла
+        with pytest.raises(ValueError, match="должен указывать на файл"):
+            train_ranker(db_dir, model_json_path, onnx_out=None)
+
+
+def test_train_ranker_validates_model_out_is_not_dir():
+    """Тест валидации, что путь для модели не указывает на директорию."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_training_db(db_path, num_snapshots=3)
+        model_dir = Path(tmpdir) / "model_dir"
+        model_dir.mkdir()
+
+        # Ожидаем ValueError для директории вместо файла
+        with pytest.raises(ValueError, match="указывает на директорию"):
+            train_ranker(db_path, model_dir, onnx_out=None)
+
+
+def test_train_ranker_validates_onnx_out_is_not_dir():
+    """Тест валидации, что путь для ONNX модели не указывает на директорию."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_training_db(db_path, num_snapshots=3)
+        model_json_path = Path(tmpdir) / "model.json"
+        onnx_dir = Path(tmpdir) / "onnx_dir"
+        onnx_dir.mkdir()
+
+        # Ожидаем ValueError для директории вместо файла
+        with pytest.raises(ValueError, match="указывает на директорию"):
+            train_ranker(db_path, model_json_path, onnx_out=onnx_dir)
+
+
+def test_train_ranker_creates_parent_directories():
+    """Тест создания родительских директорий для модели."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_training_db(db_path, num_snapshots=3)
+        # Путь с несуществующими родительскими директориями
+        model_json_path = Path(tmpdir) / "nested" / "deep" / "model.json"
+
+        # Не должно быть ошибки, директории должны быть созданы
+        train_ranker(db_path, model_json_path, onnx_out=None)
+
+        # Проверяем, что модель создана
+        assert model_json_path.exists(), "Модель должна быть создана"
+        assert model_json_path.parent.exists(), "Родительские директории должны быть созданы"

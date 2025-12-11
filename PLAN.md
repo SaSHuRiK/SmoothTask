@@ -39,6 +39,26 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-354: Улучшить обработку ошибок в export_model с более информативными сообщениями
+  - Тип: Python / trainer / export_model
+  - Примечания: Добавлена обработка ошибок при загрузке и сохранении моделей с информативными сообщениями. Добавлены тесты на невалидные файлы моделей и ошибки сохранения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_export_model.py`.
+
+- [x] ST-353: Добавить тесты на обработку ошибок CatBoost в train_ranker
+  - Тип: Python / trainer / train_ranker
+  - Примечания: Добавлены тесты на валидацию путей к БД и моделям, проверку директорий вместо файлов, создание родительских директорий. Исправлены тестовые данные для корректной работы с валидацией фич. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_train_ranker.py`.
+
+- [x] ST-352: Добавить валидацию параметров train_ranker (проверка путей, форматов)
+  - Тип: Python / trainer / train_ranker
+  - Примечания: Добавлена валидация входных параметров (проверка существования БД, что пути указывают на файлы, а не директории), улучшена обработка ошибок при обучении и сохранении моделей с информативными сообщениями. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_train_ranker.py`.
+
+- [x] ST-351: Улучшить валидацию ошибок булевых колонок в dataset
+  - Тип: Python / trainer / dataset
+  - Примечания: Сообщения об ошибках булевых колонок включают допустимые значения, добавлен тест на падение при строках "yes"/"maybe". Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-350: Поддержать строковые true/false в булевых колонках load_snapshots_as_frame
+  - Тип: Python / trainer / dataset
+  - Примечания: _coerce_bool_column принимает строки true/false в любом регистре, новые тесты подтверждают корректную конвертацию булевых колонок snapshots/processes/app_groups. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 - [x] ST-349: Нормализовать пробелы в tags при сборке категориальных фич
   - Тип: Python / trainer / features
   - Примечания: _prepare_tags_column триммит строки и элементы коллекций, пустые значения превращаются в "unknown"; добавлен тест на пробелы и пустые строки. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
@@ -70,14 +90,6 @@
 - [x] ST-342: Не допускать пустых таблиц snapshots/processes в trainer
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame теперь выбрасывает понятный ValueError, если таблицы snapshots или processes пусты; покрыто двумя unit-тестами.
-
-- [x] ST-341: Проверять соответствие process_ids app_groups существующим процессам
-  - Тип: Python / trainer / dataset
-  - Примечания: load_snapshots_as_frame валидирует, что process_ids каждой группы ссылаются на процессы того же snapshot; сообщение об ошибке содержит app_group_id и недостающие PID. Добавлен тест на отсутствие PID в groups.
-
-- [x] ST-340: Проверка уникальности snapshot_id в таблице snapshots
-  - Тип: Python / trainer / dataset
-  - Примечания: load_snapshots_as_frame теперь отклоняет дубликаты snapshot_id с понятным ValueError. Добавлен тест на повторяющиеся snapshot_id в snapshots.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

@@ -32,7 +32,13 @@ def export_model(model_path: Path, format: str, output_path: Path):
 
     # Загружаем модель
     model = CatBoostRanker()
-    model.load_model(model_path.as_posix(), format=model_format)
+    try:
+        model.load_model(model_path.as_posix(), format=model_format)
+    except Exception as e:
+        raise ValueError(
+            f"Ошибка при загрузке модели из {model_path} (формат: {model_format}): {e}. "
+            "Проверьте, что файл является валидной моделью CatBoost."
+        ) from e
 
     # Нормализуем формат экспорта
     export_format = format.lower()
@@ -46,4 +52,10 @@ def export_model(model_path: Path, format: str, output_path: Path):
         )
 
     # Экспортируем модель
-    model.save_model(output_path.as_posix(), format=export_format)
+    try:
+        model.save_model(output_path.as_posix(), format=export_format)
+    except Exception as e:
+        raise ValueError(
+            f"Ошибка при экспорте модели в {export_format}: {e}. "
+            f"Проверьте, что путь доступен для записи: {output_path}"
+        ) from e

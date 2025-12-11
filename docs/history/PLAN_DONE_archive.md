@@ -1,3 +1,13 @@
+## Перенос из PLAN.md (ST-341–ST-340, 2025-12-11)
+
+- [x] ST-341: Проверять соответствие process_ids app_groups существующим процессам
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame валидирует, что process_ids каждой группы ссылаются на процессы того же snapshot; сообщение об ошибке содержит app_group_id и недостающие PID. Добавлен тест на отсутствие PID в groups.
+
+- [x] ST-340: Проверка уникальности snapshot_id в таблице snapshots
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame теперь отклоняет дубликаты snapshot_id с понятным ValueError. Добавлен тест на повторяющиеся snapshot_id в snapshots.
+
 ## Перенос из PLAN.md (ST-339–ST-338, 2025-12-11)
 
 - [x] ST-339: Запретить отрицательные идентификаторы в ключевых колонках снапшотов

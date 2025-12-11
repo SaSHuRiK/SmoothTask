@@ -1198,7 +1198,7 @@ def test_load_snapshots_as_frame_invalid_boolean_values_raises():
         conn.close()
 
         with pytest.raises(
-            ValueError, match="невалидные булевые значения"
+            ValueError, match="невалидные булевые значения.*допустимо"
         ):
             load_snapshots_as_frame(db_path)
 
@@ -1276,6 +1276,83 @@ def test_load_snapshots_as_frame_accepts_numeric_string_booleans():
         assert df["env_has_display"].iloc[0] == True
         assert df["has_gui_window_group"].dtype == "boolean"
         assert df["has_gui_window_group"].iloc[0] == True
+
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_load_snapshots_as_frame_accepts_text_boolean_values():
+    """Строковые 'true'/'false' в любом регистре конвертируются в boolean."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user_active TEXT,
+                bad_responsiveness TEXT
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                has_tty TEXT,
+                has_gui_window TEXT,
+                env_has_wayland TEXT,
+                is_audio_client TEXT,
+                app_group_id TEXT,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL,
+                has_gui_window TEXT,
+                is_focused_group TEXT,
+                PRIMARY KEY (snapshot_id, app_group_id)
+            )
+            """
+        )
+
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp, user_active, bad_responsiveness) VALUES (?, ?, ?, ?)",
+            (10, datetime.now(timezone.utc).isoformat(), " TRUE ", "false"),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, has_tty, has_gui_window, env_has_wayland, is_audio_client, app_group_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (10, 222, "false", "FALSE", "TrUe", "FALSE", "g10"),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id, has_gui_window, is_focused_group) VALUES (?, ?, ?, ?)",
+            (10, "g10", "True", " FaLsE "),
+        )
+
+        conn.commit()
+        conn.close()
+
+        df = load_snapshots_as_frame(db_path)
+
+        assert df["user_active"].dtype == "boolean"
+        assert df["user_active"].iloc[0] == True
+        assert df["bad_responsiveness"].iloc[0] == False
+        assert df["has_tty"].iloc[0] == False
+        assert df["has_gui_window"].iloc[0] == False
+        assert df["env_has_wayland"].iloc[0] == True
+        assert df["is_audio_client"].iloc[0] == False
+        assert df["has_gui_window_group"].iloc[0] == True
+        assert df["is_focused_group"].iloc[0] == False
 
     finally:
         db_path.unlink(missing_ok=True)

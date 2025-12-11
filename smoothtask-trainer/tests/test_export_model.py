@@ -166,3 +166,32 @@ def test_export_model_rejects_directory_output_path():
 
         with pytest.raises(ValueError, match="директор"):
             export_model(model_json_path, "onnx", output_dir)
+
+
+def test_export_model_invalid_model_file():
+    """Тест обработки невалидного файла модели."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Создаём файл, который не является валидной моделью
+        invalid_model_path = Path(tmpdir) / "invalid.json"
+        invalid_model_path.write_text("Это не валидная модель CatBoost")
+
+        output_path = Path(tmpdir) / "model.onnx"
+
+        # Ожидаем ValueError с информативным сообщением
+        with pytest.raises(ValueError, match="Ошибка при загрузке модели"):
+            export_model(invalid_model_path, "onnx", output_path)
+
+
+def test_export_model_error_on_save():
+    """Тест обработки ошибки при сохранении модели."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        create_test_model(model_json_path, format="json")
+
+        # Создаём путь, который указывает на директорию (должна быть ошибка валидации)
+        output_dir = Path(tmpdir) / "output_dir"
+        output_dir.mkdir()
+
+        # Ожидаем ValueError при попытке сохранить в директорию
+        with pytest.raises(ValueError, match="указывает на директорию"):
+            export_model(model_json_path, "onnx", output_dir)

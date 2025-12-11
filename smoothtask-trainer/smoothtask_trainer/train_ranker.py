@@ -23,8 +23,22 @@ def train_ranker(db_path: Path, model_out: Path, onnx_out: Path | None = None):
 
     Raises:
         FileNotFoundError: если база данных не существует
-        ValueError: если данные недостаточны для обучения
+        ValueError: если данные недостаточны для обучения или параметры невалидны
     """
+    # Валидация входных параметров
+    if not db_path.exists():
+        raise FileNotFoundError(f"База данных не найдена: {db_path}")
+
+    if not db_path.is_file():
+        raise ValueError(f"Путь к базе данных должен указывать на файл: {db_path}")
+
+    if model_out.exists() and model_out.is_dir():
+        raise ValueError(f"Путь для сохранения модели указывает на директорию: {model_out}")
+
+    if onnx_out is not None:
+        if onnx_out.exists() and onnx_out.is_dir():
+            raise ValueError(f"Путь для сохранения ONNX модели указывает на директорию: {onnx_out}")
+
     df = load_snapshots_as_frame(db_path)
     X, y, group_id, cat_features = build_feature_matrix(df)
 
@@ -42,12 +56,36 @@ def train_ranker(db_path: Path, model_out: Path, onnx_out: Path | None = None):
         iterations=500,
         random_state=42,
     )
-    model.fit(train_pool, verbose=True)
 
-    model.save_model(model_out.as_posix(), format="json")
+    try:
+        model.fit(train_pool, verbose=True)
+    except Exception as e:
+        raise ValueError(
+            f"Ошибка при обучении модели: {e}. "
+            "Проверьте, что данные содержат достаточное количество снапшотов и групп."
+        ) from e
+
+    # Создаём директорию для модели, если её нет
+    model_out.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        model.save_model(model_out.as_posix(), format="json")
+    except Exception as e:
+        raise ValueError(
+            f"Ошибка при сохранении модели в JSON: {e}. "
+            f"Проверьте, что путь доступен для записи: {model_out}"
+        ) from e
 
     if onnx_out is not None:
-        model.save_model(onnx_out.as_posix(), format="onnx")
+        # Создаём директорию для ONNX модели, если её нет
+        onnx_out.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            model.save_model(onnx_out.as_posix(), format="onnx")
+        except Exception as e:
+            raise ValueError(
+                f"Ошибка при сохранении модели в ONNX: {e}. "
+                f"Проверьте, что путь доступен для записи: {onnx_out}"
+            ) from e
 
 
 if __name__ == "__main__":

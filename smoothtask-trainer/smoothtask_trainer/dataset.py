@@ -217,11 +217,13 @@ def _coerce_bool_column(
     """
     Приводит столбец к nullable boolean с валидацией допустимых значений.
 
-    Допускаются True/False, 0/1, строковые "0"/"1" и NaN. При других значениях
-    выбрасывается ValueError с указанием таблицы и примеров значений.
+    Допускаются True/False, 0/1, строковые "0"/"1"/"true"/"false" (в любом
+    регистре) и NaN. При других значениях выбрасывается ValueError с указанием
+    таблицы, списка допустимых значений и примеров некорректных.
     """
     coerced: list[object] = []
     invalid_values: list[object] = []
+    allowed_hint = "true/false, 0/1, строки \"true\"/\"false\", NaN"
 
     for value in series:
         if pd.isna(value):
@@ -239,9 +241,13 @@ def _coerce_bool_column(
                 coerced.append(bool(int(value)))
                 continue
         if isinstance(value, str):
-            stripped = value.strip().lower()
-            if stripped in {"0", "1"}:
-                coerced.append(stripped == "1")
+            stripped = value.strip()
+            if stripped == "":
+                coerced.append(pd.NA)
+                continue
+            lowered = stripped.lower()
+            if lowered in {"0", "1", "true", "false"}:
+                coerced.append(lowered in {"1", "true"})
                 continue
         invalid_values.append(value)
         coerced.append(pd.NA)
@@ -249,7 +255,8 @@ def _coerce_bool_column(
     if invalid_values:
         sample_values = ", ".join(repr(v) for v in invalid_values[:5])
         raise ValueError(
-            f"Колонка '{column}' в таблице '{table}' содержит невалидные булевые значения: {sample_values}"
+            f"Колонка '{column}' в таблице '{table}' содержит невалидные булевые значения "
+            f"(допустимо: {allowed_hint}): {sample_values}"
         )
 
     return pd.Series(coerced, index=series.index, dtype="boolean")
