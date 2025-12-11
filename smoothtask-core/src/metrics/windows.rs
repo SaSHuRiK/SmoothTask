@@ -107,8 +107,106 @@ fn pick_best_by_confidence<'a>(
 
 /// Получить информацию об окне для конкретного PID.
 ///
+/// Функция ищет окно с указанным PID среди всех окон, возвращаемых introspector.
 /// Если для PID найдено несколько окон, возвращается окно с наибольшим `pid_confidence`.
-/// Если окно не найдено, возвращается `None`.
+/// Если окно не найдено (PID отсутствует или нет окон с таким PID), возвращается `None`.
+/// Окна без PID (где `pid == None`) игнорируются.
+///
+/// # Аргументы
+///
+/// * `introspector` - интроспектор окон для получения списка окон
+/// * `pid` - PID процесса, для которого нужно найти окно
+///
+/// # Возвращает
+///
+/// * `Ok(Some(WindowInfo))` - если окно с указанным PID найдено
+/// * `Ok(None)` - если окно с указанным PID не найдено
+/// * `Err(...)` - если произошла ошибка при получении списка окон от introspector
+///
+/// # Примеры использования
+///
+/// ## Базовое использование
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{get_window_info_by_pid, StaticWindowIntrospector, WindowInfo, WindowState};
+///
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("firefox".to_string()),
+///         Some("Mozilla Firefox".to_string()),
+///         Some(1),
+///         WindowState::Focused,
+///         Some(1234),
+///         1.0,
+///     ),
+/// ];
+/// let introspector = StaticWindowIntrospector::new(windows);
+///
+/// // Найти окно для PID 1234
+/// let window = get_window_info_by_pid(&introspector, 1234).unwrap();
+/// assert!(window.is_some());
+/// assert_eq!(window.unwrap().pid, Some(1234));
+///
+/// // Попытка найти несуществующий PID
+/// let window = get_window_info_by_pid(&introspector, 9999).unwrap();
+/// assert!(window.is_none());
+/// ```
+///
+/// ## Выбор окна с наибольшим confidence при множественных окнах
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{get_window_info_by_pid, StaticWindowIntrospector, WindowInfo, WindowState};
+///
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("app".to_string()),
+///         Some("Window 1".to_string()),
+///         Some(1),
+///         WindowState::Focused,
+///         Some(100),
+///         0.5, // меньший confidence
+///     ),
+///     WindowInfo::new(
+///         Some("app".to_string()),
+///         Some("Window 2".to_string()),
+///         Some(1),
+///         WindowState::Background,
+///         Some(100), // тот же PID
+///         0.9, // больший confidence - будет выбран
+///     ),
+/// ];
+/// let introspector = StaticWindowIntrospector::new(windows);
+///
+/// let window = get_window_info_by_pid(&introspector, 100).unwrap();
+/// assert!(window.is_some());
+/// assert_eq!(window.unwrap().title, Some("Window 2".to_string()));
+/// ```
+///
+/// ## Обработка ошибок introspector
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{get_window_info_by_pid, WindowIntrospector};
+/// use anyhow::Result;
+///
+/// struct ErrorIntrospector;
+///
+/// impl WindowIntrospector for ErrorIntrospector {
+///     fn windows(&self) -> Result<Vec<smoothtask_core::metrics::windows::WindowInfo>> {
+///         anyhow::bail!("Failed to get windows")
+///     }
+/// }
+///
+/// let introspector = ErrorIntrospector;
+/// let result = get_window_info_by_pid(&introspector, 100);
+/// assert!(result.is_err());
+/// ```
+///
+/// # Примечания
+///
+/// - Функция игнорирует окна без PID (`pid == None`)
+/// - Если для одного PID есть несколько окон, выбирается окно с наибольшим `pid_confidence`
+/// - Функция не гарантирует, что выбранное окно является "активным" или "фокусным" - она просто
+///   выбирает окно с наибольшим confidence среди всех окон с указанным PID
 pub fn get_window_info_by_pid(
     introspector: &dyn WindowIntrospector,
     pid: u32,
@@ -122,7 +220,154 @@ pub fn get_window_info_by_pid(
 
 /// Построить маппинг PID -> WindowInfo для всех окон.
 ///
+/// Функция создаёт HashMap, где ключом является PID процесса, а значением - информация об окне.
 /// Если для одного PID есть несколько окон, выбирается окно с наибольшим `pid_confidence`.
+/// Окна без PID (где `pid == None`) игнорируются и не попадают в результирующий мап.
+///
+/// # Аргументы
+///
+/// * `introspector` - интроспектор окон для получения списка окон
+///
+/// # Возвращает
+///
+/// * `Ok(HashMap<u32, WindowInfo>)` - маппинг PID -> WindowInfo для всех окон с известным PID
+/// * `Err(...)` - если произошла ошибка при получении списка окон от introspector
+///
+/// # Примеры использования
+///
+/// ## Базовое использование
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{build_pid_to_window_map, StaticWindowIntrospector, WindowInfo, WindowState};
+///
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("firefox".to_string()),
+///         Some("Mozilla Firefox".to_string()),
+///         Some(1),
+///         WindowState::Focused,
+///         Some(1234),
+///         1.0,
+///     ),
+///     WindowInfo::new(
+///         Some("code".to_string()),
+///         Some("VS Code".to_string()),
+///         Some(1),
+///         WindowState::Background,
+///         Some(5678),
+///         0.9,
+///     ),
+/// ];
+/// let introspector = StaticWindowIntrospector::new(windows);
+///
+/// let map = build_pid_to_window_map(&introspector).unwrap();
+/// assert_eq!(map.len(), 2);
+/// assert!(map.contains_key(&1234));
+/// assert!(map.contains_key(&5678));
+/// assert_eq!(map.get(&1234).unwrap().app_id, Some("firefox".to_string()));
+/// ```
+///
+/// ## Выбор окна с наибольшим confidence при множественных окнах
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{build_pid_to_window_map, StaticWindowIntrospector, WindowInfo, WindowState};
+///
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("app".to_string()),
+///         Some("Window 1".to_string()),
+///         Some(1),
+///         WindowState::Focused,
+///         Some(100),
+///         0.5, // меньший confidence
+///     ),
+///     WindowInfo::new(
+///         Some("app".to_string()),
+///         Some("Window 2".to_string()),
+///         Some(1),
+///         WindowState::Background,
+///         Some(100), // тот же PID
+///         0.9, // больший confidence - будет выбран
+///     ),
+/// ];
+/// let introspector = StaticWindowIntrospector::new(windows);
+///
+/// let map = build_pid_to_window_map(&introspector).unwrap();
+/// assert_eq!(map.len(), 1);
+/// assert_eq!(map.get(&100).unwrap().title, Some("Window 2".to_string()));
+/// ```
+///
+/// ## Игнорирование окон без PID
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{build_pid_to_window_map, StaticWindowIntrospector, WindowInfo, WindowState};
+///
+/// let windows = vec![
+///     WindowInfo::new(
+///         Some("app1".to_string()),
+///         Some("Window 1".to_string()),
+///         Some(1),
+///         WindowState::Focused,
+///         Some(100), // есть PID
+///         1.0,
+///     ),
+///     WindowInfo::new(
+///         Some("app2".to_string()),
+///         Some("Window 2".to_string()),
+///         Some(1),
+///         WindowState::Background,
+///         None, // нет PID - будет проигнорировано
+///         0.9,
+///     ),
+/// ];
+/// let introspector = StaticWindowIntrospector::new(windows);
+///
+/// let map = build_pid_to_window_map(&introspector).unwrap();
+/// assert_eq!(map.len(), 1); // только окно с PID
+/// assert!(map.contains_key(&100));
+/// ```
+///
+/// ## Обработка ошибок introspector
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{build_pid_to_window_map, WindowIntrospector};
+/// use anyhow::Result;
+///
+/// struct ErrorIntrospector;
+///
+/// impl WindowIntrospector for ErrorIntrospector {
+///     fn windows(&self) -> Result<Vec<smoothtask_core::metrics::windows::WindowInfo>> {
+///         anyhow::bail!("Failed to get windows")
+///     }
+/// }
+///
+/// let introspector = ErrorIntrospector;
+/// let result = build_pid_to_window_map(&introspector);
+/// assert!(result.is_err());
+/// ```
+///
+/// ## Использование в цикле демона
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{build_pid_to_window_map, WindowIntrospector};
+///
+/// fn process_windows(introspector: &dyn WindowIntrospector) -> anyhow::Result<()> {
+///     let pid_to_window = build_pid_to_window_map(introspector)?;
+///
+///     for (pid, window) in pid_to_window {
+///         println!("PID {}: {} ({:?})", pid, window.app_id.as_deref().unwrap_or("unknown"), window.state);
+///     }
+///
+///     Ok(())
+/// }
+/// ```
+///
+/// # Примечания
+///
+/// - Функция игнорирует окна без PID (`pid == None`)
+/// - Если для одного PID есть несколько окон, выбирается окно с наибольшим `pid_confidence`
+/// - Результирующий HashMap содержит только окна с известным PID
+/// - Пустой список окон вернёт пустой HashMap (не ошибку)
 pub fn build_pid_to_window_map(
     introspector: &dyn WindowIntrospector,
 ) -> Result<std::collections::HashMap<u32, WindowInfo>> {
@@ -414,5 +659,169 @@ mod tests {
         let window = map.get(&100).unwrap();
         assert!((window.pid_confidence - 0.9).abs() < f32::EPSILON);
         assert_eq!(window.title, Some("Title2".to_string()));
+    }
+
+    #[test]
+    fn get_window_info_by_pid_returns_none_for_empty_windows() {
+        let windows = vec![];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let window = get_window_info_by_pid(&introspector, 100).unwrap();
+        assert!(window.is_none());
+    }
+
+    #[test]
+    fn get_window_info_by_pid_returns_none_when_all_windows_have_no_pid() {
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Title1".to_string()),
+                Some(1),
+                WindowState::Focused,
+                None,
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Title2".to_string()),
+                Some(1),
+                WindowState::Background,
+                None,
+                0.8,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let window = get_window_info_by_pid(&introspector, 100).unwrap();
+        assert!(window.is_none());
+    }
+
+    #[test]
+    fn get_window_info_by_pid_handles_mixed_windows_with_and_without_pid() {
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Title1".to_string()),
+                Some(1),
+                WindowState::Focused,
+                None,
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Title2".to_string()),
+                Some(1),
+                WindowState::Background,
+                Some(200),
+                0.8,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        // Должен найти окно с PID 200
+        let window = get_window_info_by_pid(&introspector, 200).unwrap();
+        assert!(window.is_some());
+        assert_eq!(window.unwrap().pid, Some(200));
+        // Не должен найти окно с PID 100 (его нет)
+        let window = get_window_info_by_pid(&introspector, 100).unwrap();
+        assert!(window.is_none());
+    }
+
+    #[test]
+    fn build_pid_to_window_map_returns_empty_map_for_empty_windows() {
+        let windows = vec![];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let map = build_pid_to_window_map(&introspector).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn build_pid_to_window_map_returns_empty_map_when_all_windows_have_no_pid() {
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Title1".to_string()),
+                Some(1),
+                WindowState::Focused,
+                None,
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Title2".to_string()),
+                Some(1),
+                WindowState::Background,
+                None,
+                0.8,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let map = build_pid_to_window_map(&introspector).unwrap();
+        assert!(map.is_empty());
+    }
+
+    #[test]
+    fn build_pid_to_window_map_handles_mixed_windows_with_and_without_pid() {
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Title1".to_string()),
+                Some(1),
+                WindowState::Focused,
+                None,
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Title2".to_string()),
+                Some(1),
+                WindowState::Background,
+                Some(200),
+                0.8,
+            ),
+            WindowInfo::new(
+                Some("app3".to_string()),
+                Some("Title3".to_string()),
+                Some(1),
+                WindowState::Minimized,
+                Some(300),
+                0.7,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let map = build_pid_to_window_map(&introspector).unwrap();
+        // Должны быть только окна с PID
+        assert_eq!(map.len(), 2);
+        assert!(map.contains_key(&200));
+        assert!(map.contains_key(&300));
+        assert!(!map.contains_key(&0)); // окно без PID не должно попасть в мап
+    }
+
+    // Тест для обработки ошибок introspector
+    struct ErrorIntrospector;
+
+    impl WindowIntrospector for ErrorIntrospector {
+        fn windows(&self) -> Result<Vec<WindowInfo>> {
+            anyhow::bail!("Test error from introspector")
+        }
+    }
+
+    #[test]
+    fn get_window_info_by_pid_propagates_introspector_error() {
+        let introspector = ErrorIntrospector;
+        let result = get_window_info_by_pid(&introspector, 100);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Test error from introspector"));
+    }
+
+    #[test]
+    fn build_pid_to_window_map_propagates_introspector_error() {
+        let introspector = ErrorIntrospector;
+        let result = build_pid_to_window_map(&introspector);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Test error from introspector"));
     }
 }
