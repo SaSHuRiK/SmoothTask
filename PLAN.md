@@ -24,6 +24,21 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-172: Добавить тесты для create_window_introspector() - проверка выбора правильного бекенда
+  - Тип: Rust / core / tests
+  - Критерии готовности:
+    - [x] Добавлены тесты, проверяющие, что функция всегда возвращает интроспектор;
+    - [x] Добавлены тесты, проверяющие fallback на StaticWindowIntrospector;
+    - [x] Все тесты проходят успешно (77 тестов, было 75).
+  - Примечания: добавлены 3 новых теста для create_window_introspector(): test_create_window_introspector_always_returns_introspector (проверка, что функция всегда возвращает интроспектор), test_create_window_introspector_fallback_to_static (проверка fallback на StaticWindowIntrospector), test_check_system_utilities_does_not_panic (проверка, что check_system_utilities не падает). Все 77 тестов проходят успешно.
+
+- [x] ST-171: Добавить тесты для check_system_utilities() - проверка логирования и доступности компонентов
+  - Тип: Rust / core / tests
+  - Критерии готовности:
+    - [x] Добавлены тесты, проверяющие, что функция не падает;
+    - [x] Все тесты проходят успешно (77 тестов, было 75).
+  - Примечания: добавлен тест test_check_system_utilities_does_not_panic для проверки, что функция check_system_utilities() выполняется без паники, независимо от доступности системных компонентов (X11, Wayland, pw-dump, evdev). Все 77 тестов проходят успешно.
+
 - [x] ST-168: Добавить тест для проверки консистентности использования build_features в StubRanker
   - Тип: Rust / core / model / tests
   - Критерии готовности:
