@@ -47,7 +47,18 @@ pub enum PolicyMode {
     Hybrid,
 }
 
-fn default_policy_mode() -> PolicyMode {
+/// Возвращает дефолтное значение для `policy_mode`.
+///
+/// По умолчанию используется режим `RulesOnly`, который использует только жёсткие правила
+/// (guardrails) и семантические правила без ML-ранкера. Это рекомендуется для начального
+/// использования, так как не требует обученной модели CatBoostRanker.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_policy_mode")]` для поля `policy_mode`
+/// - Для использования ML-ранкера необходимо явно указать `policy_mode: hybrid` в конфигурации
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации, если поле `policy_mode` не указано
+pub(crate) fn default_policy_mode() -> PolicyMode {
     PolicyMode::RulesOnly
 }
 
@@ -74,11 +85,36 @@ pub struct Thresholds {
     pub ui_loop_p95_threshold_ms: f64,
 }
 
-fn default_sched_latency_p99_threshold() -> f64 {
-    10.0 // 10 мс по умолчанию
+/// Возвращает дефолтное значение для `sched_latency_p99_threshold_ms`.
+///
+/// По умолчанию используется порог 20.0 мс для P99 scheduling latency. Это значение используется
+/// для определения `bad_responsiveness` в метриках отзывчивости системы.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_sched_latency_p99_threshold")]`
+/// - Порог должен быть положительным и не превышать 1000.0 мс (валидируется в `Thresholds::validate`)
+/// - Порог должен быть >= `ui_loop_p95_threshold_ms` (валидируется в `Thresholds::validate`)
+/// - Значение 20.0 мс выбрано как разумный порог для P99 latency, превышающий P95 UI loop threshold (16.67 мс)
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации, если поле `sched_latency_p99_threshold_ms` не указано
+pub(crate) fn default_sched_latency_p99_threshold() -> f64 {
+    20.0 // 20 мс по умолчанию
 }
 
-fn default_ui_loop_p95_threshold() -> f64 {
+/// Возвращает дефолтное значение для `ui_loop_p95_threshold_ms`.
+///
+/// По умолчанию используется порог 16.67 мс для P95 UI loop latency, что соответствует 60 FPS
+/// (1000 мс / 60 кадров ≈ 16.67 мс на кадр). Это значение используется для определения
+/// `bad_responsiveness` в метриках отзывчивости системы.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_ui_loop_p95_threshold")]`
+/// - Порог должен быть положительным и не превышать 1000.0 мс (валидируется в `Thresholds::validate`)
+/// - Порог должен быть <= `sched_latency_p99_threshold_ms` (валидируется в `Thresholds::validate`)
+/// - Значение 16.67 мс выбрано как стандартный порог для 60 FPS UI
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации, если поле `ui_loop_p95_threshold_ms` не указано
+pub(crate) fn default_ui_loop_p95_threshold() -> f64 {
     16.67 // 16.67 мс по умолчанию (60 FPS)
 }
 
@@ -2678,6 +2714,222 @@ thresholds:
         assert!(
             err.to_string().contains("psi_io_some_high must be <= 1.0"),
             "unexpected error: {err:?}"
+        );
+    }
+
+    // Тесты для проверки консистентности дефолтных значений
+    #[test]
+    fn default_policy_mode_returns_rules_only() {
+        assert_eq!(default_policy_mode(), PolicyMode::RulesOnly);
+    }
+
+    #[test]
+    fn default_sched_latency_p99_threshold_returns_expected_value() {
+        let default = default_sched_latency_p99_threshold();
+        assert!((default - 20.0).abs() < f64::EPSILON, "Expected 20.0, got {}", default);
+    }
+
+    #[test]
+    fn default_ui_loop_p95_threshold_returns_expected_value() {
+        let default = default_ui_loop_p95_threshold();
+        assert!(
+            (default - 16.67).abs() < f64::EPSILON,
+            "Expected 16.67, got {}",
+            default
+        );
+    }
+
+    #[test]
+    fn default_sched_latency_p99_threshold_is_valid() {
+        // Проверяем, что дефолтное значение проходит валидацию
+        let default = default_sched_latency_p99_threshold();
+        assert!(
+            default > 0.0,
+            "Default sched_latency_p99_threshold_ms must be positive, got {}",
+            default
+        );
+        assert!(
+            default <= 1000.0,
+            "Default sched_latency_p99_threshold_ms must be <= 1000.0, got {}",
+            default
+        );
+    }
+
+    #[test]
+    fn default_ui_loop_p95_threshold_is_valid() {
+        // Проверяем, что дефолтное значение проходит валидацию
+        let default = default_ui_loop_p95_threshold();
+        assert!(
+            default > 0.0,
+            "Default ui_loop_p95_threshold_ms must be positive, got {}",
+            default
+        );
+        assert!(
+            default <= 1000.0,
+            "Default ui_loop_p95_threshold_ms must be <= 1000.0, got {}",
+            default
+        );
+    }
+
+    #[test]
+    fn default_latency_thresholds_are_consistent() {
+        // Проверяем, что дефолтные значения latency thresholds консистентны
+        // (sched_latency_p99_threshold_ms >= ui_loop_p95_threshold_ms)
+        let sched_p99 = default_sched_latency_p99_threshold();
+        let ui_p95 = default_ui_loop_p95_threshold();
+        assert!(
+            sched_p99 >= ui_p95,
+            "Default sched_latency_p99_threshold_ms ({}) must be >= ui_loop_p95_threshold_ms ({})",
+            sched_p99,
+            ui_p95
+        );
+    }
+
+    #[test]
+    fn config_without_latency_thresholds_uses_defaults() {
+        // Проверяем, что при отсутствии latency thresholds в конфиге используются дефолты
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert!(
+            (cfg.thresholds.sched_latency_p99_threshold_ms - default_sched_latency_p99_threshold())
+                .abs()
+                < f64::EPSILON,
+            "sched_latency_p99_threshold_ms should use default value"
+        );
+        assert!(
+            (cfg.thresholds.ui_loop_p95_threshold_ms - default_ui_loop_p95_threshold()).abs()
+                < f64::EPSILON,
+            "ui_loop_p95_threshold_ms should use default value"
+        );
+    }
+
+    #[test]
+    fn config_without_policy_mode_uses_default() {
+        // Проверяем, что при отсутствии policy_mode в конфиге используется дефолт
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        assert_eq!(
+            cfg.policy_mode,
+            default_policy_mode(),
+            "policy_mode should use default value"
+        );
+    }
+
+    #[test]
+    fn default_values_pass_validation() {
+        // Проверяем, что дефолтные значения проходят валидацию при создании Thresholds
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let snapshot_db_path = temp_dir.path().join("snapshots.sqlite");
+        std::fs::create_dir_all(snapshot_db_path.parent().unwrap()).expect("snapshot dir");
+        let patterns_dir = temp_dir.path().join("patterns");
+        std::fs::create_dir_all(&patterns_dir).expect("patterns dir");
+
+        // Создаём конфиг с дефолтными значениями для latency thresholds
+        let file = write_temp_config(&format!(
+            r#"
+polling_interval_ms: 500
+max_candidates: 150
+dry_run_default: false
+
+paths:
+  snapshot_db_path: "{}"
+  patterns_dir: "{}"
+
+thresholds:
+  psi_cpu_some_high: 0.6
+  psi_io_some_high: 0.4
+  user_idle_timeout_sec: 120
+  interactive_build_grace_sec: 10
+  noisy_neighbour_cpu_share: 0.7
+
+  crit_interactive_percentile: 0.9
+  interactive_percentile: 0.6
+  normal_percentile: 0.3
+  background_percentile: 0.1
+        "#,
+            snapshot_db_path.display(),
+            patterns_dir.display()
+        ));
+
+        // Конфиг должен успешно загрузиться с дефолтными значениями
+        let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
+        // Проверяем, что валидация прошла успешно (нет ошибок)
+        assert!(
+            cfg.thresholds.sched_latency_p99_threshold_ms > 0.0,
+            "sched_latency_p99_threshold_ms should be positive"
+        );
+        assert!(
+            cfg.thresholds.ui_loop_p95_threshold_ms > 0.0,
+            "ui_loop_p95_threshold_ms should be positive"
+        );
+        assert!(
+            cfg.thresholds.sched_latency_p99_threshold_ms
+                >= cfg.thresholds.ui_loop_p95_threshold_ms,
+            "sched_latency_p99_threshold_ms should be >= ui_loop_p95_threshold_ms"
         );
     }
 }
