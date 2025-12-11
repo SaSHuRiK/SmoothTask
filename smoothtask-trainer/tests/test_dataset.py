@@ -350,6 +350,153 @@ def test_load_snapshots_as_frame_empty_db():
         db_path.unlink(missing_ok=True)
 
 
+def test_load_snapshots_as_frame_empty_processes_table_returns_empty():
+    """Должен вернуться пустой DataFrame, если в processes нет строк."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user_active INTEGER,
+                bad_responsiveness INTEGER
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                has_tty INTEGER,
+                has_gui_window INTEGER,
+                is_focused_window INTEGER,
+                env_has_display INTEGER,
+                env_has_wayland INTEGER,
+                env_ssh INTEGER,
+                is_audio_client INTEGER,
+                has_active_stream INTEGER,
+                app_group_id TEXT,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL,
+                has_gui_window INTEGER,
+                is_focused_group INTEGER,
+                PRIMARY KEY (snapshot_id, app_group_id)
+            )
+            """
+        )
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp, user_active, bad_responsiveness) VALUES (?, ?, ?, ?)",
+            (1, datetime.now(timezone.utc).isoformat(), 1, 0),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id, has_gui_window, is_focused_group) VALUES (?, ?, ?, ?)",
+            (1, "app", 0, 0),
+        )
+
+        conn.commit()
+        conn.close()
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("error")
+            df = load_snapshots_as_frame(db_path)
+
+        assert not caught
+        assert df.empty
+
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_load_snapshots_as_frame_handles_empty_snapshots_without_warnings():
+    """Булевые столбцы должны конвертироваться без предупреждений при пустых snapshots."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user_active INTEGER,
+                bad_responsiveness INTEGER
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                has_tty INTEGER,
+                has_gui_window INTEGER,
+                is_focused_window INTEGER,
+                env_has_display INTEGER,
+                env_has_wayland INTEGER,
+                env_ssh INTEGER,
+                is_audio_client INTEGER,
+                has_active_stream INTEGER,
+                app_group_id TEXT,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL,
+                has_gui_window INTEGER,
+                is_focused_group INTEGER,
+                PRIMARY KEY (snapshot_id, app_group_id)
+            )
+            """
+        )
+
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, has_tty, has_gui_window, is_focused_window, env_has_display, env_has_wayland, env_ssh, is_audio_client, has_active_stream, app_group_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (10, 4242, 1, 0, 0, 1, 0, 0, 0, 0, "group-a"),
+        )
+
+        conn.commit()
+        conn.close()
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("error")
+            df = load_snapshots_as_frame(db_path)
+
+        assert not caught
+        assert len(df) == 1
+        assert df["has_tty"].dtype == "boolean"
+        assert df["has_tty"].iloc[0] == True
+        assert df["has_gui_window"].dtype == "boolean"
+        assert df["has_gui_window"].iloc[0] == False
+        assert df["user_active"].dtype == "boolean"
+        assert df["user_active"].iloc[0] is pd.NA
+        assert df["bad_responsiveness"].dtype == "boolean"
+        assert df["bad_responsiveness"].iloc[0] is pd.NA
+
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
 def test_load_snapshots_as_frame_file_not_found():
     """Тест обработки отсутствующего файла."""
     non_existent = Path("/tmp/non_existent_snapshots.db")
