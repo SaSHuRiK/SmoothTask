@@ -67,6 +67,93 @@ curl http://127.0.0.1:8080/api/version
 
 ---
 
+### GET /api/endpoints
+
+Получение списка всех доступных endpoints API.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/endpoints
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "endpoints": [
+    {
+      "path": "/health",
+      "method": "GET",
+      "description": "Проверка работоспособности API сервера"
+    },
+    {
+      "path": "/api/version",
+      "method": "GET",
+      "description": "Получение версии демона SmoothTask"
+    },
+    {
+      "path": "/api/endpoints",
+      "method": "GET",
+      "description": "Получение списка всех доступных endpoints"
+    },
+    {
+      "path": "/api/stats",
+      "method": "GET",
+      "description": "Получение статистики работы демона"
+    },
+    {
+      "path": "/api/metrics",
+      "method": "GET",
+      "description": "Получение последних системных метрик"
+    },
+    {
+      "path": "/api/responsiveness",
+      "method": "GET",
+      "description": "Получение последних метрик отзывчивости системы"
+    },
+    {
+      "path": "/api/processes",
+      "method": "GET",
+      "description": "Получение списка последних процессов"
+    },
+    {
+      "path": "/api/processes/:pid",
+      "method": "GET",
+      "description": "Получение информации о конкретном процессе по PID"
+    },
+    {
+      "path": "/api/appgroups",
+      "method": "GET",
+      "description": "Получение списка последних групп приложений"
+    },
+    {
+      "path": "/api/appgroups/:id",
+      "method": "GET",
+      "description": "Получение информации о конкретной группе приложений по ID"
+    },
+    {
+      "path": "/api/config",
+      "method": "GET",
+      "description": "Получение текущей конфигурации демона (без секретов)"
+    }
+  ],
+  "count": 11
+}
+```
+
+**Поля:**
+- `status` (string) - статус ответа (всегда "ok")
+- `endpoints` (array) - массив объектов с информацией о каждом endpoint
+  - `path` (string) - путь к endpoint
+  - `method` (string) - HTTP метод (всегда "GET" для текущих endpoints)
+  - `description` (string) - описание назначения endpoint
+- `count` (integer) - общее количество доступных endpoints
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
 ### GET /api/stats
 
 Получение статистики работы демона.
@@ -648,6 +735,9 @@ curl http://127.0.0.1:8080/api/appgroups | jq
 
 # Получение конфигурации демона
 curl http://127.0.0.1:8080/api/config | jq
+
+# Получение списка всех доступных endpoints
+curl http://127.0.0.1:8080/api/endpoints | jq
 ```
 
 ### Автоматический мониторинг

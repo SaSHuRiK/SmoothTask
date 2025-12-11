@@ -157,11 +157,79 @@ async fn version_handler() -> Json<Value> {
     }))
 }
 
+/// Обработчик для endpoint `/api/endpoints`.
+///
+/// Возвращает список всех доступных endpoints API.
+async fn endpoints_handler() -> Json<Value> {
+    Json(json!({
+        "status": "ok",
+        "endpoints": [
+            {
+                "path": "/health",
+                "method": "GET",
+                "description": "Проверка работоспособности API сервера"
+            },
+            {
+                "path": "/api/version",
+                "method": "GET",
+                "description": "Получение версии демона SmoothTask"
+            },
+            {
+                "path": "/api/endpoints",
+                "method": "GET",
+                "description": "Получение списка всех доступных endpoints"
+            },
+            {
+                "path": "/api/stats",
+                "method": "GET",
+                "description": "Получение статистики работы демона"
+            },
+            {
+                "path": "/api/metrics",
+                "method": "GET",
+                "description": "Получение последних системных метрик"
+            },
+            {
+                "path": "/api/responsiveness",
+                "method": "GET",
+                "description": "Получение последних метрик отзывчивости системы"
+            },
+            {
+                "path": "/api/processes",
+                "method": "GET",
+                "description": "Получение списка последних процессов"
+            },
+            {
+                "path": "/api/processes/:pid",
+                "method": "GET",
+                "description": "Получение информации о конкретном процессе по PID"
+            },
+            {
+                "path": "/api/appgroups",
+                "method": "GET",
+                "description": "Получение списка последних групп приложений"
+            },
+            {
+                "path": "/api/appgroups/:id",
+                "method": "GET",
+                "description": "Получение информации о конкретной группе приложений по ID"
+            },
+            {
+                "path": "/api/config",
+                "method": "GET",
+                "description": "Получение текущей конфигурации демона (без секретов)"
+            }
+        ],
+        "count": 11
+    }))
+}
+
 /// Создаёт роутер для API.
 fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/api/version", get(version_handler))
+        .route("/api/endpoints", get(endpoints_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
         .route("/api/responsiveness", get(responsiveness_handler))
@@ -1365,5 +1433,42 @@ mod tests {
         assert!(value["app_group"].is_object());
         let app_group = &value["app_group"];
         assert_eq!(app_group["app_group_id"], "group-1");
+    }
+
+    #[tokio::test]
+    async fn test_endpoints_handler() {
+        let result = endpoints_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["endpoints"].is_array());
+        assert_eq!(json["count"], 11);
+
+        let endpoints = json["endpoints"].as_array().unwrap();
+        assert_eq!(endpoints.len(), 11);
+
+        // Проверяем наличие основных endpoints
+        let endpoint_paths: Vec<&str> = endpoints
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
+
+        assert!(endpoint_paths.contains(&"/health"));
+        assert!(endpoint_paths.contains(&"/api/version"));
+        assert!(endpoint_paths.contains(&"/api/endpoints"));
+        assert!(endpoint_paths.contains(&"/api/stats"));
+        assert!(endpoint_paths.contains(&"/api/metrics"));
+        assert!(endpoint_paths.contains(&"/api/responsiveness"));
+        assert!(endpoint_paths.contains(&"/api/processes"));
+        assert!(endpoint_paths.contains(&"/api/processes/:pid"));
+        assert!(endpoint_paths.contains(&"/api/appgroups"));
+        assert!(endpoint_paths.contains(&"/api/appgroups/:id"));
+        assert!(endpoint_paths.contains(&"/api/config"));
+
+        // Проверяем структуру endpoint
+        let first_endpoint = &endpoints[0];
+        assert!(first_endpoint["path"].is_string());
+        assert!(first_endpoint["method"].is_string());
+        assert!(first_endpoint["description"].is_string());
+        assert_eq!(first_endpoint["method"], "GET");
     }
 }
