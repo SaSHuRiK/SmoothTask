@@ -13,18 +13,59 @@ use tracing::{error, info};
 pub struct ApiState {
     /// Статистика работы демона (опционально, если демон не запущен)
     daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+    /// Последние системные метрики (опционально)
+    system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+    /// Последние процессы (опционально)
+    processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+    /// Последние группы приложений (опционально)
+    app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
 }
 
 impl ApiState {
     /// Создаёт новое состояние API сервера.
     pub fn new() -> Self {
-        Self { daemon_stats: None }
+        Self {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+        }
     }
 
     /// Создаёт новое состояние API сервера с переданной статистикой демона.
     pub fn with_daemon_stats(daemon_stats: Arc<RwLock<crate::DaemonStats>>) -> Self {
         Self {
             daemon_stats: Some(daemon_stats),
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+        }
+    }
+
+    /// Создаёт новое состояние API сервера с переданными системными метриками.
+    pub fn with_system_metrics(
+        system_metrics: Arc<RwLock<crate::metrics::system::SystemMetrics>>,
+    ) -> Self {
+        Self {
+            daemon_stats: None,
+            system_metrics: Some(system_metrics),
+            processes: None,
+            app_groups: None,
+        }
+    }
+
+    /// Создаёт новое состояние API сервера с переданной статистикой демона и системными метриками.
+    pub fn with_all(
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+    ) -> Self {
+        Self {
+            daemon_stats,
+            system_metrics,
+            processes,
+            app_groups,
         }
     }
 }
@@ -50,6 +91,9 @@ fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/api/stats", get(stats_handler))
+        .route("/api/metrics", get(metrics_handler))
+        .route("/api/processes", get(processes_handler))
+        .route("/api/appgroups", get(appgroups_handler))
         .with_state(state)
 }
 
@@ -69,6 +113,70 @@ async fn stats_handler(State(state): State<ApiState>) -> Result<Json<Value>, Sta
             "status": "ok",
             "daemon_stats": null,
             "message": "Daemon stats not available (daemon may not be running)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/metrics`.
+///
+/// Возвращает последние системные метрики (если доступны).
+async fn metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.system_metrics {
+        Some(metrics_arc) => {
+            let metrics = metrics_arc.read().await;
+            Ok(Json(json!({
+                "status": "ok",
+                "system_metrics": *metrics
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "ok",
+            "system_metrics": null,
+            "message": "System metrics not available (daemon may not be running or no metrics collected yet)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/processes`.
+///
+/// Возвращает список последних процессов (если доступны).
+async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.processes {
+        Some(processes_arc) => {
+            let processes = processes_arc.read().await;
+            Ok(Json(json!({
+                "status": "ok",
+                "processes": *processes,
+                "count": processes.len()
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "ok",
+            "processes": null,
+            "count": 0,
+            "message": "Processes not available (daemon may not be running or no processes collected yet)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/appgroups`.
+///
+/// Возвращает список последних групп приложений (если доступны).
+async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.app_groups {
+        Some(app_groups_arc) => {
+            let app_groups = app_groups_arc.read().await;
+            Ok(Json(json!({
+                "status": "ok",
+                "app_groups": *app_groups,
+                "count": app_groups.len()
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "ok",
+            "app_groups": null,
+            "count": 0,
+            "message": "App groups not available (daemon may not be running or no groups collected yet)"
         }))),
     }
 }
@@ -130,6 +238,44 @@ impl ApiServer {
         Self {
             addr,
             state: ApiState::with_daemon_stats(daemon_stats),
+        }
+    }
+
+    /// Создаёт новый API сервер с переданными системными метриками.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `system_metrics`: Системные метрики для отображения через API
+    pub fn with_system_metrics(
+        addr: std::net::SocketAddr,
+        system_metrics: Arc<RwLock<crate::metrics::system::SystemMetrics>>,
+    ) -> Self {
+        Self {
+            addr,
+            state: ApiState::with_system_metrics(system_metrics),
+        }
+    }
+
+    /// Создаёт новый API сервер с переданной статистикой демона и системными метриками.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `daemon_stats`: Статистика работы демона (опционально)
+    /// - `system_metrics`: Системные метрики (опционально)
+    /// - `processes`: Список процессов (опционально)
+    /// - `app_groups`: Список групп приложений (опционально)
+    pub fn with_all(
+        addr: std::net::SocketAddr,
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+    ) -> Self {
+        Self {
+            addr,
+            state: ApiState::with_all(daemon_stats, system_metrics, processes, app_groups),
         }
     }
 
@@ -219,12 +365,18 @@ mod tests {
     fn test_api_state_new() {
         let state = ApiState::new();
         assert!(state.daemon_stats.is_none());
+        assert!(state.system_metrics.is_none());
+        assert!(state.processes.is_none());
+        assert!(state.app_groups.is_none());
     }
 
     #[test]
     fn test_api_state_default() {
         let state = ApiState::default();
         assert!(state.daemon_stats.is_none());
+        assert!(state.system_metrics.is_none());
+        assert!(state.processes.is_none());
+        assert!(state.app_groups.is_none());
     }
 
     #[test]
@@ -232,6 +384,99 @@ mod tests {
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         let state = ApiState::with_daemon_stats(stats.clone());
         assert!(state.daemon_stats.is_some());
+        assert!(state.system_metrics.is_none());
+        assert!(state.processes.is_none());
+        assert!(state.app_groups.is_none());
+    }
+
+    #[test]
+    fn test_api_state_with_system_metrics() {
+        use crate::metrics::system::{
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+        };
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100,
+                nice: 20,
+                system: 50,
+                idle: 200,
+                iowait: 10,
+                irq: 5,
+                softirq: 5,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+        let metrics_arc = Arc::new(RwLock::new(metrics));
+        let state = ApiState::with_system_metrics(metrics_arc.clone());
+        assert!(state.daemon_stats.is_none());
+        assert!(state.system_metrics.is_some());
+    }
+
+    #[test]
+    fn test_api_state_with_all() {
+        let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
+        use crate::metrics::system::{
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+        };
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100,
+                nice: 20,
+                system: 50,
+                idle: 200,
+                iowait: 10,
+                irq: 5,
+                softirq: 5,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+        let metrics_arc = Arc::new(RwLock::new(metrics));
+        let processes = Arc::new(RwLock::new(vec![]));
+        let app_groups = Arc::new(RwLock::new(vec![]));
+        let state = ApiState::with_all(
+            Some(stats.clone()),
+            Some(metrics_arc.clone()),
+            Some(processes.clone()),
+            Some(app_groups.clone()),
+        );
+        assert!(state.daemon_stats.is_some());
+        assert!(state.system_metrics.is_some());
+        assert!(state.processes.is_some());
+        assert!(state.app_groups.is_some());
     }
 
     #[tokio::test]
@@ -284,5 +529,215 @@ mod tests {
         let server = ApiServer::new(addr);
         // Проверяем, что сервер создан (нет способа проверить внутренние поля без pub)
         let _ = server;
+    }
+
+    #[tokio::test]
+    async fn test_metrics_handler_without_metrics() {
+        let state = ApiState::new();
+        let result = metrics_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["system_metrics"], Value::Null);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_metrics_handler_with_metrics() {
+        use crate::metrics::system::{
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+        };
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100,
+                nice: 20,
+                system: 50,
+                idle: 200,
+                iowait: 10,
+                irq: 5,
+                softirq: 5,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+        let metrics_arc = Arc::new(RwLock::new(metrics));
+        let state = ApiState::with_system_metrics(metrics_arc);
+        let result = metrics_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["system_metrics"].is_object());
+        let system_metrics = &value["system_metrics"];
+        assert!(system_metrics["cpu_times"].is_object());
+        assert!(system_metrics["memory"].is_object());
+        assert!(system_metrics["load_avg"].is_object());
+        assert!(system_metrics["pressure"].is_object());
+    }
+
+    #[test]
+    fn test_api_server_with_system_metrics() {
+        use crate::metrics::system::{
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+        };
+        let addr: SocketAddr = "127.0.0.1:8082".parse().unwrap();
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes {
+                user: 100,
+                nice: 20,
+                system: 50,
+                idle: 200,
+                iowait: 10,
+                irq: 5,
+                softirq: 5,
+                steal: 0,
+                guest: 0,
+                guest_nice: 0,
+            },
+            memory: MemoryInfo {
+                mem_total_kb: 1000,
+                mem_available_kb: 500,
+                mem_free_kb: 400,
+                buffers_kb: 50,
+                cached_kb: 50,
+                swap_total_kb: 1000,
+                swap_free_kb: 800,
+            },
+            load_avg: LoadAvg {
+                one: 1.0,
+                five: 1.0,
+                fifteen: 1.0,
+            },
+            pressure: PressureMetrics::default(),
+        };
+        let metrics_arc = Arc::new(RwLock::new(metrics));
+        let server = ApiServer::with_system_metrics(addr, metrics_arc);
+        // Проверяем, что сервер создан
+        let _ = server;
+    }
+
+    #[tokio::test]
+    async fn test_processes_handler_without_processes() {
+        let state = ApiState::new();
+        let result = processes_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["processes"], Value::Null);
+        assert_eq!(value["count"], 0);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_processes_handler_with_processes() {
+        use crate::logging::snapshots::ProcessRecord;
+        let processes = vec![ProcessRecord {
+            pid: 1,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: Some("/sbin/init".to_string()),
+            cmdline: Some("init".to_string()),
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: Some(0.1),
+            cpu_share_10s: Some(0.05),
+            io_read_bytes: Some(1000),
+            io_write_bytes: Some(500),
+            rss_mb: Some(10),
+            swap_mb: Some(0),
+            voluntary_ctx: Some(100),
+            involuntary_ctx: Some(10),
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: vec![],
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        }];
+        let processes_arc = Arc::new(RwLock::new(processes));
+        let state = ApiState::with_all(None, None, Some(processes_arc), None);
+        let result = processes_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["processes"].is_array());
+        assert_eq!(value["count"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_appgroups_handler_without_appgroups() {
+        let state = ApiState::new();
+        let result = appgroups_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["app_groups"], Value::Null);
+        assert_eq!(value["count"], 0);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_appgroups_handler_with_appgroups() {
+        use crate::logging::snapshots::AppGroupRecord;
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "group-1".to_string(),
+            root_pid: 1,
+            process_ids: vec![1, 2, 3],
+            app_name: Some("test-app".to_string()),
+            total_cpu_share: Some(0.5),
+            total_io_read_bytes: Some(10000),
+            total_io_write_bytes: Some(5000),
+            total_rss_mb: Some(100),
+            has_gui_window: true,
+            is_focused_group: false,
+            tags: vec!["gui".to_string()],
+            priority_class: None,
+        }];
+        let app_groups_arc = Arc::new(RwLock::new(app_groups));
+        let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
+        let result = appgroups_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["app_groups"].is_array());
+        assert_eq!(value["count"], 1);
     }
 }
