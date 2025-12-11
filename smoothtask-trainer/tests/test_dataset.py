@@ -241,7 +241,7 @@ def create_test_db(db_path: Path) -> None:
     )
 
     # Группа приложений
-    group_process_ids = json.dumps([1234, 1235])
+    group_process_ids = json.dumps([1234])
     group_tags = json.dumps(["terminal"])
     cursor.execute(
         """
@@ -313,7 +313,7 @@ def test_load_snapshots_as_frame_basic():
         assert "app_name" in df.columns
         assert df["app_name"].iloc[0] == "test"
         assert isinstance(df["process_ids"].iloc[0], list)
-        assert df["process_ids"].iloc[0] == [1234, 1235]
+        assert df["process_ids"].iloc[0] == [1234]
 
         # Проверяем timestamp
         assert "timestamp" in df.columns
@@ -337,7 +337,13 @@ def _create_minimal_db_with_tables(path: Path) -> sqlite3.Connection:
         """
     )
     cursor.execute(
-        "CREATE TABLE app_groups (snapshot_id INTEGER NOT NULL, app_group_id TEXT NOT NULL)"
+        """
+        CREATE TABLE app_groups (
+            snapshot_id INTEGER NOT NULL,
+            app_group_id TEXT NOT NULL,
+            process_ids TEXT
+        )
+        """
     )
     return conn
 
@@ -386,6 +392,44 @@ def test_load_snapshots_as_frame_rejects_duplicate_app_group_keys(tmp_path: Path
     conn.close()
 
     with pytest.raises(ValueError, match="app_groups.*дубликаты"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_duplicate_snapshot_ids(tmp_path: Path):
+    db_path = tmp_path / "duplicate_snapshot.sqlite"
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("CREATE TABLE snapshots (snapshot_id INTEGER)")
+    cursor.execute("CREATE TABLE processes (snapshot_id INTEGER NOT NULL, pid INTEGER NOT NULL)")
+    cursor.execute(
+        "CREATE TABLE app_groups (snapshot_id INTEGER NOT NULL, app_group_id TEXT NOT NULL, process_ids TEXT)"
+    )
+    cursor.executemany("INSERT INTO snapshots (snapshot_id) VALUES (?)", [(1,), (1,)])
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, 10))
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="snapshots.*дубликаты"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_missing_process_ids_in_groups(tmp_path: Path):
+    db_path = tmp_path / "missing_process_ids.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.executemany(
+        "INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)",
+        [(1, 10), (1, 11)],
+    )
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id, process_ids) VALUES (?, ?, ?)",
+        (1, "g1", json.dumps([10, 42])),
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="process_ids.*42"):
         load_snapshots_as_frame(db_path)
 
 
@@ -1341,7 +1385,7 @@ def test_load_snapshots_as_frame_process_ids_coerced_to_ints(tmp_path: Path):
     )
     cursor.execute(
         "INSERT INTO app_groups (snapshot_id, app_group_id, process_ids, tags) VALUES (?, ?, ?, ?)",
-        (1, "g1", json.dumps(["1", 2, 3.0, " 4 "]), json.dumps([" root ", "", "child"])),
+        (1, "g1", json.dumps(["500", 500, 500.0, " 500 "]), json.dumps([" root ", "", "child"])),
     )
 
     conn.commit()
@@ -1349,7 +1393,7 @@ def test_load_snapshots_as_frame_process_ids_coerced_to_ints(tmp_path: Path):
 
     df = load_snapshots_as_frame(db_path)
 
-    assert df["process_ids"].iloc[0] == [1, 2, 3, 4]
+    assert df["process_ids"].iloc[0] == [500, 500, 500, 500]
     assert df["tags"].iloc[0] == ["main", "5"]
     assert df["tags_group"].iloc[0] == ["root", "child"]
 

@@ -426,6 +426,7 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
     _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
     _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})
+    _ensure_unique_keys(snapshots, table="snapshots", keys=["snapshot_id"])
     _ensure_integer_like(
         snapshots,
         table="snapshots",
@@ -524,6 +525,32 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
         )
     if "process_ids" in app_groups.columns:
         app_groups["process_ids"] = app_groups["process_ids"].apply(_parse_process_ids)
+
+        if not app_groups.empty:
+            process_index = processes[["snapshot_id", "pid"]].dropna(subset=["snapshot_id", "pid"])
+            process_map: dict[int, set[int]] = {}
+            for row in process_index.itertuples(index=False):
+                process_map.setdefault(int(row.snapshot_id), set()).add(int(row.pid))
+
+            missing_refs: list[str] = []
+            for row in app_groups.itertuples(index=False):
+                if not row.process_ids:
+                    continue
+                snapshot_id = int(row.snapshot_id)
+                known_pids = process_map.get(snapshot_id, set())
+                missing_pids = sorted(pid for pid in set(row.process_ids) if pid not in known_pids)
+                if missing_pids:
+                    preview = ", ".join(str(pid) for pid in missing_pids[:5])
+                    missing_refs.append(
+                        f"(snapshot_id={snapshot_id}, app_group_id={row.app_group_id}, missing_pids=[{preview}])"
+                    )
+
+            if missing_refs:
+                formatted = "; ".join(missing_refs)
+                raise ValueError(
+                    "В таблице 'app_groups' поле process_ids ссылается на отсутствующие процессы: "
+                    f"{formatted}"
+                )
 
     df = processes.merge(
         snapshots,

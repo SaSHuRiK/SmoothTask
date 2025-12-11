@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-341: Проверять соответствие process_ids app_groups существующим процессам
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame валидирует, что process_ids каждой группы ссылаются на процессы того же snapshot; сообщение об ошибке содержит app_group_id и недостающие PID. Добавлен тест на отсутствие PID в groups.
+
+- [x] ST-340: Проверка уникальности snapshot_id в таблице snapshots
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame теперь отклоняет дубликаты snapshot_id с понятным ValueError. Добавлен тест на повторяющиеся snapshot_id в snapshots.
+
 - [x] ST-339: Запретить отрицательные идентификаторы в ключевых колонках снапшотов
   - Тип: Python / trainer / dataset
   - Примечания: _ensure_integer_like отклоняет отрицательные snapshot_id/pid с понятным ValueError; добавлен тест на отрицательный pid. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
@@ -70,14 +78,6 @@
 - [x] ST-332: Запретить NaN в ключевых колонках SQLite снапшотов
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame валидирует отсутствия NaN в snapshot_id/pid/app_group_id и выдаёт понятные ошибки; добавлены unit-тесты на NaN в ключевых таблицах.
-
-- [x] ST-331: Проверка ссылочной целостности app_group_id процессов
-  - Тип: Python / trainer / dataset
-  - Примечания: load_snapshots_as_frame проверяет наличие записей в app_groups для app_group_id процессов (кроме NULL); добавлены тесты на ошибку и допустимое отсутствие app_group_id; все сценарии сортировки сохраняются.
-
-- [x] ST-330: Проверка snapshot_id в app_groups в `load_snapshots_as_frame`
-  - Тип: Python / trainer / dataset
-  - Примечания: добавлена валидация наличия snapshot_id app_groups в snapshots с понятным ValueError; покрыто unit-тестом.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

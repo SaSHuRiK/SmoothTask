@@ -16,6 +16,16 @@
   - Тип: Python / trainer / features
   - Примечания: булевые фичи принимают только True/False/0/1 (включая строковые "0"/"1" и float 0.0/1.0); при иных значениях выбрасывается понятный ValueError. Добавлены тесты на ошибочные и корректные значения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
 
+## Перенос из PLAN.md (ST-331–ST-330, 2025-12-11)
+
+- [x] ST-331: Проверка ссылочной целостности app_group_id процессов
+  - Тип: Python / trainer / dataset
+  - Примечания: load_snapshots_as_frame проверяет наличие записей в app_groups для app_group_id процессов (кроме NULL); добавлены тесты на ошибку и допустимое отсутствие app_group_id; все сценарии сортировки сохраняются.
+
+- [x] ST-330: Проверка snapshot_id в app_groups в `load_snapshots_as_frame`
+  - Тип: Python / trainer / dataset
+  - Примечания: добавлена валидация наличия snapshot_id app_groups в snapshots с понятным ValueError; покрыто unit-тестом.
+
 ## Перенос из PLAN.md (ST-323, 2025-12-11)
 
 - [x] ST-323: Улучшить сообщение об ошибке для `_json_list`
