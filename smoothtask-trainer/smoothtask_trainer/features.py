@@ -119,6 +119,8 @@ def _prepare_tags_column(series: Iterable[object]) -> pd.Series:
     def _join_tags(value: object) -> str:
         if isinstance(value, (list, tuple, set)):
             tags = sorted([str(v) for v in value])
+            if not tags:
+                return "unknown"
             return "|".join(tags)
         if pd.isna(value):
             return "unknown"

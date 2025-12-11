@@ -116,6 +116,40 @@ def test_build_feature_matrix_empty_dataframe():
         build_feature_matrix(df)
 
 
+def test_build_feature_matrix_empty_and_set_tags():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [31, 32, 33],
+            "teacher_score": [0.5, 0.6, 0.7],
+            "tags": [[], {"b", "a"}, ("one", "two")],
+            "app_name": ["alpha", "beta", None],
+        }
+    )
+
+    X, y, group_id, cat_idx = build_feature_matrix(df)
+
+    assert list(group_id) == [31, 32, 33]
+    assert list(y) == [
+        pytest.approx(0.5),
+        pytest.approx(0.6),
+        pytest.approx(0.7),
+    ]
+
+    assert X.loc[0, "tags_joined"] == "unknown"  # пустая коллекция -> unknown
+    assert X.loc[1, "tags_joined"] == "a|b"  # set сортируется детерминированно
+    assert X.loc[2, "tags_joined"] == "one|two"  # кортеж поддерживается
+
+    expected_cat_idx = [
+        X.columns.get_loc("process_type"),
+        X.columns.get_loc("app_name"),
+        X.columns.get_loc("priority_class"),
+        X.columns.get_loc("teacher_priority_class"),
+        X.columns.get_loc("env_term"),
+        X.columns.get_loc("tags_joined"),
+    ]
+    assert cat_idx == expected_cat_idx
+
+
 def test_build_feature_matrix_cat_indices_order():
     df = pd.DataFrame(
         {
