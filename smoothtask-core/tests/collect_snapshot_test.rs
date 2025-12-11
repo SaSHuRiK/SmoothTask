@@ -95,11 +95,11 @@ async fn test_collect_snapshot_with_valid_components() {
 
     // Проверяем, что снапшот содержит базовые метрики
     assert!(snapshot.snapshot_id > 0);
-    assert!(!snapshot.processes.is_empty() || snapshot.processes.is_empty()); // Может быть пустым в тестовом окружении
+    // processes может быть пустым в тестовом окружении, проверяем только что он существует
     assert!(snapshot.app_groups.is_empty()); // app_groups заполняются после группировки
 
     // Проверяем, что GlobalMetrics построены корректно
-    assert!(snapshot.global.mem_total_kb >= 0); // Может быть 0 в тестовом окружении
+    // mem_total_kb имеет тип u64, который всегда >= 0, поэтому проверка не нужна
     assert!(snapshot.global.load_avg_one >= 0.0);
     assert!(snapshot.global.load_avg_five >= 0.0);
     assert!(snapshot.global.load_avg_fifteen >= 0.0);
@@ -281,8 +281,7 @@ async fn test_collect_snapshot_global_metrics_correctness() {
     assert!(global.load_avg_five >= 0.0);
     assert!(global.load_avg_fifteen >= 0.0);
     // PSI метрики могут быть None (если PSI недоступен)
-    // Input метрики должны быть заполнены
-    assert!(global.user_active || !global.user_active); // Может быть true или false
+    // Input метрики должны быть заполнены (user_active может быть true или false, проверка не нужна)
 }
 
 /// Тест проверяет корректность построения ResponsivenessMetrics.
@@ -327,7 +326,7 @@ async fn test_collect_snapshot_responsiveness_metrics_correctness() {
             || responsiveness.sched_latency_p99_ms.is_some()
     );
     // bad_responsiveness и responsiveness_score должны быть вычислены
-    assert!(responsiveness.bad_responsiveness || !responsiveness.bad_responsiveness); // Может быть true или false
+    // bad_responsiveness может быть true или false, проверка не нужна
     assert!(responsiveness.responsiveness_score.is_some());
     if let Some(score) = responsiveness.responsiveness_score {
         assert!((0.0..=1.0).contains(&score));
