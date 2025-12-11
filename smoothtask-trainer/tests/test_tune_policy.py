@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 import yaml
 
-from smoothtask_trainer.tune_policy import tune_policy
+from smoothtask_trainer.tune_policy import (
+    load_snapshots_for_tuning,
+    tune_policy,
+    _count_snapshots,
+    _validate_db_path,
+    _validate_db_schema,
+)
 
 
 def create_test_db(db_path: Path, num_snapshots: int = 5) -> None:
@@ -194,9 +200,11 @@ def test_tune_policy_not_implemented():
         db_path = Path(tmpdir) / "test.db"
         config_path = Path(tmpdir) / "config.yml"
 
-        create_test_db(db_path, num_snapshots=5)
+        # Создаём БД с достаточным количеством снапшотов для прохождения валидации
+        create_test_db(db_path, num_snapshots=150)
         create_test_config(config_path)
 
+        # Функция должна пройти валидацию и выбросить NotImplementedError
         with pytest.raises(NotImplementedError, match="TODO: реализовать тюнинг политики"):
             tune_policy(db_path, config_path)
 
@@ -225,8 +233,8 @@ def test_tune_policy_with_nonexistent_db():
 
         create_test_config(config_path)
 
-        # Функция пока не реализована, но проверяем, что она существует
-        with pytest.raises(NotImplementedError):
+        # Функция должна выбросить FileNotFoundError при валидации
+        with pytest.raises(FileNotFoundError, match="База данных не найдена"):
             tune_policy(db_path, config_path)
 
 
@@ -242,6 +250,147 @@ def test_tune_policy_with_empty_db():
 
         create_test_config(config_path)
 
-        # Функция пока не реализована, но проверяем, что она существует
-        with pytest.raises(NotImplementedError):
+        # Функция должна выбросить ValueError из-за отсутствия необходимых таблиц
+        with pytest.raises(ValueError, match="База данных не содержит необходимые таблицы"):
+            tune_policy(db_path, config_path)
+
+
+def test_validate_db_path_with_existing_file():
+    """Тест валидации существующего файла БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=5)
+        
+        # Функция не должна выбрасывать исключение для существующего файла
+        _validate_db_path(db_path)
+
+
+def test_validate_db_path_with_nonexistent_file():
+    """Тест валидации несуществующего файла БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "nonexistent.db"
+        
+        # Функция должна выбросить FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            _validate_db_path(db_path)
+
+
+def test_validate_db_schema_with_valid_schema():
+    """Тест валидации схемы БД с валидными таблицами."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=5)
+        
+        with sqlite3.connect(db_path) as conn:
+            # Функция не должна выбрасывать исключение для валидной схемы
+            _validate_db_schema(conn)
+
+
+def test_validate_db_schema_with_missing_tables():
+    """Тест валидации схемы БД с отсутствующими таблицами."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        
+        # Создаём БД только с таблицей snapshots (без processes и app_groups)
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL
+            )
+            """
+        )
+        conn.commit()
+        conn.close()
+        
+        with sqlite3.connect(db_path) as conn:
+            # Функция должна выбросить ValueError
+            with pytest.raises(ValueError, match="не содержит необходимые таблицы"):
+                _validate_db_schema(conn)
+
+
+def test_count_snapshots_with_filter():
+    """Тест подсчёта снапшотов с фильтрацией по времени."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=5)
+        
+        with sqlite3.connect(db_path) as conn:
+            count = _count_snapshots(conn, days_back=7)
+            assert count == 5
+
+
+def test_count_snapshots_without_filter():
+    """Тест подсчёта снапшотов без фильтрации по времени."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=5)
+        
+        with sqlite3.connect(db_path) as conn:
+            count = _count_snapshots(conn, days_back=0)
+            assert count == 5
+
+
+def test_load_snapshots_for_tuning_with_sufficient_data():
+    """Тест загрузки снапшотов с достаточным количеством данных."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        # Создаём БД с достаточным количеством снапшотов (100+)
+        create_test_db(db_path, num_snapshots=150)
+        
+        df = load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+        
+        assert len(df) == 150
+        assert "snapshot_id" in df.columns
+        assert "timestamp" in df.columns
+
+
+def test_load_snapshots_for_tuning_with_insufficient_data():
+    """Тест загрузки снапшотов с недостаточным количеством данных."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=50)
+        
+        # Функция должна выбросить ValueError
+        with pytest.raises(ValueError, match="Недостаточно данных для тюнинга"):
+            load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+
+
+def test_load_snapshots_for_tuning_with_nonexistent_db():
+    """Тест загрузки снапшотов из несуществующей БД."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "nonexistent.db"
+        
+        # Функция должна выбросить FileNotFoundError
+        with pytest.raises(FileNotFoundError):
+            load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+
+
+def test_tune_policy_with_insufficient_snapshots():
+    """Тест тюнинга политики с недостаточным количеством снапшотов."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        config_path = Path(tmpdir) / "config.yml"
+        
+        create_test_db(db_path, num_snapshots=50)  # Меньше минимума (100)
+        create_test_config(config_path)
+        
+        # Функция должна выбросить ValueError перед NotImplementedError
+        with pytest.raises(ValueError, match="Недостаточно данных для тюнинга"):
+            tune_policy(db_path, config_path)
+
+
+def test_tune_policy_with_sufficient_snapshots():
+    """Тест тюнинга политики с достаточным количеством снапшотов."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        config_path = Path(tmpdir) / "config.yml"
+        
+        create_test_db(db_path, num_snapshots=150)  # Больше минимума (100)
+        create_test_config(config_path)
+        
+        # Функция должна пройти валидацию и выбросить NotImplementedError
+        with pytest.raises(NotImplementedError, match="TODO: реализовать тюнинг политики"):
             tune_policy(db_path, config_path)

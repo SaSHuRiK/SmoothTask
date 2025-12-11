@@ -1,6 +1,124 @@
 """Оффлайн-тюнинг параметров политики по логам и метрикам латентности."""
 
+import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
+
+import pandas as pd
+
+
+def _validate_db_path(db_path: Path) -> None:
+    """
+    Проверяет существование файла базы данных.
+    
+    Args:
+        db_path: Путь к SQLite базе данных
+        
+    Raises:
+        FileNotFoundError: если файл не существует
+    """
+    if not db_path.exists():
+        raise FileNotFoundError(f"База данных не найдена: {db_path}")
+
+
+def _validate_db_schema(conn: sqlite3.Connection) -> None:
+    """
+    Проверяет наличие необходимых таблиц в базе данных.
+    
+    Args:
+        conn: Соединение с SQLite базой данных
+        
+    Raises:
+        ValueError: если отсутствуют необходимые таблицы
+    """
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('snapshots', 'processes', 'app_groups')"
+    )
+    tables = {row[0] for row in cursor.fetchall()}
+    
+    required_tables = {"snapshots", "processes", "app_groups"}
+    missing_tables = required_tables - tables
+    
+    if missing_tables:
+        raise ValueError(
+            f"База данных не содержит необходимые таблицы: {', '.join(missing_tables)}"
+        )
+
+
+def _count_snapshots(conn: sqlite3.Connection, days_back: int = 7) -> int:
+    """
+    Подсчитывает количество снапшотов за указанный период.
+    
+    Args:
+        conn: Соединение с SQLite базой данных
+        days_back: Количество дней назад для фильтрации (по умолчанию 7)
+        
+    Returns:
+        Количество снапшотов за указанный период
+    """
+    cursor = conn.cursor()
+    
+    if days_back > 0:
+        cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_back)
+        cutoff_timestamp = cutoff_time.isoformat()
+        cursor.execute(
+            "SELECT COUNT(*) FROM snapshots WHERE timestamp >= ?",
+            (cutoff_timestamp,),
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) FROM snapshots")
+    
+    result = cursor.fetchone()
+    return result[0] if result else 0
+
+
+def load_snapshots_for_tuning(
+    db_path: Path, min_snapshots: int = 100, days_back: int = 7
+) -> pd.DataFrame:
+    """
+    Загружает снапшоты из БД для тюнинга политики с фильтрацией по времени.
+    
+    Функция загружает снапшоты за указанный период и проверяет минимальное
+    количество данных для надёжной оптимизации.
+    
+    Args:
+        db_path: Путь к SQLite базе данных со снапшотами
+        min_snapshots: Минимальное количество снапшотов для тюнинга (по умолчанию 100)
+        days_back: Количество дней назад для фильтрации (по умолчанию 7)
+        
+    Returns:
+        DataFrame со снапшотами за указанный период
+        
+    Raises:
+        FileNotFoundError: если файл базы данных не существует
+        ValueError: если данных недостаточно для тюнинга
+        sqlite3.OperationalError: если БД имеет некорректный формат
+    """
+    _validate_db_path(db_path)
+    
+    with sqlite3.connect(db_path) as conn:
+        _validate_db_schema(conn)
+        
+        snapshot_count = _count_snapshots(conn, days_back)
+        
+        if snapshot_count < min_snapshots:
+            raise ValueError(
+                f"Недостаточно данных для тюнинга: найдено {snapshot_count} снапшотов, "
+                f"требуется минимум {min_snapshots} за последние {days_back} дней"
+            )
+        
+        # Загружаем снапшоты за указанный период
+        if days_back > 0:
+            cutoff_time = datetime.now(timezone.utc) - timedelta(days=days_back)
+            cutoff_timestamp = cutoff_time.isoformat()
+            query = "SELECT * FROM snapshots WHERE timestamp >= ? ORDER BY timestamp"
+            df = pd.read_sql(query, conn, params=(cutoff_timestamp,), parse_dates=["timestamp"])
+        else:
+            query = "SELECT * FROM snapshots ORDER BY timestamp"
+            df = pd.read_sql(query, conn, parse_dates=["timestamp"])
+    
+    return df
 
 
 def tune_policy(db_path: Path, config_out: Path):
@@ -184,6 +302,21 @@ def tune_policy(db_path: Path, config_out: Path):
     - `IOError`: Если не удалось записать `config_out`
     - `PermissionError`: Если нет прав на запись в `config_out`
     """
+    # Базовая валидация входных данных
+    _validate_db_path(db_path)
+    
+    with sqlite3.connect(db_path) as conn:
+        _validate_db_schema(conn)
+        
+        # Проверяем минимальное количество снапшотов
+        snapshot_count = _count_snapshots(conn, days_back=7)
+        if snapshot_count < 100:
+            raise ValueError(
+                f"Недостаточно данных для тюнинга: найдено {snapshot_count} снапшотов, "
+                "требуется минимум 100 за последние 7 дней"
+            )
+    
+    # Основная логика тюнинга будет реализована позже
     raise NotImplementedError("TODO: реализовать тюнинг политики")
 
 
