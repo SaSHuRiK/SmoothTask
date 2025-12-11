@@ -355,6 +355,42 @@ def _ensure_no_infinite(
             )
 
 
+def _ensure_integer_like(
+    df: pd.DataFrame,
+    table: str,
+    columns: Iterable[str],
+    *,
+    allow_null: bool,
+    non_negative: bool,
+    sample_size: int = 5,
+) -> None:
+    """
+    Проверяет, что столбцы содержат целочисленные значения без бесконечностей.
+    """
+    for col in columns:
+        if col not in df.columns:
+            continue
+
+        series = df[col]
+        values = series.dropna() if allow_null else series
+        if values.empty:
+            continue
+
+        numeric = pd.to_numeric(values, errors="coerce")
+        invalid_mask = numeric.isna() | np.isinf(numeric) | (numeric % 1 != 0)
+        if non_negative:
+            invalid_mask |= numeric < 0
+
+        if invalid_mask.any():
+            samples = values[invalid_mask].head(sample_size)
+            formatted = ", ".join(repr(v) for v in samples)
+            sign_hint = " неотрицательные" if non_negative else ""
+            raise ValueError(
+                f"Колонка '{col}' в таблице '{table}' должна содержать целые{sign_hint} значения, "
+                f"примеры некорректных: {formatted}"
+            )
+
+
 def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     """
     Загружает снапшоты из SQLite в pandas DataFrame.
@@ -390,6 +426,27 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     _ensure_no_nan(snapshots, table="snapshots", columns={"snapshot_id"})
     _ensure_no_nan(processes, table="processes", columns={"snapshot_id", "pid"})
     _ensure_no_nan(app_groups, table="app_groups", columns={"snapshot_id", "app_group_id"})
+    _ensure_integer_like(
+        snapshots,
+        table="snapshots",
+        columns=["snapshot_id"],
+        allow_null=False,
+        non_negative=True,
+    )
+    _ensure_integer_like(
+        processes,
+        table="processes",
+        columns=["snapshot_id", "pid"],
+        allow_null=False,
+        non_negative=True,
+    )
+    _ensure_integer_like(
+        app_groups,
+        table="app_groups",
+        columns=["snapshot_id"],
+        allow_null=False,
+        non_negative=True,
+    )
     _ensure_no_infinite(
         snapshots,
         table="snapshots",

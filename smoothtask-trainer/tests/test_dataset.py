@@ -389,6 +389,35 @@ def test_load_snapshots_as_frame_rejects_duplicate_app_group_keys(tmp_path: Path
         load_snapshots_as_frame(db_path)
 
 
+def test_load_snapshots_as_frame_rejects_non_integer_keys(tmp_path: Path):
+    db_path = tmp_path / "non_integer_keys.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", ("1.5", "abc"))
+    cursor.execute(
+        "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)", ("oops", "g1")
+    )
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="целые"):
+        load_snapshots_as_frame(db_path)
+
+
+def test_load_snapshots_as_frame_rejects_negative_keys(tmp_path: Path):
+    db_path = tmp_path / "negative_keys.sqlite"
+    conn = _create_minimal_db_with_tables(db_path)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (1)")
+    cursor.execute("INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)", (1, -10))
+    conn.commit()
+    conn.close()
+
+    with pytest.raises(ValueError, match="неотрицательные"):
+        load_snapshots_as_frame(db_path)
+
+
 def test_load_snapshots_as_frame_rejects_app_groups_without_snapshots(tmp_path: Path):
     db_path = tmp_path / "missing_app_group_snapshots.sqlite"
     conn = _create_minimal_db_with_tables(db_path)
