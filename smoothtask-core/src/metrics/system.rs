@@ -143,10 +143,66 @@ pub struct MemoryInfo {
 }
 
 impl MemoryInfo {
+    /// Вычисляет использованную память в килобайтах.
+    ///
+    /// Использует `saturating_sub` для безопасной обработки случаев, когда
+    /// `mem_available_kb` больше `mem_total_kb` (некорректные данные).
+    ///
+    /// # Возвращает
+    ///
+    /// Количество использованной памяти в килобайтах.
+    /// Если `mem_available_kb > mem_total_kb`, возвращает 0.
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::MemoryInfo;
+    ///
+    /// let mem = MemoryInfo {
+    ///     mem_total_kb: 16_384_256,
+    ///     mem_available_kb: 9_876_543,
+    ///     mem_free_kb: 1_234_567,
+    ///     buffers_kb: 345_678,
+    ///     cached_kb: 2_345_678,
+    ///     swap_total_kb: 8_192_000,
+    ///     swap_free_kb: 4_096_000,
+    /// };
+    ///
+    /// let used = mem.mem_used_kb();
+    /// assert_eq!(used, 16_384_256 - 9_876_543);
+    /// ```
     pub fn mem_used_kb(&self) -> u64 {
         self.mem_total_kb.saturating_sub(self.mem_available_kb)
     }
 
+    /// Вычисляет использованный swap в килобайтах.
+    ///
+    /// Использует `saturating_sub` для безопасной обработки случаев, когда
+    /// `swap_free_kb` больше `swap_total_kb` (некорректные данные).
+    ///
+    /// # Возвращает
+    ///
+    /// Количество использованного swap в килобайтах.
+    /// Если `swap_free_kb > swap_total_kb`, возвращает 0.
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::MemoryInfo;
+    ///
+    /// let mem = MemoryInfo {
+    ///     mem_total_kb: 0,
+    ///     mem_available_kb: 0,
+    ///     mem_free_kb: 0,
+    ///     buffers_kb: 0,
+    ///     cached_kb: 0,
+    ///     swap_total_kb: 8_192_000,
+    ///     swap_free_kb: 4_096_000,
+    /// };
+    ///
+    /// let used = mem.swap_used_kb();
+    /// assert_eq!(used, 8_192_000 - 4_096_000);
+    /// ```
     pub fn swap_used_kb(&self) -> u64 {
         self.swap_total_kb.saturating_sub(self.swap_free_kb)
     }
@@ -189,7 +245,42 @@ pub struct SystemMetrics {
 }
 
 impl SystemMetrics {
-    /// Доли использования CPU относительно предыдущего снапшота.
+    /// Вычисляет доли использования CPU относительно предыдущего снапшота.
+    ///
+    /// Делегирует вычисление к `CpuTimes::delta()` для получения нормализованных
+    /// процентов использования CPU (user, system, idle, iowait).
+    ///
+    /// # Аргументы
+    ///
+    /// * `prev` - предыдущий снапшот системных метрик для вычисления дельт
+    ///
+    /// # Возвращает
+    ///
+    /// - `Some(CpuUsage)` - если удалось вычислить использование CPU
+    /// - `None` - если произошло переполнение счетчиков или total = 0
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::{SystemMetrics, CpuTimes, MemoryInfo, LoadAvg, PressureMetrics};
+    ///
+    /// let prev = SystemMetrics {
+    ///     cpu_times: CpuTimes { user: 100, nice: 20, system: 50, idle: 200, iowait: 10, irq: 5, softirq: 5, steal: 0, guest: 0, guest_nice: 0 },
+    ///     memory: MemoryInfo { mem_total_kb: 1000, mem_available_kb: 500, mem_free_kb: 400, buffers_kb: 50, cached_kb: 50, swap_total_kb: 1000, swap_free_kb: 800 },
+    ///     load_avg: LoadAvg { one: 1.0, five: 1.0, fifteen: 1.0 },
+    ///     pressure: PressureMetrics::default(),
+    /// };
+    ///
+    /// let cur = SystemMetrics {
+    ///     cpu_times: CpuTimes { user: 150, nice: 30, system: 80, idle: 260, iowait: 20, irq: 10, softirq: 10, steal: 0, guest: 0, guest_nice: 0 },
+    ///     memory: prev.memory,
+    ///     load_avg: prev.load_avg,
+    ///     pressure: prev.pressure.clone(),
+    /// };
+    ///
+    /// let usage = cur.cpu_usage_since(&prev);
+    /// assert!(usage.is_some());
+    /// ```
     pub fn cpu_usage_since(&self, prev: &SystemMetrics) -> Option<CpuUsage> {
         self.cpu_times.delta(&prev.cpu_times)
     }
@@ -207,6 +298,33 @@ pub struct ProcPaths {
 }
 
 impl ProcPaths {
+    /// Создаёт новый ProcPaths с указанным корневым путём к /proc.
+    ///
+    /// # Аргументы
+    ///
+    /// * `proc_root` - корневой путь к /proc (например, "/proc" или "/tmp/test_proc")
+    ///
+    /// # Возвращает
+    ///
+    /// `ProcPaths` с путями к файлам:
+    /// - `stat` - `/proc/stat`
+    /// - `meminfo` - `/proc/meminfo`
+    /// - `loadavg` - `/proc/loadavg`
+    /// - `pressure_cpu` - `/proc/pressure/cpu`
+    /// - `pressure_io` - `/proc/pressure/io`
+    /// - `pressure_memory` - `/proc/pressure/memory`
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::system::ProcPaths;
+    ///
+    /// // Использование реального /proc
+    /// let paths = ProcPaths::new("/proc");
+    ///
+    /// // Использование тестового пути
+    /// let paths = ProcPaths::new("/tmp/test_proc");
+    /// ```
     pub fn new(proc_root: impl AsRef<Path>) -> Self {
         let root = proc_root.as_ref();
         Self {
