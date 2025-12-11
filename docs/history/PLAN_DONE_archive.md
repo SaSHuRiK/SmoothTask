@@ -1,3 +1,12 @@
+## Перенос из PLAN.md (ST-317–ST-316, 2025-12-11)
+
+- [x] ST-317: export_model создаёт директории и валидирует выходной путь
+  - Тип: Python / trainer / export
+  - Примечания: добавлена автосоздающаяся директория для выхода, явная ошибка при сохранении в каталог; покрыто тестами вложенного пути и запретом на каталог; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_export_model.py`.
+- [x] ST-316: Улучшить ошибки load_snapshots_as_frame при отсутствии таблиц
+  - Тип: Python / trainer / dataset
+  - Примечания: `_load_table` теперь отдаёт ValueError с названием таблицы при отсутствии/ошибке SQLite; добавлена проверка обязательных столбцов и тесты на отсутствие таблицы и PID; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 ## Перенос из PLAN.md (ST-315–ST-314, 2025-12-11)
 
 - [x] ST-315: Добавить smoke-тесты load_snapshots_as_frame для пустых таблиц

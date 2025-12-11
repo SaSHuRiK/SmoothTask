@@ -128,6 +128,49 @@ def _prepare_tags_column(series: Iterable[object]) -> pd.Series:
     return pd.Series([_join_tags(v) for v in series])
 
 
+def _coerce_boolean(series: pd.Series, column: str) -> pd.Series:
+    """
+    Приводит столбец к nullable boolean с валидацией допустимых значений.
+
+    Допускаются значения True/False, 0/1 (включая строковые "0"/"1") и NaN.
+    При других значениях выбрасывается ValueError с примерами.
+    """
+
+    coerced: list[object] = []
+    invalid_values: list[object] = []
+
+    for value in series:
+        if pd.isna(value):
+            coerced.append(pd.NA)
+            continue
+        if isinstance(value, (bool, np.bool_)):
+            coerced.append(bool(value))
+            continue
+        if isinstance(value, (int, np.integer)):
+            if value in (0, 1):
+                coerced.append(bool(value))
+                continue
+        if isinstance(value, (float, np.floating)):
+            if value in (0.0, 1.0):
+                coerced.append(bool(int(value)))
+                continue
+        if isinstance(value, str):
+            stripped = value.strip()
+            if stripped in {"0", "1"}:
+                coerced.append(stripped == "1")
+                continue
+        invalid_values.append(value)
+        coerced.append(pd.NA)
+
+    if invalid_values:
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Колонка '{column}' содержит невалидные булевые значения: {sample_values}"
+        )
+
+    return pd.Series(coerced, index=series.index, dtype="boolean")
+
+
 def build_feature_matrix(
     df: pd.DataFrame,
 ) -> Tuple[pd.DataFrame, pd.Series, pd.Series, List[int]]:
@@ -236,8 +279,9 @@ def build_feature_matrix(
 
     # Булевые фичи -> 0/1
     for col in _BOOL_COLS:
-        series = _ensure_column(work_df, col, False, dtype="boolean")
-        features[col] = series.fillna(False).astype(int)
+        series = _ensure_column(work_df, col, False)
+        bool_series = _coerce_boolean(pd.Series(series, copy=False), col)
+        features[col] = bool_series.fillna(False).astype(int)
         column_order.append(col)
 
     # Теги в отдельную категориальную колонку

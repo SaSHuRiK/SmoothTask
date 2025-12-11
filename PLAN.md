@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-327: Валидация булевых колонок в load_snapshots_as_frame
+  - Тип: Python / trainer / dataset
+  - Примечания: _to_bool теперь валидирует булевые значения с понятным ValueError, допускает только True/False/0/1/"0"/"1" (включая float 0.0/1.0). Добавлены тесты на ошибочные и валидные значения булевых колонок в snapshots/processes/app_groups. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-326: Валидация булевых фич в build_feature_matrix
+  - Тип: Python / trainer / features
+  - Примечания: булевые фичи принимают только True/False/0/1 (включая строковые "0"/"1" и float 0.0/1.0); при иных значениях выбрасывается понятный ValueError. Добавлены тесты на ошибочные и корректные значения. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 - [x] ST-325: build_feature_matrix валидирует бесконечные числовые фичи
   - Тип: Python / trainer / features
   - Примечания: все числовые колонки проверяются на +/-inf с ValueError, добавлен тест на бесконечное значение в cpu_share_1s. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
@@ -70,13 +78,6 @@
 - [x] ST-318: Добавить unit-тесты для `_prepare_tags_column` в `features`
   - Тип: Python / trainer / features / tests
   - Примечания: покрыты списки/множества/кортежи/скаляры/NaN/None и пустые коллекции, обеспечена сортировка тегов и возврат "unknown" для отсутствующих значений; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
-
-- [x] ST-317: export_model создаёт директории и валидирует выходной путь
-  - Тип: Python / trainer / export
-  - Примечания: добавлена автосоздающаяся директория для выхода, явная ошибка при сохранении в каталог; покрыто тестами вложенного пути и запретом на каталог; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_export_model.py`.
-- [x] ST-316: Улучшить ошибки load_snapshots_as_frame при отсутствии таблиц
-  - Тип: Python / trainer / dataset
-  - Примечания: `_load_table` теперь отдаёт ValueError с названием таблицы при отсутствии/ошибке SQLite; добавлена проверка обязательных столбцов и тесты на отсутствие таблицы и PID; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

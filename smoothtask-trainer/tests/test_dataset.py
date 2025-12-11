@@ -774,7 +774,7 @@ def test_to_bool_converts_present_columns_only():
         }
     )
 
-    _to_bool(df, ["flag_int", "missing"])
+    _to_bool(df, ["flag_int", "missing"], table="test_table")
 
     assert df["flag_int"].dtype == "boolean"
     assert list(df["flag_int"]) == [True, False, pd.NA]
@@ -792,8 +792,149 @@ def test_to_bool_no_warnings_for_nullable_bools():
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("error")
-        _to_bool(df, ["flag_int", "flag_bool"])
+        _to_bool(df, ["flag_int", "flag_bool"], table="test_table")
 
     assert not caught
     assert df["flag_int"].dtype == "boolean"
     assert df["flag_bool"].dtype == "boolean"
+
+
+def test_load_snapshots_as_frame_invalid_boolean_values_raises():
+    """Невалидные булевые значения должны выдавать понятный ValueError."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user_active TEXT,
+                bad_responsiveness INTEGER
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                has_tty TEXT,
+                app_group_id TEXT,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL,
+                has_gui_window TEXT,
+                PRIMARY KEY (snapshot_id, app_group_id)
+            )
+            """
+        )
+
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp, user_active, bad_responsiveness) VALUES (?, ?, ?, ?)",
+            (1, datetime.now(timezone.utc).isoformat(), "yes", 0),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, has_tty, app_group_id) VALUES (?, ?, ?, ?)",
+            (1, 42, "maybe", "g1"),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id, has_gui_window) VALUES (?, ?, ?)",
+            (1, "g1", 2),
+        )
+
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(
+            ValueError, match="невалидные булевые значения"
+        ):
+            load_snapshots_as_frame(db_path)
+
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_load_snapshots_as_frame_accepts_numeric_string_booleans():
+    """Строковые '0'/'1' и числа конвертируются в boolean dtype."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL,
+                user_active TEXT,
+                bad_responsiveness INTEGER
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                has_tty TEXT,
+                env_has_display TEXT,
+                has_gui_window INTEGER,
+                app_group_id TEXT,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL,
+                has_gui_window TEXT,
+                is_focused_group INTEGER,
+                PRIMARY KEY (snapshot_id, app_group_id)
+            )
+            """
+        )
+
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp, user_active, bad_responsiveness) VALUES (?, ?, ?, ?)",
+            (5, datetime.now(timezone.utc).isoformat(), "1", 0),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, has_tty, env_has_display, has_gui_window, app_group_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (5, 111, "0", 1, 0, "g5"),
+        )
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id, has_gui_window, is_focused_group) VALUES (?, ?, ?, ?)",
+            (5, "g5", "1", 0),
+        )
+
+        conn.commit()
+        conn.close()
+
+        df = load_snapshots_as_frame(db_path)
+
+        assert df["user_active"].dtype == "boolean"
+        assert df["user_active"].iloc[0] == True
+        assert df["bad_responsiveness"].iloc[0] == False
+        assert df["has_tty"].dtype == "boolean"
+        assert df["has_tty"].iloc[0] == False
+        assert df["env_has_display"].iloc[0] == True
+        assert df["has_gui_window_group"].dtype == "boolean"
+        assert df["has_gui_window_group"].iloc[0] == True
+
+    finally:
+        db_path.unlink(missing_ok=True)

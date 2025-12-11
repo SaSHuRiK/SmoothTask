@@ -7,6 +7,7 @@ import sqlite3
 from pathlib import Path
 from typing import Iterable
 
+import numpy as np
 import pandas as pd
 
 _PROCESS_BOOL_COLS = {
@@ -53,7 +54,51 @@ def _json_list(value: str | None) -> list:
     raise ValueError(f"Ожидался JSON-массив, получено: {type(parsed)}")
 
 
-def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
+def _coerce_bool_column(
+    series: pd.Series, column: str, table: str
+) -> pd.Series:
+    """
+    Приводит столбец к nullable boolean с валидацией допустимых значений.
+
+    Допускаются True/False, 0/1, строковые "0"/"1" и NaN. При других значениях
+    выбрасывается ValueError с указанием таблицы и примеров значений.
+    """
+    coerced: list[object] = []
+    invalid_values: list[object] = []
+
+    for value in series:
+        if pd.isna(value):
+            coerced.append(pd.NA)
+            continue
+        if isinstance(value, (bool, np.bool_)):
+            coerced.append(bool(value))
+            continue
+        if isinstance(value, (int, np.integer)):
+            if value in (0, 1):
+                coerced.append(bool(value))
+                continue
+        if isinstance(value, (float, np.floating)):
+            if value in (0.0, 1.0):
+                coerced.append(bool(int(value)))
+                continue
+        if isinstance(value, str):
+            stripped = value.strip().lower()
+            if stripped in {"0", "1"}:
+                coerced.append(stripped == "1")
+                continue
+        invalid_values.append(value)
+        coerced.append(pd.NA)
+
+    if invalid_values:
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Колонка '{column}' в таблице '{table}' содержит невалидные булевые значения: {sample_values}"
+        )
+
+    return pd.Series(coerced, index=series.index, dtype="boolean")
+
+
+def _to_bool(df: pd.DataFrame, columns: Iterable[str], table: str) -> None:
     """
     Преобразует указанные столбцы DataFrame в булевый тип.
 
@@ -63,11 +108,13 @@ def _to_bool(df: pd.DataFrame, columns: Iterable[str]) -> None:
     Args:
         df: DataFrame для преобразования (изменяется in-place)
         columns: Итератор с именами столбцов для преобразования
+        table: Имя таблицы для сообщений об ошибке
     """
     for col in columns:
         if col in df.columns:
-            # Явно приводим к nullable boolean, чтобы избежать future warning'ов при двойных astype.
-            df[col] = pd.Series(df[col], copy=False).astype("boolean")
+            df[col] = _coerce_bool_column(
+                pd.Series(df[col], copy=False), column=col, table=table
+            )
 
 
 def _load_table(
@@ -144,9 +191,9 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
         return pd.DataFrame()
 
     # Нормализуем булевые флаги и JSON-списки.
-    _to_bool(snapshots, _SNAPSHOT_BOOL_COLS)
-    _to_bool(processes, _PROCESS_BOOL_COLS)
-    _to_bool(app_groups, _APP_GROUP_BOOL_COLS)
+    _to_bool(snapshots, _SNAPSHOT_BOOL_COLS, table="snapshots")
+    _to_bool(processes, _PROCESS_BOOL_COLS, table="processes")
+    _to_bool(app_groups, _APP_GROUP_BOOL_COLS, table="app_groups")
 
     if "tags" in processes.columns:
         processes["tags"] = processes["tags"].apply(_json_list)

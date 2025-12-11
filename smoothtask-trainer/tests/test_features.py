@@ -184,6 +184,37 @@ def test_build_feature_matrix_tags_and_cat_defaults():
         assert X.columns.get_loc(col) in cat_idx
 
 
+def test_build_feature_matrix_rejects_invalid_boolean_values():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [0.1, 0.2],
+            "has_tty": ["yes", 0],
+            "user_active": [1, "maybe"],
+        }
+    )
+
+    with pytest.raises(ValueError, match="невалидные булевые значения"):
+        build_feature_matrix(df)
+
+
+def test_build_feature_matrix_accepts_numeric_boolean_values():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [10, 11],
+            "teacher_score": [0.3, 0.4],
+            "has_tty": ["1", 0],
+            "has_gui_window": [1, "0"],
+            "user_active": [True, False],
+        }
+    )
+
+    X, _, _, _ = build_feature_matrix(df)
+
+    assert list(X["has_tty"]) == [1, 0]
+    assert list(X["has_gui_window"]) == [1, 0]
+    assert list(X["user_active"]) == [1, 0]
+
 def test_build_feature_matrix_requires_snapshot_id():
     df = pd.DataFrame({"teacher_score": [0.5]})
     with pytest.raises(ValueError):
