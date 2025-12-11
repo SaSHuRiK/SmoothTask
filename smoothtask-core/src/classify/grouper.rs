@@ -234,7 +234,7 @@ impl ProcessGrouper {
     /// - Функция всегда возвращает путь, начинающийся с `/`
     /// - Пустые части пути (двойные слэши) игнорируются
     /// - Если путь не содержит специальных элементов, возвращается весь путь
-    fn normalize_cgroup(cgroup_path: &str) -> String {
+    pub fn normalize_cgroup(cgroup_path: &str) -> String {
         let parts: Vec<&str> = cgroup_path.split('/').filter(|s| !s.is_empty()).collect();
         let mut normalized = Vec::new();
 

@@ -128,7 +128,19 @@ impl ResponsivenessMetrics {
     ///     psi_io_some_avg10: Some(0.3),
     ///     ..Default::default()
     /// };
-    /// let thresholds = Thresholds::default();
+    /// let thresholds = Thresholds {
+    ///     psi_cpu_some_high: 0.6,
+    ///     psi_io_some_high: 0.4,
+    ///     user_idle_timeout_sec: 120,
+    ///     interactive_build_grace_sec: 10,
+    ///     noisy_neighbour_cpu_share: 0.7,
+    ///     crit_interactive_percentile: 0.9,
+    ///     interactive_percentile: 0.6,
+    ///     normal_percentile: 0.3,
+    ///     background_percentile: 0.1,
+    ///     sched_latency_p99_threshold_ms: 10.0,
+    ///     ui_loop_p95_threshold_ms: 16.67,
+    /// };
     ///
     /// responsiveness.compute(&global, &thresholds);
     ///
@@ -144,7 +156,30 @@ impl ResponsivenessMetrics {
     /// ## Использование в цикле демона
     ///
     /// ```rust,no_run
+    /// use smoothtask_core::logging::snapshots::{ResponsivenessMetrics, GlobalMetrics};
+    /// use smoothtask_core::config::Thresholds;
+    /// use smoothtask_core::metrics::scheduling_latency::LatencyCollector;
+    /// use smoothtask_core::metrics::audio::AudioMetrics;
+    /// use std::sync::Arc;
+    /// use std::time::SystemTime;
+    ///
     /// // В функции collect_snapshot
+    /// # let latency_collector = Arc::new(LatencyCollector::new(1000));
+    /// # let audio_metrics = AudioMetrics::empty(SystemTime::now(), SystemTime::now());
+    /// # let global = GlobalMetrics::default();
+    /// # let thresholds = Thresholds {
+    /// #     psi_cpu_some_high: 0.6,
+    /// #     psi_io_some_high: 0.4,
+    /// #     user_idle_timeout_sec: 120,
+    /// #     interactive_build_grace_sec: 10,
+    /// #     noisy_neighbour_cpu_share: 0.7,
+    /// #     crit_interactive_percentile: 0.9,
+    /// #     interactive_percentile: 0.6,
+    /// #     normal_percentile: 0.3,
+    /// #     background_percentile: 0.1,
+    /// #     sched_latency_p99_threshold_ms: 10.0,
+    /// #     ui_loop_p95_threshold_ms: 16.67,
+    /// # };
     /// let mut responsiveness = ResponsivenessMetrics {
     ///     sched_latency_p95_ms: latency_collector.p95(),
     ///     sched_latency_p99_ms: latency_collector.p99(),
@@ -153,11 +188,11 @@ impl ResponsivenessMetrics {
     /// };
     ///
     /// // Вычисление метрик отзывчивости
-    /// responsiveness.compute(&global, &config.thresholds);
+    /// responsiveness.compute(&global, &thresholds);
     ///
     /// // Использование в логировании или принятии решений
     /// if responsiveness.bad_responsiveness {
-    ///     warn!("Обнаружены проблемы с отзывчивостью системы");
+    ///     // Обнаружены проблемы с отзывчивостью системы
     /// }
     /// ```
     ///

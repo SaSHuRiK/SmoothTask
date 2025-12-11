@@ -54,6 +54,7 @@ impl AudioMetrics {
     /// # Примеры
     ///
     /// ```rust,no_run
+    /// use smoothtask_core::metrics::audio::AudioMetrics;
     /// use std::time::{SystemTime, Duration};
     ///
     /// let start = SystemTime::now();
@@ -62,6 +63,7 @@ impl AudioMetrics {
     /// ```
     ///
     /// ```rust,should_panic
+    /// use smoothtask_core::metrics::audio::AudioMetrics;
     /// use std::time::{SystemTime, Duration};
     ///
     /// let start = SystemTime::now();
@@ -93,6 +95,7 @@ impl AudioMetrics {
     /// # Примеры
     ///
     /// ```rust,no_run
+    /// use smoothtask_core::metrics::audio::AudioMetrics;
     /// use std::time::{SystemTime, Duration};
     ///
     /// let start = SystemTime::now();

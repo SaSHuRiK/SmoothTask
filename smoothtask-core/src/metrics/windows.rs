@@ -409,7 +409,7 @@ impl StaticWindowIntrospector {
     /// # Примеры
     ///
     /// ```rust
-    /// use smoothtask_core::metrics::windows::{StaticWindowIntrospector, WindowInfo, WindowState};
+    /// use smoothtask_core::metrics::windows::{StaticWindowIntrospector, WindowInfo, WindowState, WindowIntrospector};
     ///
     /// let windows = vec![
     ///     WindowInfo::new(

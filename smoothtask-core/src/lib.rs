@@ -39,6 +39,8 @@ use crate::policy::engine::PolicyEngine;
 /// # Примеры использования
 ///
 /// ```no_run
+/// use smoothtask_core::DaemonStats;
+///
 /// let mut stats = DaemonStats::new();
 ///
 /// // Записываем успешную итерацию
@@ -87,9 +89,11 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
     /// let stats = DaemonStats::new();
-    /// assert_eq!(stats.total_iterations, 0);
-    /// assert_eq!(stats.successful_iterations, 0);
+    /// // Статистика инициализирована с нулевыми значениями
+    /// assert_eq!(stats.average_iteration_duration_ms(), 0.0);
     /// ```
     pub fn new() -> Self {
         Self {
@@ -117,12 +121,12 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_successful_iteration(100, 5, 1);
-    /// assert_eq!(stats.total_iterations, 1);
-    /// assert_eq!(stats.successful_iterations, 1);
-    /// assert_eq!(stats.total_applied_adjustments, 5);
-    /// assert_eq!(stats.total_apply_errors, 1);
+    /// // Статистика обновлена: среднее время итерации вычисляется
+    /// assert_eq!(stats.average_iteration_duration_ms(), 100.0);
     /// ```
     pub fn record_successful_iteration(&mut self, duration_ms: u128, applied: u64, errors: u64) {
         self.total_iterations += 1;
@@ -141,11 +145,12 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_error_iteration();
-    /// assert_eq!(stats.total_iterations, 1);
-    /// assert_eq!(stats.error_iterations, 1);
-    /// assert_eq!(stats.successful_iterations, 0);
+    /// // Статистика обновлена: среднее время итерации остаётся 0.0 (нет успешных итераций)
+    /// assert_eq!(stats.average_iteration_duration_ms(), 0.0);
     /// ```
     pub fn record_error_iteration(&mut self) {
         self.total_iterations += 1;
@@ -160,6 +165,8 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_successful_iteration(100, 0, 0);
     /// stats.record_successful_iteration(200, 0, 0);
@@ -186,6 +193,8 @@ impl DaemonStats {
     /// # Примеры
     ///
     /// ```no_run
+    /// use smoothtask_core::DaemonStats;
+    ///
     /// let mut stats = DaemonStats::new();
     /// stats.record_successful_iteration(100, 5, 1);
     /// stats.log_stats(); // Логирует: "Daemon stats: 1 total iterations..."
@@ -743,18 +752,18 @@ pub async fn run_daemon(
 /// use smoothtask_core::collect_snapshot;
 /// use smoothtask_core::config::Thresholds;
 /// use smoothtask_core::metrics::system::ProcPaths;
-/// use smoothtask_core::metrics::windows::StaticWindowIntrospector;
+/// use smoothtask_core::metrics::windows::{StaticWindowIntrospector, WindowIntrospector};
 /// use smoothtask_core::metrics::audio::{AudioIntrospector, StaticAudioIntrospector};
-/// use smoothtask_core::metrics::input::InputActivityTracker;
+/// use smoothtask_core::metrics::input::InputTracker;
 /// use smoothtask_core::metrics::scheduling_latency::LatencyCollector;
 /// use std::sync::{Arc, Mutex};
 /// use std::time::Duration;
 ///
 /// # async fn example() -> anyhow::Result<()> {
 /// let proc_paths = ProcPaths::default();
-/// let window_introspector = Arc::new(StaticWindowIntrospector::new(Vec::new()));
-/// let audio_introspector = Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty()) as Box<dyn AudioIntrospector>));
-/// let input_tracker = Arc::new(Mutex::new(InputActivityTracker::new(Duration::from_secs(60))));
+/// let window_introspector: Arc<dyn WindowIntrospector> = Arc::new(StaticWindowIntrospector::new(Vec::new()));
+/// let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> = Arc::new(Mutex::new(Box::new(StaticAudioIntrospector::empty())));
+/// let input_tracker = Arc::new(Mutex::new(InputTracker::new(Duration::from_secs(60))));
 /// let mut prev_cpu_times = None;
 /// let thresholds = Thresholds {
 ///     psi_cpu_some_high: 0.6,

@@ -39,8 +39,8 @@ pub struct PolicyResult {
 /// let engine = PolicyEngine::new(config);
 ///
 /// // Оценить снапшот
-/// let snapshot = Snapshot::default(); // ваш снапшот
-/// let results = engine.evaluate_snapshot(&snapshot);
+/// # let snapshot: &Snapshot = todo!(); // ваш снапшот
+/// let results = engine.evaluate_snapshot(snapshot);
 ///
 /// // Результаты содержат приоритеты для каждой AppGroup
 /// for (app_group_id, result) in results {
@@ -158,8 +158,8 @@ impl PolicyEngine {
     /// let config = Config::load("config.yml")?;
     /// let engine = PolicyEngine::new(config);
     ///
-    /// let snapshot = Snapshot::default(); // ваш снапшот
-    /// let results = engine.evaluate_snapshot(&snapshot);
+    /// # let snapshot: &Snapshot = todo!(); // ваш снапшот
+    /// let results = engine.evaluate_snapshot(snapshot);
     ///
     /// // Обработка результатов
     /// for (app_group_id, result) in results {
