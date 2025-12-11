@@ -3,6 +3,7 @@
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Dict
 
 import pandas as pd
 
@@ -119,6 +120,165 @@ def load_snapshots_for_tuning(
             df = pd.read_sql(query, conn, parse_dates=["timestamp"])
     
     return df
+
+
+def compute_policy_correlations(snapshots_df: pd.DataFrame) -> Dict[str, float]:
+    """
+    Вычисляет корреляции между параметрами политики и метриками отзывчивости.
+    
+    Функция анализирует корреляции между:
+    - PSI-метриками (psi_cpu_some_avg10, psi_io_some_avg10) и bad_responsiveness
+    - Latency-метриками (sched_latency_p99_ms, ui_loop_p95_ms) и bad_responsiveness
+    - PSI-метриками и responsiveness_score
+    - Latency-метриками и responsiveness_score
+    
+    Корреляции вычисляются с использованием метода Пирсона. Значения корреляции
+    находятся в диапазоне [-1.0, 1.0], где:
+    - Положительные значения указывают на прямую зависимость
+    - Отрицательные значения указывают на обратную зависимость
+    - Значения близкие к 0 указывают на отсутствие линейной зависимости
+    
+    Args:
+        snapshots_df: DataFrame со снапшотами из БД (должен содержать колонки:
+                     psi_cpu_some_avg10, psi_io_some_avg10, sched_latency_p99_ms,
+                     ui_loop_p95_ms, bad_responsiveness, responsiveness_score)
+    
+    Returns:
+        Словарь с корреляциями, где ключи:
+        - 'psi_cpu_vs_bad_responsiveness': корреляция между psi_cpu_some_avg10 и bad_responsiveness
+        - 'psi_io_vs_bad_responsiveness': корреляция между psi_io_some_avg10 и bad_responsiveness
+        - 'sched_latency_vs_bad_responsiveness': корреляция между sched_latency_p99_ms и bad_responsiveness
+        - 'ui_latency_vs_bad_responsiveness': корреляция между ui_loop_p95_ms и bad_responsiveness
+        - 'psi_cpu_vs_responsiveness_score': корреляция между psi_cpu_some_avg10 и responsiveness_score
+        - 'psi_io_vs_responsiveness_score': корреляция между psi_io_some_avg10 и responsiveness_score
+        - 'sched_latency_vs_responsiveness_score': корреляция между sched_latency_p99_ms и responsiveness_score
+        - 'ui_latency_vs_responsiveness_score': корреляция между ui_loop_p95_ms и responsiveness_score
+        
+        Значения могут быть NaN, если для соответствующей пары метрик недостаточно данных.
+    
+    Examples:
+        >>> import pandas as pd
+        >>> from smoothtask_trainer.tune_policy import compute_policy_correlations
+        >>> 
+        >>> # Создаём тестовый DataFrame
+        >>> df = pd.DataFrame({
+        ...     'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4, 0.5],
+        ...     'psi_io_some_avg10': [0.05, 0.1, 0.15, 0.2, 0.25],
+        ...     'sched_latency_p99_ms': [5.0, 10.0, 15.0, 20.0, 25.0],
+        ...     'ui_loop_p95_ms': [10.0, 15.0, 20.0, 25.0, 30.0],
+        ...     'bad_responsiveness': [0, 0, 1, 1, 1],
+        ...     'responsiveness_score': [1.0, 0.9, 0.7, 0.5, 0.3]
+        ... })
+        >>> 
+        >>> correlations = compute_policy_correlations(df)
+        >>> print(f"PSI CPU vs bad_responsiveness: {correlations['psi_cpu_vs_bad_responsiveness']:.3f}")
+        >>> print(f"Sched latency vs responsiveness_score: {correlations['sched_latency_vs_responsiveness_score']:.3f}")
+    """
+    if snapshots_df.empty:
+        return {
+            'psi_cpu_vs_bad_responsiveness': float('nan'),
+            'psi_io_vs_bad_responsiveness': float('nan'),
+            'sched_latency_vs_bad_responsiveness': float('nan'),
+            'ui_latency_vs_bad_responsiveness': float('nan'),
+            'psi_cpu_vs_responsiveness_score': float('nan'),
+            'psi_io_vs_responsiveness_score': float('nan'),
+            'sched_latency_vs_responsiveness_score': float('nan'),
+            'ui_latency_vs_responsiveness_score': float('nan'),
+        }
+    
+    # Преобразуем bad_responsiveness в числовой тип, если это необходимо
+    if 'bad_responsiveness' in snapshots_df.columns:
+        if snapshots_df['bad_responsiveness'].dtype == 'object' or snapshots_df['bad_responsiveness'].dtype == 'bool':
+            snapshots_df = snapshots_df.copy()
+            snapshots_df['bad_responsiveness'] = snapshots_df['bad_responsiveness'].astype(int)
+    
+    correlations = {}
+    
+    # Корреляции PSI-метрик с bad_responsiveness
+    if 'psi_cpu_some_avg10' in snapshots_df.columns and 'bad_responsiveness' in snapshots_df.columns:
+        psi_cpu_bad = snapshots_df[['psi_cpu_some_avg10', 'bad_responsiveness']].dropna()
+        if len(psi_cpu_bad) > 1:
+            corr = psi_cpu_bad['psi_cpu_some_avg10'].corr(psi_cpu_bad['bad_responsiveness'])
+            correlations['psi_cpu_vs_bad_responsiveness'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['psi_cpu_vs_bad_responsiveness'] = float('nan')
+    else:
+        correlations['psi_cpu_vs_bad_responsiveness'] = float('nan')
+    
+    if 'psi_io_some_avg10' in snapshots_df.columns and 'bad_responsiveness' in snapshots_df.columns:
+        psi_io_bad = snapshots_df[['psi_io_some_avg10', 'bad_responsiveness']].dropna()
+        if len(psi_io_bad) > 1:
+            corr = psi_io_bad['psi_io_some_avg10'].corr(psi_io_bad['bad_responsiveness'])
+            correlations['psi_io_vs_bad_responsiveness'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['psi_io_vs_bad_responsiveness'] = float('nan')
+    else:
+        correlations['psi_io_vs_bad_responsiveness'] = float('nan')
+    
+    # Корреляции latency-метрик с bad_responsiveness
+    if 'sched_latency_p99_ms' in snapshots_df.columns and 'bad_responsiveness' in snapshots_df.columns:
+        sched_bad = snapshots_df[['sched_latency_p99_ms', 'bad_responsiveness']].dropna()
+        if len(sched_bad) > 1:
+            corr = sched_bad['sched_latency_p99_ms'].corr(sched_bad['bad_responsiveness'])
+            correlations['sched_latency_vs_bad_responsiveness'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['sched_latency_vs_bad_responsiveness'] = float('nan')
+    else:
+        correlations['sched_latency_vs_bad_responsiveness'] = float('nan')
+    
+    if 'ui_loop_p95_ms' in snapshots_df.columns and 'bad_responsiveness' in snapshots_df.columns:
+        ui_bad = snapshots_df[['ui_loop_p95_ms', 'bad_responsiveness']].dropna()
+        if len(ui_bad) > 1:
+            corr = ui_bad['ui_loop_p95_ms'].corr(ui_bad['bad_responsiveness'])
+            correlations['ui_latency_vs_bad_responsiveness'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['ui_latency_vs_bad_responsiveness'] = float('nan')
+    else:
+        correlations['ui_latency_vs_bad_responsiveness'] = float('nan')
+    
+    # Корреляции PSI-метрик с responsiveness_score
+    if 'psi_cpu_some_avg10' in snapshots_df.columns and 'responsiveness_score' in snapshots_df.columns:
+        psi_cpu_score = snapshots_df[['psi_cpu_some_avg10', 'responsiveness_score']].dropna()
+        if len(psi_cpu_score) > 1:
+            corr = psi_cpu_score['psi_cpu_some_avg10'].corr(psi_cpu_score['responsiveness_score'])
+            correlations['psi_cpu_vs_responsiveness_score'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['psi_cpu_vs_responsiveness_score'] = float('nan')
+    else:
+        correlations['psi_cpu_vs_responsiveness_score'] = float('nan')
+    
+    if 'psi_io_some_avg10' in snapshots_df.columns and 'responsiveness_score' in snapshots_df.columns:
+        psi_io_score = snapshots_df[['psi_io_some_avg10', 'responsiveness_score']].dropna()
+        if len(psi_io_score) > 1:
+            corr = psi_io_score['psi_io_some_avg10'].corr(psi_io_score['responsiveness_score'])
+            correlations['psi_io_vs_responsiveness_score'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['psi_io_vs_responsiveness_score'] = float('nan')
+    else:
+        correlations['psi_io_vs_responsiveness_score'] = float('nan')
+    
+    # Корреляции latency-метрик с responsiveness_score
+    if 'sched_latency_p99_ms' in snapshots_df.columns and 'responsiveness_score' in snapshots_df.columns:
+        sched_score = snapshots_df[['sched_latency_p99_ms', 'responsiveness_score']].dropna()
+        if len(sched_score) > 1:
+            corr = sched_score['sched_latency_p99_ms'].corr(sched_score['responsiveness_score'])
+            correlations['sched_latency_vs_responsiveness_score'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['sched_latency_vs_responsiveness_score'] = float('nan')
+    else:
+        correlations['sched_latency_vs_responsiveness_score'] = float('nan')
+    
+    if 'ui_loop_p95_ms' in snapshots_df.columns and 'responsiveness_score' in snapshots_df.columns:
+        ui_score = snapshots_df[['ui_loop_p95_ms', 'responsiveness_score']].dropna()
+        if len(ui_score) > 1:
+            corr = ui_score['ui_loop_p95_ms'].corr(ui_score['responsiveness_score'])
+            correlations['ui_latency_vs_responsiveness_score'] = corr if not pd.isna(corr) else float('nan')
+        else:
+            correlations['ui_latency_vs_responsiveness_score'] = float('nan')
+    else:
+        correlations['ui_latency_vs_responsiveness_score'] = float('nan')
+    
+    return correlations
 
 
 def tune_policy(db_path: Path, config_out: Path):

@@ -9,6 +9,7 @@ import pytest
 import yaml
 
 from smoothtask_trainer.tune_policy import (
+    compute_policy_correlations,
     load_snapshots_for_tuning,
     tune_policy,
     _count_snapshots,
@@ -394,3 +395,149 @@ def test_tune_policy_with_sufficient_snapshots():
         # Функция должна пройти валидацию и выбросить NotImplementedError
         with pytest.raises(NotImplementedError, match="TODO: реализовать тюнинг политики"):
             tune_policy(db_path, config_path)
+
+
+def test_compute_policy_correlations_basic():
+    """Тест базового вычисления корреляций."""
+    import pandas as pd
+    
+    # Создаём тестовый DataFrame с положительной корреляцией между PSI и bad_responsiveness
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8],
+        'psi_io_some_avg10': [0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4],
+        'sched_latency_p99_ms': [5.0, 10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0],
+        'ui_loop_p95_ms': [10.0, 15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0],
+        'bad_responsiveness': [0, 0, 0, 0, 1, 1, 1, 1],
+        'responsiveness_score': [1.0, 0.9, 0.8, 0.7, 0.5, 0.4, 0.3, 0.2],
+    })
+    
+    correlations = compute_policy_correlations(df)
+    
+    # Проверяем, что все корреляции вычислены
+    assert 'psi_cpu_vs_bad_responsiveness' in correlations
+    assert 'psi_io_vs_bad_responsiveness' in correlations
+    assert 'sched_latency_vs_bad_responsiveness' in correlations
+    assert 'ui_latency_vs_bad_responsiveness' in correlations
+    assert 'psi_cpu_vs_responsiveness_score' in correlations
+    assert 'psi_io_vs_responsiveness_score' in correlations
+    assert 'sched_latency_vs_responsiveness_score' in correlations
+    assert 'ui_latency_vs_responsiveness_score' in correlations
+    
+    # Проверяем, что корреляции находятся в допустимом диапазоне [-1, 1]
+    for key, value in correlations.items():
+        if not pd.isna(value):
+            assert -1.0 <= value <= 1.0, f"Корреляция {key} = {value} вне диапазона [-1, 1]"
+    
+    # Проверяем, что корреляции с bad_responsiveness положительные (больше PSI/latency -> больше bad_responsiveness)
+    if not pd.isna(correlations['psi_cpu_vs_bad_responsiveness']):
+        assert correlations['psi_cpu_vs_bad_responsiveness'] > 0
+    
+    if not pd.isna(correlations['sched_latency_vs_bad_responsiveness']):
+        assert correlations['sched_latency_vs_bad_responsiveness'] > 0
+    
+    # Проверяем, что корреляции с responsiveness_score отрицательные (больше PSI/latency -> меньше score)
+    if not pd.isna(correlations['psi_cpu_vs_responsiveness_score']):
+        assert correlations['psi_cpu_vs_responsiveness_score'] < 0
+    
+    if not pd.isna(correlations['sched_latency_vs_responsiveness_score']):
+        assert correlations['sched_latency_vs_responsiveness_score'] < 0
+
+
+def test_compute_policy_correlations_empty_dataframe():
+    """Тест вычисления корреляций для пустого DataFrame."""
+    import pandas as pd
+    
+    df = pd.DataFrame()
+    correlations = compute_policy_correlations(df)
+    
+    # Все корреляции должны быть NaN
+    for key, value in correlations.items():
+        assert pd.isna(value), f"Корреляция {key} должна быть NaN для пустого DataFrame, но получили {value}"
+
+
+def test_compute_policy_correlations_missing_columns():
+    """Тест вычисления корреляций при отсутствии некоторых колонок."""
+    import pandas as pd
+    
+    # DataFrame без некоторых колонок
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, 0.3],
+        'bad_responsiveness': [0, 0, 1],
+        'responsiveness_score': [1.0, 0.9, 0.7],
+    })
+    
+    correlations = compute_policy_correlations(df)
+    
+    # Корреляции для существующих колонок должны быть вычислены
+    assert not pd.isna(correlations['psi_cpu_vs_bad_responsiveness'])
+    assert not pd.isna(correlations['psi_cpu_vs_responsiveness_score'])
+    
+    # Корреляции для отсутствующих колонок должны быть NaN
+    assert pd.isna(correlations['psi_io_vs_bad_responsiveness'])
+    assert pd.isna(correlations['sched_latency_vs_bad_responsiveness'])
+    assert pd.isna(correlations['ui_latency_vs_bad_responsiveness'])
+
+
+def test_compute_policy_correlations_with_nulls():
+    """Тест вычисления корреляций при наличии NULL значений."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1, 0.2, None, 0.4, 0.5],
+        'psi_io_some_avg10': [0.05, None, 0.15, 0.2, 0.25],
+        'sched_latency_p99_ms': [5.0, 10.0, 15.0, None, 25.0],
+        'ui_loop_p95_ms': [10.0, 15.0, None, 25.0, 30.0],
+        'bad_responsiveness': [0, 0, 1, 1, 1],
+        'responsiveness_score': [1.0, 0.9, None, 0.5, 0.3],
+    })
+    
+    correlations = compute_policy_correlations(df)
+    
+    # Функция должна корректно обработать NULL значения (dropna перед вычислением корреляции)
+    # Проверяем, что функция не падает и возвращает корректные значения или NaN
+    for key, value in correlations.items():
+        if not pd.isna(value):
+            assert -1.0 <= value <= 1.0, f"Корреляция {key} = {value} вне диапазона [-1, 1]"
+
+
+def test_compute_policy_correlations_single_value():
+    """Тест вычисления корреляций при наличии только одного значения (недостаточно для корреляции)."""
+    import pandas as pd
+    
+    df = pd.DataFrame({
+        'psi_cpu_some_avg10': [0.1],
+        'psi_io_some_avg10': [0.05],
+        'sched_latency_p99_ms': [5.0],
+        'ui_loop_p95_ms': [10.0],
+        'bad_responsiveness': [0],
+        'responsiveness_score': [1.0],
+    })
+    
+    correlations = compute_policy_correlations(df)
+    
+    # Все корреляции должны быть NaN, так как недостаточно данных (нужно минимум 2 точки)
+    for key, value in correlations.items():
+        assert pd.isna(value), f"Корреляция {key} должна быть NaN для одного значения, но получили {value}"
+
+
+def test_compute_policy_correlations_with_real_data():
+    """Тест вычисления корреляций с данными из реальной БД."""
+    import pandas as pd
+    
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        create_test_db(db_path, num_snapshots=150)
+        
+        # Загружаем снапшоты
+        df = load_snapshots_for_tuning(db_path, min_snapshots=100, days_back=7)
+        
+        # Вычисляем корреляции
+        correlations = compute_policy_correlations(df)
+        
+        # Проверяем, что все корреляции вычислены (могут быть NaN, если данных недостаточно)
+        assert len(correlations) == 8
+        
+        # Проверяем, что корреляции находятся в допустимом диапазоне
+        for key, value in correlations.items():
+            if not pd.isna(value):
+                assert -1.0 <= value <= 1.0, f"Корреляция {key} = {value} вне диапазона [-1, 1]"
