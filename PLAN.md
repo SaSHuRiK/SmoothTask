@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-349: Нормализовать пробелы в tags при сборке категориальных фич
+  - Тип: Python / trainer / features
+  - Примечания: _prepare_tags_column триммит строки и элементы коллекций, пустые значения превращаются в "unknown"; добавлен тест на пробелы и пустые строки. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-348: Поддержать строковые true/false в булевых фичах build_feature_matrix
+  - Тип: Python / trainer / features
+  - Примечания: _coerce_boolean принимает строки "true"/"false" в любом регистре наряду с 0/1; добавлен тест на корректную обработку строковых булевых значений. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 - [x] ST-347: Отклонять невалидные timestamp строки в snapshots
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame валидирует timestamp и падает с ValueError, если дата не парсится; добавлен юнит-тест на строку "not-a-date". Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
@@ -70,14 +78,6 @@
 - [x] ST-340: Проверка уникальности snapshot_id в таблице snapshots
   - Тип: Python / trainer / dataset
   - Примечания: load_snapshots_as_frame теперь отклоняет дубликаты snapshot_id с понятным ValueError. Добавлен тест на повторяющиеся snapshot_id в snapshots.
-
-- [x] ST-339: Запретить отрицательные идентификаторы в ключевых колонках снапшотов
-  - Тип: Python / trainer / dataset
-  - Примечания: _ensure_integer_like отклоняет отрицательные snapshot_id/pid с понятным ValueError; добавлен тест на отрицательный pid. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-338: Валидировать целочисленные ключи snapshot_id/pid в load_snapshots_as_frame
-  - Тип: Python / trainer / dataset
-  - Примечания: добавлена проверка целочисленности и отсутствия inf в ключах snapshots/processes/app_groups с выборкой примеров; добавлен тест на строки и дробные значения в ключах. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

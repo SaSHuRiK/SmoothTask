@@ -1,3 +1,13 @@
+## Перенос из PLAN.md (ST-339–ST-338, 2025-12-11)
+
+- [x] ST-339: Запретить отрицательные идентификаторы в ключевых колонках снапшотов
+  - Тип: Python / trainer / dataset
+  - Примечания: _ensure_integer_like отклоняет отрицательные snapshot_id/pid с понятным ValueError; добавлен тест на отрицательный pid. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-338: Валидировать целочисленные ключи snapshot_id/pid в load_snapshots_as_frame
+  - Тип: Python / trainer / dataset
+  - Примечания: добавлена проверка целочисленности и отсутствия inf в ключах snapshots/processes/app_groups с выборкой примеров; добавлен тест на строки и дробные значения в ключах. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 ## Перенос из PLAN.md (ST-337–ST-336, 2025-12-11)
 
 - [x] ST-337: build_feature_matrix отклоняет inf в snapshot_id

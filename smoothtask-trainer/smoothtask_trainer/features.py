@@ -115,15 +115,30 @@ def _prepare_tags_column(series: Iterable[object]) -> pd.Series:
         Series со строками вида "tag1|tag2|tag3" или "unknown"
     """
 
+    def _normalize_tag_value(raw: object) -> str | None:
+        if pd.isna(raw):
+            return None
+        text = str(raw).strip()
+        if text == "":
+            return None
+        return text
+
     def _join_tags(value: object) -> str:
         if isinstance(value, (list, tuple, set)):
-            tags = sorted([str(v) for v in value])
-            if not tags:
+            normalized_tags = []
+            for v in value:
+                tag = _normalize_tag_value(v)
+                if tag is not None:
+                    normalized_tags.append(tag)
+            if not normalized_tags:
                 return "unknown"
-            return "|".join(tags)
+            return "|".join(sorted(normalized_tags))
         if pd.isna(value):
             return "unknown"
-        return str(value)
+        normalized = _normalize_tag_value(value)
+        if normalized is None:
+            return "unknown"
+        return normalized
 
     return pd.Series([_join_tags(v) for v in series])
 
@@ -132,8 +147,9 @@ def _coerce_boolean(series: pd.Series, column: str) -> pd.Series:
     """
     Приводит столбец к nullable boolean с валидацией допустимых значений.
 
-    Допускаются значения True/False, 0/1 (включая строковые "0"/"1") и NaN.
-    При других значениях выбрасывается ValueError с примерами.
+    Допускаются значения True/False, 0/1 (включая строковые "0"/"1") и
+    строковые "true"/"false" в любом регистре, а также NaN. При других
+    значениях выбрасывается ValueError с примерами.
     """
 
     coerced: list[object] = []
@@ -156,8 +172,9 @@ def _coerce_boolean(series: pd.Series, column: str) -> pd.Series:
                 continue
         if isinstance(value, str):
             stripped = value.strip()
-            if stripped in {"0", "1"}:
-                coerced.append(stripped == "1")
+            lowered = stripped.lower()
+            if lowered in {"0", "1", "true", "false"}:
+                coerced.append(lowered in {"1", "true"})
                 continue
         invalid_values.append(value)
         coerced.append(pd.NA)

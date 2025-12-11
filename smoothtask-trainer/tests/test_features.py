@@ -40,6 +40,29 @@ def test_prepare_tags_column_various_inputs():
     assert len(series) == 8
 
 
+def test_prepare_tags_column_trims_and_skips_empty():
+    series = _prepare_tags_column(
+        [
+            "  single  ",
+            "   ",
+            [" a ", "b", "  "],
+            {" d ", "c", "   "},
+            (None, " e ", pd.NA),
+            pd.NA,
+        ]
+    )
+
+    assert series.tolist() == [
+        "single",
+        "unknown",
+        "a|b",
+        "c|d",
+        "e",
+        "unknown",
+    ]
+    assert len(series) == 6
+
+
 def test_ensure_column_existing_and_missing_with_dtype():
     df = pd.DataFrame({"flag": pd.Series([1, 0, pd.NA], dtype="Int64")})
 
@@ -214,6 +237,25 @@ def test_build_feature_matrix_accepts_numeric_boolean_values():
     assert list(X["has_tty"]) == [1, 0]
     assert list(X["has_gui_window"]) == [1, 0]
     assert list(X["user_active"]) == [1, 0]
+
+
+def test_build_feature_matrix_accepts_string_boolean_words():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [30, 31],
+            "teacher_score": [0.7, 0.8],
+            "has_tty": ["TRUE", " false "],
+            "has_gui_window": ["true", "False"],
+            "user_active": ["TrUe", "fAlSe"],
+        }
+    )
+
+    X, _, _, _ = build_feature_matrix(df)
+
+    assert list(X["has_tty"]) == [1, 0]
+    assert list(X["has_gui_window"]) == [1, 0]
+    assert list(X["user_active"]) == [1, 0]
+
 
 def test_build_feature_matrix_requires_snapshot_id():
     df = pd.DataFrame({"teacher_score": [0.5]})
