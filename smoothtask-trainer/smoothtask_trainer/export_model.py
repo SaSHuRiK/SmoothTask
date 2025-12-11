@@ -21,6 +21,12 @@ def export_model(model_path: Path, format: str, output_path: Path):
     if not model_path.exists():
         raise FileNotFoundError(f"Модель не найдена: {model_path}")
 
+    if output_path.exists() and output_path.is_dir():
+        raise ValueError(f"Выходной путь указывает на директорию: {output_path}")
+
+    # Создаём вложенные директории для результата, если их ещё нет.
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     # Определяем формат исходной модели по расширению
     model_format = "json" if model_path.suffix == ".json" else "cbm"
 

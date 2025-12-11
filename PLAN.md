@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-317: export_model создаёт директории и валидирует выходной путь
+  - Тип: Python / trainer / export
+  - Примечания: добавлена автосоздающаяся директория для выхода, явная ошибка при сохранении в каталог; покрыто тестами вложенного пути и запретом на каталог; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_export_model.py`.
+
+- [x] ST-316: Улучшить ошибки load_snapshots_as_frame при отсутствии таблиц
+  - Тип: Python / trainer / dataset
+  - Примечания: `_load_table` теперь отдаёт ValueError с названием таблицы при отсутствии/ошибке SQLite; добавлена проверка обязательных столбцов и тесты на отсутствие таблицы и PID; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 - [x] ST-315: Добавить smoke-тесты load_snapshots_as_frame для пустых таблиц
   - Тип: Python / trainer / tests
   - Примечания: добавлены два smoke-теста на пустые таблицы и пустые snapshots; проверены возврат пустого DataFrame, отсутствие предупреждений при конвертации булевых столбцов и корректные dtype. Прогнан `uv run pytest smoothtask-trainer/tests/test_dataset.py`.
@@ -70,14 +78,6 @@
 - [x] ST-308: Проверить неиспользуемые импорты в trainer и обновить fmt
   - Тип: Python / trainer / code quality
   - Примечания: импорты в `dataset.py`, `features.py`, `train_ranker.py` проверены, лишних не обнаружено; форматирование обновлено; прогнан `uv run python -m pytest smoothtask-trainer/tests`.
-
-- [x] ST-307: Мини-код-ревизия API ответов на пустые паттерны
-  - Тип: Rust / core / api / tests
-  - Примечания: добавлен тест `test_patterns_handler_with_empty_database`, фиксирует ответ `/api/patterns` при пустой базе (пустой массив категорий, нулевые счётчики, message=null). Прогнан `cargo test -p smoothtask-core test_patterns_handler_with_empty_database`.
-
-- [x] ST-306: Тесты для build_feature_matrix без части колонок
-  - Тип: Python / trainer / tests
-  - Примечания: расширен набор тестов в `smoothtask-trainer/tests/test_features.py` на отсутствие необязательных колонок; проверены дефолты для bool/cat/num фич и cat_idx. Прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

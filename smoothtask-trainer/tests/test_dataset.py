@@ -577,6 +577,98 @@ def test_load_snapshots_as_frame_multiple_snapshots():
         db_path.unlink(missing_ok=True)
 
 
+def test_load_snapshots_as_frame_missing_table():
+    """При отсутствии таблицы должно приходить понятное сообщение об ошибке."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+            (1, datetime.now(timezone.utc).isoformat()),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid) VALUES (?, ?)",
+            (1, 10),
+        )
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(ValueError, match="app_groups"):
+            load_snapshots_as_frame(db_path)
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
+def test_load_snapshots_as_frame_missing_required_columns():
+    """Отсутствующие ключевые столбцы должны отдавать ValueError с их именами."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL
+            )
+            """
+        )
+
+        cursor.execute("INSERT INTO snapshots (snapshot_id) VALUES (?)", (1,))
+        cursor.execute("INSERT INTO processes (snapshot_id) VALUES (?)", (1,))
+        cursor.execute(
+            "INSERT INTO app_groups (snapshot_id, app_group_id) VALUES (?, ?)",
+            (1, "group-1"),
+        )
+
+        conn.commit()
+        conn.close()
+
+        with pytest.raises(ValueError, match="pid"):
+            load_snapshots_as_frame(db_path)
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
 def test_json_list_handles_empty_and_none():
     """_json_list должен безопасно обрабатывать None и пустые строки."""
     assert _json_list(None) == []

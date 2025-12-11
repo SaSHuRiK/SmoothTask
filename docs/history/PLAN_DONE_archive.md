@@ -1,3 +1,13 @@
+## Перенос из PLAN.md (ST-307–ST-306, 2025-12-11)
+
+- [x] ST-307: Мини-код-ревизия API ответов на пустые паттерны
+  - Тип: Rust / core / api / tests
+  - Примечания: добавлен тест `test_patterns_handler_with_empty_database`, фиксирует ответ `/api/patterns` при пустой базе (пустой массив категорий, нулевые счётчики, message=null). Прогнан `cargo test -p smoothtask-core test_patterns_handler_with_empty_database`.
+
+- [x] ST-306: Тесты для build_feature_matrix без части колонок
+  - Тип: Python / trainer / tests
+  - Примечания: расширен набор тестов в `smoothtask-trainer/tests/test_features.py` на отсутствие необязательных колонок; проверены дефолты для bool/cat/num фич и cat_idx. Прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
+
 ## Перенос из PLAN.md (ST-304–ST-200, 2025-12-11)
 
 - [x] ST-305: Проверить наличие простых улучшений кода (неиспользуемые импорты, упрощения, форматирование)

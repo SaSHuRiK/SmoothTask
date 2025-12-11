@@ -78,7 +78,27 @@ def _load_table(
     Returns:
         DataFrame с данными из таблицы
     """
-    return pd.read_sql(f"SELECT * FROM {table}", conn, parse_dates=parse_dates or [])
+    try:
+        return pd.read_sql(f"SELECT * FROM {table}", conn, parse_dates=parse_dates or [])
+    except (sqlite3.Error, pd.errors.DatabaseError) as exc:  # pragma: no cover - rethrown with context
+        raise ValueError(f"Не удалось прочитать таблицу '{table}': {exc}") from exc
+
+
+def _ensure_required_columns(table: str, df: pd.DataFrame, required: set[str]) -> None:
+    """
+    Проверяет наличие обязательных колонок и выбрасывает понятный ValueError.
+
+    Args:
+        table: имя таблицы для сообщения об ошибке
+        df: DataFrame с данными таблицы
+        required: множество обязательных колонок
+    """
+    missing = required.difference(df.columns)
+    if missing:
+        missing_sorted = ", ".join(sorted(missing))
+        raise ValueError(
+            f"В таблице '{table}' отсутствуют обязательные столбцы: {missing_sorted}"
+        )
 
 
 def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
@@ -109,6 +129,10 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
         snapshots = _load_table(conn, "snapshots", parse_dates=["timestamp"])
         processes = _load_table(conn, "processes")
         app_groups = _load_table(conn, "app_groups")
+
+    _ensure_required_columns("snapshots", snapshots, {"snapshot_id"})
+    _ensure_required_columns("processes", processes, {"snapshot_id", "pid"})
+    _ensure_required_columns("app_groups", app_groups, {"snapshot_id", "app_group_id"})
 
     if processes.empty:
         return pd.DataFrame()

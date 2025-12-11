@@ -137,3 +137,32 @@ def test_export_model_case_insensitive_format():
         model_onnx_path2 = Path(tmpdir) / "model2.onnx"
         export_model(model_json_path, "Onnx", model_onnx_path2)
         assert model_onnx_path2.exists()
+
+
+def test_export_model_creates_parent_directories():
+    """Экспорт должен создавать вложенные каталоги для выходного файла."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        nested_dir = Path(tmpdir) / "nested" / "deep"
+        model_json_path = Path(tmpdir) / "model.json"
+        output_path = nested_dir / "model.onnx"
+
+        create_test_model(model_json_path, format="json")
+
+        export_model(model_json_path, "onnx", output_path)
+
+        assert nested_dir.exists() and nested_dir.is_dir()
+        assert output_path.exists()
+        assert output_path.stat().st_size > 0
+
+
+def test_export_model_rejects_directory_output_path():
+    """Если output_path указывает на каталог, должна быть ошибка."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        output_dir = Path(tmpdir) / "out_dir"
+        output_dir.mkdir()
+
+        create_test_model(model_json_path, format="json")
+
+        with pytest.raises(ValueError, match="директор"):
+            export_model(model_json_path, "onnx", output_dir)
