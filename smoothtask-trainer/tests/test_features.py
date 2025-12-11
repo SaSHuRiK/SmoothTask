@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from smoothtask_trainer.features import build_feature_matrix
+from smoothtask_trainer.features import _BOOL_COLS, _CAT_COLS, build_feature_matrix
 
 
 def test_build_feature_matrix_basic():
@@ -70,6 +70,39 @@ def test_build_feature_matrix_fallback_and_defaults():
     for col in zero_cols:
         assert col in X.columns
         assert X.loc[0, col] == 0.0
+
+
+def test_build_feature_matrix_missing_optional_columns_defaults():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [100, 101],
+            "teacher_score": [0.2, 0.3],
+        }
+    )
+
+    X, y, group_id, cat_idx = build_feature_matrix(df)
+
+    assert list(group_id) == [100, 101]
+    assert list(y) == [pytest.approx(0.2), pytest.approx(0.3)]
+
+    # Все булевые фичи должны присутствовать и заполняться нулями
+    for col in _BOOL_COLS:
+        assert col in X.columns
+        assert list(X[col]) == [0, 0]
+
+    # Категориальные фичи заполняются "unknown" при отсутствии колонок
+    for col in _CAT_COLS:
+        assert col in X.columns
+        assert list(X[col]) == ["unknown", "unknown"]
+    assert list(X["tags_joined"]) == ["unknown", "unknown"]
+
+    # Несколько числовых колонок также присутствуют с нулями
+    for col in ("cpu_share_1s", "mem_total_kb", "total_rss_mb"):
+        assert col in X.columns
+        assert list(X[col]) == [0.0, 0.0]
+
+    expected_cat_idx = [X.columns.get_loc(col) for col in _CAT_COLS]
+    assert cat_idx == expected_cat_idx
 
 
 def test_build_feature_matrix_tags_and_cat_defaults():

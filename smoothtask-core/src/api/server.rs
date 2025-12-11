@@ -1798,6 +1798,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_patterns_handler_with_empty_database() {
+        use crate::classify::rules::PatternDatabase;
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let pattern_db = PatternDatabase::load(temp_dir.path()).unwrap();
+        assert_eq!(pattern_db.all_patterns().len(), 0);
+
+        let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(Arc::new(pattern_db)),
+        );
+
+        let result = patterns_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["total_patterns"], 0);
+        assert_eq!(value["total_categories"], 0);
+        assert!(value["categories"].is_array());
+        assert!(value["categories"].as_array().unwrap().is_empty());
+        assert!(value["message"].is_null());
+    }
+
+    #[tokio::test]
     async fn test_patterns_handler_with_patterns() {
         use crate::classify::rules::PatternDatabase;
         use tempfile::TempDir;
