@@ -643,16 +643,18 @@ pub async fn run_daemon(
 
     // Запуск API сервера (если указан адрес)
     let mut api_server_handle: Option<ApiServerHandle> = None;
+    let config_arc = Arc::new(config.clone());
     if let Some(ref api_addr_str) = config.paths.api_listen_addr {
         match api_addr_str.parse::<std::net::SocketAddr>() {
             Ok(addr) => {
                 info!("Starting API server on {}", addr);
-                let api_server = ApiServer::with_all(
+                let api_server = ApiServer::with_all_and_config(
                     addr,
                     Some(Arc::clone(&stats_arc)),
                     Some(Arc::clone(&system_metrics_arc)),
                     Some(Arc::clone(&processes_arc)),
                     Some(Arc::clone(&app_groups_arc)),
+                    Some(Arc::clone(&config_arc)),
                 );
                 match api_server.start().await {
                     Ok(handle) => {

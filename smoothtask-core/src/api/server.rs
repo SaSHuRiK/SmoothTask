@@ -19,6 +19,8 @@ pub struct ApiState {
     processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
     /// Последние группы приложений (опционально)
     app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+    /// Текущая конфигурация демона (опционально)
+    config: Option<Arc<crate::config::Config>>,
 }
 
 impl ApiState {
@@ -29,6 +31,7 @@ impl ApiState {
             system_metrics: None,
             processes: None,
             app_groups: None,
+            config: None,
         }
     }
 
@@ -39,6 +42,7 @@ impl ApiState {
             system_metrics: None,
             processes: None,
             app_groups: None,
+            config: None,
         }
     }
 
@@ -51,6 +55,7 @@ impl ApiState {
             system_metrics: Some(system_metrics),
             processes: None,
             app_groups: None,
+            config: None,
         }
     }
 
@@ -66,6 +71,24 @@ impl ApiState {
             system_metrics,
             processes,
             app_groups,
+            config: None,
+        }
+    }
+
+    /// Создаёт новое состояние API сервера со всеми данными, включая конфигурацию.
+    pub fn with_all_and_config(
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+        config: Option<Arc<crate::config::Config>>,
+    ) -> Self {
+        Self {
+            daemon_stats,
+            system_metrics,
+            processes,
+            app_groups,
+            config,
         }
     }
 }
@@ -109,6 +132,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/metrics", get(metrics_handler))
         .route("/api/processes", get(processes_handler))
         .route("/api/appgroups", get(appgroups_handler))
+        .route("/api/config", get(config_handler))
         .with_state(state)
 }
 
@@ -192,6 +216,25 @@ async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>,
             "app_groups": null,
             "count": 0,
             "message": "App groups not available (daemon may not be running or no groups collected yet)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/config`.
+///
+/// Возвращает текущую конфигурацию демона (без секретов).
+/// Конфигурация возвращается как есть, так как в SmoothTask нет явных секретов
+/// (паролей, токенов и т.д.). Все поля конфигурации безопасны для просмотра.
+async fn config_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.config {
+        Some(config_arc) => Ok(Json(json!({
+            "status": "ok",
+            "config": serde_json::to_value(config_arc.as_ref()).unwrap_or(Value::Null)
+        }))),
+        None => Ok(Json(json!({
+            "status": "ok",
+            "config": null,
+            "message": "Config not available (daemon may not be running or config not set)"
         }))),
     }
 }
@@ -294,6 +337,36 @@ impl ApiServer {
         }
     }
 
+    /// Создаёт новый API сервер со всеми данными, включая конфигурацию.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `daemon_stats`: Статистика работы демона (опционально)
+    /// - `system_metrics`: Системные метрики (опционально)
+    /// - `processes`: Список процессов (опционально)
+    /// - `app_groups`: Список групп приложений (опционально)
+    /// - `config`: Конфигурация демона (опционально)
+    pub fn with_all_and_config(
+        addr: std::net::SocketAddr,
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+        config: Option<Arc<crate::config::Config>>,
+    ) -> Self {
+        Self {
+            addr,
+            state: ApiState::with_all_and_config(
+                daemon_stats,
+                system_metrics,
+                processes,
+                app_groups,
+                config,
+            ),
+        }
+    }
+
     /// Запускает API сервер в фоновой задаче.
     ///
     /// Возвращает handle для управления сервером (остановка, проверка состояния).
@@ -383,6 +456,7 @@ mod tests {
         assert!(state.system_metrics.is_none());
         assert!(state.processes.is_none());
         assert!(state.app_groups.is_none());
+        assert!(state.config.is_none());
     }
 
     #[test]
@@ -392,6 +466,7 @@ mod tests {
         assert!(state.system_metrics.is_none());
         assert!(state.processes.is_none());
         assert!(state.app_groups.is_none());
+        assert!(state.config.is_none());
     }
 
     #[test]
@@ -402,6 +477,7 @@ mod tests {
         assert!(state.system_metrics.is_none());
         assert!(state.processes.is_none());
         assert!(state.app_groups.is_none());
+        assert!(state.config.is_none());
     }
 
     #[test]
@@ -442,6 +518,7 @@ mod tests {
         let state = ApiState::with_system_metrics(metrics_arc.clone());
         assert!(state.daemon_stats.is_none());
         assert!(state.system_metrics.is_some());
+        assert!(state.config.is_none());
     }
 
     #[test]
@@ -492,6 +569,7 @@ mod tests {
         assert!(state.system_metrics.is_some());
         assert!(state.processes.is_some());
         assert!(state.app_groups.is_some());
+        assert!(state.config.is_none());
     }
 
     #[tokio::test]
@@ -765,5 +843,131 @@ mod tests {
         assert!(json["version"].is_string());
         // Проверяем, что версия соответствует версии из Cargo.toml
         assert_eq!(json["version"], env!("CARGO_PKG_VERSION"));
+    }
+
+    #[tokio::test]
+    async fn test_config_handler_without_config() {
+        let state = ApiState::new();
+        let result = config_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["config"], Value::Null);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_config_handler_with_config() {
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
+        let result = config_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["config"].is_object());
+        let config_obj = &value["config"];
+        assert_eq!(config_obj["polling_interval_ms"], 1000);
+        assert_eq!(config_obj["max_candidates"], 150);
+        assert_eq!(config_obj["dry_run_default"], false);
+        assert_eq!(config_obj["policy_mode"], "rules-only");
+        assert_eq!(config_obj["enable_snapshot_logging"], true);
+        assert!(config_obj["thresholds"].is_object());
+        assert!(config_obj["paths"].is_object());
+    }
+
+    #[test]
+    fn test_api_state_with_all_and_config() {
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
+        assert!(state.config.is_some());
+    }
+
+    #[test]
+    fn test_api_server_with_all_and_config() {
+        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+        };
+        let config_arc = Arc::new(config);
+        let server = ApiServer::with_all_and_config(addr, None, None, None, None, Some(config_arc));
+        // Проверяем, что сервер создан
+        let _ = server;
     }
 }

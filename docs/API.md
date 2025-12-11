@@ -385,6 +385,89 @@ curl http://127.0.0.1:8080/api/appgroups
 
 ---
 
+### GET /api/config
+
+Получение текущей конфигурации демона (без секретов).
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/config
+```
+
+**Ответ (если конфигурация доступна):**
+```json
+{
+  "status": "ok",
+  "config": {
+    "polling_interval_ms": 1000,
+    "max_candidates": 150,
+    "dry_run_default": false,
+    "policy_mode": "rules-only",
+    "enable_snapshot_logging": true,
+    "thresholds": {
+      "psi_cpu_some_high": 0.6,
+      "psi_io_some_high": 0.4,
+      "user_idle_timeout_sec": 120,
+      "interactive_build_grace_sec": 10,
+      "noisy_neighbour_cpu_share": 0.7,
+      "crit_interactive_percentile": 0.9,
+      "interactive_percentile": 0.6,
+      "normal_percentile": 0.3,
+      "background_percentile": 0.1,
+      "sched_latency_p99_threshold_ms": 20.0,
+      "ui_loop_p95_threshold_ms": 16.67
+    },
+    "paths": {
+      "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
+      "patterns_dir": "/etc/smoothtask/patterns",
+      "api_listen_addr": "127.0.0.1:8080"
+    }
+  }
+}
+```
+
+**Ответ (если конфигурация недоступна):**
+```json
+{
+  "status": "ok",
+  "config": null,
+  "message": "Config not available (daemon may not be running or config not set)"
+}
+```
+
+**Поля конфигурации:**
+- `polling_interval_ms` (u64) - интервал опроса системы (в миллисекундах)
+- `max_candidates` (usize) - максимальное количество кандидатов для обработки
+- `dry_run_default` (bool) - режим dry-run по умолчанию
+- `policy_mode` (string) - режим работы Policy Engine ("rules-only" или "hybrid")
+- `enable_snapshot_logging` (bool) - флаг включения логирования снапшотов
+- `thresholds` (object) - пороги для определения приоритетов и метрик отзывчивости
+  - `psi_cpu_some_high` (f32) - порог PSI CPU для определения высокого давления
+  - `psi_io_some_high` (f32) - порог PSI IO для определения высокого давления
+  - `user_idle_timeout_sec` (u64) - таймаут неактивности пользователя (в секундах)
+  - `interactive_build_grace_sec` (u64) - период отсрочки для интерактивных сборок (в секундах)
+  - `noisy_neighbour_cpu_share` (f32) - доля CPU для определения "шумного соседа"
+  - `crit_interactive_percentile` (f32) - перцентиль для критически интерактивных процессов
+  - `interactive_percentile` (f32) - перцентиль для интерактивных процессов
+  - `normal_percentile` (f32) - перцентиль для обычных процессов
+  - `background_percentile` (f32) - перцентиль для фоновых процессов
+  - `sched_latency_p99_threshold_ms` (f64) - порог P99 scheduling latency (в миллисекундах)
+  - `ui_loop_p95_threshold_ms` (f64) - порог P95 UI loop latency (в миллисекундах)
+- `paths` (object) - пути к файлам и директориям
+  - `snapshot_db_path` (string) - путь к базе данных снапшотов
+  - `patterns_dir` (string) - директория с паттернами приложений
+  - `api_listen_addr` (string?) - адрес для прослушивания API сервера
+
+**Примечания:**
+- Конфигурация возвращается как есть, так как в SmoothTask нет явных секретов (паролей, токенов и т.д.)
+- Все поля конфигурации безопасны для просмотра
+- Конфигурация обновляется при перезапуске демона
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
 ## Обновление данных
 
 Данные в API обновляются при каждой итерации демона (согласно `polling_interval_ms` в конфигурации). Это означает, что:
@@ -393,6 +476,7 @@ curl http://127.0.0.1:8080/api/appgroups
 - Системные метрики (`/api/metrics`) обновляются после каждого сбора снапшота
 - Список процессов (`/api/processes`) обновляется после каждого сбора снапшота
 - Список групп приложений (`/api/appgroups`) обновляется после каждого сбора снапшота
+- Конфигурация (`/api/config`) устанавливается при запуске демона и не изменяется во время работы
 
 ## Обработка ошибок
 
@@ -417,6 +501,9 @@ curl http://127.0.0.1:8080/api/processes | jq
 
 # Получение списка групп приложений
 curl http://127.0.0.1:8080/api/appgroups | jq
+
+# Получение конфигурации демона
+curl http://127.0.0.1:8080/api/config | jq
 ```
 
 ### Автоматический мониторинг

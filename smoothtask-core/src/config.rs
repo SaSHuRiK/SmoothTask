@@ -1,9 +1,9 @@
 use anyhow::{ensure, Context, Result};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub polling_interval_ms: u64,
     pub max_candidates: usize,
@@ -43,7 +43,7 @@ pub struct Config {
 /// # Гибридный режим с ML-ранкером
 /// policy_mode: hybrid
 /// ```
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PolicyMode {
     /// Только правила, без ML-ранкера.
@@ -85,7 +85,7 @@ pub(crate) fn default_enable_snapshot_logging() -> bool {
     false
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Thresholds {
     pub psi_cpu_some_high: f32,
     pub psi_io_some_high: f32,
@@ -141,7 +141,7 @@ pub(crate) fn default_ui_loop_p95_threshold() -> f64 {
     16.67 // 16.67 мс по умолчанию (60 FPS)
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Paths {
     pub snapshot_db_path: String,
     pub patterns_dir: String,
