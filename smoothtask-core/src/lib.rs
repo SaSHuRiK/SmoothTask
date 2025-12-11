@@ -11,7 +11,7 @@ use chrono::Utc;
 use config::Config;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
@@ -20,8 +20,7 @@ use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::Patte
 use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
-use crate::metrics::input::EvdevInputTracker;
-use crate::metrics::input::InputTracker;
+use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{collect_system_metrics, ProcPaths, SystemMetrics};
@@ -893,7 +892,6 @@ pub async fn collect_snapshot(
                     "Audio introspector mutex is poisoned: {}. Using empty metrics and clients.",
                     e
                 );
-                use std::time::SystemTime;
                 return (
                     AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
                     Vec::new(),
@@ -905,7 +903,6 @@ pub async fn collect_snapshot(
                 "Audio introspector failed to collect metrics: {}. Using empty metrics.",
                 e
             );
-            use std::time::SystemTime;
             AudioMetrics::empty(SystemTime::now(), SystemTime::now())
         });
         let clients = introspector.clients().unwrap_or_else(|e| {
@@ -925,7 +922,6 @@ pub async fn collect_snapshot(
                 "Failed to join audio metrics task: {}. Continuing without audio information.",
                 e
             );
-            use std::time::SystemTime;
             (
                 AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
                 Vec::new(),
@@ -954,7 +950,6 @@ pub async fn collect_snapshot(
                     "Input tracker mutex is poisoned: {}. Using default input metrics.",
                     e
                 );
-                use crate::metrics::input::InputMetrics;
                 return InputMetrics {
                     user_active: false,
                     time_since_last_input_ms: None,
@@ -971,7 +966,6 @@ pub async fn collect_snapshot(
                 "Failed to join input metrics task: {}. Using default input metrics.",
                 e
             );
-            use crate::metrics::input::InputMetrics;
             InputMetrics {
                 user_active: false,
                 time_since_last_input_ms: None,
