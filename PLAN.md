@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-325: build_feature_matrix валидирует бесконечные числовые фичи
+  - Тип: Python / trainer / features
+  - Примечания: все числовые колонки проверяются на +/-inf с ValueError, добавлен тест на бесконечное значение в cpu_share_1s. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
+- [x] ST-324: build_feature_matrix отвергает бесконечные таргеты
+  - Тип: Python / trainer / features
+  - Примечания: teacher_score/responsiveness_score валидируются на +/-inf, выбрасывается понятный ValueError с примерами значений; добавлен тест на бесконечный таргет. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
+
 - [x] ST-323: Улучшить сообщение об ошибке для `_json_list`
   - Тип: Python / trainer / dataset
   - Примечания: json.JSONDecodeError оборачивается в ValueError с понятным текстом; добавлен тест на невалидную строку. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
@@ -66,17 +74,9 @@
 - [x] ST-317: export_model создаёт директории и валидирует выходной путь
   - Тип: Python / trainer / export
   - Примечания: добавлена автосоздающаяся директория для выхода, явная ошибка при сохранении в каталог; покрыто тестами вложенного пути и запретом на каталог; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_export_model.py`.
-
 - [x] ST-316: Улучшить ошибки load_snapshots_as_frame при отсутствии таблиц
   - Тип: Python / trainer / dataset
   - Примечания: `_load_table` теперь отдаёт ValueError с названием таблицы при отсутствии/ошибке SQLite; добавлена проверка обязательных столбцов и тесты на отсутствие таблицы и PID; прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
-
-- [x] ST-315: Добавить smoke-тесты load_snapshots_as_frame для пустых таблиц
-  - Тип: Python / trainer / tests
-  - Примечания: добавлены два smoke-теста на пустые таблицы и пустые snapshots; проверены возврат пустого DataFrame, отсутствие предупреждений при конвертации булевых столбцов и корректные dtype. Прогнан `uv run pytest smoothtask-trainer/tests/test_dataset.py`.
-- [x] ST-314: Проверить astype в tune_policy/dataset на предупреждения
-  - Тип: Python / trainer / maintenance
-  - Примечания: конверсии bad_responsiveness переведены на nullable boolean -> Int8 без предупреждений; _to_bool теперь приводит напрямую к boolean. Добавлены тесты на отсутствие FutureWarning; прогнан `uv run pytest smoothtask-trainer/tests`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

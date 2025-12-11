@@ -184,6 +184,13 @@ def build_feature_matrix(
     )
     target = teacher.combine_first(resp)
     target_numeric = pd.to_numeric(target, errors="coerce")
+    target_infinite = np.isinf(target_numeric)
+    if target_infinite.any():
+        invalid_values = pd.unique(target[target_infinite])
+        sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+        raise ValueError(
+            f"Таргет (teacher_score/responsiveness_score) содержит бесконечные значения: {sample_values}"
+        )
     invalid_target = target.notna() & target_numeric.isna()
     if invalid_target.any():
         invalid_values = pd.unique(target[invalid_target])
@@ -216,6 +223,13 @@ def build_feature_matrix(
             sample_values = ", ".join(repr(v) for v in invalid_values[:5])
             raise ValueError(
                 f"Колонка '{col}' содержит нечисловые значения: {sample_values}"
+            )
+        infinite_mask = np.isinf(numeric_series)
+        if infinite_mask.any():
+            invalid_values = pd.unique(series[infinite_mask])
+            sample_values = ", ".join(repr(v) for v in invalid_values[:5])
+            raise ValueError(
+                f"Колонка '{col}' содержит бесконечные значения: {sample_values}"
             )
         features[col] = numeric_series.fillna(0.0).astype(float)
         column_order.append(col)

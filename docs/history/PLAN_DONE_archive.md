@@ -1,3 +1,12 @@
+## Перенос из PLAN.md (ST-315–ST-314, 2025-12-11)
+
+- [x] ST-315: Добавить smoke-тесты load_snapshots_as_frame для пустых таблиц
+  - Тип: Python / trainer / tests
+  - Примечания: добавлены два smoke-теста на пустые таблицы и пустые snapshots; проверены возврат пустого DataFrame, отсутствие предупреждений при конвертации булевых столбцов и корректные dtype. Прогнан `uv run pytest smoothtask-trainer/tests/test_dataset.py`.
+- [x] ST-314: Проверить astype в tune_policy/dataset на предупреждения
+  - Тип: Python / trainer / maintenance
+  - Примечания: конверсии bad_responsiveness переведены на nullable boolean -> Int8 без предупреждений; _to_bool теперь приводит напрямую к boolean. Добавлены тесты на отсутствие FutureWarning; прогнан `uv run pytest smoothtask-trainer/tests`.
+
 ## Перенос из PLAN.md (ST-313–ST-312, 2025-12-11)
 
 - [x] ST-313: Архивировать старые DONE-задачи в PLAN.md

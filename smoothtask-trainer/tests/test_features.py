@@ -239,6 +239,31 @@ def test_build_feature_matrix_targets_numeric_strings_and_invalid_values():
         build_feature_matrix(bad)
 
 
+def test_build_feature_matrix_rejects_infinite_target():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [np.inf, 0.5],
+        }
+    )
+
+    with pytest.raises(ValueError, match="бесконечные значения"):
+        build_feature_matrix(df)
+
+
+def test_build_feature_matrix_rejects_infinite_numeric_feature():
+    df = pd.DataFrame(
+        {
+            "snapshot_id": [1, 2],
+            "teacher_score": [0.5, 0.6],
+            "cpu_share_1s": [np.inf, 0.1],
+        }
+    )
+
+    with pytest.raises(ValueError, match="cpu_share_1s.*бесконечные значения"):
+        build_feature_matrix(df)
+
+
 def test_build_feature_matrix_empty_dataframe():
     df = pd.DataFrame()
     with pytest.raises(ValueError):
