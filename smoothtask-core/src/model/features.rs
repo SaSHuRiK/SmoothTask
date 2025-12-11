@@ -106,7 +106,7 @@ pub fn build_features(snapshot: &Snapshot, app_group: &AppGroupRecord) -> Featur
         .filter(|p| {
             p.app_group_id
                 .as_deref()
-                .map_or(false, |id| id == app_group.app_group_id)
+                .is_some_and(|id| id == app_group.app_group_id)
         })
         .collect();
 
@@ -114,6 +114,7 @@ pub fn build_features(snapshot: &Snapshot, app_group: &AppGroupRecord) -> Featur
     let representative_process = group_processes.first();
 
     // Числовые фичи (в порядке _NUMERIC_COLS)
+    #[allow(clippy::vec_init_then_push)]
     let mut numeric = Vec::new();
 
     // Процессные метрики

@@ -34,6 +34,7 @@ impl PriorityClass {
     }
 
     /// Парсинг из строки (для чтения из БД/конфига).
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "CRIT_INTERACTIVE" => Some(PriorityClass::CritInteractive),

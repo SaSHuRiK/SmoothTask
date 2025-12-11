@@ -99,7 +99,7 @@ async fn test_collect_snapshot_with_valid_components() {
     assert!(snapshot.app_groups.is_empty()); // app_groups заполняются после группировки
 
     // Проверяем, что GlobalMetrics построены корректно
-    assert!(snapshot.global.mem_total_kb > 0 || snapshot.global.mem_total_kb == 0); // Может быть 0 в тестовом окружении
+    assert!(snapshot.global.mem_total_kb >= 0); // Может быть 0 в тестовом окружении
     assert!(snapshot.global.load_avg_one >= 0.0);
     assert!(snapshot.global.load_avg_five >= 0.0);
     assert!(snapshot.global.load_avg_fifteen >= 0.0);

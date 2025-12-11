@@ -49,9 +49,7 @@ impl WindowInfo {
         pid_confidence: f32,
     ) -> Self {
         // Если PID неизвестен — confidence принудительно обнуляем, даже если бекенд прислал значение.
-        let pid_confidence = if pid.is_none() {
-            0.0
-        } else if pid_confidence.is_nan() {
+        let pid_confidence = if pid.is_none() || pid_confidence.is_nan() {
             0.0
         } else {
             pid_confidence.clamp(0.0, 1.0)

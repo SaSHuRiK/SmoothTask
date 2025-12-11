@@ -173,12 +173,10 @@ impl PolicyEngine {
         snapshot: &Snapshot,
     ) -> std::collections::HashMap<String, PolicyResult> {
         // В hybrid mode сначала ранжируем все группы
-        let ranking_results: Option<std::collections::HashMap<String, RankingResult>> =
-            if let Some(ref ranker) = self.ranker {
-                Some(ranker.rank(&snapshot.app_groups, snapshot))
-            } else {
-                None
-            };
+        let ranking_results: Option<std::collections::HashMap<String, RankingResult>> = self
+            .ranker
+            .as_ref()
+            .map(|ranker| ranker.rank(&snapshot.app_groups, snapshot));
 
         let mut results = std::collections::HashMap::new();
 

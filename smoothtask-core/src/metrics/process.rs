@@ -93,7 +93,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let nice = stat.nice as i32;
 
     // Читаем ionice через системный вызов ioprio_get
-    let (ionice_class, ionice_prio) = read_ionice(stat.pid as i32)
+    let (ionice_class, ionice_prio) = read_ionice(stat.pid)
         .ok()
         .flatten()
         .map(|(class, level)| (Some(class), Some(level)))
@@ -117,8 +117,8 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let systemd_unit = extract_systemd_unit(&cgroup_path);
 
     let record = ProcessRecord {
-        pid: stat.pid as i32,
-        ppid: stat.ppid as i32,
+        pid: stat.pid,
+        ppid: stat.ppid,
         uid,
         gid,
         exe,
@@ -129,7 +129,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         state: format!("{:?}", stat.state),
         start_time: stat.starttime,
         uptime_sec,
-        tty_nr: stat.tty_nr as i32,
+        tty_nr: stat.tty_nr,
         has_tty,
         cpu_share_1s: None,   // будет вычислено при следующем снапшоте
         cpu_share_10s: None,  // будет вычислено при следующем снапшоте

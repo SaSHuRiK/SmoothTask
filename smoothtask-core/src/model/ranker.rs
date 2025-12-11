@@ -94,7 +94,7 @@ impl Ranker for StubRanker {
             }
 
             // Ограничиваем score в диапазоне [0.0, 1.0]
-            score = score.min(1.0).max(0.0);
+            score = score.clamp(0.0, 1.0);
 
             scores.push((app_group.app_group_id.clone(), score));
         }
