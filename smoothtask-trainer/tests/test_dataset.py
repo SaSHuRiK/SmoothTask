@@ -577,6 +577,82 @@ def test_load_snapshots_as_frame_multiple_snapshots():
         db_path.unlink(missing_ok=True)
 
 
+def test_load_snapshots_as_frame_sorted_by_snapshot_and_pid():
+    """Строки должны возвращаться отсортированными по snapshot_id, затем pid."""
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
+        db_path = Path(tmp.name)
+
+    try:
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+
+        cursor.execute(
+            """
+            CREATE TABLE snapshots (
+                snapshot_id INTEGER PRIMARY KEY,
+                timestamp TEXT NOT NULL
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE processes (
+                snapshot_id INTEGER NOT NULL,
+                pid INTEGER NOT NULL,
+                app_group_id TEXT,
+                PRIMARY KEY (snapshot_id, pid)
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE app_groups (
+                snapshot_id INTEGER NOT NULL,
+                app_group_id TEXT NOT NULL,
+                PRIMARY KEY (snapshot_id, app_group_id)
+            )
+            """
+        )
+
+        timestamp = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+            (2, timestamp),
+        )
+        cursor.execute(
+            "INSERT INTO snapshots (snapshot_id, timestamp) VALUES (?, ?)",
+            (1, timestamp),
+        )
+
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+            (2, 20, "b"),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+            (1, 11, "a"),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+            (1, 10, "a"),
+        )
+        cursor.execute(
+            "INSERT INTO processes (snapshot_id, pid, app_group_id) VALUES (?, ?, ?)",
+            (2, 19, "b"),
+        )
+
+        conn.commit()
+        conn.close()
+
+        df = load_snapshots_as_frame(db_path)
+
+        expected = [(1, 10), (1, 11), (2, 19), (2, 20)]
+        assert list(df[["snapshot_id", "pid"]].itertuples(index=False, name=None)) == expected
+
+    finally:
+        db_path.unlink(missing_ok=True)
+
+
 def test_load_snapshots_as_frame_missing_table():
     """При отсутствии таблицы должно приходить понятное сообщение об ошибке."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -681,6 +757,12 @@ def test_json_list_rejects_non_list_payload():
     """_json_list должен отдавать ValueError, если JSON не список."""
     with pytest.raises(ValueError):
         _json_list('{"key": "value"}')
+
+
+def test_json_list_invalid_json_message():
+    """Невалидный JSON должен отдавать понятный ValueError."""
+    with pytest.raises(ValueError, match="Некорректный JSON"):
+        _json_list("[1, 2")
 
 
 def test_to_bool_converts_present_columns_only():

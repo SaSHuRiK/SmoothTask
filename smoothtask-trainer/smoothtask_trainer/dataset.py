@@ -41,7 +41,13 @@ def _json_list(value: str | None) -> list:
     if isinstance(value, str) and value.strip() == "":
         return []
 
-    parsed = json.loads(value)
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:  # pragma: no cover - конкретный текст проверяется в тесте
+        raise ValueError(f"Некорректный JSON: {exc.msg}") from exc
+    except TypeError as exc:  # pragma: no cover - защитная проверка типов
+        raise ValueError(f"Ожидалась JSON-строка, получено: {type(value)}") from exc
+
     if isinstance(parsed, list):
         return parsed
     raise ValueError(f"Ожидался JSON-массив, получено: {type(parsed)}")
@@ -163,5 +169,7 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
             how="left",
             suffixes=("", "_group"),
         )
+
+    df = df.sort_values(["snapshot_id", "pid"]).reset_index(drop=True)
 
     return df

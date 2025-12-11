@@ -39,6 +39,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-323: Улучшить сообщение об ошибке для `_json_list`
+  - Тип: Python / trainer / dataset
+  - Примечания: json.JSONDecodeError оборачивается в ValueError с понятным текстом; добавлен тест на невалидную строку. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
+- [x] ST-322: Стабилизировать порядок строк в `load_snapshots_as_frame`
+  - Тип: Python / trainer / dataset
+  - Примечания: результат сортируется по snapshot_id/pid; добавлен тест на стабильный порядок при несортированных вставках. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_dataset.py`.
+
 - [x] ST-321: Проверка числовых таргетов teacher/responsiveness
   - Тип: Python / trainer / features
   - Примечания: build_feature_matrix валидирует целевой столбец, выдавая понятный ValueError при нечисловых значениях; числовые строки коэрсятся без предупреждений. Прогнан `uv run python -m pytest smoothtask-trainer/tests/test_features.py`.
@@ -66,18 +74,9 @@
 - [x] ST-315: Добавить smoke-тесты load_snapshots_as_frame для пустых таблиц
   - Тип: Python / trainer / tests
   - Примечания: добавлены два smoke-теста на пустые таблицы и пустые snapshots; проверены возврат пустого DataFrame, отсутствие предупреждений при конвертации булевых столбцов и корректные dtype. Прогнан `uv run pytest smoothtask-trainer/tests/test_dataset.py`.
-
 - [x] ST-314: Проверить astype в tune_policy/dataset на предупреждения
   - Тип: Python / trainer / maintenance
   - Примечания: конверсии bad_responsiveness переведены на nullable boolean -> Int8 без предупреждений; _to_bool теперь приводит напрямую к boolean. Добавлены тесты на отсутствие FutureWarning; прогнан `uv run pytest smoothtask-trainer/tests`.
-
-- [x] ST-313: Архивировать старые DONE-задачи в PLAN.md
-  - Тип: Документация / планирование
-  - Примечания: в Recently Done оставлены 10 последних задач; ST-304–ST-200 перенесены в `docs/history/PLAN_DONE_archive.md`, ссылка обновлена.
-
-- [x] ST-312: Усилить валидацию типов числовых колонок в build_feature_matrix
-  - Тип: Python / trainer / features
-  - Примечания: numeric-колонки валидируются перед fillna; нечисловые значения приводят к понятной ValueError с примерами значений. Строковые числа коэрсятся в float без предупреждений. Добавлены тесты на смешанные типы и ошибки; прогнан `uv run pytest smoothtask-trainer/tests/test_features.py`.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 
