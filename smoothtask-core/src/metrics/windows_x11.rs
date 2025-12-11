@@ -188,7 +188,9 @@ impl X11Introspector {
         if let Some(reply) = reply {
             let pids: Vec<u32> = reply
                 .value32()
-                .context("_NET_WM_PID не является числом (CARDINAL): ожидается одно значение типа u32")?
+                .context(
+                    "_NET_WM_PID не является числом (CARDINAL): ожидается одно значение типа u32",
+                )?
                 .collect();
             Ok(pids.first().copied())
         } else {

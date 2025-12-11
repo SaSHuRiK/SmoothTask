@@ -460,14 +460,12 @@ fn parse_cpu_times(contents: &str) -> Result<CpuTimes> {
         })?;
 
     let mut fields = line.split_whitespace();
-    let _cpu_label = fields
-        .next()
-        .ok_or_else(|| {
-            anyhow!(
-                "Пустая строка CPU в /proc/stat. \
+    let _cpu_label = fields.next().ok_or_else(|| {
+        anyhow!(
+            "Пустая строка CPU в /proc/stat. \
                  Ожидается строка вида 'cpu <user> <nice> <system> ...'"
-            )
-        })?;
+        )
+    })?;
 
     let parse_field = |name: &str, iter: &mut std::str::SplitWhitespace<'_>| -> Result<u64> {
         iter.next()
@@ -524,18 +522,15 @@ fn parse_meminfo(contents: &str) -> Result<MemoryInfo> {
     }
 
     let take = |name: &str| -> Result<u64> {
-        values
-            .get(name)
-            .copied()
-            .ok_or_else(|| {
-                anyhow!(
-                    "В /proc/meminfo отсутствует обязательное поле '{}'. \
+        values.get(name).copied().ok_or_else(|| {
+            anyhow!(
+                "В /proc/meminfo отсутствует обязательное поле '{}'. \
                      Проверьте, что файл содержит строку вида '{}: <значение> kB'. \
                      Это может быть вызвано нестандартным ядром или отсутствием памяти в системе",
-                    name,
-                    name
-                )
-            })
+                name,
+                name
+            )
+        })
     };
 
     Ok(MemoryInfo {
@@ -617,40 +612,30 @@ fn parse_pressure_record(line: &str) -> Result<PressureRecord> {
 
     for token in line.split_whitespace().skip(1) {
         let mut kv = token.split('=');
-        let key = kv
-            .next()
-            .ok_or_else(|| {
-                anyhow!(
-                    "Некорректный токен в записи PSI pressure: '{}'. \
+        let key = kv.next().ok_or_else(|| {
+            anyhow!(
+                "Некорректный токен в записи PSI pressure: '{}'. \
                      Ожидается формат 'key=value', например 'avg10=0.01'",
-                    token
-                )
-            })?;
-        let value = kv
-            .next()
-            .ok_or_else(|| {
-                anyhow!(
-                    "Некорректный токен в записи PSI pressure: '{}'. \
+                token
+            )
+        })?;
+        let value = kv.next().ok_or_else(|| {
+            anyhow!(
+                "Некорректный токен в записи PSI pressure: '{}'. \
                      Ожидается формат 'key=value', но значение отсутствует",
-                    token
-                )
-            })?;
+                token
+            )
+        })?;
         match key {
-            "avg10" => {
-                avg10 = Some(value.parse::<f64>().context(
-                    "Некорректное значение avg10 в PSI pressure: ожидается число с плавающей точкой",
-                )?)
-            }
-            "avg60" => {
-                avg60 = Some(value.parse::<f64>().context(
-                    "Некорректное значение avg60 в PSI pressure: ожидается число с плавающей точкой",
-                )?)
-            }
-            "avg300" => {
-                avg300 = Some(value.parse::<f64>().context(
-                    "Некорректное значение avg300 в PSI pressure: ожидается число с плавающей точкой",
-                )?)
-            }
+            "avg10" => avg10 = Some(value.parse::<f64>().context(
+                "Некорректное значение avg10 в PSI pressure: ожидается число с плавающей точкой",
+            )?),
+            "avg60" => avg60 = Some(value.parse::<f64>().context(
+                "Некорректное значение avg60 в PSI pressure: ожидается число с плавающей точкой",
+            )?),
+            "avg300" => avg300 = Some(value.parse::<f64>().context(
+                "Некорректное значение avg300 в PSI pressure: ожидается число с плавающей точкой",
+            )?),
             "total" => {
                 total = Some(value.parse::<u64>().context(
                     "Некорректное значение total в PSI pressure: ожидается целое число (u64)",

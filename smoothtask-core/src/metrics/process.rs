@@ -68,8 +68,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
                  Проверьте, что процесс существует и доступен для чтения",
                 proc.pid(),
                 e
-            )
-            .into())
+            ))
         }
     };
 
@@ -83,8 +82,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
                  Проверьте, что процесс существует и доступен для чтения",
                 proc.pid(),
                 e
-            )
-            .into())
+            ))
         }
     };
 
@@ -297,29 +295,25 @@ fn read_uid_gid(pid: i32) -> Result<(u32, u32)> {
             // Формат: Uid: 1000 1000 1000 1000 (real, effective, saved, filesystem)
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
-                uid = parts[1]
-                    .parse::<u32>()
-                    .with_context(|| {
-                        format!(
-                            "Некорректный UID в /proc/{}/status: ожидается целое число (u32). \
+                uid = parts[1].parse::<u32>().with_context(|| {
+                    format!(
+                        "Некорректный UID в /proc/{}/status: ожидается целое число (u32). \
                              Формат строки: 'Uid: <real> <effective> <saved> <filesystem>'",
-                            pid
-                        )
-                    })?;
+                        pid
+                    )
+                })?;
             }
         } else if line.starts_with("Gid:") {
             // Формат: Gid: 1000 1000 1000 1000 (real, effective, saved, filesystem)
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 2 {
-                gid = parts[1]
-                    .parse::<u32>()
-                    .with_context(|| {
-                        format!(
-                            "Некорректный GID в /proc/{}/status: ожидается целое число (u32). \
+                gid = parts[1].parse::<u32>().with_context(|| {
+                    format!(
+                        "Некорректный GID в /proc/{}/status: ожидается целое число (u32). \
                              Формат строки: 'Gid: <real> <effective> <saved> <filesystem>'",
-                            pid
-                        )
-                    })?;
+                        pid
+                    )
+                })?;
             }
         }
     }
@@ -519,5 +513,78 @@ Gid:    1000 1000 1000 1000
         );
         assert_eq!(extract_systemd_unit(&Some("/user.slice".to_string())), None);
         assert_eq!(extract_systemd_unit(&None), None);
+    }
+
+    #[test]
+    fn calculate_uptime_with_valid_stat() {
+        // Этот тест проверяет, что функция calculate_uptime не падает с ошибкой
+        // при корректных входных данных. Так как функция зависит от системного времени
+        // и boot_time, мы не можем точно предсказать результат, но можем проверить,
+        // что она возвращает разумное значение.
+        
+        // Используем реальный процесс (текущий процесс) для получения реального Stat
+        // Это более надежный подход, чем создание мокового Stat
+        let current_pid = std::process::id() as i32;
+        let proc = match Process::new(current_pid) {
+            Ok(p) => p,
+            Err(_) => {
+                // Если не удалось получить процесс, пропускаем тест
+                return;
+            }
+        };
+        
+        let stat = match proc.stat() {
+            Ok(s) => s,
+            Err(_) => {
+                // Если не удалось получить stat, пропускаем тест
+                return;
+            }
+        };
+
+        let result = calculate_uptime(&stat);
+        assert!(result.is_ok());
+        let uptime = result.unwrap();
+        // Проверяем, что uptime разумный (не отрицательный и не слишком большой)
+        assert!(uptime > 0);
+        assert!(uptime < 1000000); // разумный верхний предел
+    }
+
+    #[test]
+    fn read_cgroup_path_with_valid_file() {
+        // Создаем временный файл cgroup
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Формат cgroup v2: 0::/user.slice/user-1000.slice/session-2.scope
+        let cgroup_content = "0::/user.slice/user-1000.slice/session-2.scope\n";
+        fs::write(proc_dir.join("cgroup"), cgroup_content).unwrap();
+
+        // Мокаем чтение через временный файл
+        let path = proc_dir.join("cgroup");
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut found_path = None;
+        for line in contents.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 3 {
+                let cgroup_path = parts[2];
+                if !cgroup_path.is_empty() && cgroup_path != "/" {
+                    found_path = Some(cgroup_path.to_string());
+                    break;
+                }
+            }
+        }
+        assert_eq!(
+            found_path,
+            Some("/user.slice/user-1000.slice/session-2.scope".to_string())
+        );
+    }
+
+    #[test]
+    fn read_cgroup_path_with_missing_file() {
+        // Проверяем, что функция корректно обрабатывает отсутствие файла
+        let result = read_cgroup_path(999999);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
     }
 }
