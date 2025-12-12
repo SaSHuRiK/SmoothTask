@@ -509,7 +509,7 @@ impl PolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, Paths, Thresholds};
+    use crate::config::{CacheIntervals, Config, Paths, Thresholds};
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};
     use chrono::Utc;
 
@@ -538,6 +538,10 @@ mod tests {
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: None,
             },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
         }
     }
 
@@ -565,6 +569,10 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: None,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         }
     }

@@ -144,20 +144,64 @@ pub fn is_wayland_available() -> bool {
 /// Использует wlr-foreign-toplevel-management для получения списка окон
 /// и их состояния. Поддерживает композиторы: Mutter, KWin, Sway, Hyprland и др.
 ///
-/// ПРИМЕЧАНИЕ: Полная реализация требует сложной работы с асинхронными событиями
-/// Wayland через wayland-client API и обработки событий через Dispatch трейты.
-/// Текущая реализация является базовой структурой. Полная реализация будет добавлена
-/// в будущем, когда будет больше времени на правильную работу с wayland-client API.
+/// ПРИМЕЧАНИЕ: Текущая реализация предоставляет базовую структуру с подключением
+/// к Wayland композитору. Полная реализация с обработкой событий будет добавлена
+/// в будущем.
 pub struct WaylandIntrospector {
-    // Поля будут добавлены при полной реализации
-    _phantom: std::marker::PhantomData<()>,
+    /// Соединение с Wayland композитором
+    /// TODO: будет использоваться для получения информации об окнах в будущем
+    #[allow(dead_code)]
+    connection: wayland_client::Connection,
+    /// Очередь событий для обработки асинхронных событий
+    /// TODO: будет использоваться для обработки событий Wayland в будущем
+    #[allow(dead_code)]
+    event_queue: wayland_client::EventQueue<WaylandState>,
+    /// Текущий список окон
+    /// TODO: будет заполняться информацией об окнах в будущем
+    #[allow(dead_code)]
+    windows: Vec<WindowInfo>,
+}
+
+/// Состояние для обработки событий Wayland
+struct WaylandState {
+    // Здесь будет храниться состояние для обработки событий
+}
+
+// Реализация Dispatch для обработки событий реестра
+impl wayland_client::Dispatch<wayland_client::protocol::wl_registry::WlRegistry, ()> for WaylandState {
+    fn event(
+        _state: &mut Self,
+        _proxy: &wayland_client::protocol::wl_registry::WlRegistry,
+        event: wayland_client::protocol::wl_registry::Event,
+        _data: &(),
+        _conn: &wayland_client::Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        // Обработка событий реестра
+        match event {
+            wayland_client::protocol::wl_registry::Event::Global { name: _, interface, version: _ } => {
+                // Здесь можно обрабатывать глобальные объекты
+                // Например, искать wlr-foreign-toplevel-manager
+                if interface == "wlr-foreign-toplevel-manager-v1" {
+                    // Нашли менеджер wlr-foreign-toplevel
+                    // В будущем здесь будет логика подключения к нему
+                }
+            }
+            wayland_client::protocol::wl_registry::Event::GlobalRemove { name: _ } => {
+                // Обработка удаления глобальных объектов
+            }
+            _ => {
+                // Игнорируем другие события
+            }
+        }
+    }
 }
 
 impl WaylandIntrospector {
     /// Создаёт новый WaylandIntrospector, подключаясь к Wayland композитору.
     ///
     /// Функция проверяет доступность Wayland окружения и пытается создать интроспектор.
-    /// В текущей версии функция возвращает ошибку, так как полная реализация ещё не завершена.
+    /// Текущая реализация предоставляет базовое подключение к Wayland композитору.
     ///
     /// # Возвращаемое значение
     ///
@@ -171,8 +215,8 @@ impl WaylandIntrospector {
     /// 1. **Wayland недоступен**: переменные окружения не установлены, socket не найден.
     ///    Сообщение об ошибке включает инструкции по проверке доступности Wayland.
     ///
-    /// 2. **Реализация не завершена**: Wayland доступен, но полная реализация интроспектора
-    ///    ещё не завершена. Это временная ошибка, которая будет исправлена в будущих обновлениях.
+    /// 2. **Ошибка подключения**: не удалось подключиться к Wayland композитору.
+    ///    Сообщение об ошибке включает детали ошибки подключения.
     ///
     /// # Примеры использования
     ///
@@ -215,41 +259,11 @@ impl WaylandIntrospector {
     /// }
     /// ```
     ///
-    /// ## Использование в главном цикле демона
-    ///
-    /// ```no_run
-    /// use smoothtask_core::metrics::windows::{WaylandIntrospector, X11Introspector, StaticWindowIntrospector, WindowIntrospector};
-    ///
-    /// // Пробуем создать WaylandIntrospector
-    /// let window_introspector: Box<dyn WindowIntrospector> = if WaylandIntrospector::is_available() {
-    ///     match WaylandIntrospector::new() {
-    ///         Ok(introspector) => {
-    ///             Box::new(introspector)
-    ///         }
-    ///         Err(_) => {
-    ///             // Fallback на X11 или StaticWindowIntrospector
-    ///             if X11Introspector::is_available() {
-    ///                 Box::new(X11Introspector::new().unwrap())
-    ///             } else {
-    ///                 Box::new(StaticWindowIntrospector::new(Vec::new()))
-    ///             }
-    ///         }
-    ///     }
-    /// } else {
-    ///     // Wayland недоступен, используем X11 или StaticWindowIntrospector
-    ///     if X11Introspector::is_available() {
-    ///         Box::new(X11Introspector::new().unwrap())
-    ///     } else {
-    ///         Box::new(StaticWindowIntrospector::new(Vec::new()))
-    ///     }
-    /// };
-    /// ```
-    ///
     /// # Примечания
     ///
     /// - Функция проверяет доступность Wayland через `is_available()` перед попыткой создания.
-    /// - В текущей версии функция всегда возвращает ошибку, так как полная реализация ещё не завершена.
-    /// - Полная реализация требует работы с асинхронными событиями через wayland-client API.
+    /// - Текущая реализация предоставляет базовое подключение к Wayland композитору.
+    /// - Полная реализация с обработкой событий будет добавлена в будущем.
     /// - Система автоматически использует fallback на `StaticWindowIntrospector`, если Wayland недоступен
     ///   или интроспектор не может быть создан.
     pub fn new() -> Result<Self> {
@@ -263,27 +277,22 @@ impl WaylandIntrospector {
             );
         }
 
-        // ПРИМЕЧАНИЕ: Полная реализация требует:
-        // 1. Подключения к Wayland композитору через Connection::connect_to_env()
-        // 2. Создания EventQueue и обработки событий через Dispatch трейты
-        // 3. Поиска wlr-foreign-toplevel-manager в реестре глобальных объектов
-        // 4. Регистрации обработчиков событий для получения списка окон
-        // 5. Обработки событий для обновления состояния окон (title, app_id, state, pid)
-        //
-        // Это сложная задача, требующая правильной работы с асинхронными событиями
-        // через wayland-client 0.31 API. Полная реализация будет добавлена в будущем.
-        anyhow::bail!(
-            "WaylandIntrospector is not yet fully implemented. \
-             Wayland is available, but the full implementation requires:\n\
-             - Connection to Wayland compositor via wayland-client API\n\
-             - Event handling through Dispatch traits\n\
-             - Registry binding for wlr-foreign-toplevel-management protocol\n\
-             - Event handlers for window state updates (title, app_id, state, pid)\n\
-             \n\
-             This is a complex task requiring proper async event handling. \
-             The implementation will be completed in a future update. \
-             For now, the system will fall back to StaticWindowIntrospector."
-        )
+        // Подключаемся к Wayland композитору
+        let connection = wayland_client::Connection::connect_to_env()
+            .map_err(|e| anyhow::anyhow!("Failed to connect to Wayland compositor: {}", e))?;
+
+        // Создаём состояние для обработки событий
+        let _state = WaylandState {};
+
+        // Создаём очередь событий для обработки асинхронных событий
+        let event_queue = connection.new_event_queue();
+
+        // Создаём интроспектор с базовой структурой
+        Ok(Self {
+            connection,
+            event_queue,
+            windows: Vec::new(),
+        })
     }
 
     /// Проверяет, доступен ли Wayland композитор.
@@ -301,7 +310,6 @@ impl WindowIntrospector for WaylandIntrospector {
              - Connection to Wayland compositor\n\
              - wlr-foreign-toplevel-management protocol support\n\
              - Async event handling through wayland-client API\n\
-             \n\
              The full implementation will be added in a future update. \
              This error should not occur if WaylandIntrospector::new() was called successfully."
         )
