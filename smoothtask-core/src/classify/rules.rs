@@ -443,17 +443,24 @@ impl PatternDatabase {
                 // Отслеживаем новые имена паттернов
                 new_file_names.insert(app.name.clone());
 
-                // Проверяем, изменился ли паттерн
-                let pattern_changed = self
+                // Проверяем, существует ли паттерн уже в базе
+                let existing_pattern = self
                     .all_patterns
                     .iter()
-                    .find(|(_, existing_pattern)| existing_pattern.name == app.name)
-                    .map(|(_, existing_pattern)| existing_pattern != &app)
-                    .unwrap_or(true);
+                    .find(|(_, existing_pattern)| existing_pattern.name == app.name);
 
-                if pattern_changed {
-                    changed_files += 1;
-                    debug!("Паттерн {} был изменён или является новым", app.name);
+                match existing_pattern {
+                    Some((_, existing_app)) => {
+                        // Паттерн существует, проверяем изменился ли он
+                        if existing_app != &app {
+                            changed_files += 1;
+                            debug!("Паттерн {} был изменён", app.name);
+                        }
+                    }
+                    None => {
+                        // Это совершенно новый паттерн
+                        debug!("Обнаружен новый паттерн: {}", app.name);
+                    }
                 }
 
                 new_all_patterns.push((category.clone(), app));
@@ -2575,7 +2582,7 @@ apps:
         assert!(result.has_changes());
         assert_eq!(
             result.summary(),
-            "Updated: 1 changed, 2 new, 1 removed (5 patterns)"
+            "Updated: 2 new, 1 changed, 1 removed (5 patterns)"
         );
 
         let no_change_result = PatternUpdateResult {
