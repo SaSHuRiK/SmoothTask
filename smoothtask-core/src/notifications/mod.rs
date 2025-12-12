@@ -33,6 +33,18 @@ pub enum NotificationType {
     /// Информационное уведомление - общая информация о работе системы.
     /// Используется для уведомлений о нормальной работе, успешных операциях и т.д.
     Info,
+
+    /// Уведомление о изменении приоритета - специальный тип для уведомлений
+    /// о изменении приоритетов процессов.
+    PriorityChange,
+
+    /// Уведомление о изменении конфигурации - специальный тип для уведомлений
+    /// о перезагрузке конфигурации или изменении настроек.
+    ConfigChange,
+
+    /// Уведомление о системном событии - специальный тип для уведомлений
+    /// о системных событиях (запуск, остановка, ошибки системы и т.д.).
+    SystemEvent,
 }
 
 impl fmt::Display for NotificationType {
@@ -41,6 +53,9 @@ impl fmt::Display for NotificationType {
             NotificationType::Critical => write!(f, "CRITICAL"),
             NotificationType::Warning => write!(f, "WARNING"),
             NotificationType::Info => write!(f, "INFO"),
+            NotificationType::PriorityChange => write!(f, "PRIORITY_CHANGE"),
+            NotificationType::ConfigChange => write!(f, "CONFIG_CHANGE"),
+            NotificationType::SystemEvent => write!(f, "SYSTEM_EVENT"),
         }
     }
 }
@@ -88,6 +103,55 @@ impl Notification {
         self.details = Some(details.into());
         self
     }
+
+    /// Создаёт уведомление о изменении приоритета.
+    pub fn priority_change(
+        process_name: impl Into<String>,
+        old_priority: impl Into<String>,
+        new_priority: impl Into<String>,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            notification_type: NotificationType::PriorityChange,
+            title: format!("Priority Changed: {}", process_name.into()),
+            message: format!(
+                "Priority changed from {} to {} - {}",
+                old_priority.into(),
+                new_priority.into(),
+                reason.into()
+            ),
+            details: None,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    /// Создаёт уведомление о изменении конфигурации.
+    pub fn config_change(
+        config_file: impl Into<String>,
+        changes_summary: impl Into<String>,
+    ) -> Self {
+        Self {
+            notification_type: NotificationType::ConfigChange,
+            title: format!("Configuration Reloaded: {}", config_file.into()),
+            message: format!("Configuration changes applied: {}", changes_summary.into()),
+            details: None,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    /// Создаёт уведомление о системном событии.
+    pub fn system_event(
+        event_type: impl Into<String>,
+        event_description: impl Into<String>,
+    ) -> Self {
+        Self {
+            notification_type: NotificationType::SystemEvent,
+            title: format!("System Event: {}", event_type.into()),
+            message: event_description.into(),
+            details: None,
+            timestamp: chrono::Utc::now(),
+        }
+    }
 }
 
 /// Трейт для отправки уведомлений.
@@ -131,6 +195,27 @@ impl Notifier for StubNotifier {
                 );
             }
             NotificationType::Info => {
+                tracing::info!(
+                    "[NOTIFICATION] {}: {}",
+                    notification.title,
+                    notification.message
+                );
+            }
+            NotificationType::PriorityChange => {
+                tracing::info!(
+                    "[NOTIFICATION] {}: {}",
+                    notification.title,
+                    notification.message
+                );
+            }
+            NotificationType::ConfigChange => {
+                tracing::info!(
+                    "[NOTIFICATION] {}: {}",
+                    notification.title,
+                    notification.message
+                );
+            }
+            NotificationType::SystemEvent => {
                 tracing::info!(
                     "[NOTIFICATION] {}: {}",
                     notification.title,
@@ -285,6 +370,9 @@ impl Notifier for DBusNotifier {
             NotificationType::Critical => "critical",
             NotificationType::Warning => "normal",
             NotificationType::Info => "low",
+            NotificationType::PriorityChange => "normal",
+            NotificationType::ConfigChange => "low",
+            NotificationType::SystemEvent => "normal",
         };
 
         // Формируем сообщение уведомления
@@ -310,6 +398,9 @@ impl Notifier for DBusNotifier {
             NotificationType::Critical => "dialog-error",
             NotificationType::Warning => "dialog-warning",
             NotificationType::Info => "dialog-information",
+            NotificationType::PriorityChange => "preferences-system-performance",
+            NotificationType::ConfigChange => "preferences-system",
+            NotificationType::SystemEvent => "computer",
         };
         let summary: &str = &notification.title;
         let body_str: &str = &body;
@@ -389,6 +480,17 @@ impl Notifier for DBusNotifier {
     fn backend_name(&self) -> &str {
         "dbus"
     }
+}
+
+/// Структура, представляющая текущее состояние системы уведомлений.
+#[derive(Debug, Clone, Serialize)]
+pub struct NotificationStatus {
+    /// Флаг, указывающий, включены ли уведомления.
+    pub enabled: bool,
+    /// Текущий бэкенд уведомлений.
+    pub backend: String,
+    /// Флаг, указывающий, интегрирована ли система уведомлений с хранилищем логов.
+    pub has_log_integration: bool,
 }
 
 /// Основной менеджер уведомлений, управляющий отправкой уведомлений через различные бэкенды.
@@ -502,6 +604,9 @@ impl NotificationManager {
                 NotificationType::Critical => crate::logging::log_storage::LogLevel::Error,
                 NotificationType::Warning => crate::logging::log_storage::LogLevel::Warn,
                 NotificationType::Info => crate::logging::log_storage::LogLevel::Info,
+                NotificationType::PriorityChange => crate::logging::log_storage::LogLevel::Info,
+                NotificationType::ConfigChange => crate::logging::log_storage::LogLevel::Info,
+                NotificationType::SystemEvent => crate::logging::log_storage::LogLevel::Info,
             };
 
             let mut log_entry = crate::logging::log_storage::LogEntry::new(
@@ -523,6 +628,55 @@ impl NotificationManager {
         }
 
         self.primary_notifier.send_notification(notification).await
+    }
+
+    /// Создаёт запись в логе на основе уведомления без отправки уведомления.
+    ///
+    /// # Аргументы
+    /// * `notification` - Уведомление для логирования.
+    ///
+    /// # Возвращает
+    /// `Result<()>` - Ok, если запись успешно добавлена в лог, иначе ошибка.
+    pub async fn log_only(&self, notification: &Notification) -> Result<()> {
+        // Логируем уведомление в хранилище логов, если оно доступно
+        if let Some(ref log_storage_arc) = self.log_storage {
+            let log_level = match notification.notification_type {
+                NotificationType::Critical => crate::logging::log_storage::LogLevel::Error,
+                NotificationType::Warning => crate::logging::log_storage::LogLevel::Warn,
+                NotificationType::Info => crate::logging::log_storage::LogLevel::Info,
+                NotificationType::PriorityChange => crate::logging::log_storage::LogLevel::Info,
+                NotificationType::ConfigChange => crate::logging::log_storage::LogLevel::Info,
+                NotificationType::SystemEvent => crate::logging::log_storage::LogLevel::Info,
+            };
+
+            let mut log_entry = crate::logging::log_storage::LogEntry::new(
+                log_level,
+                "notifications",
+                format!("{} - {}", notification.title, notification.message),
+            );
+
+            if let Some(details) = &notification.details {
+                let fields = serde_json::json!({
+                    "notification_type": format!("{}", notification.notification_type),
+                    "timestamp": notification.timestamp.to_rfc3339(),
+                    "details": details,
+                });
+                log_entry = log_entry.with_fields(fields);
+            }
+
+            log_storage_arc.add_entry(log_entry).await;
+        }
+
+        Ok(())
+    }
+
+    /// Возвращает текущее состояние системы уведомлений.
+    pub fn get_status(&self) -> NotificationStatus {
+        NotificationStatus {
+            enabled: self.enabled,
+            backend: self.backend_name().to_string(),
+            has_log_integration: self.log_storage.is_some(),
+        }
     }
 
     /// Возвращает имя текущего бэкенда уведомлений.
@@ -747,5 +901,206 @@ mod tests {
             .get_entries_by_level(crate::logging::log_storage::LogLevel::Info)
             .await;
         assert_eq!(entries.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_new_notification_types() {
+        // Тестируем новые типы уведомлений
+        let priority_notification = Notification::priority_change(
+            "test_process",
+            "low",
+            "high",
+            "user request"
+        );
+        assert_eq!(priority_notification.notification_type, NotificationType::PriorityChange);
+        assert!(priority_notification.title.contains("Priority Changed: test_process"));
+        assert!(priority_notification.message.contains("Priority changed from low to high - user request"));
+
+        let config_notification = Notification::config_change(
+            "/etc/smoothtask/config.yml",
+            "updated qos settings"
+        );
+        assert_eq!(config_notification.notification_type, NotificationType::ConfigChange);
+        assert!(config_notification.title.contains("Configuration Reloaded: /etc/smoothtask/config.yml"));
+        assert!(config_notification.message.contains("Configuration changes applied: updated qos settings"));
+
+        let system_notification = Notification::system_event(
+            "startup",
+            "SmoothTask daemon started successfully"
+        );
+        assert_eq!(system_notification.notification_type, NotificationType::SystemEvent);
+        assert!(system_notification.title.contains("System Event: startup"));
+        assert_eq!(system_notification.message, "SmoothTask daemon started successfully");
+    }
+
+    #[tokio::test]
+    async fn test_notification_type_display_new_types() {
+        assert_eq!(format!("{}", NotificationType::PriorityChange), "PRIORITY_CHANGE");
+        assert_eq!(format!("{}", NotificationType::ConfigChange), "CONFIG_CHANGE");
+        assert_eq!(format!("{}", NotificationType::SystemEvent), "SYSTEM_EVENT");
+    }
+
+    #[tokio::test]
+    async fn test_notification_type_serde_new_types() {
+        let priority_change = NotificationType::PriorityChange;
+        let serialized = serde_yaml::to_string(&priority_change).unwrap();
+        assert!(serialized.contains("priority-change"));
+
+        let config_change = NotificationType::ConfigChange;
+        let serialized = serde_yaml::to_string(&config_change).unwrap();
+        assert!(serialized.contains("config-change"));
+
+        let system_event = NotificationType::SystemEvent;
+        let serialized = serde_yaml::to_string(&system_event).unwrap();
+        assert!(serialized.contains("system-event"));
+    }
+
+    #[tokio::test]
+    async fn test_stub_notifier_new_types() {
+        let notifier = StubNotifier;
+        
+        let priority_notification = Notification::priority_change(
+            "test_app", "normal", "high", "policy change"
+        );
+        let result = notifier.send_notification(&priority_notification).await;
+        assert!(result.is_ok());
+
+        let config_notification = Notification::config_change(
+            "config.yml", "updated settings"
+        );
+        let result = notifier.send_notification(&config_notification).await;
+        assert!(result.is_ok());
+
+        let system_notification = Notification::system_event(
+            "shutdown", "System shutting down"
+        );
+        let result = notifier.send_notification(&system_notification).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_log_only() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
+        // Создаём уведомление и логируем его без отправки
+        let notification = Notification::priority_change(
+            "test_process", "low", "high", "test reason"
+        );
+
+        let result = manager.log_only(&notification).await;
+        assert!(result.is_ok());
+
+        // Проверяем, что уведомление было залоггировано
+        let entries = log_storage
+            .get_entries_by_level(crate::logging::log_storage::LogLevel::Info)
+            .await;
+        assert_eq!(entries.len(), 1);
+
+        let entry = &entries[0];
+        assert_eq!(entry.target, "notifications");
+        assert!(entry.message.contains("Priority Changed: test_process - Priority changed from low to high - test reason"));
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_get_status() {
+        let manager = NotificationManager::new_stub();
+        let status = manager.get_status();
+
+        assert!(status.enabled);
+        assert_eq!(status.backend, "stub");
+        assert!(!status.has_log_integration);
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_get_status_with_logging() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        let status = manager.get_status();
+
+        assert!(status.enabled);
+        assert_eq!(status.backend, "stub");
+        assert!(status.has_log_integration);
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_get_status_disabled() {
+        let mut manager = NotificationManager::new_stub();
+        manager.set_enabled(false);
+        let status = manager.get_status();
+
+        assert!(!status.enabled);
+        assert_eq!(status.backend, "stub");
+        assert!(!status.has_log_integration);
+    }
+
+    #[tokio::test]
+    async fn test_notification_serialization_with_new_types() {
+        let notification = Notification::priority_change(
+            "firefox", "normal", "high", "interactive application"
+        ).with_details("Process ID: 1234, User: testuser");
+
+        let serialized = serde_json::to_string(&notification).unwrap();
+        let deserialized: Notification = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.notification_type, NotificationType::PriorityChange);
+        assert_eq!(deserialized.title, "Priority Changed: firefox");
+        assert!(deserialized.message.contains("Priority changed from normal to high - interactive application"));
+        assert_eq!(deserialized.details, Some("Process ID: 1234, User: testuser".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_comprehensive() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+
+        let log_storage = Arc::new(SharedLogStorage::new(20));
+        let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
+        // Тестируем все типы уведомлений
+        let notifications = vec![
+            Notification::new(NotificationType::Critical, "Critical Test", "Critical message"),
+            Notification::new(NotificationType::Warning, "Warning Test", "Warning message"),
+            Notification::new(NotificationType::Info, "Info Test", "Info message"),
+            Notification::priority_change("app1", "low", "high", "reason1"),
+            Notification::config_change("config.yml", "changes applied"),
+            Notification::system_event("startup", "system started"),
+        ];
+
+        // Отправляем все уведомления
+        for notification in &notifications {
+            let result = manager.send(notification).await;
+            assert!(result.is_ok(), "Failed to send notification: {:?}", notification);
+        }
+
+        // Проверяем, что все уведомления были залоггированы
+        let all_entries = log_storage.get_all_entries().await;
+        assert_eq!(all_entries.len(), 6, "Expected 6 log entries, got {}", all_entries.len());
+
+        // Проверяем, что разные типы уведомлений имеют правильные уровни логирования
+        let info_entries: Vec<_> = all_entries
+            .iter()
+            .filter(|e| e.level == crate::logging::log_storage::LogLevel::Info)
+            .collect();
+
+        let warn_entries: Vec<_> = all_entries
+            .iter()
+            .filter(|e| e.level == crate::logging::log_storage::LogLevel::Warn)
+            .collect();
+
+        let error_entries: Vec<_> = all_entries
+            .iter()
+            .filter(|e| e.level == crate::logging::log_storage::LogLevel::Error)
+            .collect();
+
+        assert_eq!(error_entries.len(), 1, "Expected 1 error entry");
+        assert_eq!(warn_entries.len(), 1, "Expected 1 warning entry");
+        assert_eq!(info_entries.len(), 4, "Expected 4 info entries");
     }
 }
