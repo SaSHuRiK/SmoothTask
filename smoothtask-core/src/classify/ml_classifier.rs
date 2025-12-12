@@ -194,8 +194,6 @@ impl MLClassifier for StubMLClassifier {
 pub struct CatBoostMLClassifier {
     /// Внутренняя модель CatBoost
     model: CatBoostModel,
-    /// Конфигурация классификатора
-    config: MLClassifierConfig,
 }
 
 /// Внутреннее представление модели CatBoost
@@ -234,7 +232,7 @@ impl CatBoostMLClassifier {
             CatBoostModel::Stub
         };
 
-        Ok(Self { model, config })
+        Ok(Self { model })
     }
 
     /// Загрузить модель из файла.
@@ -350,6 +348,11 @@ impl CatBoostMLClassifier {
     /// # Возвращает
     ///
     /// Вектор фич для ML-модели.
+    ///
+    /// # Примечание
+    ///
+    /// Этот метод используется внутренне в `classify_with_catboost` и `classify_with_onnx`.
+    #[allow(dead_code)]
     fn process_to_features(&self, process: &ProcessRecord) -> Vec<f32> {
         let mut features = Vec::new();
 

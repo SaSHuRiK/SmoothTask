@@ -353,7 +353,7 @@ impl PatternDatabase {
         let mut total_files = 0;
         let mut invalid_files = 0;
         let mut changed_files = 0;
-        let mut new_files = 0;
+        let new_files;
 
         // Собираем текущие имена файлов для сравнения
         let current_files: HashSet<_> = self.all_patterns.iter()

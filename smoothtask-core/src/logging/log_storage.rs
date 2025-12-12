@@ -259,6 +259,10 @@ macro_rules! setup_tracing_with_log_storage {
 }
 
 /// Внутренний writer для интеграции с tracing.
+///
+/// Используется в макросе `setup_tracing_with_log_storage!` для перенаправления
+/// логов tracing в хранилище логов.
+#[allow(dead_code)]
 struct TracingLogWriter {
     storage: SharedLogStorage,
 }

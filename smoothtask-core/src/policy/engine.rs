@@ -4,12 +4,9 @@
 //! для определения целевого класса приоритета для каждой AppGroup в снапшоте.
 //! В режиме hybrid также использует ML-ранкер для более точного определения приоритетов.
 
-use crate::config::config_struct::{
-    Config, MLClassifierConfig, ModelType, PatternAutoUpdateConfig, PolicyMode,
-};
+use crate::config::config_struct::{Config, PolicyMode};
 
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
-use crate::metrics::ebpf::EbpfConfig;
 use crate::model::ranker::{Ranker, RankingResult};
 use crate::policy::classes::PriorityClass;
 
@@ -544,6 +541,9 @@ impl PolicyEngine {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
+    use crate::metrics::ebpf::EbpfConfig;
     use super::*;
     use crate::config::config_struct::{CacheIntervals, Config, ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel, Paths, Thresholds};
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};

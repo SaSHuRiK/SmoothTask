@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
 use tracing::warn;
+#[cfg(test)]
 use rayon::prelude::*;
 
 /// Сырые счётчики CPU из `/proc/stat`.
@@ -645,6 +646,7 @@ impl Default for ProcPaths {
 /// 
 /// assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
 /// ```
+#[cfg(test)]
 pub fn collect_system_metrics_cached_parallel(
     cache: &SharedSystemMetricsCache,
     paths: &ProcPaths,
@@ -737,6 +739,7 @@ pub fn collect_system_metrics_cached(
 /// let paths = ProcPaths::default();
 /// let metrics = collect_system_metrics_parallel(&paths).expect("Не удалось собрать системные метрики");
 /// ```
+#[cfg(test)]
 pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Используем параллельную обработку для сбора различных типов метрик
     // Используем вложенные join для обработки нескольких задач параллельно
@@ -791,6 +794,7 @@ pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetric
 }
 
 /// Вспомогательная функция для чтения и парсинга CPU метрик
+#[cfg(test)]
 fn read_and_parse_cpu_metrics(paths: &ProcPaths) -> Result<Result<CpuTimes>> {
     let cpu_contents = read_file(&paths.stat).with_context(|| {
         format!(
@@ -812,6 +816,7 @@ fn read_and_parse_cpu_metrics(paths: &ProcPaths) -> Result<Result<CpuTimes>> {
 }
 
 /// Вспомогательная функция для чтения и парсинга метрик памяти
+#[cfg(test)]
 fn read_and_parse_memory_metrics(paths: &ProcPaths) -> Result<Result<MemoryInfo>> {
     let meminfo_contents = read_file(&paths.meminfo).with_context(|| {
         format!(
@@ -833,6 +838,7 @@ fn read_and_parse_memory_metrics(paths: &ProcPaths) -> Result<Result<MemoryInfo>
 }
 
 /// Вспомогательная функция для чтения и парсинга метрик средней нагрузки
+#[cfg(test)]
 fn read_and_parse_loadavg_metrics(paths: &ProcPaths) -> Result<Result<LoadAvg>> {
     let loadavg_contents = read_file(&paths.loadavg).with_context(|| {
         format!(
@@ -854,6 +860,7 @@ fn read_and_parse_loadavg_metrics(paths: &ProcPaths) -> Result<Result<LoadAvg>> 
 }
 
 /// Вспомогательная функция для чтения и парсинга PSI метрик
+#[cfg(test)]
 fn read_and_parse_psi_metrics(paths: &ProcPaths) -> Result<PressureMetrics> {
     // PSI может быть недоступен на старых ядрах, поэтому обрабатываем ошибки gracefully
     let pressure_cpu = read_file(&paths.pressure_cpu)
