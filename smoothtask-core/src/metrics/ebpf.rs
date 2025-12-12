@@ -5736,7 +5736,7 @@ mod tests {
 #[cfg(test)]
 mod ebpf_notification_tests {
     use super::*;
-    use crate::notifications::{Notification, NotificationManager, NotificationType};
+    use crate::notifications::{NotificationManager};
     use crate::logging::log_storage::SharedLogStorage;
     use std::sync::Arc;
 
@@ -5767,7 +5767,7 @@ mod ebpf_notification_tests {
         let log_storage = Arc::new(SharedLogStorage::new(10));
         let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
         
-        let mut collector = EbpfMetricsCollector::new_with_notifications(
+        let collector = EbpfMetricsCollector::new_with_notifications(
             EbpfConfig::default(),
             Arc::new(notification_manager)
         );
