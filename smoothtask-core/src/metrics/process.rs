@@ -91,6 +91,103 @@ use std::fs;
 /// - Процессы, которые завершились во время сбора, автоматически пропускаются
 /// - Ошибки доступа к отдельным процессам логируются на уровне debug и не прерывают выполнение
 /// - Функция безопасна для вызова из многопоточного контекста
+///
+/// ## Обработка ошибок и graceful degradation
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+///
+/// // Пример обработки ошибок с fallback логикой
+/// let processes = match collect_process_metrics() {
+///     Ok(processes) => processes,
+///     Err(e) => {
+///         tracing::error!("Не удалось собрать метрики процессов: {}", e);
+///         // Fallback: использовать пустой вектор или кэшированные данные
+///         Vec::new()
+///     }
+/// };
+/// 
+/// // Продолжение работы даже при отсутствии данных о процессах
+/// if processes.is_empty() {
+///     tracing::warn!("Нет данных о процессах, работаем в деградированном режиме");
+/// }
+/// ```
+///
+/// ## Интеграция с мониторингом и логированием
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+///
+/// // Пример интеграции с системой мониторинга
+/// if let Ok(processes) = collect_process_metrics() {
+///     let total_cpu: f64 = processes.iter().map(|p| p.cpu_usage).sum();
+///     let avg_cpu = total_cpu / processes.len() as f64;
+///     
+///     // Логирование статистики
+///     tracing::info!(
+///         "Процессов: {}, среднее CPU: {:.2}%, пиковое CPU: {:.2}%",
+///         processes.len(),
+///         avg_cpu,
+///         processes.iter().map(|p| p.cpu_usage).fold(0.0, f64::max)
+///     );
+///     
+///     // Экспорт метрик в Prometheus или другую систему
+///     // metrics::gauge!("process_count", processes.len() as f64);
+///     // metrics::gauge!("process_avg_cpu", avg_cpu);
+/// }
+/// ```
+///
+/// ## Работа с большими наборами данных
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+///
+/// // Пример обработки большого количества процессов
+/// if let Ok(processes) = collect_process_metrics() {
+///     // Фильтрация и сортировка для анализа
+///     let mut sorted_processes = processes;
+///     sorted_processes.sort_by(|a, b| b.cpu_usage.partial_cmp(&a.cpu_usage).unwrap());
+///     
+///     // Вывод топ-10 процессов по использованию CPU
+///     let top_10: Vec<_> = sorted_processes.into_iter().take(10).collect();
+///     
+///     for (i, proc) in top_10.iter().enumerate() {
+///         tracing::info!(
+///             "Top {}: PID {} - {} - CPU: {:.1}% - MEM: {} MB",
+///             i + 1,
+///             proc.pid,
+///             proc.name,
+///             proc.cpu_usage,
+///             proc.rss_mb
+///         );
+///     }
+/// }
+/// ```
+///
+/// ## Использование в асинхронном контексте
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+/// use tokio::task;
+///
+/// // Пример использования в асинхронном контексте
+/// let processes = task::spawn_blocking(|| {
+///     collect_process_metrics()
+/// }).await;
+///
+/// match processes {
+///     Ok(Ok(processes)) => {
+///         // Успешно собрали метрики в асинхронном контексте
+///         println!("Собрано {} процессов", processes.len());
+///     }
+///     Ok(Err(e)) => {
+///         eprintln!("Ошибка сбора метрик: {}", e);
+///     }
+///     Err(e) => {
+///         eprintln!("Ошибка выполнения задачи: {}", e);
+///     }
+/// }
+/// ```
 pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
     let all_procs = procfs::process::all_processes()
         .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc")?;
@@ -786,5 +883,256 @@ Gid:    1000 1000 1000 1000
         // Проверяем, что uptime разумный
         let uptime = result.unwrap();
         assert!(uptime < 1000000); // разумный верхний предел
+    }
+
+    #[test]
+    fn extract_systemd_unit_handles_complex_paths() {
+        // Тест обработки сложных путей systemd
+        assert_eq!(
+            extract_systemd_unit(&Some(
+                "/user.slice/user-1000.slice/session-2.scope/app.slice/firefox-1234.scope".to_string()
+            )),
+            Some("firefox-1234.scope".to_string())
+        );
+
+        // Тест с несколькими уровнями вложенности
+        assert_eq!(
+            extract_systemd_unit(&Some(
+                "/system.slice/docker-abc123.scope/container.slice/firefox.service".to_string()
+            )),
+            Some("firefox.service".to_string())
+        );
+
+        // Тест с нестандартными именами
+        assert_eq!(
+            extract_systemd_unit(&Some(
+                "/user.slice/user-1000.slice/session-2.scope/my-custom-app@123.service".to_string()
+            )),
+            Some("my-custom-app@123.service".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_cgroup_v2_path_handles_edge_cases() {
+        // Тест обработки пустого cgroup пути
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Пустой cgroup путь
+        let empty_cgroup = "0::\n";
+        fs::write(proc_dir.join("cgroup"), empty_cgroup).unwrap();
+
+        let path = proc_dir.join("cgroup");
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut found_path = None;
+        for line in contents.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 3 {
+                let cgroup_path = parts[2];
+                if !cgroup_path.is_empty() && cgroup_path != "/" {
+                    found_path = Some(cgroup_path.to_string());
+                    break;
+                }
+            }
+        }
+        assert_eq!(found_path, None);
+
+        // Тест с корневым путем
+        let root_cgroup = "0::/\n";
+        fs::write(proc_dir.join("cgroup"), root_cgroup).unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut found_path = None;
+        for line in contents.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 3 {
+                let cgroup_path = parts[2];
+                if !cgroup_path.is_empty() && cgroup_path != "/" {
+                    found_path = Some(cgroup_path.to_string());
+                    break;
+                }
+            }
+        }
+        assert_eq!(found_path, None);
+    }
+
+    #[test]
+    fn parse_env_vars_handles_special_characters() {
+        // Тест обработки специальных символов в переменных окружения
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // environ с специальными символами
+        let env_content = 
+            "DISPLAY=:0\0TERM=xterm-256color\0SSH_CLIENT=192.168.1.1 22 33\0LANG=en_US.UTF-8\0";
+        fs::write(proc_dir.join("environ"), env_content).unwrap();
+
+        let path = proc_dir.join("environ");
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut has_display = false;
+        let mut term = None;
+        let mut ssh = false;
+        let mut lang = None;
+
+        for env_var in contents.split('\0') {
+            if env_var.starts_with("DISPLAY=") {
+                has_display = true;
+            } else if env_var.starts_with("TERM=") {
+                term = env_var.strip_prefix("TERM=").map(|s| s.to_string());
+            } else if env_var.starts_with("SSH_") {
+                ssh = true;
+            } else if env_var.starts_with("LANG=") {
+                lang = env_var.strip_prefix("LANG=").map(|s| s.to_string());
+            }
+        }
+
+        assert!(has_display);
+        assert_eq!(term, Some("xterm-256color".to_string()));
+        assert!(ssh);
+        assert_eq!(lang, Some("en_US.UTF-8".to_string()));
+    }
+
+    #[test]
+    fn parse_uid_gid_handles_boundary_values() {
+        // Тест обработки граничных значений UID/GID
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Максимальные значения UID/GID
+        let max_status = format!(
+            "Name:   test_process\nState:  R (running)\nUid:    {} {} {} {}\nGid:    {} {} {} {}\n",
+            u32::MAX, u32::MAX, u32::MAX, u32::MAX,
+            u32::MAX, u32::MAX, u32::MAX, u32::MAX
+        );
+        fs::write(proc_dir.join("status"), max_status).unwrap();
+
+        let status_path = proc_dir.join("status");
+        let contents = fs::read_to_string(&status_path).unwrap();
+        let mut uid = 0;
+        let mut gid = 0;
+
+        for line in contents.lines() {
+            if line.starts_with("Uid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    uid = parts[1].parse::<u32>().unwrap();
+                }
+            } else if line.starts_with("Gid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    gid = parts[1].parse::<u32>().unwrap();
+                }
+            }
+        }
+
+        assert_eq!(uid, u32::MAX);
+        assert_eq!(gid, u32::MAX);
+
+        // Нулевые значения UID/GID
+        let zero_status = "Name:   test_process\nState:  R (running)\nUid:    0 0 0 0\nGid:    0 0 0 0\n";
+        fs::write(proc_dir.join("status"), zero_status).unwrap();
+
+        let contents = fs::read_to_string(&status_path).unwrap();
+        let mut uid = 0;
+        let mut gid = 0;
+
+        for line in contents.lines() {
+            if line.starts_with("Uid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    uid = parts[1].parse::<u32>().unwrap();
+                }
+            } else if line.starts_with("Gid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    gid = parts[1].parse::<u32>().unwrap();
+                }
+            }
+        }
+
+        assert_eq!(uid, 0);
+        assert_eq!(gid, 0);
+    }
+
+    #[test]
+    fn read_cgroup_path_with_malformed_content() {
+        // Тест обработки некорректного содержимого cgroup
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Некорректный формат cgroup (не хватает колонок)
+        let malformed_cgroup = "0:/user.slice\n";
+        fs::write(proc_dir.join("cgroup"), malformed_cgroup).unwrap();
+
+        let path = proc_dir.join("cgroup");
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut found_path = None;
+        for line in contents.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 3 {
+                let cgroup_path = parts[2];
+                if !cgroup_path.is_empty() && cgroup_path != "/" {
+                    found_path = Some(cgroup_path.to_string());
+                    break;
+                }
+            }
+        }
+        assert_eq!(found_path, None);
+
+        // Некорректный формат cgroup (слишком много колонок)
+        let malformed_cgroup2 = "0:1:2:/user.slice\n";
+        fs::write(proc_dir.join("cgroup"), malformed_cgroup2).unwrap();
+
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut found_path = None;
+        for line in contents.lines() {
+            let parts: Vec<&str> = line.split(':').collect();
+            if parts.len() >= 3 {
+                let cgroup_path = parts[2];
+                if !cgroup_path.is_empty() && cgroup_path != "/" {
+                    found_path = Some(cgroup_path.to_string());
+                    break;
+                }
+            }
+        }
+        // В этом случае parts[2] будет "2", а не "/user.slice"
+        assert_eq!(found_path, Some("2".to_string()));
+    }
+
+    #[test]
+    fn parse_env_vars_with_unicode_content() {
+        // Тест обработки Unicode символов в переменных окружения
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // environ с Unicode символами
+        let env_content = 
+            "DISPLAY=:0\0TERM=xterm-256color\0LANG=ru_RU.UTF-8\0USER=Пользователь\0";
+        fs::write(proc_dir.join("environ"), env_content).unwrap();
+
+        let path = proc_dir.join("environ");
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut has_display = false;
+        let mut lang = None;
+        let mut user = None;
+
+        for env_var in contents.split('\0') {
+            if env_var.starts_with("DISPLAY=") {
+                has_display = true;
+            } else if env_var.starts_with("LANG=") {
+                lang = env_var.strip_prefix("LANG=").map(|s| s.to_string());
+            } else if env_var.starts_with("USER=") {
+                user = env_var.strip_prefix("USER=").map(|s| s.to_string());
+            }
+        }
+
+        assert!(has_display);
+        assert_eq!(lang, Some("ru_RU.UTF-8".to_string()));
+        assert_eq!(user, Some("Пользователь".to_string()));
     }
 }

@@ -404,6 +404,56 @@ impl Default for ProcPaths {
 /// let result = collect_system_metrics(&test_paths);
 /// // result будет Ok с пустыми PSI метриками, если PSI файлы отсутствуют
 /// ```
+///
+/// # Пример использования в главном цикле демона
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
+/// use std::thread;
+/// use std::time::Duration;
+///
+/// let paths = ProcPaths::default();
+/// 
+/// // Основной цикл сбора метрик
+/// loop {
+///     match collect_system_metrics(&paths) {
+///         Ok(metrics) => {
+///             println!("CPU usage: {:.2}%", metrics.cpu_usage_since(&prev_metrics).map_or(0.0, |u| u.user * 100.0));
+///             prev_metrics = metrics;
+///         }
+///         Err(e) => {
+///             eprintln!("Ошибка сбора метрик: {}", e);
+///         }
+///     }
+///     thread::sleep(Duration::from_secs(1));
+/// }
+/// ```
+///
+/// # Пример обработки ошибок и graceful degradation
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
+///
+/// let paths = ProcPaths::default();
+/// let metrics = collect_system_metrics(&paths);
+///
+/// match metrics {
+///     Ok(metrics) => {
+///         // Метрики успешно собраны
+///         println!("Метрики собраны успешно");
+///         
+///         // Проверяем доступность PSI метрик
+///         if metrics.pressure.cpu.some.is_none() {
+///             println!("PSI метрики CPU недоступны (возможно, старое ядро)");
+///         }
+///     }
+///     Err(e) => {
+///         // Критическая ошибка - основные файлы недоступны
+///         eprintln!("Критическая ошибка сбора метрик: {}", e);
+///         // Можно попробовать fallback или перезапустить демон
+///     }
+/// }
+/// ```
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Читаем основные файлы с подробными сообщениями об ошибках
     let cpu_contents = read_file(&paths.stat).with_context(|| {

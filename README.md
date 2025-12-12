@@ -121,6 +121,12 @@ curl http://127.0.0.1:8080/api/classes
 
 # Получение списка всех доступных endpoints
 curl http://127.0.0.1:8080/api/endpoints
+
+# Получение информации о системе
+curl http://127.0.0.1:8080/api/system
+
+# Получение информации о загруженных паттернах
+curl http://127.0.0.1:8080/api/patterns
 ```
 
 **Практические примеры использования:**
@@ -182,6 +188,152 @@ if [[ -n "$HIGH_PRIO_PROCESSES" ]]; then
     # Отправка оповещения в систему мониторинга
     echo "Critical processes detected: $HIGH_PRIO_PROCESSES" | logger -t smoothtask-monitor
 fi
+```
+
+**Пример комплексного мониторинга системы:**
+
+```bash
+#!/bin/bash
+# Комплексный скрипт мониторинга системы с использованием SmoothTask API
+
+# Получение системных метрик
+SYSTEM_METRICS=$(curl -s http://127.0.0.1:8080/api/metrics)
+CPU_USAGE=$(echo "$SYSTEM_METRICS" | jq '.cpu_usage.total')
+MEM_USAGE=$(echo "$SYSTEM_METRICS" | jq '.memory.used_kb')
+SWAP_USAGE=$(echo "$SYSTEM_METRICS" | jq '.memory.swap_used_kb')
+
+# Получение метрик отзывчивости
+RESPONSIVENESS=$(curl -s http://127.0.0.1:8080/api/responsiveness)
+LATENCY_P99=$(echo "$RESPONSIVENESS" | jq '.latency_stats.p99_ms')
+
+# Получение статистики демона
+DAEMON_STATS=$(curl -s http://127.0.0.1:8080/api/stats)
+TOTAL_ITERATIONS=$(echo "$DAEMON_STATS" | jq '.daemon_stats.total_iterations')
+
+# Вывод комплексного отчета
+echo "=== System Health Report ==="
+echo "CPU Usage: ${CPU_USAGE}%"
+echo "Memory Used: ${MEM_USAGE} KB"
+echo "Swap Used: ${SWAP_USAGE} KB"
+echo "Latency P99: ${LATENCY_P99} ms"
+echo "Daemon Iterations: ${TOTAL_ITERATIONS}"
+
+# Проверка на критическое состояние
+if (( $(echo "$CPU_USAGE > 90.0" | bc -l) )); then
+    echo "WARNING: High CPU usage detected!" | logger -t smoothtask-monitor
+fi
+
+if (( $(echo "$LATENCY_P99 > 50.0" | bc -l) )); then
+    echo "WARNING: High system latency detected!" | logger -t smoothtask-monitor
+fi
+```
+
+**Пример интеграции с Prometheus для расширенного мониторинга:**
+
+```bash
+#!/bin/bash
+# Расширенный экспортер метрик для Prometheus
+
+# Получение полных системных метрик
+METRICS=$(curl -s http://127.0.0.1:8080/api/metrics)
+
+# Экспорт метрик CPU
+CPU_USER=$(echo "$METRICS" | jq '.cpu_usage.user')
+CPU_SYSTEM=$(echo "$METRICS" | jq '.cpu_usage.system')
+CPU_IDLE=$(echo "$METRICS" | jq '.cpu_usage.idle')
+
+# Экспорт метрик памяти
+MEM_TOTAL=$(echo "$METRICS" | jq '.memory.mem_total_kb')
+MEM_USED=$(echo "$METRICS" | jq '.memory.mem_used_kb')
+MEM_AVAILABLE=$(echo "$METRICS" | jq '.memory.mem_available_kb')
+
+# Экспорт метрик PSI
+PSI_CPU_SOME=$(echo "$METRICS" | jq '.pressure.cpu.some.avg10')
+PSI_IO_SOME=$(echo "$METRICS" | jq '.pressure.io.some.avg10')
+PSI_MEM_SOME=$(echo "$METRICS" | jq '.pressure.memory.some.avg10')
+
+# Вывод в формате Prometheus
+cat <<EOF
+# HELP smoothtask_cpu_user CPU user usage percentage
+# TYPE smoothtask_cpu_user gauge
+smoothtask_cpu_user ${CPU_USER}
+
+# HELP smoothtask_cpu_system CPU system usage percentage
+# TYPE smoothtask_cpu_system gauge
+smoothtask_cpu_system ${CPU_SYSTEM}
+
+# HELP smoothtask_cpu_idle CPU idle percentage
+# TYPE smoothtask_cpu_idle gauge
+smoothtask_cpu_idle ${CPU_IDLE}
+
+# HELP smoothtask_memory_total Total memory in KB
+# TYPE smoothtask_memory_total gauge
+smoothtask_memory_total ${MEM_TOTAL}
+
+# HELP smoothtask_memory_used Used memory in KB
+# TYPE smoothtask_memory_used gauge
+smoothtask_memory_used ${MEM_USED}
+
+# HELP smoothtask_memory_available Available memory in KB
+# TYPE smoothtask_memory_available gauge
+smoothtask_memory_available ${MEM_AVAILABLE}
+
+# HELP smoothtask_psi_cpu_some CPU pressure (some) avg10
+# TYPE smoothtask_psi_cpu_some gauge
+smoothtask_psi_cpu_some ${PSI_CPU_SOME}
+
+# HELP smoothtask_psi_io_some IO pressure (some) avg10
+# TYPE smoothtask_psi_io_some gauge
+smoothtask_psi_io_some ${PSI_IO_SOME}
+
+# HELP smoothtask_psi_mem_some Memory pressure (some) avg10
+# TYPE smoothtask_psi_mem_some gauge
+smoothtask_psi_mem_some ${PSI_MEM_SOME}
+EOF
+```
+
+**Пример использования API для анализа производительности приложений:**
+
+```bash
+#!/bin/bash
+# Анализ производительности конкретного приложения
+
+APP_NAME="firefox"
+
+# Получение информации о процессах приложения
+PROCESSES=$(curl -s http://127.0.0.1:8080/api/processes | \
+    jq --arg app "$APP_NAME" '.processes | .[] | select(.cmdline | contains($app))')
+
+# Анализ использования ресурсов
+TOTAL_CPU=0
+TOTAL_MEM=0
+PROCESS_COUNT=0
+
+for process in $(echo "$PROCESSES" | jq -c '.'); do
+    CPU=$(echo "$process" | jq '.cpu_share_1s')
+    MEM=$(echo "$process" | jq '.rss_mb')
+    
+    if [[ "$CPU" != "null" ]]; then
+        TOTAL_CPU=$(echo "$TOTAL_CPU + $CPU" | bc)
+    fi
+    
+    if [[ "$MEM" != "null" ]]; then
+        TOTAL_MEM=$(echo "$TOTAL_MEM + $MEM" | bc)
+    fi
+    
+    PROCESS_COUNT=$((PROCESS_COUNT + 1))
+done
+
+echo "=== $APP_NAME Performance Analysis ==="
+echo "Process Count: $PROCESS_COUNT"
+echo "Total CPU Usage: ${TOTAL_CPU}%"
+echo "Total Memory Usage: ${TOTAL_MEM} MB"
+
+# Получение информации о группе приложения
+APP_GROUP=$(curl -s http://127.0.0.1:8080/api/appgroups | \
+    jq --arg app "$APP_NAME" '.app_groups | .[] | select(.app_name | contains($app)) | .priority_class')
+
+echo "Priority Class: ${APP_GROUP:-Not found}"
 ```
 
 **Документация API:**
