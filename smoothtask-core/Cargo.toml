@@ -59,4 +59,5 @@ libnotify = ["dep:libnotify"]
 [dev-dependencies]
 tempfile = "3"
 criterion = "0.5"
+reqwest = { version = "0.12", features = ["json"] }
 

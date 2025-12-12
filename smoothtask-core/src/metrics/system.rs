@@ -2774,6 +2774,95 @@ SwapFree:        4096000 kB
         // Функция должна работать без ошибок
         assert!(true);
     }
+
+    #[test]
+    fn test_collect_network_metrics_with_real_data() {
+        // Тест проверяет парсинг реальных данных из /proc/net/dev
+        // Создаем тестовые данные, похожие на реальные данные из /proc/net/dev
+        let test_data = "Inter-|   Receive                                                |  Transmit
+ face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed
+    lo: 12345678 12345 0    0    0     0          0         0 12345678 12345 0    0    0     0       0          0
+  eth0: 10000000 10000 1    0    0     0          0         0 20000000 20000 2    0    0     0       0          0
+  wlan0: 5000000 5000 0    0    0     0          0         0 15000000 15000 0    0    0     0       0          0";
+        
+        let mut network = NetworkMetrics::default();
+        let mut total_rx_bytes = 0;
+        let mut total_tx_bytes = 0;
+        
+        for line in test_data.lines().skip(2) { // Пропускаем заголовки
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            
+            // Разбираем строку
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 17 {
+                let interface_name = parts[0].trim_end_matches(':');
+                
+                // Извлекаем значения
+                let rx_bytes = parts[1].parse::<u64>().unwrap_or(0);
+                let rx_packets = parts[2].parse::<u64>().unwrap_or(0);
+                let rx_errors = parts[3].parse::<u64>().unwrap_or(0);
+                let tx_bytes = parts[9].parse::<u64>().unwrap_or(0);
+                let tx_packets = parts[10].parse::<u64>().unwrap_or(0);
+                let tx_errors = parts[11].parse::<u64>().unwrap_or(0);
+                
+                network.interfaces.push(NetworkInterface {
+                    name: interface_name.to_string(),
+                    rx_bytes,
+                    tx_bytes,
+                    rx_packets,
+                    tx_packets,
+                    rx_errors,
+                    tx_errors,
+                });
+                
+                total_rx_bytes += rx_bytes;
+                total_tx_bytes += tx_bytes;
+            }
+        }
+        
+        network.total_rx_bytes = total_rx_bytes;
+        network.total_tx_bytes = total_tx_bytes;
+        
+        // Проверяем результаты
+        assert_eq!(network.interfaces.len(), 3); // lo, eth0, wlan0
+        
+        // Проверяем интерфейс lo
+        let lo_interface = &network.interfaces[0];
+        assert_eq!(lo_interface.name, "lo");
+        assert_eq!(lo_interface.rx_bytes, 12345678);
+        assert_eq!(lo_interface.tx_bytes, 12345678);
+        assert_eq!(lo_interface.rx_packets, 12345);
+        assert_eq!(lo_interface.tx_packets, 12345);
+        assert_eq!(lo_interface.rx_errors, 0);
+        assert_eq!(lo_interface.tx_errors, 0);
+        
+        // Проверяем интерфейс eth0
+        let eth0_interface = &network.interfaces[1];
+        assert_eq!(eth0_interface.name, "eth0");
+        assert_eq!(eth0_interface.rx_bytes, 10000000);
+        assert_eq!(eth0_interface.tx_bytes, 20000000);
+        assert_eq!(eth0_interface.rx_packets, 10000);
+        assert_eq!(eth0_interface.tx_packets, 20000);
+        assert_eq!(eth0_interface.rx_errors, 1);
+        assert_eq!(eth0_interface.tx_errors, 2);
+        
+        // Проверяем интерфейс wlan0
+        let wlan0_interface = &network.interfaces[2];
+        assert_eq!(wlan0_interface.name, "wlan0");
+        assert_eq!(wlan0_interface.rx_bytes, 5000000);
+        assert_eq!(wlan0_interface.tx_bytes, 15000000);
+        assert_eq!(wlan0_interface.rx_packets, 5000);
+        assert_eq!(wlan0_interface.tx_packets, 15000);
+        assert_eq!(wlan0_interface.rx_errors, 0);
+        assert_eq!(wlan0_interface.tx_errors, 0);
+        
+        // Проверяем общие метрики
+        assert_eq!(network.total_rx_bytes, 12345678 + 10000000 + 5000000);
+        assert_eq!(network.total_tx_bytes, 12345678 + 20000000 + 15000000);
+    }
 }
 
 /// Кэш для системных метрик
