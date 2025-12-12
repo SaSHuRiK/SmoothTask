@@ -83,6 +83,8 @@ fn benchmark_ebpf_metrics_collection_high_performance(c: &mut Criterion) {
     });
 }
 
+
+
 /// Бенчмарк для измерения времени сбора eBPF метрик с различными конфигурациями
 fn benchmark_ebpf_metrics_collection_configs(c: &mut Criterion) {
     let configs = vec![

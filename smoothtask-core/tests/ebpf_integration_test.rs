@@ -195,6 +195,39 @@ fn test_ebpf_filesystem_monitoring() {
 }
 
 #[test]
+fn test_ebpf_initialization_statistics() {
+    // Тестируем статистику инициализации eBPF
+    let config = EbpfConfig::default();
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Проверяем статистику до инициализации
+    let (success_before, error_before) = collector.get_initialization_stats();
+    assert_eq!(success_before, 0);
+    assert_eq!(error_before, 0);
+    
+    // Инициализация
+    assert!(collector.initialize().is_ok());
+    
+    // Проверяем статистику после инициализации
+    let (success_after, error_after) = collector.get_initialization_stats();
+    
+    #[cfg(feature = "ebpf")]
+    {
+        // Должно быть как минимум 2 успешных загрузки (CPU и память по умолчанию)
+        assert!(success_after >= 2);
+        // Ошибок быть не должно для включенных по умолчанию программ
+        assert_eq!(error_after, 0);
+    }
+    
+    #[cfg(not(feature = "ebpf"))]
+    {
+        // Без eBPF поддержки статистика должна остаться 0
+        assert_eq!(success_after, 0);
+        assert_eq!(error_after, 0);
+    }
+}
+
+#[test]
 fn test_ebpf_comprehensive_integration() {
     // Комплексный тест интеграции eBPF функциональности
     let config = EbpfConfig {
@@ -215,6 +248,16 @@ fn test_ebpf_comprehensive_integration() {
     
     // Тестируем валидацию конфигурации
     assert!(collector.validate_config().is_ok());
+    
+    // Тестируем статистику инициализации
+    let (success_count, error_count) = collector.get_initialization_stats();
+    #[cfg(feature = "ebpf")]
+    {
+        // Должно быть как минимум 5 успешных загрузок (все кроме GPU)
+        assert!(success_count >= 5);
+        // Ошибок быть не должно
+        assert_eq!(error_count, 0);
+    }
     
     // Тестируем сбор метрик
     let metrics = collector.collect_metrics();
@@ -268,6 +311,10 @@ fn test_ebpf_comprehensive_integration() {
     // Тестируем сброс состояния
     collector.reset();
     assert!(!collector.is_initialized());
+    // После сброса статистика должна обнулиться
+    let (success_after_reset, error_after_reset) = collector.get_initialization_stats();
+    assert_eq!(success_after_reset, 0);
+    assert_eq!(error_after_reset, 0);
     // После сброса сбор метрик должен вернуть значения по умолчанию
     let reset_metrics = collector.collect_metrics().unwrap();
     assert_eq!(reset_metrics.cpu_usage, 0.0);
