@@ -15,8 +15,7 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
-// Import notification types for test configurations
-use crate::config::config::{NotificationBackend, NotificationConfig, NotificationLevel};
+
 
 /// Состояние API сервера.
 #[derive(Clone)]
@@ -1068,6 +1067,9 @@ impl ApiServerHandle {
 mod tests {
     use super::*;
     use std::net::SocketAddr;
+    
+    // Import notification types for test configurations
+    use crate::config::config::{NotificationBackend, NotificationConfig, NotificationLevel};
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -2264,7 +2266,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config.clone());
+        let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
             sched_latency_p95_ms: Some(5.0),
             sched_latency_p99_ms: Some(10.0),
@@ -2334,7 +2336,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config.clone());
+        let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
         let temp_dir = std::env::temp_dir().join("smoothtask_test_patterns");
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2400,7 +2402,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config.clone());
+        let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
             sched_latency_p95_ms: Some(5.0),
             sched_latency_p99_ms: Some(10.0),
@@ -2469,7 +2471,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config.clone());
+        let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
         let temp_dir = std::env::temp_dir().join("smoothtask_test_patterns");
         std::fs::create_dir_all(&temp_dir).unwrap();

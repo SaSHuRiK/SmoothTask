@@ -277,7 +277,7 @@ impl LogRotator {
 
         let log_dir = log_path.parent().unwrap_or_else(|| Path::new("."));
         let file_stem = log_path.file_stem().unwrap_or_else(|| "log".as_ref());
-        let extension = log_path.extension().and_then(|ext| ext.to_str()).unwrap_or("log");
+        let _extension = log_path.extension().and_then(|ext| ext.to_str()).unwrap_or("log");
 
         // Ищем все ротированные файлы, соответствующие шаблону
         let mut rotated_files: Vec<(PathBuf, DateTime<Local>)> = Vec::new();

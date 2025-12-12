@@ -44,10 +44,13 @@ tower-http = { version = "0.5", features = ["cors"] }
 notify = "6.1"
 
 # Desktop уведомления
-# libnotify = "0.1"
+libnotify = { version = "0.1", optional = true }
 
 # Сжатие логов
 flate2 = { version = "1.0", features = ["zlib"] }
+
+[features]
+libnotify = ["dep:libnotify"]
 
 [dev-dependencies]
 tempfile = "3"

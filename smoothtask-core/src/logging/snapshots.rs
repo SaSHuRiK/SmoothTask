@@ -4,7 +4,6 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
-use std::fs;
 use std::path::Path;
 
 use crate::config::config::Thresholds;
@@ -614,7 +613,7 @@ impl SnapshotLogger {
             let db_path = Path::new(db_path_str);
             
             // Получаем текущий размер файла
-            let current_size = get_log_file_size(db_path)?;
+            let _current_size = get_log_file_size(db_path)?;
             
             // Выполняем ротацию, если необходимо
             rotator.rotate_log(db_path)?;
@@ -793,6 +792,7 @@ impl SnapshotLogger {
 mod tests {
     use super::*;
     use crate::config::config::Thresholds;
+    use std::fs;
     use tempfile::NamedTempFile;
 
     fn create_test_snapshot() -> Snapshot {

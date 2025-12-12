@@ -487,7 +487,7 @@ mod tests {
             },
         ];
         
-        let mut introspector_with_clients = StaticAudioIntrospector::new(AudioMetrics::empty(now, now), clients.clone());
+        let introspector_with_clients = StaticAudioIntrospector::new(AudioMetrics::empty(now, now), clients.clone());
         let clients_result = introspector_with_clients.clients();
         assert!(clients_result.is_ok());
         let returned_clients = clients_result.unwrap();

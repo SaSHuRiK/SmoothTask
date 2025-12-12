@@ -9,7 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
-use crate::classify::ml_classifier::{MLClassifier, StubMLClassifier};
+use crate::classify::ml_classifier::MLClassifier;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
 /// Категория паттернов (browser, ide, terminal, batch, и т.д.).
@@ -499,6 +499,8 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::TempDir;
+    
+    use crate::classify::ml_classifier::StubMLClassifier;
 
     fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) -> PathBuf {
         let file_path = dir.join(filename);

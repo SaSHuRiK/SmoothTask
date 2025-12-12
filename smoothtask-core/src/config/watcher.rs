@@ -123,7 +123,7 @@ impl ConfigWatcher {
         )?;
         
         // Создаём watcher
-        let (tx, mut rx) = std::sync::mpsc::channel();
+        let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher: RecommendedWatcher = Watcher::new(
             tx,
             notify::Config::default()
@@ -245,7 +245,6 @@ impl ConfigWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
     use tempfile::NamedTempFile;
 
     #[test]
@@ -282,7 +281,7 @@ mod tests {
         let file_path = temp_file.path().to_str().unwrap().to_string();
         
         let watcher = ConfigWatcher::new(&file_path).expect("watcher creation");
-        let mut receiver = watcher.change_receiver();
+        let receiver = watcher.change_receiver();
         
         // Проверяем, что изначально нет изменений
         assert!(!*receiver.borrow());

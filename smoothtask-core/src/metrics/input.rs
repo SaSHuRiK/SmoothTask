@@ -1150,7 +1150,7 @@ mod tests {
         let mut simple_tracker = InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(3)));
         simple_tracker.set_idle_threshold(Duration::from_secs(7));
         
-        if let Ok(mut evdev_tracker) = EvdevInputTracker::new(Duration::from_secs(2)) {
+        if let Ok(evdev_tracker) = EvdevInputTracker::new(Duration::from_secs(2)) {
             let mut tracker = InputTracker::Evdev(evdev_tracker);
             tracker.set_idle_threshold(Duration::from_secs(8));
             // Метод не должен паниковать
