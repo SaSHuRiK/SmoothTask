@@ -71,7 +71,7 @@
 //! ```
 
 use anyhow::{Context, Result};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 #[cfg(feature = "ebpf")]
 use libbpf_rs::{Map, Program, Skel, SkelBuilder};
@@ -311,6 +311,164 @@ fn load_ebpf_program_from_file(program_path: &str) -> Result<Program> {
     Ok(program)
 }
 
+/// Загрузить eBPF программу из файла с таймаутом
+#[cfg(feature = "ebpf")]
+fn load_ebpf_program_from_file_with_timeout(program_path: &str, timeout_ms: u64) -> Result<Program> {
+    use libbpf_rs::Program;
+    use std::path::Path;
+    use std::time::Instant;
+
+    let path = Path::new(program_path);
+    if !path.exists() {
+        tracing::warn!("eBPF программа не найдена: {:?}", program_path);
+        anyhow::bail!("eBPF программа не найдена: {}", program_path);
+    }
+
+    tracing::info!("Загрузка eBPF программы из {:?} (таймаут: {}ms)", program_path, timeout_ms);
+
+    let start_time = Instant::now();
+    
+    // Реальная загрузка eBPF программы с использованием libbpf-rs
+    let program = Program::from_file(path).context(format!(
+        "Не удалось загрузить eBPF программу из {:?}",
+        program_path
+    ))?;
+
+    let elapsed = start_time.elapsed();
+    if elapsed.as_millis() > timeout_ms as u128 {
+        tracing::warn!("Загрузка eBPF программы {:?} превысила таймаут ({}ms > {}ms)", 
+            program_path, elapsed.as_millis(), timeout_ms);
+    } else {
+        tracing::info!("eBPF программа успешно загружена из {:?} за {:?}", program_path, elapsed);
+    }
+
+    Ok(program)
+}
+
+/// Параллельная загрузка нескольких eBPF программ
+#[cfg(feature = "ebpf")]
+fn load_ebpf_programs_parallel(program_paths: Vec<&str>, timeout_ms: u64) -> Result<Vec<Option<Program>>> {
+    use std::thread;
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    tracing::info!("Параллельная загрузка {} eBPF программ", program_paths.len());
+    
+    let (sender, receiver) = mpsc::channel();
+    let mut handles = Vec::new();
+    
+    for (index, path) in program_paths.into_iter().enumerate() {
+        let sender = sender.clone();
+        let timeout = timeout_ms;
+        
+        let handle = thread::spawn(move || {
+            let result = load_ebpf_program_from_file_with_timeout(path, timeout);
+            sender.send((index, result)).unwrap();
+        });
+        
+        handles.push(handle);
+    }
+    
+    // Ожидание завершения всех потоков с таймаутом
+    let timeout_duration = Duration::from_millis(timeout_ms * 2); // Общий таймаут
+    let start_time = Instant::now();
+    
+    let mut results = vec![None; program_paths.len()];
+    let mut completed_count = 0;
+    
+    loop {
+        match receiver.recv_timeout(timeout_duration.saturating_sub(start_time.elapsed())) {
+            Ok((index, result)) => {
+                match result {
+                    Ok(program) => {
+                        results[index] = Some(program);
+                        tracing::debug!("Успешно загружена программа {}", index);
+                    }
+                    Err(e) => {
+                        tracing::error!("Ошибка загрузки программы {}: {}", index, e);
+                        results[index] = None;
+                    }
+                }
+                completed_count += 1;
+                
+                if completed_count == program_paths.len() {
+                    break;
+                }
+            }
+            Err(_) => {
+                tracing::warn!("Таймаут ожидания загрузки программ ({} из {})", 
+                    completed_count, program_paths.len());
+                break;
+            }
+        }
+    }
+    
+    // Ожидание завершения всех потоков
+    for handle in handles {
+        let _ = handle.join();
+    }
+    
+    tracing::info!("Параллельная загрузка завершена: {} успехов, {} ошибок",
+        results.iter().filter(|p| p.is_some()).count(),
+        results.iter().filter(|p| p.is_none()).count());
+    
+    Ok(results)
+}
+
+/// Кэш загруженных eBPF программ для оптимизации производительности
+#[cfg(feature = "ebpf")]
+struct EbpfProgramCache {
+    cache: std::collections::HashMap<String, Program>,
+    hit_count: u64,
+    miss_count: u64,
+}
+
+#[cfg(feature = "ebpf")]
+impl EbpfProgramCache {
+    fn new() -> Self {
+        Self {
+            cache: std::collections::HashMap::new(),
+            hit_count: 0,
+            miss_count: 0,
+        }
+    }
+
+    /// Получить программу из кэша или загрузить новую
+    fn get_or_load(&mut self, program_path: &str, timeout_ms: u64) -> Result<Program> {
+        if let Some(program) = self.cache.get(program_path) {
+            self.hit_count += 1;
+            tracing::debug!("Кэш-хит для программы {:?}", program_path);
+            return Ok(program.clone());
+        }
+
+        self.miss_count += 1;
+        tracing::debug!("Кэш-мисс для программы {:?}, загрузка...", program_path);
+        
+        let program = load_ebpf_program_from_file_with_timeout(program_path, timeout_ms)?;
+        self.cache.insert(program_path.to_string(), program.clone());
+        
+        Ok(program)
+    }
+
+    /// Очистить кэш
+    fn clear(&mut self) {
+        self.cache.clear();
+        tracing::debug!("Кэш eBPF программ очищен");
+    }
+
+    /// Получить статистику кэша
+    fn get_stats(&self) -> (u64, u64, f64) {
+        let total = self.hit_count + self.miss_count;
+        let hit_rate = if total > 0 {
+            (self.hit_count as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        (self.hit_count, self.miss_count, hit_rate)
+    }
+}
+
 /// Загрузить eBPF карты из программы
 #[cfg(feature = "ebpf")]
 fn load_maps_from_program(program_path: &str, expected_map_name: &str) -> Result<Vec<Map>> {
@@ -479,6 +637,8 @@ pub struct EbpfMetricsCollector {
     gpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     filesystem_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    program_cache: EbpfProgramCache,
     initialized: bool,
     /// Кэш для хранения последних метрик (оптимизация производительности)
     metrics_cache: Option<EbpfMetrics>,
@@ -535,6 +695,8 @@ impl EbpfMetricsCollector {
             gpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             filesystem_maps: Vec::new(),
+            #[cfg(feature = "ebpf")]
+            program_cache: EbpfProgramCache::new(),
             initialized: false,
             // Кэш для хранения последних метрик (оптимизация производительности)
             metrics_cache: None,
@@ -737,6 +899,279 @@ impl EbpfMetricsCollector {
                 Some("eBPF поддержка отключена (собран без feature 'ebpf')".to_string());
         }
 
+        Ok(())
+    }
+
+    /// Инициализировать eBPF программы с оптимизацией (параллельная загрузка)
+    #[cfg(feature = "ebpf")]
+    pub fn initialize_optimized(&mut self) -> Result<()> {
+        if self.initialized {
+            tracing::info!("eBPF метрики уже инициализированы");
+            return Ok(());
+        }
+
+        tracing::info!("Оптимизированная инициализация eBPF метрик");
+
+        // Проверяем конфигурацию перед инициализацией
+        if let Err(e) = self.validate_config() {
+            tracing::error!("Некорректная конфигурация eBPF: {}", e);
+            self.last_error = Some(format!("Некорректная конфигурация: {}", e));
+            return Err(e);
+        }
+
+        // Проверяем поддержку eBPF
+        match Self::check_ebpf_support() {
+            Ok(supported) => {
+                if !supported {
+                    tracing::warn!("eBPF не поддерживается в этой системе");
+                    self.last_error = Some("eBPF не поддерживается в этой системе".to_string());
+                    return Ok(());
+                }
+            }
+            Err(e) => {
+                tracing::error!("Ошибка проверки поддержки eBPF: {}", e);
+                self.last_error = Some(format!("Ошибка проверки поддержки eBPF: {}", e));
+                return Err(e);
+            }
+        }
+
+        // Собираем список программ для загрузки на основе конфигурации
+        let mut programs_to_load = Vec::new();
+        
+        if self.config.enable_cpu_metrics {
+            programs_to_load.push(("cpu", "src/ebpf_programs/cpu_metrics.c", "cpu_metrics_map"));
+        }
+        
+        if self.config.enable_memory_metrics {
+            programs_to_load.push(("memory", "src/ebpf_programs/cpu_metrics.c", "cpu_metrics_map"));
+        }
+        
+        if self.config.enable_syscall_monitoring {
+            // Пробуем загрузить расширенную версию программы
+            let advanced_path = "src/ebpf_programs/syscall_monitor_advanced.c";
+            let basic_path = "src/ebpf_programs/syscall_monitor.c";
+            
+            let program_path = if std::path::Path::new(advanced_path).exists() {
+                advanced_path
+            } else if std::path::Path::new(basic_path).exists() {
+                basic_path
+            } else {
+                tracing::warn!("eBPF программы для мониторинга системных вызовов не найдены");
+                None
+            };
+            
+            if let Some(path) = program_path {
+                programs_to_load.push(("syscall", path, "syscall_count_map"));
+            }
+        }
+        
+        if self.config.enable_network_monitoring {
+            let path = "src/ebpf_programs/network_monitor.c";
+            if std::path::Path::new(path).exists() {
+                programs_to_load.push(("network", path, "network_stats_map"));
+            }
+        }
+        
+        if self.config.enable_network_connections {
+            let path = "src/ebpf_programs/network_connections.c";
+            if std::path::Path::new(path).exists() {
+                programs_to_load.push(("connections", path, "connection_map"));
+            }
+        }
+        
+        if self.config.enable_gpu_monitoring {
+            // Пробуем загрузить высокопроизводительную версию программы
+            let high_perf_path = "src/ebpf_programs/gpu_monitor_high_perf.c";
+            let optimized_path = "src/ebpf_programs/gpu_monitor_optimized.c";
+            let basic_path = "src/ebpf_programs/gpu_monitor.c";
+            
+            let program_path = if std::path::Path::new(high_perf_path).exists() {
+                high_perf_path
+            } else if std::path::Path::new(optimized_path).exists() {
+                optimized_path
+            } else if std::path::Path::new(basic_path).exists() {
+                basic_path
+            } else {
+                None
+            };
+            
+            if let Some(path) = program_path {
+                programs_to_load.push(("gpu", path, "gpu_metrics_map"));
+            }
+        }
+        
+        if self.config.enable_filesystem_monitoring {
+            // Пробуем загрузить высокопроизводительную версию программы
+            let high_perf_path = "src/ebpf_programs/filesystem_monitor_high_perf.c";
+            let optimized_path = "src/ebpf_programs/filesystem_monitor_optimized.c";
+            let basic_path = "src/ebpf_programs/filesystem_monitor.c";
+            
+            let program_path = if std::path::Path::new(high_perf_path).exists() {
+                high_perf_path
+            } else if std::path::Path::new(optimized_path).exists() {
+                optimized_path
+            } else if std::path::Path::new(basic_path).exists() {
+                basic_path
+            } else {
+                None
+            };
+            
+            if let Some(path) = program_path {
+                programs_to_load.push(("filesystem", path, "filesystem_metrics_map"));
+            }
+        }
+        
+        if self.config.enable_process_monitoring {
+            let path = "src/ebpf_programs/process_monitor.c";
+            if std::path::Path::new(path).exists() {
+                programs_to_load.push(("process", path, "process_map"));
+            }
+        }
+        
+        if programs_to_load.is_empty() {
+            tracing::warn!("Нет программ для загрузки (все функции отключены или программы не найдены)");
+            return Ok(());
+        }
+        
+        tracing::info!("Запланировано для загрузки: {} программ", programs_to_load.len());
+        
+        // Используем параллельную загрузку для оптимизации
+        let start_time = Instant::now();
+        let program_paths: Vec<&str> = programs_to_load.iter().map(|(_, path, _)| *path).collect();
+        
+        match load_ebpf_programs_parallel(program_paths, self.config.operation_timeout_ms) {
+            Ok(programs) => {
+                let mut success_count = 0;
+                let mut error_count = 0;
+                let mut detailed_errors = Vec::new();
+                
+                // Обработка результатов параллельной загрузки
+                for (index, program_result) in programs.into_iter().enumerate() {
+                    if let Some((program_type, program_path, map_name)) = programs_to_load.get(index) {
+                        match program_result {
+                            Some(program) => {
+                                // Сохраняем программу и загружаем карты
+                                match self.save_program_and_load_maps(program_type, program, program_path, map_name) {
+                                    Ok(_) => {
+                                        success_count += 1;
+                                        tracing::info!("Программа {} успешно загружена", program_type);
+                                    }
+                                    Err(e) => {
+                                        error_count += 1;
+                                        tracing::error!("Ошибка сохранения программы {}: {}", program_type, e);
+                                        detailed_errors.push(format!("{}: {}", program_type, e));
+                                    }
+                                }
+                            }
+                            None => {
+                                error_count += 1;
+                                tracing::error!("Не удалось загрузить программу {}", program_type);
+                                detailed_errors.push(format!("{}: загрузка не удалась", program_type));
+                            }
+                        }
+                    }
+                }
+                
+                let elapsed = start_time.elapsed();
+                self.initialized = success_count > 0;
+                
+                if success_count > 0 {
+                    tracing::info!(
+                        "Оптимизированная инициализация завершена ({} программ загружено, {} ошибок) за {:?}",
+                        success_count, error_count, elapsed
+                    );
+                    
+                    if !detailed_errors.is_empty() {
+                        tracing::debug!("Детали ошибок: {}", detailed_errors.join(", "));
+                    }
+                } else {
+                    tracing::warn!(
+                        "Не удалось загрузить ни одну eBPF программу ({} ошибок) за {:?}",
+                        error_count, elapsed
+                    );
+                    
+                    if !detailed_errors.is_empty() {
+                        self.last_error = Some(format!("Не удалось загрузить программы: {}", detailed_errors.join(", ")));
+                    }
+                }
+                
+                // Получение статистики кэша
+                let (hits, misses, hit_rate) = self.program_cache.get_stats();
+                tracing::info!("Статистика кэша программ: {} хитов, {} миссов, {:.1}% кэш-хит", hits, misses, hit_rate);
+            }
+            Err(e) => {
+                tracing::error!("Ошибка параллельной загрузки программ: {}", e);
+                self.last_error = Some(format!("Ошибка параллельной загрузки: {}", e));
+                return Err(e);
+            }
+        }
+        
+        Ok(())
+    }
+
+    /// Сохранить программу и загрузить карты
+    #[cfg(feature = "ebpf")]
+    fn save_program_and_load_maps(&mut self, program_type: &str, program: Program, program_path: &str, map_name: &str) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        
+        match program_type {
+            "cpu" => {
+                self.cpu_program = Some(program);
+                self.cpu_maps = self.load_maps_from_program(program_path, map_name)?;
+            }
+            "memory" => {
+                self.memory_program = Some(program);
+                self.memory_maps = self.load_maps_from_program(program_path, map_name)?;
+            }
+            "syscall" => {
+                self.syscall_program = Some(program);
+                self.syscall_maps = self.load_maps_from_program(program_path, map_name)?;
+            }
+            "network" => {
+                self.network_program = Some(program);
+                self.network_maps = self.load_maps_from_program(program_path, map_name)?;
+            }
+            "connections" => {
+                self.network_connections_program = Some(program);
+                // Для соединений загружаем несколько карт
+                self.connection_maps = self.load_maps_from_program(program_path, "connection_map")?;
+                self.connection_maps.extend(self.load_maps_from_program(program_path, "connection_stats_map")?);
+                self.connection_maps.extend(self.load_maps_from_program(program_path, "active_connections_map")?);
+            }
+            "gpu" => {
+                self.gpu_program = Some(program);
+                self.gpu_maps = self.load_maps_from_program(program_path, map_name)?;
+            }
+            "filesystem" => {
+                self.filesystem_program = Some(program);
+                self.filesystem_maps = self.load_maps_from_program(program_path, map_name)?;
+            }
+            "process" => {
+                self.process_monitoring_program = Some(program);
+                self.process_maps = self.load_maps_from_program(program_path, "process_map")?;
+                self.process_maps.extend(self.load_maps_from_program(program_path, "syscall_stats_map")?);
+                self.process_maps.extend(self.load_maps_from_program(program_path, "cpu_stats_map")?);
+            }
+            _ => {
+                tracing::warn!("Неизвестный тип программы: {}", program_type);
+                return Ok(());
+            }
+        }
+        
+        tracing::debug!("Программа {} сохранена с {} картами", program_type, 
+            match program_type {
+                "cpu" => self.cpu_maps.len(),
+                "memory" => self.memory_maps.len(),
+                "syscall" => self.syscall_maps.len(),
+                "network" => self.network_maps.len(),
+                "connections" => self.connection_maps.len(),
+                "gpu" => self.gpu_maps.len(),
+                "filesystem" => self.filesystem_maps.len(),
+                "process" => self.process_maps.len(),
+                _ => 0,
+            }
+        );
+        
         Ok(())
     }
 
@@ -2476,6 +2911,18 @@ impl EbpfMetricsCollector {
         
         // Пробуем переинициализироваться
         self.initialize()
+    }
+
+    /// Получить статистику кэша программ
+    #[cfg(feature = "ebpf")]
+    pub fn get_program_cache_stats(&self) -> (u64, u64, f64) {
+        self.program_cache.get_stats()
+    }
+
+    /// Очистить кэш программ
+    #[cfg(feature = "ebpf")]
+    pub fn clear_program_cache(&mut self) {
+        self.program_cache.clear();
     }
 }
 
