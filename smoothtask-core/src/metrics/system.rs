@@ -2861,6 +2861,9 @@ SwapFree:        4096000 kB
             gpu_temperature: 0,
             filesystem_ops: 0,
             active_processes: 0,
+            cpu_temperature: 50,
+            cpu_max_temperature: 80,
+            cpu_temperature_details: None,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or(std::time::Duration::from_secs(0))

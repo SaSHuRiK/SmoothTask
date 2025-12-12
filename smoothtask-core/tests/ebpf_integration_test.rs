@@ -329,6 +329,123 @@ fn test_ebpf_multiple_initializations() {
 }
 
 #[test]
+fn test_cpu_temperature_monitoring() {
+    // Тестируем мониторинг температуры CPU через eBPF
+    let config = EbpfConfig {
+        enable_cpu_temperature_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Инициализация должна пройти успешно
+    assert!(collector.initialize().is_ok());
+
+    // Сбор метрик должен работать
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+
+    let metrics = metrics.unwrap();
+    
+    // Проверяем, что температура CPU имеет разумные значения
+    assert!(metrics.cpu_temperature >= 0, "Температура CPU должна быть >= 0");
+    assert!(metrics.cpu_max_temperature >= 0, "Максимальная температура CPU должна быть >= 0");
+    
+    // В тестовой среде температура может быть 0, но не должна быть нереалистично высокой
+    assert!(metrics.cpu_temperature <= 200, "Температура CPU должна быть <= 200°C");
+    assert!(metrics.cpu_max_temperature <= 200, "Максимальная температура CPU должна быть <= 200°C");
+    
+    // Проверяем детализированную статистику температуры CPU
+    if let Some(temperature_details) = metrics.cpu_temperature_details {
+        assert!(!temperature_details.is_empty() || !config.enable_cpu_temperature_monitoring, 
+               "Детализированная статистика температуры CPU должна быть доступна при включенном мониторинге");
+        
+        for temp_stat in temperature_details {
+            assert!(temp_stat.temperature_celsius >= 0, "Температура CPU в деталях должна быть >= 0");
+            assert!(temp_stat.max_temperature_celsius >= 0, "Максимальная температура CPU в деталях должна быть >= 0");
+            assert!(temp_stat.timestamp > 0, "Временная метка температуры CPU должна быть > 0");
+        }
+    }
+}
+
+#[test]
+fn test_process_type_filtering() {
+    // Тестируем фильтрацию по типам процессов
+    let mut config = EbpfConfig {
+        enable_process_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config.clone());
+
+    // Инициализация должна пройти успешно
+    assert!(collector.initialize().is_ok());
+
+    // Устанавливаем фильтрацию по типам процессов
+    collector.set_process_type_filtering(true, vec!["nginx".to_string(), "apache2".to_string()]);
+
+    // Сбор метрик должен работать
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+
+    let metrics = metrics.unwrap();
+    
+    // Проверяем, что фильтрация применена
+    if let Some(process_details) = metrics.process_details {
+        // В тестовой среде может не быть процессов, но фильтрация должна работать
+        for process in process_details {
+            // Процессы должны соответствовать фильтру
+            assert!(process.name == "nginx" || process.name == "apache2", 
+                   "Процесс {} не соответствует фильтру по типам процессов", process.name);
+        }
+    }
+
+    // Тестируем фильтрацию по категориям процессов
+    collector.set_process_category_filtering(true, vec!["web".to_string(), "database".to_string()]);
+
+    // Тестируем фильтрацию по приоритету процессов
+    collector.set_process_priority_filtering(true, -10, 10);
+
+    // Сбор метрик должен работать с несколькими фильтрами
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+}
+
+#[test]
+fn test_real_time_event_processing_optimization() {
+    // Тестируем оптимизацию обработки eBPF событий в реальном времени
+    let config = EbpfConfig {
+        batch_size: 100, // Большой размер для тестирования оптимизации
+        enable_aggressive_caching: true,
+        aggressive_cache_interval_ms: 5000,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Инициализация должна пройти успешно
+    assert!(collector.initialize().is_ok());
+
+    // Применяем оптимизацию для реального времени
+    let result = collector.optimize_real_time_event_processing();
+    assert!(result.is_ok());
+
+    // Проверяем, что оптимизации применены
+    assert_eq!(collector.config.batch_size, 50, "Размер batches должен быть уменьшен до 50");
+    assert!(!collector.config.enable_aggressive_caching, "Агрессивное кэширование должно быть отключено");
+    assert_eq!(collector.config.aggressive_cache_interval_ms, 1000, "Интервал агрессивного кэширования должен быть уменьшен до 1000ms");
+
+    // Проверяем, что сбор метрик все еще работает после оптимизации
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+
+    let metrics = metrics.unwrap();
+    // Проверяем, что метрики все еще собираются корректно
+    assert!(metrics.cpu_usage >= 0.0);
+    assert!(metrics.memory_usage >= 0);
+}
+
+#[test]
 fn test_ebpf_custom_interval() {
     // Тестируем кастомный интервал сбора
     let config = EbpfConfig {

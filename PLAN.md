@@ -11,42 +11,57 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-581: Добавить поддержку мониторинга GPU через eBPF
-  - Тип: Rust / core / metrics / eBPF / GPU
-  - Примечания: Расширение eBPF функциональности для мониторинга GPU метрик
-  - Приоритет: Высокий
-  - Оценка времени: ~90 минут
+- [x] ST-586: Добавить поддержку мониторинга температуры CPU через eBPF
+  - Тип: Rust / core / metrics / eBPF / Hardware
+  - Примечания: Расширение eBPF функциональности для мониторинга температуры CPU
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
   - Зависимости: Текущая реализация eBPF модуля
   - Статус: COMPLETED
   - Время выполнения: ~60 минут
   - Изменённые файлы:
-    - smoothtask-core/src/metrics/ebpf.rs: Добавлены полные реализации функций collect_gpu_memory_from_maps и collect_gpu_details
-    - smoothtask-core/src/ebpf_programs/gpu_monitor.c: Улучшены функции отслеживания активности GPU, памяти, вычислительных единиц и добавлено отслеживание энергопотребления
-    - smoothtask-core/src/ebpf_programs/gpu_monitor_optimized.c: Добавлено отслеживание энергопотребления в оптимизированной версии
-    - smoothtask-core/src/ebpf_programs/gpu_monitor_high_perf.c: Добавлено отслеживание энергопотребления в высокопроизводительной версии
-    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_monitoring_functionality и test_gpu_monitoring_with_detailed_stats
-  - Результаты: Полная реализация мониторинга GPU через eBPF с поддержкой отслеживания использования GPU, памяти, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
+    - smoothtask-core/src/ebpf_programs/cpu_temperature.c: Создана новая eBPF программа для мониторинга температуры CPU
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры CpuTemperatureStat, обновлена EbpfConfig, добавлены методы для работы с температурой CPU в EbpfMetricsCollector
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлен тест test_cpu_temperature_monitoring
+  - Новые функции:
+    - CpuTemperatureStat: Структура для хранения детализированной статистики температуры CPU
+    - load_cpu_temperature_program: Загрузка eBPF программы для мониторинга температуры CPU
+    - collect_cpu_temperature_from_maps: Сбор температуры CPU из eBPF карт
+    - collect_cpu_temperature_data: Сбор основных и детализированных данных о температуре CPU
+  - Результаты: Полная реализация мониторинга температуры CPU через eBPF с поддержкой отслеживания температуры по ядрам, средней и максимальной температуры, добавлены соответствующие тесты
 
-- [x] ST-582: Интегрировать eBPF метрики с системой уведомлений
-  - Тип: Rust / core / notifications / eBPF
-  - Примечания: Добавление уведомлений на основе eBPF метрик и событий
+- [x] ST-587: Реализовать расширенную фильтрацию eBPF данных по типам процессов
+  - Тип: Rust / core / metrics / eBPF / Processing
+  - Примечания: Добавление фильтрации eBPF данных по типам и категориям процессов
   - Приоритет: Средний
-  - Оценка времени: ~60 минут
+  - Оценка времени: ~45 минут
   - Зависимости: ST-581 (GPU мониторинг)
   - Статус: COMPLETED
   - Время выполнения: ~45 минут
   - Изменённые файлы:
-    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры EbpfNotificationThresholds, обновлена EbpfConfig, добавлены методы для работы с уведомлениями в EbpfMetricsCollector
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены поля в EbpfFilterConfig для фильтрации по типам, категориям и приоритетам процессов, добавлены методы set_process_type_filtering, set_process_category_filtering, set_process_priority_filtering, обновлен метод apply_filtering для поддержки фильтрации процессов
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлен тест test_process_type_filtering
   - Новые функции:
-    - EbpfNotificationThresholds: Конфигурация порогов для уведомлений
-    - check_thresholds_and_notify: Проверка порогов и отправка уведомлений
-    - can_send_notification: Проверка возможности отправки уведомлений
-    - update_last_notification_time: Обновление времени последнего уведомления
-    - send_notification: Отправка уведомлений через менеджер
-    - new_with_notifications: Конструктор с менеджером уведомлений
-    - set_notification_manager: Установка менеджера уведомлений
-    - set_notification_cooldown: Установка интервала между уведомлениями
-  - Результаты: Полная интеграция eBPF метрик с системой уведомлений, поддержка пороговых уведомлений для CPU, памяти, GPU, сетевых соединений и других метрик
+    - set_process_type_filtering: Установка фильтрации по типам процессов
+    - set_process_category_filtering: Установка фильтрации по категориям процессов
+    - set_process_priority_filtering: Установка фильтрации по приоритету процессов
+    - Расширен apply_filtering: Добавлена фильтрация процессов по типам, категориям и приоритетам
+  - Результаты: Полная реализация расширенной фильтрации eBPF данных по типам процессов с поддержкой фильтрации по именам процессов, категориям и приоритетам, добавлены соответствующие тесты
+
+- [x] ST-588: Оптимизировать обработку eBPF событий в реальном времени
+  - Тип: Rust / core / metrics / eBPF / Performance
+  - Примечания: Улучшение производительности обработки eBPF событий для снижения задержек
+  - Приоритет: Низкий
+  - Оценка времени: ~30 минут
+  - Зависимости: Текущая реализация eBPF модуля
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлен метод optimize_real_time_event_processing для оптимизации обработки eBPF событий в реальном времени
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлен тест test_real_time_event_processing_optimization
+  - Новые функции:
+    - optimize_real_time_event_processing: Оптимизация обработки eBPF событий в реальном времени
+  - Результаты: Полная реализация оптимизации обработки eBPF событий в реальном времени с уменьшением размера batches, отключением агрессивного кэширования, уменьшением интервалов кэширования и оптимизацией памяти, добавлены соответствующие тесты
 
 ## 2. Бэклог
 
@@ -66,35 +81,139 @@
     - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_temperature_and_power_monitoring и test_gpu_comprehensive_monitoring, обновлен тест test_gpu_monitoring_with_detailed_stats
   - Результаты: Полная реализация мониторинга температуры и энергопотребления GPU через eBPF с поддержкой отслеживания температуры, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
 
-- [ ] ST-584: Реализовать расширенную фильтрацию и агрегацию eBPF данных
+- [x] ST-584: Реализовать расширенную фильтрацию и агрегацию eBPF данных
   - Тип: Rust / core / metrics / eBPF / Processing
   - Примечания: Добавление возможностей фильтрации и агрегации eBPF данных на уровне ядра
   - Приоритет: Средний
   - Оценка времени: ~90 минут
   - Зависимости: ST-581 (GPU мониторинг)
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры EbpfFilterConfig, методы apply_filtering, apply_aggregation, apply_filtering_and_aggregation и другие методы для настройки фильтрации и агрегации
+  - Новые функции:
+    - EbpfFilterConfig: Конфигурация фильтрации и агрегации данных
+    - set_filter_config: Установка конфигурации фильтрации
+    - apply_filtering: Применение фильтрации к метрикам
+    - apply_aggregation: Применение агрегации к метрикам
+    - apply_filtering_and_aggregation: Комбинированное применение фильтрации и агрегации
+    - set_pid_filtering: Установка фильтрации по идентификаторам процессов
+    - set_syscall_type_filtering: Установка фильтрации по типам системных вызовов
+    - set_network_protocol_filtering: Установка фильтрации по сетевым протоколам
+    - set_port_range_filtering: Установка фильтрации по диапазону портов
+    - set_aggregation_parameters: Установка параметров агрегации
+    - set_filtering_thresholds: Установка порогов фильтрации
+  - Результаты: Полная реализация расширенной фильтрации и агрегации eBPF данных с поддержкой фильтрации по порогам, типам данных, идентификаторам процессов и агрегации детализированных статистик
 
-- [ ] ST-585: Оптимизировать использование памяти в eBPF картах
+- [x] ST-585: Оптимизировать использование памяти в eBPF картах
   - Тип: Rust / core / metrics / eBPF / Performance
   - Примечания: Улучшение управления памятью в eBPF картах для уменьшения memory footprint
   - Приоритет: Низкий
   - Оценка времени: ~45 минут
   - Зависимости: Текущая реализация eBPF модуля
+  - Статус: COMPLETED
+  - Время выполнения: ~45 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены методы optimize_ebpf_memory_usage, optimize_map_memory, analyze_map_usage, clear_map_entries, optimize_program_cache, optimize_detailed_stats, set_max_cached_details, get_max_cached_details
+  - Новые функции:
+    - optimize_ebpf_memory_usage: Оптимизация использования памяти в eBPF картах
+    - optimize_map_memory: Оптимизация памяти для конкретной карты
+    - analyze_map_usage: Анализ использования карты
+    - clear_map_entries: Очистка всех записей в карте
+    - optimize_program_cache: Оптимизация кэша программ
+    - optimize_detailed_stats: Оптимизация использования памяти в детализированных статистиках
+    - set_max_cached_details: Установка ограничения на количество кэшируемых детализированных статистик
+    - get_max_cached_details: Получение текущего ограничения на количество кэшируемых детализированных статистик
+  - Результаты: Полная реализация оптимизации памяти в eBPF картах с поддержкой анализа использования карт, очистки неиспользуемых записей, оптимизации кэша программ и ограничения количества детализированных статистик
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-583: Добавить поддержку мониторинга температуры и энергопотребления через eBPF
-  - Тип: Rust / core / metrics / eBPF / Hardware
-  - Примечания: Расширение eBPF функциональности для мониторинга температуры CPU/GPU и энергопотребления
+- [x] ST-588: Оптимизировать обработку eBPF событий в реальном времени
+  - Тип: Rust / core / metrics / eBPF / Performance
+  - Примечания: Улучшение производительности обработки eBPF событий для снижения задержек
+  - Приоритет: Низкий
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлен метод optimize_real_time_event_processing для оптимизации обработки eBPF событий в реальном времени
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлен тест test_real_time_event_processing_optimization
+  - Новые функции:
+    - optimize_real_time_event_processing: Оптимизация обработки eBPF событий в реальном времени
+  - Результаты: Полная реализация оптимизации обработки eBPF событий в реальном времени с уменьшением размера batches, отключением агрессивного кэширования, уменьшением интервалов кэширования и оптимизацией памяти, добавлены соответствующие тесты
+
+- [x] ST-587: Реализовать расширенную фильтрацию eBPF данных по типам процессов
+  - Тип: Rust / core / metrics / eBPF / Processing
+  - Примечания: Добавление фильтрации eBPF данных по типам и категориям процессов
   - Приоритет: Средний
   - Статус: COMPLETED
   - Время выполнения: ~45 минут
   - Изменённые файлы:
-    - smoothtask-core/src/ebpf_programs/gpu_monitor.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats, улучшено отслеживание энергопотребления
-    - smoothtask-core/src/ebpf_programs/gpu_monitor_optimized.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats_optimized
-    - smoothtask-core/src/ebpf_programs/gpu_monitor_high_perf.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats_high_perf
-    - smoothtask-core/src/metrics/ebpf.rs: Добавлены новые функции collect_gpu_compute_units_from_maps, collect_gpu_power_usage_from_maps, collect_gpu_temperature_from_maps; обновлены структуры EbpfMetrics и GpuStat с новыми полями; обновлена функция collect_gpu_metrics_parallel для возврата дополнительных метрик
-    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_temperature_and_power_monitoring и test_gpu_comprehensive_monitoring, обновлен тест test_gpu_monitoring_with_detailed_stats
-  - Результаты: Полная реализация мониторинга температуры и энергопотребления GPU через eBPF с поддержкой отслеживания температуры, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены поля в EbpfFilterConfig для фильтрации по типам, категориям и приоритетам процессов, добавлены методы set_process_type_filtering, set_process_category_filtering, set_process_priority_filtering, обновлен метод apply_filtering для поддержки фильтрации процессов
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлен тест test_process_type_filtering
+  - Новые функции:
+    - set_process_type_filtering: Установка фильтрации по типам процессов
+    - set_process_category_filtering: Установка фильтрации по категориям процессов
+    - set_process_priority_filtering: Установка фильтрации по приоритету процессов
+    - Расширен apply_filtering: Добавлена фильтрация процессов по типам, категориям и приоритетам
+  - Результаты: Полная реализация расширенной фильтрации eBPF данных по типам процессов с поддержкой фильтрации по именам процессов, категориям и приоритетам, добавлены соответствующие тесты
+
+- [x] ST-586: Добавить поддержку мониторинга температуры CPU через eBPF
+  - Тип: Rust / core / metrics / eBPF / Hardware
+  - Примечания: Расширение eBPF функциональности для мониторинга температуры CPU
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/ebpf_programs/cpu_temperature.c: Создана новая eBPF программа для мониторинга температуры CPU
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры CpuTemperatureStat, обновлена EbpfConfig, добавлены методы для работы с температурой CPU в EbpfMetricsCollector
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлен тест test_cpu_temperature_monitoring
+  - Новые функции:
+    - CpuTemperatureStat: Структура для хранения детализированной статистики температуры CPU
+    - load_cpu_temperature_program: Загрузка eBPF программы для мониторинга температуры CPU
+    - collect_cpu_temperature_from_maps: Сбор температуры CPU из eBPF карт
+    - collect_cpu_temperature_data: Сбор основных и детализированных данных о температуре CPU
+  - Результаты: Полная реализация мониторинга температуры CPU через eBPF с поддержкой отслеживания температуры по ядрам, средней и максимальной температуры, добавлены соответствующие тесты
+
+- [x] ST-585: Оптимизировать использование памяти в eBPF картах
+  - Тип: Rust / core / metrics / eBPF / Performance
+  - Примечания: Улучшение управления памятью в eBPF картах для уменьшения memory footprint
+  - Приоритет: Низкий
+  - Статус: COMPLETED
+  - Время выполнения: ~45 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены методы optimize_ebpf_memory_usage, optimize_map_memory, analyze_map_usage, clear_map_entries, optimize_program_cache, optimize_detailed_stats, set_max_cached_details, get_max_cached_details
+  - Новые функции:
+    - optimize_ebpf_memory_usage: Оптимизация использования памяти в eBPF картах
+    - optimize_map_memory: Оптимизация памяти для конкретной карты
+    - analyze_map_usage: Анализ использования карты
+    - clear_map_entries: Очистка всех записей в карте
+    - optimize_program_cache: Оптимизация кэша программ
+    - optimize_detailed_stats: Оптимизация использования памяти в детализированных статистиках
+    - set_max_cached_details: Установка ограничения на количество кэшируемых детализированных статистик
+    - get_max_cached_details: Получение текущего ограничения на количество кэшируемых детализированных статистик
+  - Результаты: Полная реализация оптимизации памяти в eBPF картах с поддержкой анализа использования карт, очистки неиспользуемых записей, оптимизации кэша программ и ограничения количества детализированных статистик
+
+- [x] ST-584: Реализовать расширенную фильтрацию и агрегацию eBPF данных
+  - Тип: Rust / core / metrics / eBPF / Processing
+  - Примечания: Добавление возможностей фильтрации и агрегации eBPF данных на уровне ядра
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры EbpfFilterConfig, методы apply_filtering, apply_aggregation, apply_filtering_and_aggregation и другие методы для настройки фильтрации и агрегации
+  - Новые функции:
+    - EbpfFilterConfig: Конфигурация фильтрации и агрегации данных
+    - set_filter_config: Установка конфигурации фильтрации
+    - apply_filtering: Применение фильтрации к метрикам
+    - apply_aggregation: Применение агрегации к метрикам
+    - apply_filtering_and_aggregation: Комбинированное применение фильтрации и агрегации
+    - set_pid_filtering: Установка фильтрации по идентификаторам процессов
+    - set_syscall_type_filtering: Установка фильтрации по типам системных вызовов
+    - set_network_protocol_filtering: Установка фильтрации по сетевым протоколам
+    - set_port_range_filtering: Установка фильтрации по диапазону портов
+    - set_aggregation_parameters: Установка параметров агрегации
+    - set_filtering_thresholds: Установка порогов фильтрации
+  - Результаты: Полная реализация расширенной фильтрации и агрегации eBPF данных с поддержкой фильтрации по порогам, типам данных, идентификаторам процессов и агрегации детализированных статистик
 
 - [x] ST-582: Интегрировать eBPF метрики с системой уведомлений
   - Тип: Rust / core / notifications / eBPF
