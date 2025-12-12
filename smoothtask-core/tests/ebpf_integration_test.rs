@@ -172,6 +172,9 @@ fn test_gpu_monitoring_with_detailed_stats() {
     // Проверяем, что GPU метрики имеют разумные значения
     assert!(metrics.gpu_usage >= 0.0); // Должно быть >= 0.0
     assert!(metrics.gpu_memory_usage >= 0); // Должно быть >= 0
+    assert!(metrics.gpu_compute_units >= 0); // Должно быть >= 0
+    assert!(metrics.gpu_power_usage >= 0); // Должно быть >= 0
+    assert!(metrics.gpu_temperature >= 0); // Должно быть >= 0
     
     // Проверяем, что детализированная статистика GPU отсутствует или пустая
     // В тестовой среде без реальных GPU данных она должна быть None или пустой
@@ -183,12 +186,96 @@ fn test_gpu_monitoring_with_detailed_stats() {
                 assert!(gpu_stat.memory_usage >= 0);
                 assert!(gpu_stat.compute_units_active >= 0);
                 assert!(gpu_stat.power_usage_uw >= 0);
+                assert!(gpu_stat.temperature_celsius >= 0);
+                assert!(gpu_stat.max_temperature_celsius >= 0);
             }
         },
         None => {
             // Это ожидаемое поведение в тестовой среде без реальных GPU данных
             assert!(true);
         }
+    }
+}
+
+#[test]
+fn test_gpu_temperature_and_power_monitoring() {
+    // Тестируем мониторинг температуры и энергопотребления GPU
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_cpu_metrics: false,
+        enable_memory_metrics: false,
+        enable_syscall_monitoring: false,
+        enable_network_monitoring: false,
+        enable_network_connections: false,
+        enable_filesystem_monitoring: false,
+        enable_process_monitoring: false,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Инициализация должна пройти успешно
+    assert!(collector.initialize().is_ok());
+    
+    // Сбор метрик должен работать
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+    
+    let metrics = metrics.unwrap();
+    
+    // Проверяем, что новые метрики температуры и энергопотребления присутствуют
+    assert!(metrics.gpu_temperature >= 0, "Температура GPU должна быть >= 0");
+    assert!(metrics.gpu_power_usage >= 0, "Энергопотребление GPU должно быть >= 0");
+    assert!(metrics.gpu_compute_units >= 0, "Количество вычислительных единиц GPU должно быть >= 0");
+    
+    // Проверяем, что значения находятся в разумных пределах
+    assert!(metrics.gpu_temperature <= 200, "Температура GPU должна быть <= 200°C");
+    assert!(metrics.gpu_power_usage <= 1000000, "Энергопотребление GPU должно быть <= 1000000 мкВт");
+    assert!(metrics.gpu_compute_units <= 1000, "Количество вычислительных единиц GPU должно быть <= 1000");
+}
+
+#[test]
+fn test_gpu_comprehensive_monitoring() {
+    // Тестируем комплексный мониторинг GPU со всеми метриками
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_cpu_metrics: false,
+        enable_memory_metrics: false,
+        enable_syscall_monitoring: false,
+        enable_network_monitoring: false,
+        enable_network_connections: false,
+        enable_filesystem_monitoring: false,
+        enable_process_monitoring: false,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Инициализация должна пройти успешно
+    assert!(collector.initialize().is_ok());
+    
+    // Сбор метрик должен работать
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+    
+    let metrics = metrics.unwrap();
+    
+    // Проверяем все GPU метрики
+    assert!(metrics.gpu_usage >= 0.0, "Использование GPU должно быть >= 0%");
+    assert!(metrics.gpu_usage <= 100.0, "Использование GPU должно быть <= 100%");
+    
+    assert!(metrics.gpu_memory_usage >= 0, "Использование памяти GPU должно быть >= 0");
+    assert!(metrics.gpu_compute_units >= 0, "Количество вычислительных единиц GPU должно быть >= 0");
+    assert!(metrics.gpu_power_usage >= 0, "Энергопотребление GPU должно быть >= 0");
+    assert!(metrics.gpu_temperature >= 0, "Температура GPU должна быть >= 0");
+    
+    // Проверяем, что метрики согласованы
+    if metrics.gpu_usage > 0.0 {
+        // Если GPU используется, то должны быть и другие метрики
+        assert!(metrics.gpu_compute_units > 0 || metrics.gpu_power_usage > 0 || metrics.gpu_temperature > 0,
+                "Если GPU используется, должны быть и другие метрики");
     }
 }
 

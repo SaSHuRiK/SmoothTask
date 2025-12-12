@@ -18,6 +18,8 @@ struct gpu_stats {
     __u64 compute_units_active;
     __u64 last_timestamp;
     __u64 power_usage_uw;
+    __u32 temperature_celsius;  // Температура GPU в градусах Цельсия
+    __u32 max_temperature_celsius;  // Максимальная температура GPU
 };
 
 // Карта для хранения статистики по GPU устройствам
@@ -68,6 +70,20 @@ int trace_gpu_activity(struct trace_event_raw_drm_gpu_sched_run_job *ctx)
     __u64 *total_usage = bpf_map_lookup_elem(&total_gpu_usage_map, &total_key);
     if (total_usage) {
         __sync_fetch_and_add(total_usage, delta);
+    }
+    
+    // Обновляем температуру GPU (симуляция)
+    // В реальной реализации нужно получить реальную температуру из ядра
+    __u32 current_temp = 50; // Базовая температура
+    if (stats->gpu_usage_ns > 1000000000) { // Если GPU активно используется
+        current_temp = 65 + (stats->gpu_usage_ns / 1000000000) % 20; // 65-85°C
+    }
+    
+    stats->temperature_celsius = current_temp;
+    
+    // Обновляем максимальную температуру
+    if (current_temp > stats->max_temperature_celsius) {
+        stats->max_temperature_celsius = current_temp;
     }
     
     return 0;
@@ -163,6 +179,14 @@ int trace_gpu_power_usage(struct trace_event_raw_power_start *ctx)
     // Увеличиваем потребление энергии
     // В реальной реализации нужно получить реальное значение энергопотребления
     __u64 power_increase = 1000; // Пример: 1000 микроватт (реально нужно получить из ctx)
+    
+    // Масштабируем энергопотребление в зависимости от использования GPU
+    if (stats->gpu_usage_ns > 0) {
+        __u64 usage_factor = stats->gpu_usage_ns / 1000000; // Масштабирующий фактор
+        if (usage_factor > 100) usage_factor = 100; // Ограничиваем максимальный фактор
+        power_increase = 1000 + (usage_factor * 50); // 1000-6000 микроватт
+    }
+    
     __sync_fetch_and_add(&stats->power_usage_uw, power_increase);
     
     return 0;

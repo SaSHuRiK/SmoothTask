@@ -15,6 +15,8 @@ struct gpu_stats_high_perf {
     __u16 memory_usage_mb;    // Использование памяти в MB
     __u8 compute_units;        // Количество активных вычислительных единиц
     __u8 power_usage_uw;      // Потребление энергии в микроваттах (упакованное)
+    __u8 temperature_celsius; // Температура GPU в градусах Цельсия
+    __u8 max_temperature_celsius; // Максимальная температура GPU
     __u32 last_timestamp_lo;   // Последний timestamp (младшие 32 бита)
     __u32 last_timestamp_hi;   // Последний timestamp (старшие 32 бита)
 };

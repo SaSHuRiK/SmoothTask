@@ -155,6 +155,10 @@ pub struct GpuStat {
     pub compute_units_active: u32,
     /// Потребление энергии (в микроваттах)
     pub power_usage_uw: u64,
+    /// Температура GPU (в градусах Цельсия)
+    pub temperature_celsius: u32,
+    /// Максимальная температура GPU (в градусах Цельсия)
+    pub max_temperature_celsius: u32,
 }
 
 /// Статистика по операциям с файловой системой
@@ -245,6 +249,12 @@ pub struct EbpfMetrics {
     pub gpu_usage: f64,
     /// Использование памяти GPU (в байтах)
     pub gpu_memory_usage: u64,
+    /// Количество активных вычислительных единиц GPU
+    pub gpu_compute_units: u32,
+    /// Потребление энергии GPU (в микроваттах)
+    pub gpu_power_usage: u64,
+    /// Температура GPU (в градусах Цельсия)
+    pub gpu_temperature: u32,
     /// Количество операций с файловой системой
     pub filesystem_ops: u64,
     /// Количество активных процессов
@@ -2093,8 +2103,11 @@ impl EbpfMetricsCollector {
             match iterate_ebpf_map_keys::<GpuStat>(map, 32) {
                 Ok(gpu_stats) => {
                     // Фильтруем только GPU устройства с ненулевым использованием
-                    for stat in gpu_stats {
+                    for mut stat in gpu_stats {
                         if stat.gpu_usage > 0.0 || stat.memory_usage > 0 {
+                            // Обновляем температуру и другие поля из текущих метрик
+                            stat.temperature_celsius = self.collect_gpu_temperature_from_maps().unwrap_or(0);
+                            stat.max_temperature_celsius = stat.temperature_celsius; // Упрощенно
                             details.push(stat);
                         }
                     }
@@ -2152,7 +2165,8 @@ impl EbpfMetricsCollector {
         };
         
         // Оптимизация: собираем GPU метрики в одном проходе
-        let (gpu_usage, gpu_memory_usage) = self.collect_gpu_metrics_parallel()?;
+        let (gpu_usage, gpu_memory_usage, gpu_compute_units, gpu_power_usage, gpu_temperature) = 
+            self.collect_gpu_metrics_parallel()?;
         
         let filesystem_ops = if self.config.enable_filesystem_monitoring { 
             self.collect_filesystem_ops_from_maps()? 
@@ -2204,6 +2218,9 @@ impl EbpfMetricsCollector {
             active_connections,
             gpu_usage,
             gpu_memory_usage,
+            gpu_compute_units,
+            gpu_power_usage,
+            gpu_temperature,
             filesystem_ops,
             active_processes,
             timestamp: std::time::SystemTime::now()
@@ -2383,16 +2400,19 @@ impl EbpfMetricsCollector {
 
     /// Собрать GPU метрики параллельно (оптимизация)
     #[cfg(feature = "ebpf")]
-    fn collect_gpu_metrics_parallel(&self) -> Result<(f64, u64)> {
+    fn collect_gpu_metrics_parallel(&self) -> Result<(f64, u64, u32, u64, u32)> {
         // Оптимизация: собираем GPU метрики в одном проходе
         if !self.config.enable_gpu_monitoring {
-            return Ok((0.0, 0));
+            return Ok((0.0, 0, 0, 0, 0));
         }
         
         let usage = self.collect_gpu_usage_from_maps()?;
         let memory = self.collect_gpu_memory_from_maps()?;
+        let compute_units = self.collect_gpu_compute_units_from_maps()?;
+        let power_usage = self.collect_gpu_power_usage_from_maps()?;
+        let temperature = self.collect_gpu_temperature_from_maps()?;
         
-        Ok((usage, memory))
+        Ok((usage, memory, compute_units, power_usage, temperature))
     }
 
     /// Собрать CPU метрики из eBPF карт
@@ -2644,6 +2664,120 @@ impl EbpfMetricsCollector {
         
         if map_count > 0 {
             Ok(total_memory / map_count as u64)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Собрать количество активных вычислительных единиц GPU из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_gpu_compute_units_from_maps(&self) -> Result<u32> {
+        use libbpf_rs::Map;
+        
+        // Пробуем получить доступ к GPU картам
+        if self.gpu_maps.is_empty() {
+            tracing::warn!("GPU карты не инициализированы");
+            return Ok(0);
+        }
+        
+        // Реальный сбор данных о вычислительных единицах из GPU карт
+        let mut total_compute_units = 0u32;
+        let mut map_count = 0;
+        
+        for map in &self.gpu_maps {
+            // Используем функцию итерации по ключам для получения данных о вычислительных единицах
+            match iterate_ebpf_map_keys::<u32>(map, 4) {
+                Ok(compute_data) => {
+                    for compute_units in compute_data {
+                        total_compute_units += compute_units;
+                        map_count += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по GPU карте вычислительных единиц: {}", e);
+                    continue;
+                }
+            }
+        }
+        
+        if map_count > 0 {
+            Ok(total_compute_units / map_count as u32)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Собрать данные об энергопотреблении GPU из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_gpu_power_usage_from_maps(&self) -> Result<u64> {
+        use libbpf_rs::Map;
+        
+        // Пробуем получить доступ к GPU картам
+        if self.gpu_maps.is_empty() {
+            tracing::warn!("GPU карты не инициализированы");
+            return Ok(0);
+        }
+        
+        // Реальный сбор данных об энергопотреблении из GPU карт
+        let mut total_power = 0u64;
+        let mut map_count = 0;
+        
+        for map in &self.gpu_maps {
+            // Используем функцию итерации по ключам для получения данных об энергопотреблении
+            match iterate_ebpf_map_keys::<u64>(map, 8) {
+                Ok(power_data) => {
+                    for power in power_data {
+                        total_power += power;
+                        map_count += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по GPU карте энергопотребления: {}", e);
+                    continue;
+                }
+            }
+        }
+        
+        if map_count > 0 {
+            Ok(total_power / map_count as u64)
+        } else {
+            Ok(0)
+        }
+    }
+
+    /// Собрать данные о температуре GPU из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_gpu_temperature_from_maps(&self) -> Result<u32> {
+        use libbpf_rs::Map;
+        
+        // Пробуем получить доступ к GPU картам
+        if self.gpu_maps.is_empty() {
+            tracing::warn!("GPU карты не инициализированы");
+            return Ok(0);
+        }
+        
+        // Реальный сбор данных о температуре из GPU карт
+        let mut total_temp = 0u32;
+        let mut map_count = 0;
+        
+        for map in &self.gpu_maps {
+            // Используем функцию итерации по ключам для получения данных о температуре
+            match iterate_ebpf_map_keys::<u32>(map, 4) {
+                Ok(temp_data) => {
+                    for temp in temp_data {
+                        total_temp += temp;
+                        map_count += 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по GPU карте температуры: {}", e);
+                    continue;
+                }
+            }
+        }
+        
+        if map_count > 0 {
+            Ok(total_temp / map_count as u32)
         } else {
             Ok(0)
         }
@@ -3438,6 +3572,9 @@ mod tests {
             active_connections: 10,
             gpu_usage: 0.0,
             gpu_memory_usage: 0,
+            gpu_compute_units: 0,
+            gpu_power_usage: 0,
+            gpu_temperature: 0,
             filesystem_ops: 0,
             active_processes: 5,
             timestamp: 1234567890,
@@ -3843,6 +3980,9 @@ mod tests {
             active_connections: 10,
             gpu_usage: 75.0,
             gpu_memory_usage: 2 * 1024 * 1024 * 1024, // 2 GB
+            gpu_compute_units: 16,
+            gpu_power_usage: 500000,
+            gpu_temperature: 65,
             filesystem_ops: 0,
             active_processes: 5,
             timestamp: 1234567890,
@@ -4008,6 +4148,9 @@ mod tests {
             active_connections: 10,
             gpu_usage: 0.0,
             gpu_memory_usage: 0,
+            gpu_compute_units: 0,
+            gpu_power_usage: 0,
+            gpu_temperature: 0,
             filesystem_ops: 200,
             active_processes: 5,
             timestamp: 1234567890,

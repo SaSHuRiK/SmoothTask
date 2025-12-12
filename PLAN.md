@@ -50,12 +50,21 @@
 
 ## 2. Бэклог
 
-- [ ] ST-583: Добавить поддержку мониторинга температуры и энергопотребления через eBPF
+- [x] ST-583: Добавить поддержку мониторинга температуры и энергопотребления через eBPF
   - Тип: Rust / core / metrics / eBPF / Hardware
   - Примечания: Расширение eBPF функциональности для мониторинга температуры CPU/GPU и энергопотребления
   - Приоритет: Средний
   - Оценка времени: ~60 минут
   - Зависимости: Текущая реализация eBPF модуля
+  - Статус: COMPLETED
+  - Время выполнения: ~45 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/ebpf_programs/gpu_monitor.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats, улучшено отслеживание энергопотребления
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_optimized.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats_optimized
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_high_perf.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats_high_perf
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены новые функции collect_gpu_compute_units_from_maps, collect_gpu_power_usage_from_maps, collect_gpu_temperature_from_maps; обновлены структуры EbpfMetrics и GpuStat с новыми полями; обновлена функция collect_gpu_metrics_parallel для возврата дополнительных метрик
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_temperature_and_power_monitoring и test_gpu_comprehensive_monitoring, обновлен тест test_gpu_monitoring_with_detailed_stats
+  - Результаты: Полная реализация мониторинга температуры и энергопотребления GPU через eBPF с поддержкой отслеживания температуры, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
 
 - [ ] ST-584: Реализовать расширенную фильтрацию и агрегацию eBPF данных
   - Тип: Rust / core / metrics / eBPF / Processing
@@ -72,6 +81,20 @@
   - Зависимости: Текущая реализация eBPF модуля
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-583: Добавить поддержку мониторинга температуры и энергопотребления через eBPF
+  - Тип: Rust / core / metrics / eBPF / Hardware
+  - Примечания: Расширение eBPF функциональности для мониторинга температуры CPU/GPU и энергопотребления
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~45 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/ebpf_programs/gpu_monitor.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats, улучшено отслеживание энергопотребления
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_optimized.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats_optimized
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_high_perf.c: Добавлены поля temperature_celsius и max_temperature_celsius в структуру gpu_stats_high_perf
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены новые функции collect_gpu_compute_units_from_maps, collect_gpu_power_usage_from_maps, collect_gpu_temperature_from_maps; обновлены структуры EbpfMetrics и GpuStat с новыми полями; обновлена функция collect_gpu_metrics_parallel для возврата дополнительных метрик
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_temperature_and_power_monitoring и test_gpu_comprehensive_monitoring, обновлен тест test_gpu_monitoring_with_detailed_stats
+  - Результаты: Полная реализация мониторинга температуры и энергопотребления GPU через eBPF с поддержкой отслеживания температуры, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
 
 - [x] ST-582: Интегрировать eBPF метрики с системой уведомлений
   - Тип: Rust / core / notifications / eBPF

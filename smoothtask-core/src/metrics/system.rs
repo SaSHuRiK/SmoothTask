@@ -2856,6 +2856,9 @@ SwapFree:        4096000 kB
             active_connections: 0,
             gpu_usage: 0.0,
             gpu_memory_usage: 0,
+            gpu_compute_units: 0,
+            gpu_power_usage: 0,
+            gpu_temperature: 0,
             filesystem_ops: 0,
             active_processes: 0,
             timestamp: std::time::SystemTime::now()

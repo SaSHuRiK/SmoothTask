@@ -15,6 +15,8 @@ struct gpu_stats_optimized {
     __u32 memory_usage_mb;    // Использование памяти в MB (упакованное)
     __u16 compute_units;       // Количество активных вычислительных единиц
     __u16 power_usage_uw;      // Потребление энергии в микроваттах (упакованное)
+    __u16 temperature_celsius; // Температура GPU в градусах Цельсия
+    __u16 max_temperature_celsius; // Максимальная температура GPU
     __u64 last_timestamp;      // Последний timestamp для расчета дельты
 };
 
