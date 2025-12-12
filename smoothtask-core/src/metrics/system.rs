@@ -2526,6 +2526,7 @@ SwapFree:        4096000 kB
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or(std::time::Duration::from_secs(0))
                 .as_nanos() as u64,
+            syscall_details: None,
         };
         metrics.ebpf = Some(ebpf_metrics.clone());
         
