@@ -135,6 +135,125 @@ classify_all(&mut processes, &mut app_groups, &pattern_db, Some(&ml_classifier))
 // Все процессы классифицированы с использованием паттернов и ML
 ```
 
+### Пример 4: Использование PatternWatcher для автоматического обновления паттернов
+
+```rust
+use smoothtask_core::classify::pattern_watcher::PatternWatcher;
+use smoothtask_core::classify::rules::PatternDatabase;
+use std::path::Path;
+
+// Создание PatternWatcher
+let patterns_dir = Path::new("/etc/smoothtask/patterns");
+let mut pattern_watcher = PatternWatcher::new(patterns_dir.to_path_buf());
+
+// Загрузка начальной базы паттернов
+let mut pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+// Настройка мониторинга изменений
+pattern_watcher.set_auto_reload_interval(60); // Проверка каждые 60 секунд
+pattern_watcher.set_notify_on_reload(true);
+
+// Основной цикл с мониторингом изменений
+loop {
+    // Проверка изменений в паттернах
+    if pattern_watcher.has_changes() {
+        println!("Обнаружены изменения в паттернах, выполняется перезагрузка...");
+        
+        // Перезагрузка паттернов
+        if let Ok(reloaded_db) = PatternDatabase::load(patterns_dir) {
+            pattern_db = reloaded_db;
+            println!("Паттерны успешно перезагружены");
+            
+            // Уведомление о перезагрузке
+            if pattern_watcher.should_notify() {
+                // Отправка уведомления пользователю
+                println!("УВЕДОМЛЕНИЕ: Паттерны перезагружены");
+            }
+        }
+    }
+    
+    // Использование обновленной базы паттернов для классификации
+    let mut process = ProcessRecord {
+        pid: 1002,
+        exe: Some("code".to_string()),
+        // ... остальные поля
+    };
+    
+    classify_process(&mut process, &pattern_db, Some(&ml_classifier), None);
+    
+    // Ожидание перед следующей проверкой
+    std::thread::sleep(std::time::Duration::from_secs(1));
+}
+```
+
+### Пример 5: Интеграция PatternWatcher с ML-классификатором
+
+```rust
+use smoothtask_core::classify::ml_classifier::CatBoostMLClassifier;
+use smoothtask_core::classify::pattern_watcher::PatternWatcher;
+
+// Создание ML-классификатора
+let ml_classifier = CatBoostMLClassifier::new("models/process_classifier.json")
+    .expect("load ML model");
+
+// Создание PatternWatcher
+let patterns_dir = Path::new("/etc/smoothtask/patterns");
+let mut pattern_watcher = PatternWatcher::new(patterns_dir.to_path_buf());
+
+// Загрузка начальной базы паттернов
+let mut pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+// Основной цикл классификации с автоматической перезагрузкой паттернов
+loop {
+    // Проверка изменений в паттернах
+    if pattern_watcher.has_changes() {
+        if let Ok(reloaded_db) = PatternDatabase::load(patterns_dir) {
+            pattern_db = reloaded_db;
+            println!("Паттерны перезагружены, продолжаем классификацию");
+        }
+    }
+    
+    // Получение списка процессов для классификации
+    let mut processes = get_processes_from_system(); // Ваша функция получения процессов
+    
+    // Классификация всех процессов с использованием обновленных паттернов и ML
+    for process in &mut processes {
+        classify_process(process, &pattern_db, Some(&ml_classifier), None);
+        
+        // Логирование результатов классификации
+        println!("Process {}: type={:?}, tags={:?}", 
+                 process.pid, 
+                 process.process_type, 
+                 process.tags);
+    }
+    
+    // Ожидание перед следующей итерацией
+    std::thread::sleep(std::time::Duration::from_secs(5));
+}
+```
+
+### Пример 6: Настройка PatternWatcher для различных сценариев
+
+```rust
+// Сценарий 1: Разработка - частые проверки, уведомления включены
+let mut dev_watcher = PatternWatcher::new(Path::new("/etc/smoothtask/patterns"));
+dev_watcher.set_auto_reload_interval(10); // Проверка каждые 10 секунд
+dev_watcher.set_notify_on_reload(true);
+dev_watcher.set_validate_on_reload(true);
+
+// Сценарий 2: Production - редкие проверки, уведомления отключены
+let mut prod_watcher = PatternWatcher::new(Path::new("/etc/smoothtask/patterns"));
+prod_watcher.set_auto_reload_interval(300); // Проверка каждые 5 минут
+prod_watcher.set_notify_on_reload(false);
+prod_watcher.set_validate_on_reload(false);
+
+// Сценарий 3: Тестирование - только добавление новых паттернов
+let mut test_watcher = PatternWatcher::new(Path::new("/etc/smoothtask/patterns"));
+test_watcher.set_detect_additions(true);
+test_watcher.set_detect_modifications(false);
+test_watcher.set_detect_deletions(false);
+```
+
 ## Интеграция с ONNX Runtime
 
 SmoothTask поддерживает интеграцию с ONNX Runtime для загрузки и выполнения обученных CatBoost моделей. Это позволяет использовать реальные ML-модели для классификации и ранжирования процессов.

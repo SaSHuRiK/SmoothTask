@@ -11,6 +11,65 @@
 - **Rust-демон** (`smoothtaskd`) — быстрый демон для сбора метрик, применения правил и ML-ранкера
 - **Python-тренер** (`smoothtask-trainer`) — офлайн-обучение CatBoostRanker на основе собранных снапшотов
 
+## Основные возможности
+
+### ML-классификация процессов
+
+SmoothTask поддерживает ML-классификацию процессов для более точного определения типов процессов:
+- **CatBoost JSON модели** — простой формат для тестирования и отладки
+- **ONNX модели** — оптимизированный формат для production использования
+- **Гибкая конфигурация** — настройка порога уверенности и приоритетов
+- **Автоматическое переопределение** — ML-результаты могут переопределять паттерн-классификацию
+
+### Автообновление паттерн-базы
+
+Автоматическое обновление паттернов без перезапуска демона:
+- **Мониторинг изменений** — отслеживание добавления/изменения/удаления паттернов
+- **Горячая перезагрузка** — новые паттерны применяются без перезапуска
+- **Уведомления** — оповещения об обновлениях паттерн-базы
+- **Периодическая проверка** — регулярное сканирование директории с паттернами
+
+### Расширенный мониторинг производительности
+
+Детальные метрики производительности на уровне приложений:
+- **Задержка отклика** — мониторинг отзывчивости приложений
+- **FPS для графических приложений** — контроль производительности графики
+- **Использование ресурсов** — CPU, память, потоки на уровне процессов
+- **История метрик** — сохранение и анализ временных рядов
+
+## Тестирование
+
+SmoothTask включает comprehensive тесты для обеспечения надежности:
+
+### Интеграционные тесты для ML-классификатора
+
+```bash
+# Запуск интеграционных тестов для ML-классификатора
+cargo test --test ml_classifier_integration_test
+```
+
+Тесты покрывают:
+- Интеграцию ML-классификатора с системой паттерн-классификации
+- Взаимодействие с PatternWatcher
+- Обработку ошибок и fallback механизмы
+- Тестирование порогов уверенности
+- Извлечение фич и объединение тегов
+- Производительность и надежность
+
+### Unit-тесты
+
+```bash
+# Запуск всех unit-тестов
+cargo test
+```
+
+### Интеграционные тесты
+
+```bash
+# Запуск всех интеграционных тестов
+cargo test --tests
+```
+
 ## Быстрый старт
 
 ### Сборка
@@ -64,6 +123,116 @@ sudo ./target/release/smoothtaskd --config configs/smoothtask.example.yml
    ```
 
 Подробная документация по systemd доступна в [systemd/README.md](systemd/README.md).
+
+## Примеры использования
+
+### Использование ML-классификатора
+
+Запуск с ML-классификатором (CatBoost JSON):
+```bash
+sudo ./target/release/smoothtaskd --config configs/examples/smoothtask-ml-enabled.yml
+```
+
+Запуск с ONNX моделью:
+```bash
+sudo ./target/release/smoothtaskd --config configs/examples/smoothtask-ml-onnx.yml
+```
+
+### Настройка автообновления паттернов
+
+Пример конфигурации с автообновлением:
+```yaml
+pattern_auto_update:
+  enabled: true
+  interval_sec: 60
+  notify_on_update: true
+```
+
+### Мониторинг производительности
+
+Получение метрик производительности через API:
+```bash
+curl http://127.0.0.1:8080/api/metrics/app_performance
+```
+
+### Обучение ML-модели
+
+Обучение модели с использованием тренера:
+```bash
+cd smoothtask-trainer
+python -m smoothtask_trainer.train_ranker --input data/snapshots --output models/process_classifier.json
+```
+
+Экспорт модели в ONNX формат:
+```bash
+python -m smoothtask_trainer.export_model --input models/process_classifier.json --output models/process_classifier.onnx
+```
+
+### Пример использования ML-классификатора с PatternWatcher
+
+Запуск с ML-классификатором и автоматической перезагрузкой паттернов:
+```bash
+sudo ./target/release/smoothtaskd --config configs/examples/smoothtask-ml-patternwatcher.yml
+```
+
+Этот пример демонстрирует:
+- Автоматическую загрузку и использование ML-модели
+- Мониторинг изменений в директории паттернов
+- Автоматическую перезагрузку паттернов без перезапуска демона
+- Интеграцию ML-классификации с паттерн-классификацией
+
+### Пример мониторинга производительности приложений
+
+Комплексный мониторинг производительности с использованием API:
+```bash
+#!/bin/bash
+# Мониторинг производительности приложений с использованием SmoothTask API
+
+API_URL="http://127.0.0.1:8080/api/metrics/app_performance"
+
+# Получение метрик производительности
+PERF_DATA=$(curl -s "$API_URL")
+
+# Анализ производительности приложений
+echo "$PERF_DATA" | jq -c '.app_performance | .[]' | while read app; do
+    APP_NAME=$(echo "$app" | jq -r '.app_name')
+    RESPONSE_TIME=$(echo "$app" | jq '.response_time_ms')
+    CPU_USAGE=$(echo "$app" | jq '.cpu_usage_percent')
+    
+    echo "App: $APP_NAME, Response: ${RESPONSE_TIME}ms, CPU: ${CPU_USAGE}%"
+    
+    # Проверка на критическое состояние
+    if (( $(echo "$RESPONSE_TIME > 100.0" | bc -l) )); then
+        echo "WARNING: High response time for $APP_NAME!" | logger -t smoothtask-perf
+    fi
+done
+```
+
+### Пример интеграции с системой мониторинга
+
+Интеграция SmoothTask с Prometheus для мониторинга:
+```yaml
+# Конфигурация Prometheus для сбора метрик SmoothTask
+scrape_configs:
+  - job_name: 'smoothtask'
+    static_configs:
+      - targets: ['localhost:8080']
+    metrics_path: '/api/metrics/app_performance'
+    scrape_interval: 15s
+```
+
+### Пример использования API для управления конфигурацией
+
+Получение и обновление текущей конфигурации:
+```bash
+# Получение текущей конфигурации
+curl http://127.0.0.1:8080/api/config
+
+# Обновление конфигурации (если поддерживается)
+curl -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"ml_classifier": {"enabled": true}}'
+```
 
 ## Документация
 

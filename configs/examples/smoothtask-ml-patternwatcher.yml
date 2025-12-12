@@ -1,0 +1,178 @@
+# SmoothTask Configuration with ML Classifier and PatternWatcher Integration
+#
+# This configuration demonstrates advanced usage of ML classifier with PatternWatcher
+# for automatic pattern updates and real-time classification.
+
+# Global settings
+logging:
+  level: "info"
+  file: "/var/log/smoothtask/smoothtask.log"
+  max_size_mb: 10
+  max_files: 5
+
+paths:
+  patterns_dir: "/etc/smoothtask/patterns"
+  api_listen_addr: "127.0.0.1:8080"
+  state_dir: "/var/lib/smoothtask"
+
+# ML Classifier Configuration with advanced settings
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.8
+  use_onnx: false
+  
+  # Advanced ML settings
+  feature_normalization: true
+  model_caching: true
+  max_processes_per_cycle: 200
+
+# PatternWatcher Configuration for automatic pattern updates
+pattern_watcher:
+  enabled: true
+  
+  # Watch for changes in pattern directory
+  watch_patterns: true
+  
+  # Automatic reload settings
+  auto_reload_interval_sec: 30
+  notify_on_reload: true
+  
+  # Pattern validation on reload
+  validate_on_reload: true
+  
+  # Pattern change detection
+  detect_additions: true
+  detect_modifications: true
+  detect_deletions: true
+
+# Pattern Auto-Update Configuration
+pattern_auto_update:
+  enabled: true
+  interval_sec: 60
+  notify_on_update: true
+
+# Policy Configuration with ML integration
+policy:
+  # Enable adaptive policy that uses ML classification results
+  adaptive_mode: true
+  
+  # ML-based priority mapping
+  ml_priority_mapping:
+    enabled: true
+    
+    # Mapping from ML confidence to priority classes
+    confidence_thresholds:
+      latency_critical: 0.95
+      interactive: 0.85
+      background: 0.70
+  
+  # Priority classes mapping
+  priority_classes:
+    latency_critical:
+      cpu_weight: 200
+      latency_nice: -20
+      nice: -10
+      ionice_class: "realtime"
+      ionice_prio: 0
+    
+    interactive:
+      cpu_weight: 150
+      latency_nice: -10
+      nice: 0
+      ionice_class: "best-effort"
+      ionice_prio: 3
+    
+    background:
+      cpu_weight: 50
+      latency_nice: 0
+      nice: 10
+      ionice_class: "idle"
+      ionice_prio: 7
+
+# Monitoring Configuration
+monitoring:
+  # Enable application performance monitoring
+  app_performance:
+    enabled: true
+    update_interval_sec: 5
+    max_history_minutes: 30
+
+# Metrics Collection
+metrics:
+  system:
+    enabled: true
+    update_interval_sec: 2
+  
+  processes:
+    enabled: true
+    update_interval_sec: 1
+    max_processes: 500
+  
+  gpu:
+    enabled: true
+    update_interval_sec: 5
+
+# Actuator Configuration
+actuator:
+  cgroups_v2:
+    enabled: true
+    controller_path: "/sys/fs/cgroup"
+  
+  latency_nice:
+    enabled: true
+  
+  nice:
+    enabled: true
+  
+  ionice:
+    enabled: true
+
+# Example pattern categories that work well with ML classifier
+pattern_categories:
+  - "audio"
+  - "video"
+  - "browsers"
+  - "ide"
+  - "games"
+  - "terminals"
+  - "batch"
+  - "maintenance"
+
+# ML-specific optimizations
+ml_optimizations:
+  # Cache ML model in memory for faster access
+  model_caching: true
+  
+  # Enable feature normalization for better accuracy
+  feature_normalization: true
+  
+  # Maximum number of processes to classify per cycle
+  max_processes_per_cycle: 100
+  
+  # Feature extraction settings
+  feature_extraction:
+    include_cpu_metrics: true
+    include_memory_metrics: true
+    include_io_metrics: true
+    include_window_metrics: true
+    include_audio_metrics: true
+
+# Debugging and logging for ML classifier
+ml_debug:
+  log_classification_results: true
+  log_feature_extraction: false
+  log_model_loading: true
+  log_pattern_watcher_events: true
+
+# Performance tuning for ML classifier
+ml_performance:
+  # Batch size for ML classification
+  batch_size: 50
+  
+  # Timeout for ML classification in milliseconds
+  classification_timeout_ms: 1000
+  
+  # Parallel processing settings
+  parallel_processing: true
+  max_workers: 4

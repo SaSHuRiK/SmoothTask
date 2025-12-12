@@ -2162,14 +2162,440 @@ if __name__ == "__main__":
 
 ---
 
+## ML-классификатор процессов
+
+SmoothTask поддерживает ML-классификацию процессов для более точного определения типов процессов и назначения приоритетов.
+
+### Конфигурация ML-классификатора
+
+ML-классификатор настраивается через поле `ml_classifier` в конфигурационном файле:
+
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.7
+  use_onnx: false
+```
+
+**Параметры:**
+- `enabled`: Включить ML-классификатор (по умолчанию: `false`)
+- `model_path`: Путь к файлу модели (JSON или ONNX)
+- `confidence_threshold`: Минимальная уверенность для переопределения паттерн-классификации (0.0-1.0)
+- `use_onnx`: Использовать ONNX Runtime для загрузки модели (по умолчанию: `false`)
+
+### Примеры использования
+
+**Загрузка модели CatBoost (JSON формат):**
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.7
+  use_onnx: false
+```
+
+**Загрузка модели ONNX:**
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.onnx"
+  confidence_threshold: 0.8
+  use_onnx: true
+```
+
+### Интеграция с системой классификации
+
+ML-классификатор работает в дополнение к паттерн-базированной классификации:
+1. Сначала применяется паттерн-классификация
+2. Если ML-классификатор включен и его уверенность выше порога, его результат переопределяет паттерн-классификацию
+3. Если ML-классификатор отключен или его уверенность ниже порога, используется результат паттерн-классификации
+
+### Практические примеры использования
+
+**Пример 1: Классификация аудио-приложения с высокой уверенностью**
+
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.7
+  use_onnx: false
+```
+
+В этом примере, если ML-классификатор определяет процесс как "audio" с уверенностью 0.85, этот тип будет использован вместо паттерн-классификации.
+
+**Пример 2: Использование с автообновлением паттернов**
+
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.75
+  use_onnx: false
+
+pattern_auto_update:
+  enabled: true
+  interval_sec: 60
+  notify_on_update: true
+```
+
+Эта конфигурация позволяет ML-классификатору работать вместе с автообновлением паттернов, обеспечивая наилучшие результаты классификации.
+
+### Обработка ошибок и fallback механизмы
+
+ML-классификатор имеет встроенные механизмы обработки ошибок:
+- Если модель не найдена, классификатор автоматически отключается
+- Если уверенность ниже порога, используется паттерн-классификация
+- Если ML-классификатор отключен, используется только паттерн-классификация
+
+### Производительность и оптимизация
+
+ML-классификатор оптимизирован для работы в реальном времени:
+- Быстрое извлечение фич из процессов
+- Эффективная загрузка и кэширование моделей
+- Минимальное влияние на производительность системы
+
+### Мониторинг и отладка
+
+Для мониторинга работы ML-классификатора используйте API endpoints:
+- `/api/stats` - статистика классификации
+- `/api/processes` - текущие процессы с информацией о классификации
+- `/api/logs` - логи работы классификатора
+
+**Пример запроса для мониторинга:**
+
+```bash
+curl http://127.0.0.1:8080/api/stats
+```
+
+**Пример ответа:**
+
+```json
+{
+  "status": "ok",
+  "stats": {
+    "total_processes": 150,
+    "classified_by_ml": 45,
+    "classified_by_patterns": 105,
+    "ml_average_confidence": 0.82,
+    "classification_time_ms": 15
+  }
+}
+```
+
+## Автообновление паттерн-базы
+
+SmoothTask поддерживает автоматическое обновление паттерн-базы для поддержки новых приложений без перезапуска демона.
+
+### Конфигурация автообновления
+
+Автообновление настраивается через поле `pattern_auto_update` в конфигурационном файле:
+
+```yaml
+pattern_auto_update:
+  enabled: true
+  interval_sec: 60
+  notify_on_update: true
+```
+
+**Параметры:**
+- `enabled`: Включить автоматическое обновление паттернов (по умолчанию: `false`)
+- `interval_sec`: Интервал проверки изменений в секундах (по умолчанию: `60`)
+- `notify_on_update`: Уведомлять об обновлениях паттернов (по умолчанию: `false`)
+
+### Примеры использования
+
+**Базовая конфигурация:**
+```yaml
+pattern_auto_update:
+  enabled: true
+  interval_sec: 30
+  notify_on_update: true
+```
+
+**Отключение автообновления:**
+```yaml
+pattern_auto_update:
+  enabled: false
+```
+
+### Мониторинг изменений
+
+PatternWatcher отслеживает изменения в директории с паттернами:
+- Обнаружение новых файлов паттернов
+- Обнаружение изменений в существующих файлах
+- Обнаружение удаленных файлов
+- Автоматическая перезагрузка паттерн-базы при обнаружении изменений
+
+### Интеграция с системой классификации
+
+Автообновление паттернов интегрировано с основным циклом классификации:
+1. PatternWatcher мониторит директорию с паттернами
+2. При обнаружении изменений выполняется перезагрузка паттерн-базы
+3. Новые паттерны становятся доступны для классификации без перезапуска демона
+4. При включенных уведомлениях, пользователь получает информацию об обновлении
+
+## Мониторинг производительности приложений
+
+SmoothTask предоставляет расширенные метрики производительности для мониторинга отзывчивости и ресурсоемкости приложений.
+
+### Метрики производительности
+
+Модуль `app_performance` собирает следующие метрики:
+- Задержка отклика приложения (мс)
+- FPS для графических приложений
+- Использование CPU на уровне процесса (%)
+- Использование памяти на уровне процесса (MB)
+- Количество активных потоков
+- Время работы процесса
+
+### Примеры использования
+
+**Получение метрик производительности через API:**
+```bash
+curl http://127.0.0.1:8080/api/metrics/app_performance
+```
+
+**Интеграция с Prometheus:**
+```yaml
+# В конфигурации Prometheus
+scrape_configs:
+  - job_name: 'smoothtask'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+**Пример 1: Мониторинг производительности конкретного приложения**
+
+```bash
+#!/bin/bash
+# Мониторинг производительности Firefox с использованием SmoothTask API
+
+APP_NAME="firefox"
+API_URL="http://127.0.0.1:8080/api/metrics/app_performance"
+
+# Получение метрик производительности
+PERF_DATA=$(curl -s "$API_URL")
+
+# Анализ данных для Firefox
+FIREFOX_PERF=$(echo "$PERF_DATA" | jq --arg app "$APP_NAME" '.app_performance | .[] | select(.app_name | contains($app))')
+
+if [[ -n "$FIREFOX_PERF" ]]; then
+    RESPONSE_TIME=$(echo "$FIREFOX_PERF" | jq '.response_time_ms')
+    CPU_USAGE=$(echo "$FIREFOX_PERF" | jq '.cpu_usage_percent')
+    MEM_USAGE=$(echo "$FIREFOX_PERF" | jq '.memory_usage_mb')
+    
+    echo "=== $APP_NAME Performance ==="
+    echo "Response Time: ${RESPONSE_TIME} ms"
+    echo "CPU Usage: ${CPU_USAGE}%"
+    echo "Memory Usage: ${MEM_USAGE} MB"
+    
+    # Проверка на критическое состояние
+    if (( $(echo "$RESPONSE_TIME > 100.0" | bc -l) )); then
+        echo "WARNING: High response time for $APP_NAME!" | logger -t smoothtask-perf
+    fi
+else
+    echo "No performance data found for $APP_NAME"
+fi
+```
+
+**Пример 2: Комплексный мониторинг производительности системы**
+
+```bash
+#!/bin/bash
+# Комплексный скрипт мониторинга производительности с использованием SmoothTask API
+
+API_URL="http://127.0.0.1:8080/api/metrics/app_performance"
+SYSTEM_API="http://127.0.0.1:8080/api/metrics"
+
+# Получение метрик производительности приложений
+APP_PERF=$(curl -s "$API_URL")
+
+# Получение системных метрик
+SYSTEM_PERF=$(curl -s "$SYSTEM_API")
+
+# Анализ производительности приложений
+TOTAL_APPS=$(echo "$APP_PERF" | jq '.app_performance | length')
+HIGH_RESPONSE_APPS=0
+HIGH_CPU_APPS=0
+
+for app in $(echo "$APP_PERF" | jq -c '.app_performance | .[]'); do
+    RESPONSE_TIME=$(echo "$app" | jq '.response_time_ms')
+    CPU_USAGE=$(echo "$app" | jq '.cpu_usage_percent')
+    APP_NAME=$(echo "$app" | jq -r '.app_name')
+    
+    if (( $(echo "$RESPONSE_TIME > 50.0" | bc -l) )); then
+        HIGH_RESPONSE_APPS=$((HIGH_RESPONSE_APPS + 1))
+        echo "WARNING: High response time for $APP_NAME: ${RESPONSE_TIME} ms"
+    fi
+    
+    if (( $(echo "$CPU_USAGE > 80.0" | bc -l) )); then
+        HIGH_CPU_APPS=$((HIGH_CPU_APPS + 1))
+        echo "WARNING: High CPU usage for $APP_NAME: ${CPU_USAGE}%"
+    fi
+done
+
+# Анализ системной производительности
+CPU_USAGE=$(echo "$SYSTEM_PERF" | jq '.cpu_usage.total')
+MEM_USAGE=$(echo "$SYSTEM_PERF" | jq '.memory.used_kb / 1024')
+
+# Вывод комплексного отчета
+echo "=== System Performance Report ==="
+echo "Total Applications: $TOTAL_APPS"
+echo "High Response Time Apps: $HIGH_RESPONSE_APPS"
+echo "High CPU Usage Apps: $HIGH_CPU_APPS"
+echo "System CPU Usage: ${CPU_USAGE}%"
+echo "System Memory Usage: ${MEM_USAGE} MB"
+
+# Проверка на критическое состояние системы
+if (( HIGH_RESPONSE_APPS > 3 )); then
+    echo "CRITICAL: Multiple applications with high response time!" | logger -t smoothtask-perf
+fi
+
+if (( HIGH_CPU_APPS > 2 )); then
+    echo "CRITICAL: Multiple applications with high CPU usage!" | logger -t smoothtask-perf
+fi
+```
+
+**Пример 3: Интеграция с Grafana для визуализации производительности**
+
+```yaml
+# Конфигурация источника данных Grafana для SmoothTask API
+apiVersion: 1
+
+datasources:
+  - name: SmoothTask
+    type: json-api
+    access: proxy
+    url: http://localhost:8080
+    jsonData:
+      tlsSkipVerify: true
+      oauthPassThru: false
+    secureJsonData:
+      # Если требуется аутентификация
+      # basicAuthPassword: "your_password"
+```
+
+**Пример 4: Создание дашборда Grafana для мониторинга производительности**
+
+```json
+{
+  "title": "SmoothTask Performance Dashboard",
+  "panels": [
+    {
+      "title": "Application Response Times",
+      "type": "timeseries",
+      "datasource": "SmoothTask",
+      "targets": [
+        {
+          "refId": "A",
+          "url": "/api/metrics/app_performance",
+          "query": "$.app_performance[*].response_time_ms",
+          "format": "time_series",
+          "legendFormat": "{{app_name}}"
+        }
+      ]
+    },
+    {
+      "title": "Application CPU Usage",
+      "type": "timeseries",
+      "datasource": "SmoothTask",
+      "targets": [
+        {
+          "refId": "B",
+          "url": "/api/metrics/app_performance",
+          "query": "$.app_performance[*].cpu_usage_percent",
+          "format": "time_series",
+          "legendFormat": "{{app_name}}"
+        }
+      ]
+    },
+    {
+      "title": "System Overview",
+      "type": "stat",
+      "datasource": "SmoothTask",
+      "targets": [
+        {
+          "refId": "C",
+          "url": "/api/metrics",
+          "query": "$.cpu_usage.total",
+          "format": "time_series"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Пример 5: Автоматическое оповещение о проблемах производительности**
+
+```bash
+#!/bin/bash
+# Скрипт для автоматического оповещения о проблемах производительности
+
+API_URL="http://127.0.0.1:8080/api/metrics/app_performance"
+THRESHOLD_RESPONSE=100  # ms
+THRESHOLD_CPU=90        # %
+
+# Получение метрик производительности
+PERF_DATA=$(curl -s "$API_URL")
+
+# Проверка каждого приложения
+for app in $(echo "$PERF_DATA" | jq -c '.app_performance | .[]'); do
+    APP_NAME=$(echo "$app" | jq -r '.app_name')
+    RESPONSE_TIME=$(echo "$app" | jq '.response_time_ms')
+    CPU_USAGE=$(echo "$app" | jq '.cpu_usage_percent')
+    
+    # Проверка порогов
+    if (( $(echo "$RESPONSE_TIME > $THRESHOLD_RESPONSE" | bc -l) )); then
+        MESSAGE="ALERT: High response time for $APP_NAME: ${RESPONSE_TIME} ms"
+        echo "$MESSAGE" | logger -t smoothtask-alert
+        
+        # Отправка уведомления через API (если настроено)
+        curl -X POST "http://127.0.0.1:8080/api/notifications" \
+            -H "Content-Type: application/json" \
+            -d "{\"level\": \"warning\", \"message\": \"$MESSAGE\"}"
+    fi
+    
+    if (( $(echo "$CPU_USAGE > $THRESHOLD_CPU" | bc -l) )); then
+        MESSAGE="ALERT: High CPU usage for $APP_NAME: ${CPU_USAGE}%"
+        echo "$MESSAGE" | logger -t smoothtask-alert
+        
+        # Отправка уведомления через API
+        curl -X POST "http://127.0.0.1:8080/api/notifications" \
+            -H "Content-Type: application/json" \
+            -d "{\"level\": \"warning\", \"message\": \"$MESSAGE\"}"
+    fi
+done
+```
+
+**Пример 6: Интеграция с системой мониторинга Zabbix**
+
+```bash
+#!/bin/bash
+# Скрипт для интеграции SmoothTask с Zabbix
+
+API_URL="http://127.0.0.1:8080/api/metrics/app_performance"
+
+# Получение метрик производительности
+PERF_DATA=$(curl -s "$API_URL")
+
+# Экспорт метрик в формате Zabbix
+echo "$PERF_DATA" | jq -r '.app_performance | .[] | "smoothtask.app.perf[\" + .app_name + \"].response_time \" + (.response_time_ms | tostring)'
+echo "$PERF_DATA" | jq -r '.app_performance | .[] | "smoothtask.app.perf[\" + .app_name + \"].cpu_usage \" + (.cpu_usage_percent | tostring)'
+echo "$PERF_DATA" | jq -r '.app_performance | .[] | "smoothtask.app.perf[\" + .app_name + \"].memory_usage \" + (.memory_usage_mb | tostring)'
+```
+
 ## Заключение
 
-API уведомлений SmoothTask предоставляет мощный инструмент для мониторинга и управления системой уведомлений демона. С помощью API вы можете:
+SmoothTask предоставляет мощный инструмент для мониторинга и управления системой. С помощью API и конфигурации вы можете:
 
-- Проверять работоспособность системы уведомлений
-- Отправлять тестовые уведомления
-- Получать текущий статус и конфигурацию
-- Изменять параметры уведомлений в runtime
-- Интегрировать систему уведомлений с внешними системами
+- Проверять работоспособность системы
+- Использовать ML-классификацию для более точного определения типов процессов
+- Автоматически обновлять паттерн-базу без перезапуска демона
+- Мониторить производительность приложений на уровне отдельных процессов
+- Интегрировать систему с внешними инструментами мониторинга
+- Настраивать уведомления и оповещения
 
-API уведомлений является важной частью SmoothTask и позволяет обеспечить своевременное информирование пользователей о важных событиях в работе демона.
+Новые функции ML-классификации, автообновления паттернов и мониторинга производительности приложений значительно расширяют возможности SmoothTask по оптимизации работы системы и обеспечению лучшего пользовательского опыта.
