@@ -94,7 +94,11 @@ fn test_config_includes_cache_intervals() {
         model: ModelConfig {
             enabled: false,
             model_path: "models/ranker.onnx".to_string(),
+            model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
+        ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
+        pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+        ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
     };
     
     assert_eq!(config.cache_intervals.system_metrics_cache_interval, 5);
@@ -441,7 +445,11 @@ fn test_cache_configuration_integration() {
         model: ModelConfig {
             enabled: false,
             model_path: "models/ranker.onnx".to_string(),
+            model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
+        ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
+        pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+        ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
         policy_mode: PolicyMode::Hybrid,
     };
     

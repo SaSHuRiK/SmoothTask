@@ -43,9 +43,6 @@ tower-http = { version = "0.5", features = ["cors"] }
 # Мониторинг файловой системы
 notify = "6.1"
 
-# Desktop уведомления
-libnotify = { version = "0.1", optional = true }
-
 # Сжатие логов
 flate2 = { version = "1.0", features = ["zlib"] }
 
@@ -53,11 +50,15 @@ flate2 = { version = "1.0", features = ["zlib"] }
 catboost = { version = "0.1", optional = true }
 ort = { version = "2.0.0-rc.10", features = ["default"], optional = true }
 
+# eBPF поддержка
+libbpf-rs = { version = "0.26.0-beta.1", optional = true }
+
 [features]
-default = ["libnotify"]
-libnotify = ["dep:libnotify"]
+default = []
+# libnotify = ["dep:libnotify"]
 catboost = ["dep:catboost"]
 onnx = ["dep:ort"]
+ebpf = ["dep:libbpf-rs"]
 
 [dev-dependencies]
 tempfile = "3"

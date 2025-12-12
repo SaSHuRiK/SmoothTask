@@ -18,6 +18,9 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info, trace};
 
+use crate::config::config_struct::{ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
+use crate::metrics::ebpf::EbpfConfig;
+
 
 
 /// Состояние API сервера.
@@ -2404,6 +2407,7 @@ mod tests {
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc.clone());
@@ -2452,6 +2456,7 @@ mod tests {
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));
@@ -2572,6 +2577,7 @@ mod tests {
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc);
@@ -2627,6 +2633,7 @@ mod tests {
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let server = ApiServer::with_system_metrics(addr, metrics_arc);
@@ -2767,7 +2774,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_handler_with_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds, NotificationConfig, NotificationBackend, ModelConfig, ModelType, MLClassifierConfig, PatternAutoUpdateConfig, NotificationLevel};
+        use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -2802,16 +2810,35 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config_struct::NotificationConfig {
+            notifications: NotificationConfig {
                 enabled: false,
-                backend: crate::config::config_struct::NotificationBackend::Stub,
+                backend: NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config_struct::NotificationLevel::Warning,
+                min_level: NotificationLevel::Warning,
             },
             model: ModelConfig {
                 enabled: false,
-                model_path: "models/ranker.onnx".to_string(),
+                model_path: "/tmp/model.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig {
+                enabled: false,
+                model_path: "/tmp/classifier.onnx".to_string(),
+                model_type: ModelType::Onnx,
+                confidence_threshold: 0.7,
+            },
+            pattern_auto_update: PatternAutoUpdateConfig {
+                enabled: false,
+                interval_sec: 60,
+                notify_on_update: false,
+            },
+            ebpf: EbpfConfig {
+                enable_cpu_metrics: false,
+                enable_memory_metrics: false,
+                enable_syscall_monitoring: false,
+                collection_interval: Duration::from_secs(1),
+            },
+
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
@@ -2833,7 +2860,8 @@ mod tests {
 
     #[test]
     fn test_api_state_with_all_and_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds, ModelConfig, ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
+        use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -2876,7 +2904,25 @@ mod tests {
             },
             model: ModelConfig {
                 enabled: false,
-                model_path: "models/ranker.onnx".to_string(),
+                model_path: "/tmp/model.onnx".to_string(),
+                model_type: ModelType::Onnx,
+            },
+            ml_classifier: MLClassifierConfig {
+                enabled: false,
+                model_path: "/tmp/classifier.onnx".to_string(),
+                model_type: ModelType::Onnx,
+                confidence_threshold: 0.7,
+            },
+            pattern_auto_update: PatternAutoUpdateConfig {
+                enabled: false,
+                interval_sec: 60,
+                notify_on_update: false,
+            },
+            ebpf: EbpfConfig {
+                enable_cpu_metrics: false,
+                enable_memory_metrics: false,
+                enable_syscall_monitoring: false,
+                collection_interval: Duration::from_secs(1),
             },
         };
         let config_arc = Arc::new(RwLock::new(config));
@@ -2980,7 +3026,11 @@ mod tests {
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         let config_arc = Arc::new(RwLock::new(config));
         let server = ApiServer::with_all_and_config(addr, None, None, None, None, Some(config_arc));
@@ -3552,6 +3602,7 @@ apps:
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));
@@ -3615,7 +3666,11 @@ apps:
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -3689,7 +3744,11 @@ apps:
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
@@ -3756,7 +3815,11 @@ apps:
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -3829,7 +3892,11 @@ apps:
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
@@ -3971,7 +4038,8 @@ apps:
     #[tokio::test]
     async fn test_config_reload_handler_with_config() {
         // Тест для config_reload_handler когда конфигурация доступна
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds, NotificationConfig, NotificationBackend, ModelConfig, ModelType, MLClassifierConfig, PatternAutoUpdateConfig, NotificationLevel};
+        use crate::metrics::ebpf::EbpfConfig;
         
         let config = Config {
             polling_interval_ms: 500,
@@ -4016,7 +4084,11 @@ apps:
             model: ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiStateBuilder::new()
@@ -4134,7 +4206,11 @@ notifications:
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         
         let config_arc = Arc::new(RwLock::new(current_config));
@@ -4233,7 +4309,11 @@ max_candidates: 200
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         
         let config_arc = Arc::new(RwLock::new(current_config));
@@ -4372,7 +4452,11 @@ max_candidates: 200
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         
         let config_arc = Arc::new(RwLock::new(config));
@@ -4490,7 +4574,11 @@ max_candidates: 200
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         
         let config_arc = Arc::new(RwLock::new(config));
@@ -4565,7 +4653,11 @@ max_candidates: 200
             model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         };
         
         let config_arc = Arc::new(RwLock::new(config));

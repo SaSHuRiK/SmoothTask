@@ -3,18 +3,27 @@
 //! Этот модуль предоставляет реализацию ранкера на основе ONNX Runtime
 //! для загрузки и выполнения обученных CatBoost моделей.
 
+#[cfg(feature = "onnx")]
 use crate::logging::snapshots::{AppGroupRecord, Snapshot};
+#[cfg(feature = "onnx")]
 use crate::model::features::{build_features, FeatureVector};
+#[cfg(feature = "onnx")]
 use crate::model::ranker::{Ranker, RankingResult};
+#[cfg(feature = "onnx")]
 use anyhow::{Context, Result};
+#[cfg(feature = "onnx")]
 use ort::{
     session::Session, 
     value::Tensor, 
 };
+#[cfg(feature = "onnx")]
 use std::collections::HashMap;
+#[cfg(feature = "onnx")]
 use std::path::Path;
+#[cfg(feature = "onnx")]
 use std::sync::{Arc, Mutex};
 
+#[cfg(feature = "onnx")]
 /// ONNX-ранкер для ранжирования групп приложений.
 ///
 /// Использует ONNX Runtime для загрузки и выполнения обученных CatBoost моделей.
@@ -47,6 +56,7 @@ use std::sync::{Arc, Mutex};
 ///              app_group_id, result.score, result.rank, result.percentile);
 /// }
 /// ```
+#[cfg(feature = "onnx")]
 #[derive(Debug)]
 pub struct ONNXRanker {
     /// ONNX Runtime сессия для выполнения модели
@@ -59,6 +69,7 @@ pub struct ONNXRanker {
     output_name: String,
 }
 
+#[cfg(feature = "onnx")]
 impl ONNXRanker {
     /// Загрузить ONNX модель из файла.
     ///
@@ -234,6 +245,7 @@ impl ONNXRanker {
     }
 }
 
+#[cfg(feature = "onnx")]
 impl Ranker for ONNXRanker {
     fn rank(
         &self,
@@ -309,6 +321,7 @@ impl Ranker for ONNXRanker {
     }
 }
 
+#[cfg(feature = "onnx")]
 impl ONNXRanker {
     /// Выполнить инференс модели для одного образца.
     ///
@@ -349,7 +362,7 @@ impl ONNXRanker {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "onnx"))]
 mod tests {
     use super::*;
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};

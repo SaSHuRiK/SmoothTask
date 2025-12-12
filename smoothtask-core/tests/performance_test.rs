@@ -137,7 +137,11 @@ fn test_config_creation_performance() {
             model: smoothtask_core::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
             },
+            ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
+            pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+            ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
         };
     }
     

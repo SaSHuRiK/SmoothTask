@@ -10,6 +10,7 @@ use std::fs;
 use std::path::Path;
 use tracing::{debug, error, info, warn};
 
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
@@ -167,6 +168,7 @@ impl PatternUpdateResult {
 /// # }
 /// ```
 #[derive(Debug, Clone)]
+#[derive(Default)]
 pub struct PatternDatabase {
     /// Маппинг категория -> список паттернов.
     patterns_by_category: HashMap<PatternCategory, Vec<AppPattern>>,
@@ -786,6 +788,7 @@ impl PatternDatabase {
 /// - Отсутствие совпадающих паттернов
 /// - Ошибки ML-классификации
 /// - Конфликты классификации
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 pub fn classify_process(
     process: &mut ProcessRecord,
     pattern_db: &PatternDatabase,
@@ -878,6 +881,44 @@ pub fn classify_process(
     }
 }
 
+#[cfg(not(any(feature = "catboost", feature = "onnx")))]
+pub fn classify_process(
+    process: &mut ProcessRecord,
+    pattern_db: &PatternDatabase,
+    _ml_classifier: Option<&dyn std::any::Any>,
+    desktop_id: Option<&str>,
+) {
+    debug!("Классификация процесса PID {}: exe={:?}, desktop_id={:?}", 
+           process.pid, process.exe, desktop_id);
+
+    // Извлекаем desktop_id из systemd_unit, если не передан явно
+    let desktop_id = desktop_id.or_else(|| {
+        process.systemd_unit.as_deref()
+    });
+
+    // Паттерн-базированная классификация (без ML)
+    let matches = pattern_db.match_process(process.exe.as_deref(), desktop_id, process.cgroup_path.as_deref());
+    
+    // Собираем все теги из совпадающих паттернов
+    let mut all_tags = HashSet::new();
+    for (_, pattern) in &matches {
+        for tag in &pattern.tags {
+            all_tags.insert(tag.clone());
+        }
+    }
+    
+    // Выбираем process_type из первой категории
+    if let Some((category, _)) = matches.first() {
+        process.process_type = Some(category.0.clone());
+        process.tags = all_tags.into_iter().collect();
+        debug!("Процесс PID {} классифицирован как {:?} (теги: {:?})",
+               process.pid, process.process_type, process.tags);
+    } else {
+        debug!("Процесс PID {} не классифицирован (теги: {:?})", 
+               process.pid, process.tags);
+    }
+}
+
 /// Классифицирует AppGroup, агрегируя теги и типы из процессов группы.
 ///
 /// # Аргументы
@@ -959,6 +1000,7 @@ pub fn classify_app_group(
 ///
 /// Это удобная функция-обёртка, которая классифицирует все процессы,
 /// а затем агрегирует теги для групп.
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 pub fn classify_all(
     processes: &mut [ProcessRecord],
     app_groups: &mut [AppGroupRecord],
@@ -976,12 +1018,31 @@ pub fn classify_all(
     }
 }
 
+#[cfg(not(any(feature = "catboost", feature = "onnx")))]
+pub fn classify_all(
+    processes: &mut [ProcessRecord],
+    app_groups: &mut [AppGroupRecord],
+    pattern_db: &PatternDatabase,
+    _ml_classifier: Option<&dyn std::any::Any>,
+) {
+    // Классифицируем все процессы (без ML)
+    for process in processes.iter_mut() {
+        classify_process(process, pattern_db, None, None);
+    }
+
+    // Классифицируем все группы (агрегируем теги из процессов)
+    for app_group in app_groups.iter_mut() {
+        classify_app_group(app_group, processes, pattern_db);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::TempDir;
     
+    #[cfg(any(feature = "catboost", feature = "onnx"))]
     use crate::classify::ml_classifier::StubMLClassifier;
 
     fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) -> PathBuf {
@@ -1624,6 +1685,7 @@ apps:
     }
 
     #[test]
+    #[cfg(any(feature = "catboost", feature = "onnx"))]
     fn classify_process_with_ml_classifier() {
         let temp_dir = TempDir::new().expect("temp dir");
         let patterns_dir = temp_dir.path();
@@ -1697,6 +1759,7 @@ apps:
     }
 
     #[test]
+    #[cfg(any(feature = "catboost", feature = "onnx"))]
     fn classify_process_ml_overrides_pattern() {
         let temp_dir = TempDir::new().expect("temp dir");
         let patterns_dir = temp_dir.path();
@@ -1915,10 +1978,7 @@ apps:
         let _patterns_dir = temp_dir.path();
 
         // Создаем базу с пустыми паттернами
-        let db = PatternDatabase {
-            patterns_by_category: HashMap::new(),
-            all_patterns: Vec::new(),
-        };
+        let db = PatternDatabase::default();
 
         let mut process = ProcessRecord {
             pid: 1000,

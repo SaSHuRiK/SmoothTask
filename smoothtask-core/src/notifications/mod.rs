@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 // Conditional import for libnotify
-#[cfg(feature = "libnotify")]
-use libnotify::Notification as LibnotifyNotification;
+// #[cfg(feature = "libnotify")]
+// use libnotify::Notification as LibnotifyNotification;
 
 /// Тип уведомления, определяющий его важность и визуальное представление.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -148,85 +148,85 @@ impl Notifier for StubNotifier {
 /// Использует системную библиотеку libnotify для отображения уведомлений в desktop окружении.
 /// 
 /// Доступно только при включении фичи `libnotify`.
-#[cfg(feature = "libnotify")]
-#[derive(Debug, Default)]
-pub struct LibnotifyNotifier {
-    /// Имя приложения для уведомлений.
-    app_name: String,
-}
+// #[cfg(feature = "libnotify")]
+// #[derive(Debug, Default)]
+// pub struct LibnotifyNotifier {
+//     /// Имя приложения для уведомлений.
+//     app_name: String,
+// }
 
-#[cfg(feature = "libnotify")]
-impl LibnotifyNotifier {
-    /// Создаёт новый LibnotifyNotifier с указанным именем приложения.
-    /// 
-    /// # Аргументы
-    /// * `app_name` - Имя приложения, которое будет отображаться в уведомлениях.
-    /// 
-    /// # Возвращает
+// #[cfg(feature = "libnotify")]
+// impl LibnotifyNotifier {
+//     /// Создаёт новый LibnotifyNotifier с указанным именем приложения.
+//     /// 
+//     /// # Аргументы
+//     /// * `app_name` - Имя приложения, которое будет отображаться в уведомлениях.
+//     /// 
+//     /// # Возвращает
     /// Новый экземпляр LibnotifyNotifier.
-    pub fn new(app_name: impl Into<String>) -> Self {
-        Self {
-            app_name: app_name.into(),
-        }
-    }
+    // pub fn new(app_name: impl Into<String>) -> Self {
+    //     Self {
+    //         app_name: app_name.into(),
+    //     }
+    // }
     
     /// Инициализирует библиотеку libnotify.
     /// 
     /// # Возвращает
     /// `Result<()>` - Ok, если инициализация прошла успешно, иначе ошибка.
-    pub fn init() -> Result<()> {
-        libnotify::init("SmoothTask")?;
-        Ok(())
-    }
-}
+    // pub fn init() -> Result<()> {
+    //     libnotify::init("SmoothTask")?;
+    //     Ok(())
+    // }
 
-#[cfg(feature = "libnotify")]
-#[async_trait::async_trait]
-impl Notifier for LibnotifyNotifier {
-    async fn send_notification(&self, notification: &Notification) -> Result<()> {
-        // Создаём уведомление libnotify
-        let mut libnotify_notification = LibnotifyNotification::new(
-            &notification.title,
-            &notification.message,
-            None, // Иконка не указана
-        );
-        
-        // Устанавливаем имя приложения
-        libnotify_notification.set_app_name(&self.app_name);
-        
-        // Устанавливаем уровень срочности в зависимости от типа уведомления
-        let urgency = match notification.notification_type {
-            NotificationType::Critical => libnotify::Urgency::Critical,
-            NotificationType::Warning => libnotify::Urgency::Normal,
-            NotificationType::Info => libnotify::Urgency::Low,
-        };
-        libnotify_notification.set_urgency(urgency);
-        
-        // Добавляем дополнительные детали в тело уведомления, если они есть
-        if let Some(details) = &notification.details {
-            let mut body = notification.message.clone();
-            body.push_str("\n");
-            body.push_str(details);
-            libnotify_notification.set_body(&body);
-        }
-        
-        // Отправляем уведомление
-        libnotify_notification.show()?;
-        
-        // Логируем отправку уведомления
-        tracing::info!(
-            "Sent desktop notification via libnotify: {} - {}",
-            notification.title,
-            notification.message
-        );
-        
-        Ok(())
-    }
+// #[cfg(feature = "libnotify")]
+// #[async_trait::async_trait]
+// impl Notifier for LibnotifyNotifier {
+//     async fn send_notification(&self, notification: &Notification) -> Result<()> {
+//         // Создаём уведомление libnotify
+//         let mut libnotify_notification = LibnotifyNotification::new(
+//             &notification.title,
+//             &notification.message,
+//             None, // Иконка не указана
+//         );
+//         
+//         // Устанавливаем имя приложения
+//         libnotify_notification.set_app_name(&self.app_name);
+//         
+//         // Устанавливаем уровень срочности в зависимости от типа уведомления
+//         let urgency = match notification.notification_type {
+//             NotificationType::Critical => libnotify::Urgency::Critical,
+//             NotificationType::Warning => libnotify::Urgency::Normal,
+//             NotificationType::Info => libnotify::Urgency::Low,
+//         };
+//         libnotify_notification.set_urgency(urgency);
+//         
+//         // Добавляем дополнительные детали в тело уведомления, если они есть
+//         if let Some(details) = &notification.details {
+//             let mut body = notification.message.clone();
+//             body.push_str("\n");
+//             body.push_str(details);
+//             libnotify_notification.set_body(&body);
+//
+//         }
+//         
+//         // Отправляем уведомление
+//         libnotify_notification.show()?;
+//         
+//         // Логируем отправку уведомления
+//         tracing::info!(
+//             "Sent desktop notification via libnotify: {} - {}",
+//             notification.title,
+//             notification.message
+//         );
+//         
+//         Ok(())
+//     }
     
-    fn backend_name(&self) -> &str {
-        "libnotify"
-    }
-}
+//     fn backend_name(&self) -> &str {
+//         "libnotify"
+//     }
+// }
 
 /// Основной менеджер уведомлений, управляющий отправкой уведомлений через различные бэкенды.
 pub struct NotificationManager {

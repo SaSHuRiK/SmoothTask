@@ -4,6 +4,7 @@
 //! с использованием ML-моделей. Поддерживает интеграцию с CatBoost
 //! и ONNX Runtime для загрузки и использования предварительно обученных моделей.
 
+use crate::config::config_struct::{MLClassifierConfig, ModelType};
 use crate::logging::snapshots::ProcessRecord;
 use std::collections::HashSet;
 use std::path::Path;
@@ -32,7 +33,7 @@ pub struct MLClassificationResult {
 ///
 /// Трейт требует `Send + Sync`, так как классификатор используется в async контексте
 /// и может быть перемещён между потоками.
-pub trait MLClassifier: Send + Sync {
+pub trait MLClassifier: Send + Sync + std::fmt::Debug {
     /// Классифицировать процесс с использованием ML-модели.
     ///
     /// # Аргументы
@@ -65,7 +66,7 @@ pub trait MLClassifier: Send + Sync {
 ///     enabled: true,
 ///     model_path: "models/process_classifier.json".to_string(),
 ///     confidence_threshold: 0.7,
-///     use_onnx: false,
+///     model_type: ModelType::Catboost,
 /// };
 ///
 /// let classifier = create_ml_classifier(config);
@@ -93,6 +94,7 @@ pub fn create_ml_classifier(config: MLClassifierConfig) -> Result<Box<dyn MLClas
 /// - Процессы с GUI получают тип "gui" и соответствующие теги
 /// - Процессы с высоким CPU получают тип "cpu_intensive"
 /// - Процессы с высоким IO получают тип "io_intensive"
+#[derive(Debug)]
 pub struct StubMLClassifier;
 
 impl StubMLClassifier {
@@ -210,6 +212,8 @@ enum CatBoostModel {
     Stub,
 }
 
+
+
 impl CatBoostMLClassifier {
     /// Создать новый CatBoost ML-классификатор.
     ///
@@ -254,7 +258,7 @@ impl CatBoostMLClassifier {
 
         info!("Загрузка ML-модели из: {}", config.model_path);
 
-        if config.use_onnx {
+        if matches!(config.model_type, ModelType::Onnx) {
             #[cfg(feature = "onnx")]
             {
                 Self::load_onnx_model(model_path)
@@ -262,13 +266,27 @@ impl CatBoostMLClassifier {
             }
             #[cfg(not(feature = "onnx"))]
             {
-                warn!("ONNX поддержка отключена, но use_onnx=true в конфигурации");
-                Self::load_catboost_model(model_path)
-                    .with_context(|| "Не удалось загрузить CatBoost модель (ONNX отключен)")
+                warn!("ONNX поддержка отключена, но model_type=Onnx в конфигурации");
+                #[cfg(feature = "catboost")]
+                {
+                    Self::load_catboost_model(model_path)
+                        .with_context(|| "Не удалось загрузить CatBoost модель (ONNX отключен)")
+                }
+                #[cfg(not(feature = "catboost"))]
+                {
+                    Err(anyhow::anyhow!("ML поддержка отключена (и CatBoost, и ONNX отключены)"))
+                }
             }
         } else {
-            Self::load_catboost_model(model_path)
-                .with_context(|| "Не удалось загрузить CatBoost модель")
+            #[cfg(feature = "catboost")]
+            {
+                Self::load_catboost_model(model_path)
+                    .with_context(|| "Не удалось загрузить CatBoost модель")
+            }
+            #[cfg(not(feature = "catboost"))]
+            {
+                Err(anyhow::anyhow!("ML поддержка отключена (CatBoost отключен)"))
+            }
         }
     }
 
@@ -722,13 +740,13 @@ mod tests {
 
     #[test]
     fn test_create_ml_classifier_disabled() {
-        use crate::config::config_struct::MLClassifierConfig;
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
 
         let config = MLClassifierConfig {
             enabled: false,
             model_path: "test.json".to_string(),
             confidence_threshold: 0.7,
-            use_onnx: false,
+            model_type: ModelType::Catboost,
         };
 
         let classifier = create_ml_classifier(config);
@@ -742,13 +760,13 @@ mod tests {
 
     #[test]
     fn test_create_ml_classifier_nonexistent_model() {
-        use crate::config::config_struct::MLClassifierConfig;
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
 
         let config = MLClassifierConfig {
             enabled: true,
             model_path: "/nonexistent/path/model.json".to_string(),
             confidence_threshold: 0.7,
-            use_onnx: false,
+            model_type: ModelType::Catboost,
         };
 
         let classifier = create_ml_classifier(config);
@@ -761,13 +779,13 @@ mod tests {
 
     #[test]
     fn test_catboost_ml_classifier_feature_extraction() {
-        use crate::config::config_struct::MLClassifierConfig;
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
 
         let config = MLClassifierConfig {
             enabled: false, // Отключаем, чтобы использовать заглушку
             model_path: "test.json".to_string(),
             confidence_threshold: 0.7,
-            use_onnx: false,
+            model_type: ModelType::Catboost,
         };
 
         let classifier = CatBoostMLClassifier::new(config).unwrap();
@@ -814,13 +832,13 @@ mod tests {
 
     #[test]
     fn test_catboost_ml_classifier_feature_extraction_defaults() {
-        use crate::config::config_struct::MLClassifierConfig;
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
 
         let config = MLClassifierConfig {
             enabled: false,
             model_path: "test.json".to_string(),
             confidence_threshold: 0.7,
-            use_onnx: false,
+            model_type: ModelType::Catboost,
         };
 
         let classifier = CatBoostMLClassifier::new(config).unwrap();
@@ -844,13 +862,13 @@ mod tests {
 
     #[test]
     fn test_ml_classifier_config_validation() {
-        use crate::config::config_struct::MLClassifierConfig;
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
 
         // Тестируем дефолтную конфигурацию
         let default_config = MLClassifierConfig::default();
         assert!(!default_config.enabled);
         assert_eq!(default_config.model_path, "models/process_classifier.json");
         assert_eq!(default_config.confidence_threshold, 0.7);
-        assert!(!default_config.use_onnx);
+        assert!(matches!(default_config.model_type, ModelType::Catboost));
     }
 }

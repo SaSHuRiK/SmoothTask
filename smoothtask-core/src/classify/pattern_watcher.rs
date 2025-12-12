@@ -3,7 +3,7 @@
 //! Предоставляет функциональность для отслеживания изменений в директории с паттернами
 //! и автоматической перезагрузки паттерн-базы при обнаружении изменений.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::{watch, Mutex};
@@ -170,7 +170,7 @@ impl PatternWatcher {
         change_sender: watch::Sender<PatternUpdateResult>,
         config: PatternWatcherConfig,
     ) -> Result<()> {
-        use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+        use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
         let path = Path::new(&patterns_dir);
 
@@ -194,131 +194,12 @@ impl PatternWatcher {
         loop {
             // Устанавливаем таймаут для периодической проверки
             let interval = Duration::from_secs(config.interval_sec);
-            let mut timeout = time::sleep(interval);
-
+            let timeout = time::sleep(interval);
+            
+            // Используем select! без явного pinning для избежания PhantomPinned ошибок
             tokio::select! {
-                // Обработка событий файловой системы
-                event = async {
-                    rx.recv()
-                } => {
-                    match event {
-                        Ok(Ok(Event {
-                            kind: EventKind::Modify(modify_kind),
-                            paths,
-                            ..
-                        })) => {
-                            // Проверяем, что событие относится к нашей директории с паттернами
-                            if let Some(event_path) = paths.first() {
-                                if event_path.starts_with(path) {
-                                    // Игнорируем события модификации, которые не являются изменением содержимого
-                                    match modify_kind {
-                                        notify::event::ModifyKind::Data(_) => {
-                                            debug!(
-                                                "Patterns directory change detected: {:?}",
-                                                event_path
-                                            );
-                                            // Выполняем проверку и обновление
-                                            if let Err(e) = Self::check_and_update_patterns(
-                                                &patterns_dir,
-                                                &pattern_db,
-                                                &change_sender,
-                                                &config,
-                                            ).await {
-                                                error!(
-                                                    "Error during pattern update after filesystem event: {}",
-                                                    e
-                                                );
-                                            }
-                                        }
-                                        _ => {
-                                            // Игнорируем другие типы модификаций
-                                            debug!(
-                                                "Ignoring non-data modification event for patterns directory: {:?}",
-                                                event_path
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Ok(Ok(Event {
-                            kind: EventKind::Create(_),
-                            paths,
-                            ..
-                        })) => {
-                            // Новый файл в директории
-                            if let Some(event_path) = paths.first() {
-                                if event_path.starts_with(path) {
-                                    debug!(
-                                        "New file detected in patterns directory: {:?}",
-                                        event_path
-                                    );
-                                    // Выполняем проверку и обновление
-                                    if let Err(e) = Self::check_and_update_patterns(
-                                        &patterns_dir,
-                                        &pattern_db,
-                                        &change_sender,
-                                        &config,
-                                    ).await {
-                                        error!(
-                                            "Error during pattern update after create event: {}",
-                                            e
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Ok(Ok(Event {
-                            kind: EventKind::Remove(_),
-                            paths,
-                            ..
-                        })) => {
-                            // Файл удалён из директории
-                            if let Some(event_path) = paths.first() {
-                                if event_path.starts_with(path) {
-                                    debug!(
-                                        "File removed from patterns directory: {:?}",
-                                        event_path
-                                    );
-                                    // Выполняем проверку и обновление
-                                    if let Err(e) = Self::check_and_update_patterns(
-                                        &patterns_dir,
-                                        &pattern_db,
-                                        &change_sender,
-                                        &config,
-                                    ).await {
-                                        error!(
-                                            "Error during pattern update after remove event: {}",
-                                            e
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                        Ok(Ok(_)) => {
-                            // Игнорируем другие типы событий
-                            debug!(
-                                "Ignoring unrelated filesystem event for patterns directory"
-                            );
-                        }
-                        Ok(Err(e)) => {
-                            error!(
-                                "Error receiving filesystem event: {}",
-                                e
-                            );
-                            // Продолжаем работу, не завершаем мониторинг
-                        }
-                        Err(e) => {
-                            error!(
-                                "Filesystem watcher channel error: {}",
-                                e
-                            );
-                            // Продолжаем работу, не завершаем мониторинг
-                        }
-                    }
-                }
                 // Периодическая проверка изменений
-                _ = &mut timeout => {
+                _ = timeout => {
                     debug!(
                         "Performing periodic pattern update check (interval: {}s)",
                         config.interval_sec
@@ -336,9 +217,93 @@ impl PatternWatcher {
                             e
                         );
                     }
-                    
-                    // Сбрасываем таймаут
-                    timeout = time::sleep(interval);
+                }
+            }
+            
+            // Обработка событий файловой системы с использованием неблокирующего recv
+            match rx.try_recv() {
+                Ok(Ok(event)) => {
+                    // Проверяем, что событие относится к нашей директории с паттернами
+                    if let Some(event_path) = event.paths.first() {
+                        if event_path.starts_with(path) {
+                            match event.kind {
+                                EventKind::Modify(notify::event::ModifyKind::Data(_)) => {
+                                    debug!(
+                                        "Patterns directory change detected: {:?}",
+                                        event_path
+                                    );
+                                    // Выполняем проверку и обновление
+                                    if let Err(e) = Self::check_and_update_patterns(
+                                        &patterns_dir,
+                                        &pattern_db,
+                                        &change_sender,
+                                        &config,
+                                    ).await {
+                                        error!(
+                                            "Error during pattern update after filesystem event: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                EventKind::Create(_) => {
+                                    debug!(
+                                        "New file detected in patterns directory: {:?}",
+                                        event_path
+                                    );
+                                    // Выполняем проверку и обновление
+                                    if let Err(e) = Self::check_and_update_patterns(
+                                        &patterns_dir,
+                                        &pattern_db,
+                                        &change_sender,
+                                        &config,
+                                    ).await {
+                                        error!(
+                                            "Error during pattern update after create event: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                EventKind::Remove(_) => {
+                                    debug!(
+                                        "File removed from patterns directory: {:?}",
+                                        event_path
+                                    );
+                                    // Выполняем проверку и обновление
+                                    if let Err(e) = Self::check_and_update_patterns(
+                                        &patterns_dir,
+                                        &pattern_db,
+                                        &change_sender,
+                                        &config,
+                                    ).await {
+                                        error!(
+                                            "Error during pattern update after remove event: {}",
+                                            e
+                                        );
+                                    }
+                                }
+                                _ => {
+                                    // Игнорируем другие типы событий
+                                    debug!(
+                                        "Ignoring unrelated filesystem event for patterns directory"
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(Err(e)) => {
+                    error!(
+                        "Error receiving filesystem event: {}",
+                        e
+                    );
+                    // Продолжаем работу, не завершаем мониторинг
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Нет событий, продолжаем работу
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    error!("Filesystem watcher channel disconnected");
+                    return Ok(());
                 }
             }
         }
@@ -453,12 +418,7 @@ apps:
 
     #[test]
     fn test_pattern_watcher_rejects_nonexistent_directory() {
-        let pattern_db = Arc::new(Mutex::new(
-            PatternDatabase {
-                patterns_by_category: std::collections::HashMap::new(),
-                all_patterns: Vec::new(),
-            }
-        ));
+        let pattern_db = Arc::new(Mutex::new(PatternDatabase::default()));
 
         let config = PatternWatcherConfig {
             enabled: true,
@@ -477,12 +437,7 @@ apps:
         let temp_file = tempfile::NamedTempFile::new().expect("tempfile");
         let file_path = temp_file.path().to_str().unwrap().to_string();
 
-        let pattern_db = Arc::new(Mutex::new(
-            PatternDatabase {
-                patterns_by_category: std::collections::HashMap::new(),
-                all_patterns: Vec::new(),
-            }
-        ));
+        let pattern_db = Arc::new(Mutex::new(PatternDatabase::default()));
 
         let config = PatternWatcherConfig {
             enabled: true,

@@ -4,7 +4,8 @@
 //! для определения целевого класса приоритета для каждой AppGroup в снапшоте.
 //! В режиме hybrid также использует ML-ранкер для более точного определения приоритетов.
 
-use crate::config::config_struct::{Config, PolicyMode};
+use crate::config::config_struct::{Config, PolicyMode, ModelType, ModelConfig, MLClassifierConfig, PatternAutoUpdateConfig};
+use crate::metrics::ebpf::EbpfConfig;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 use crate::model::ranker::{Ranker, RankingResult};
 use crate::policy::classes::PriorityClass;
@@ -126,6 +127,7 @@ impl PolicyEngine {
         let ranker: Option<Box<dyn Ranker>> = if config.policy_mode == PolicyMode::Hybrid {
             // В hybrid режиме пытаемся загрузить ONNXRanker, если модель включена
             if config.model.enabled {
+                #[cfg(feature = "onnx")]
                 match crate::model::onnx_ranker::ONNXRanker::load(&config.model.model_path) {
                     Ok(onnx_ranker) => {
                         tracing::info!(
@@ -140,9 +142,15 @@ impl PolicyEngine {
                             config.model.model_path,
                             e
                         );
-                        tracing::warn!("Используется заглушка StubRanker вместо ONNX модели");
-                        Some(Box::new(crate::model::ranker::StubRanker::new()))
+                        None
                     }
+                }
+                #[cfg(not(feature = "onnx"))]
+                {
+                    tracing::warn!(
+                        "ONNX поддержка отключена (feature 'onnx' не включен). Используется дефолтный ранкер."
+                    );
+                    None
                 }
             } else {
                 // Модель отключена в конфигурации, используем заглушку
@@ -583,7 +591,11 @@ mod tests {
             model: ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         }
     }
 
@@ -632,7 +644,11 @@ mod tests {
             model: ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
+                model_type: ModelType::Onnx,
             },
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
         }
     }
 

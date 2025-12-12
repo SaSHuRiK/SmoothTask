@@ -6,6 +6,8 @@
 //! - Обработка ошибок и fallback механизмы
 //! - Производительность и надежность
 
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+{
 use smoothtask_core::classify::ml_classifier::{create_ml_classifier, MLClassifier, MLClassificationResult};
 use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherConfig};
 use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
@@ -92,7 +94,7 @@ apps:
         enabled: true,
         model_path: "test.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -139,7 +141,7 @@ apps:
         enabled: false,
         model_path: "test.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -165,7 +167,7 @@ fn test_ml_classifier_error_handling() {
         enabled: true,
         model_path: "/nonexistent/path/model.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -215,7 +217,7 @@ apps:
         enabled: true,
         model_path: "test.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(ml_config);
@@ -262,7 +264,7 @@ apps:
         enabled: true,
         model_path: "test.json".to_string(),
         confidence_threshold: 0.8, // Высокий порог
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -284,7 +286,7 @@ fn test_ml_classifier_feature_extraction_comprehensive() {
         enabled: false, // Используем заглушку для тестирования
         model_path: "test.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -356,7 +358,7 @@ apps:
         enabled: true,
         model_path: "test.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -391,7 +393,7 @@ fn test_ml_classifier_performance_metrics() {
         enabled: false, // Используем заглушку для тестирования производительности
         model_path: "test.json".to_string(),
         confidence_threshold: 0.7,
-        use_onnx: false,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
     };
 
     let classifier = create_ml_classifier(config);
@@ -410,4 +412,5 @@ fn test_ml_classifier_performance_metrics() {
     
     // Должно выполняться быстро (менее 100мс для 1000 процессов)
     assert!(duration.as_millis() < 100, "Performance test failed: took {}ms", duration.as_millis());
+}
 }

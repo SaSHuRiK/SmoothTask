@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+use crate::metrics::ebpf::EbpfConfig;
+
 /// Конфигурация ML-классификатора для классификации типов процессов.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct MLClassifierConfig {
@@ -39,20 +41,20 @@ pub struct MLClassifierConfig {
     #[serde(default = "default_ml_classifier_confidence_threshold")]
     pub confidence_threshold: f64,
 
-    /// Использовать ONNX Runtime для загрузки модели.
+    /// Тип ML-модели для классификации.
     ///
-    /// Если `true`, будет использоваться ONNX Runtime для загрузки модели.
-    /// В противном случае будет использоваться CatBoost JSON формат.
+    /// Определяет формат модели: CatBoost JSON или ONNX.
+    /// Это влияет на то, какой бэкенд будет использоваться для загрузки и выполнения модели.
     ///
-    /// По умолчанию: `false` (используется CatBoost JSON формат).
+    /// По умолчанию: `ModelType::Catboost` (CatBoost JSON формат).
     ///
     /// # Примечания
     ///
-    /// - ONNX Runtime требует наличия библиотеки onnxruntime
-    /// - ONNX модели могут быть более эффективными для инференса
-    /// - CatBoost JSON формат более портативен и проще в отладке
-    #[serde(default = "default_ml_classifier_use_onnx")]
-    pub use_onnx: bool,
+    /// - CatBoost JSON формат удобен для отладки и тестирования
+    /// - ONNX формат оптимизирован для production и имеет лучшую производительность
+    /// - Тип модели должен соответствовать фактическому формату файла модели
+    #[serde(default = "default_ml_classifier_model_type")]
+    pub model_type: ModelType,
 }
 
 /// Возвращает дефолтное значение для `ml_classifier_enabled`.
@@ -70,9 +72,18 @@ pub(crate) fn default_ml_classifier_confidence_threshold() -> f64 {
     0.7
 }
 
-/// Возвращает дефолтное значение для `ml_classifier_use_onnx`.
-pub(crate) fn default_ml_classifier_use_onnx() -> bool {
-    false
+/// Возвращает дефолтное значение для `ml_classifier_model_type`.
+///
+/// По умолчанию используется `ModelType::Catboost` как более портативный
+/// и простой в отладке формат.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_ml_classifier_model_type")]`
+/// - CatBoost JSON формат рекомендуется для отладки и тестирования
+/// - ONNX формат может быть использован для production
+pub(crate) fn default_ml_classifier_model_type() -> ModelType {
+    ModelType::Catboost
 }
 
 /// Конфигурация логирования для системы.
@@ -270,6 +281,16 @@ pub struct Config {
     /// По умолчанию: автообновление отключено, паттерны загружаются один раз при старте.
     #[serde(default = "default_pattern_auto_update_config")]
     pub pattern_auto_update: PatternAutoUpdateConfig,
+
+    /// Конфигурация eBPF для сбора метрик.
+    ///
+    /// Определяет параметры использования eBPF для сбора системных метрик.
+    /// eBPF позволяет получать более точные и детализированные данные о системе
+    /// с меньшими накладными расходами.
+    ///
+    /// По умолчанию: eBPF отключен, используются стандартные методы сбора метрик.
+    #[serde(default = "default_ebpf_config")]
+    pub ebpf: EbpfConfig,
 }
 
 /// Возвращает дефолтное значение для `ml_classifier`.
@@ -280,7 +301,7 @@ pub(crate) fn default_ml_classifier_config() -> MLClassifierConfig {
         enabled: default_ml_classifier_enabled(),
         model_path: default_ml_classifier_model_path(),
         confidence_threshold: default_ml_classifier_confidence_threshold(),
-        use_onnx: default_ml_classifier_use_onnx(),
+        model_type: default_ml_classifier_model_type(),
     }
 }
 
@@ -650,6 +671,21 @@ pub struct ModelConfig {
     /// - Рекомендуется использовать абсолютные пути для production
     #[serde(default = "default_model_path")]
     pub model_path: String,
+    
+    /// Тип ML-модели для ранжирования.
+    ///
+    /// Определяет формат модели: CatBoost JSON или ONNX.
+    /// Это влияет на то, какой бэкенд будет использоваться для загрузки и выполнения модели.
+    ///
+    /// По умолчанию: `ModelType::Onnx` (рекомендуется для production).
+    ///
+    /// # Примечания
+    ///
+    /// - CatBoost JSON формат удобен для отладки и тестирования
+    /// - ONNX формат оптимизирован для production и имеет лучшую производительность
+    /// - Тип модели должен соответствовать фактическому формату файла модели
+    #[serde(default = "default_model_type")]
+    pub model_type: ModelType,
 }
 
 /// Тип бэкенда для отправки уведомлений.
@@ -662,6 +698,18 @@ pub enum NotificationBackend {
     Stub,
     /// Desktop уведомления через libnotify.
     Libnotify,
+}
+
+/// Тип ML-модели для ранжирования и классификации.
+///
+/// Определяет формат ML-модели, которая будет использоваться.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum ModelType {
+    /// CatBoost модель в JSON формате.
+    Catboost,
+    /// ONNX модель (оптимизированный формат для production).
+    Onnx,
 }
 
 /// Минимальный уровень важности для отправки уведомлений.
@@ -765,6 +813,20 @@ pub(crate) fn default_model_path() -> String {
     "models/ranker.onnx".to_string()
 }
 
+/// Возвращает дефолтное значение для `model_type`.
+///
+/// По умолчанию используется `ModelType::Onnx` как рекомендуемый формат
+/// для production использования.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_model_type")]`
+/// - ONNX формат рекомендуется для production из-за лучшей производительности
+/// - CatBoost JSON формат может быть использован для отладки и тестирования
+pub(crate) fn default_model_type() -> ModelType {
+    ModelType::Onnx
+}
+
 /// Возвращает дефолтное значение для `model` конфигурации.
 ///
 /// По умолчанию создаётся конфигурация с отключенной моделью и дефолтным путём.
@@ -778,6 +840,7 @@ pub(crate) fn default_model_config() -> ModelConfig {
     ModelConfig {
         enabled: default_model_enabled(),
         model_path: default_model_path(),
+        model_type: default_model_type(),
     }
 }
 
@@ -847,6 +910,13 @@ pub struct Paths {
 /// Если нужно отключить API сервер, можно указать `api_listen_addr: null` в конфиге.
 pub(crate) fn default_api_listen_addr() -> Option<String> {
     Some("127.0.0.1:8080".to_string())
+}
+
+/// Возвращает дефолтную конфигурацию eBPF.
+///
+/// По умолчанию eBPF отключен, используются стандартные методы сбора метрик.
+pub(crate) fn default_ebpf_config() -> EbpfConfig {
+    EbpfConfig::default()
 }
 
 impl Config {
@@ -4764,5 +4834,205 @@ thresholds:
 
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
         assert_eq!(cfg.paths.api_listen_addr, Some("127.0.0.1:1".to_string()));
+    }
+}
+
+/// Реализация Default для MLClassifierConfig.
+impl Default for MLClassifierConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_ml_classifier_enabled(),
+            model_path: default_ml_classifier_model_path(),
+            confidence_threshold: default_ml_classifier_confidence_threshold(),
+            model_type: default_ml_classifier_model_type(),
+        }
+    }
+}
+
+/// Реализация Default для PatternAutoUpdateConfig.
+impl Default for PatternAutoUpdateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_pattern_auto_update_enabled(),
+            interval_sec: default_pattern_auto_update_interval_sec(),
+            notify_on_update: default_pattern_auto_update_notify(),
+        }
+    }
+}
+
+/// Возвращает дефолтное значение для `psi_cpu_some_high`.
+pub(crate) fn default_psi_cpu_some_high() -> f32 {
+    0.6
+}
+
+/// Возвращает дефолтное значение для `psi_io_some_high`.
+pub(crate) fn default_psi_io_some_high() -> f32 {
+    0.4
+}
+
+/// Возвращает дефолтное значение для `user_idle_timeout_sec`.
+pub(crate) fn default_user_idle_timeout_sec() -> u64 {
+    120
+}
+
+/// Возвращает дефолтное значение для `interactive_build_grace_sec`.
+pub(crate) fn default_interactive_build_grace_sec() -> u64 {
+    10
+}
+
+/// Возвращает дефолтное значение для `noisy_neighbour_cpu_share`.
+pub(crate) fn default_noisy_neighbour_cpu_share() -> f32 {
+    0.7
+}
+
+/// Возвращает дефолтное значение для `crit_interactive_percentile`.
+pub(crate) fn default_crit_interactive_percentile() -> f32 {
+    0.9
+}
+
+/// Возвращает дефолтное значение для `interactive_percentile`.
+pub(crate) fn default_interactive_percentile() -> f32 {
+    0.6
+}
+
+/// Возвращает дефолтное значение для `normal_percentile`.
+pub(crate) fn default_normal_percentile() -> f32 {
+    0.3
+}
+
+/// Возвращает дефолтное значение для `background_percentile`.
+pub(crate) fn default_background_percentile() -> f32 {
+    0.1
+}
+
+/// Возвращает дефолтное значение для `sched_latency_p99_threshold_ms`.
+pub(crate) fn default_sched_latency_p99_threshold_ms() -> f64 {
+    20.0
+}
+
+/// Возвращает дефолтное значение для `ui_loop_p95_threshold_ms`.
+pub(crate) fn default_ui_loop_p95_threshold_ms() -> f64 {
+    16.67
+}
+
+/// Возвращает дефолтное значение для `snapshot_db_path`.
+pub(crate) fn default_snapshot_db_path() -> String {
+    "snapshots.db".to_string()
+}
+
+/// Возвращает дефолтное значение для `patterns_dir`.
+pub(crate) fn default_patterns_dir() -> String {
+    "patterns".to_string()
+}
+
+/// Возвращает дефолтное значение для `polling_interval_ms`.
+pub(crate) fn default_polling_interval_ms() -> u64 {
+    1000
+}
+
+/// Возвращает дефолтное значение для `max_candidates`.
+pub(crate) fn default_max_candidates() -> usize {
+    150
+}
+
+/// Возвращает дефолтное значение для `dry_run_default`.
+pub(crate) fn default_dry_run_default() -> bool {
+    false
+}
+
+/// Реализация Default для Thresholds.
+impl Default for Thresholds {
+    fn default() -> Self {
+        Self {
+            psi_cpu_some_high: default_psi_cpu_some_high(),
+            psi_io_some_high: default_psi_io_some_high(),
+            user_idle_timeout_sec: default_user_idle_timeout_sec(),
+            interactive_build_grace_sec: default_interactive_build_grace_sec(),
+            noisy_neighbour_cpu_share: default_noisy_neighbour_cpu_share(),
+            crit_interactive_percentile: default_crit_interactive_percentile(),
+            interactive_percentile: default_interactive_percentile(),
+            normal_percentile: default_normal_percentile(),
+            background_percentile: default_background_percentile(),
+            sched_latency_p99_threshold_ms: default_sched_latency_p99_threshold_ms(),
+            ui_loop_p95_threshold_ms: default_ui_loop_p95_threshold_ms(),
+        }
+    }
+}
+
+/// Реализация Default для Paths.
+impl Default for Paths {
+    fn default() -> Self {
+        Self {
+            snapshot_db_path: default_snapshot_db_path(),
+            patterns_dir: default_patterns_dir(),
+            api_listen_addr: default_api_listen_addr(),
+        }
+    }
+}
+
+/// Реализация Default для LoggingConfig.
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            log_max_size_bytes: default_log_max_size_bytes(),
+            log_max_rotated_files: default_log_max_rotated_files(),
+            log_compression_enabled: default_log_compression_enabled(),
+            log_rotation_interval_sec: default_log_rotation_interval_sec(),
+        }
+    }
+}
+
+/// Реализация Default для CacheIntervals.
+impl Default for CacheIntervals {
+    fn default() -> Self {
+        Self {
+            system_metrics_cache_interval: default_system_metrics_cache_interval(),
+            process_metrics_cache_interval: default_process_metrics_cache_interval(),
+        }
+    }
+}
+
+/// Реализация Default для NotificationConfig.
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_notifications_enabled(),
+            backend: default_notification_backend(),
+            app_name: default_notification_app_name(),
+            min_level: default_notification_min_level(),
+        }
+    }
+}
+
+/// Реализация Default для ModelConfig.
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_model_enabled(),
+            model_path: default_model_path(),
+            model_type: default_model_type(),
+        }
+    }
+}
+
+/// Реализация Default для Config.
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            polling_interval_ms: default_polling_interval_ms(),
+            max_candidates: default_max_candidates(),
+            dry_run_default: default_dry_run_default(),
+            policy_mode: default_policy_mode(),
+            enable_snapshot_logging: default_enable_snapshot_logging(),
+            thresholds: Thresholds::default(),
+            paths: Paths::default(),
+            logging: LoggingConfig::default(),
+            cache_intervals: CacheIntervals::default(),
+            notifications: NotificationConfig::default(),
+            model: ModelConfig::default(),
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
+        }
     }
 }

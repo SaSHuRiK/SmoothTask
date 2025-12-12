@@ -372,6 +372,8 @@ pub struct SystemMetrics {
     pub disk: DiskMetrics,
     /// Метрики GPU (опционально, так как может быть недоступно на некоторых системах)
     pub gpu: Option<crate::metrics::gpu::GpuMetricsCollection>,
+    /// Метрики eBPF (опционально, так как требует поддержки eBPF в системе)
+    pub ebpf: Option<crate::metrics::ebpf::EbpfMetrics>,
 }
 
 impl SystemMetrics {
@@ -478,12 +480,14 @@ impl Default for ProcPaths {
 ///
 /// Если PSI-файлы недоступны (например, на старых ядрах без поддержки PSI),
 /// функция продолжит работу с пустыми метриками PSI вместо возврата ошибки.
+/// eBPF метрики собираются автоматически, если поддержка eBPF включена и доступна.
 ///
 /// # Ошибки
 ///
 /// - Возвращает ошибку, если не удалось прочитать основные файлы (/proc/stat, /proc/meminfo, /proc/loadavg)
 /// - Возвращает ошибку, если не удалось разобрать содержимое основных файлов
 /// - PSI ошибки обрабатываются gracefully с предупреждениями и использованием пустых метрик
+/// - eBPF ошибки обрабатываются gracefully с предупреждениями и использованием None для eBPF метрик
 ///
 /// # Примеры
 ///
@@ -494,10 +498,18 @@ impl Default for ProcPaths {
 /// let paths = ProcPaths::default();
 /// let metrics = collect_system_metrics(&paths).expect("Не удалось собрать системные метрики");
 ///
+/// // Проверяем доступность eBPF метрик
+/// if let Some(ebpf) = metrics.ebpf {
+///     println!("eBPF CPU usage: {:.2}%", ebpf.cpu_usage);
+/// } else {
+///     println!("eBPF метрики недоступны");
+/// }
+///
 /// // Использование тестового пути (для тестирования)
 /// let test_paths = ProcPaths::new("/tmp/test_proc");
 /// let result = collect_system_metrics(&test_paths);
 /// // result будет Ok с пустыми PSI метриками, если PSI файлы отсутствуют
+/// // и без eBPF метрик, если eBPF поддержка отключена
 /// ```
 ///
 /// # Пример использования в главном цикле демона
@@ -778,6 +790,7 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
         network,
         disk,
         gpu: Some(gpu),
+        ebpf: collect_ebpf_metrics(),
     })
 }
 
@@ -1226,6 +1239,37 @@ fn collect_disk_metrics() -> DiskMetrics {
 /// Собирает метрики GPU из различных источников
 fn collect_gpu_metrics() -> crate::metrics::gpu::GpuMetricsCollection {
     crate::metrics::gpu::collect_gpu_metrics().unwrap_or_default()
+}
+
+/// Собирает метрики eBPF
+fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
+    // Проверяем, включена ли поддержка eBPF
+    if !crate::metrics::ebpf::EbpfMetricsCollector::is_ebpf_enabled() {
+        tracing::debug!("eBPF support is disabled (compiled without 'ebpf' feature)");
+        return None;
+    }
+    
+    // Создаем коллектор eBPF метрик
+    let config = crate::metrics::ebpf::EbpfConfig::default();
+    let mut collector = crate::metrics::ebpf::EbpfMetricsCollector::new(config);
+    
+    // Инициализируем коллектор
+    if let Err(e) = collector.initialize() {
+        tracing::warn!("Failed to initialize eBPF metrics collector: {}", e);
+        return None;
+    }
+    
+    // Собираем метрики
+    match collector.collect_metrics() {
+        Ok(metrics) => {
+            tracing::debug!("Successfully collected eBPF metrics: {:?}", metrics);
+            Some(metrics)
+        }
+        Err(e) => {
+            tracing::warn!("Failed to collect eBPF metrics: {}", e);
+            None
+        }
+    }
 }
 
 fn read_file(path: &Path) -> Result<String> {
@@ -1986,6 +2030,7 @@ SwapFree:        4096000 kB
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
 
         let cur_metrics = SystemMetrics {
@@ -2009,6 +2054,7 @@ SwapFree:        4096000 kB
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -2056,6 +2102,7 @@ SwapFree:        4096000 kB
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
 
         let cur_metrics = SystemMetrics {
@@ -2079,6 +2126,7 @@ SwapFree:        4096000 kB
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -2282,6 +2330,7 @@ SwapFree:        4096000 kB
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         
         // Проверяем, что метрики содержат новые поля
@@ -2410,6 +2459,65 @@ SwapFree:        4096000 kB
     }
 
     #[test]
+    fn test_collect_ebpf_metrics_fallback() {
+        // Тест проверяет, что collect_ebpf_metrics работает корректно
+        // В системе без поддержки eBPF должен возвращать None
+        let ebpf_metrics = collect_ebpf_metrics();
+        
+        // В большинстве тестовых сред eBPF будет отключен или недоступен
+        // Поэтому мы ожидаем либо None, либо Some с дефолтными значениями
+        if let Some(metrics) = ebpf_metrics {
+            // Если eBPF доступен, проверяем, что структура корректно инициализирована
+            assert!(metrics.cpu_usage >= 0.0);
+            assert!(metrics.memory_usage >= 0);
+            assert!(metrics.syscall_count >= 0);
+            assert!(metrics.timestamp > 0);
+        } else {
+            // Если eBPF недоступен, это нормальное поведение в тестовой среде
+            assert!(true); // Просто проверяем, что функция не паникует
+        }
+    }
+
+    #[test]
+    fn test_system_metrics_with_ebpf_integration() {
+        // Тест проверяет, что SystemMetrics корректно интегрирует eBPF метрики
+        let mut metrics = SystemMetrics::default();
+        
+        // Проверяем, что изначально eBPF метрики отсутствуют
+        assert!(metrics.ebpf.is_none());
+        
+        // Устанавливаем eBPF метрики
+        let ebpf_metrics = crate::metrics::ebpf::EbpfMetrics {
+            cpu_usage: 25.5,
+            memory_usage: 1024 * 1024 * 512, // 512 MB
+            syscall_count: 100,
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or(std::time::Duration::from_secs(0))
+                .as_nanos() as u64,
+        };
+        metrics.ebpf = Some(ebpf_metrics.clone());
+        
+        // Проверяем, что eBPF метрики установлены корректно
+        assert!(metrics.ebpf.is_some());
+        let stored_ebpf = metrics.ebpf.as_ref().unwrap();
+        assert_eq!(stored_ebpf.cpu_usage, 25.5);
+        assert_eq!(stored_ebpf.memory_usage, 1024 * 1024 * 512);
+        assert_eq!(stored_ebpf.syscall_count, 100);
+        assert_eq!(stored_ebpf.timestamp, ebpf_metrics.timestamp);
+        
+        // Проверяем сериализацию и десериализацию
+        let json = serde_json::to_string(&metrics).expect("Сериализация должна работать");
+        assert!(json.contains("ebpf"));
+        
+        let deserialized: SystemMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        assert!(deserialized.ebpf.is_some());
+        let deserialized_ebpf = deserialized.ebpf.unwrap();
+        assert_eq!(deserialized_ebpf.cpu_usage, 25.5);
+        assert_eq!(deserialized_ebpf.memory_usage, 1024 * 1024 * 512);
+    }
+
+    #[test]
     fn test_system_metrics_includes_network_and_disk() {
         // Тест проверяет, что SystemMetrics включает новые поля сетевых и дисковых метрик
         let metrics = SystemMetrics {
@@ -2422,6 +2530,7 @@ SwapFree:        4096000 kB
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
+            ebpf: None,
         };
         
         // Проверяем, что метрики содержат новые поля
@@ -2431,6 +2540,31 @@ SwapFree:        4096000 kB
         assert!(metrics.disk.devices.is_empty());
         assert_eq!(metrics.disk.total_read_bytes, 0);
         assert_eq!(metrics.disk.total_write_bytes, 0);
+        assert!(metrics.ebpf.is_none());
+    }
+
+    #[test]
+    fn test_system_metrics_includes_ebpf() {
+        // Тест проверяет, что SystemMetrics включает поле eBPF метрик
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes::default(),
+            memory: MemoryInfo::default(),
+            load_avg: LoadAvg::default(),
+            pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
+            gpu: None,
+            ebpf: Some(crate::metrics::ebpf::EbpfMetrics::default()),
+        };
+        
+        // Проверяем, что метрики содержат поле eBPF
+        assert!(metrics.ebpf.is_some());
+        let ebpf_metrics = metrics.ebpf.unwrap();
+        assert_eq!(ebpf_metrics.cpu_usage, 0.0);
+        assert_eq!(ebpf_metrics.memory_usage, 0);
+        assert_eq!(ebpf_metrics.syscall_count, 0);
     }
 
     #[test]

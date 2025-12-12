@@ -24,8 +24,8 @@ use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::Patte
 use crate::config::watcher::ConfigWatcher;
 use crate::config::config_struct::NotificationBackend;
 use crate::notifications::{Notification, NotificationManager, NotificationType, StubNotifier};
-#[cfg(feature = "libnotify")]
-use crate::notifications::LibnotifyNotifier;
+// #[cfg(feature = "libnotify")]
+// use crate::notifications::LibnotifyNotifier;
 use crate::logging::snapshots::{GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
@@ -538,12 +538,6 @@ pub async fn run_daemon(
                 info!("Using StubNotifier for notifications (testing mode)");
                 NotificationManager::new(StubNotifier)
             }
-            #[cfg(feature = "libnotify")]
-            NotificationBackend::Libnotify => {
-                info!("Using LibnotifyNotifier for desktop notifications");
-                NotificationManager::new(LibnotifyNotifier::new(initial_config.notifications.app_name.clone()))
-            }
-            #[cfg(not(feature = "libnotify"))]
             NotificationBackend::Libnotify => {
                 warn!("Libnotify backend selected but feature 'libnotify' is not enabled, falling back to stub");
                 NotificationManager::new(StubNotifier)
@@ -704,6 +698,7 @@ pub async fn run_daemon(
         network: NetworkMetrics::default(),
         disk: DiskMetrics::default(),
         gpu: None,
+        ebpf: None,
     }));
     let processes_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::ProcessRecord>>> =
         Arc::new(tokio::sync::RwLock::new(Vec::new()));
@@ -894,6 +889,7 @@ pub async fn run_daemon(
         let mut app_groups = ProcessGrouper::group_processes(&processes);
 
         // Создаем ML-классификатор, если он включен в конфигурации
+        #[cfg(any(feature = "catboost", feature = "onnx"))]
         let ml_classifier = if config.ml_classifier.enabled {
             match ml_classifier::create_ml_classifier(config.ml_classifier.clone()) {
                 Ok(classifier) => {
@@ -909,6 +905,9 @@ pub async fn run_daemon(
             debug!("ML-классификатор отключен в конфигурации");
             None
         };
+        
+        #[cfg(not(any(feature = "catboost", feature = "onnx")))]
+        let ml_classifier: Option<Box<dyn std::any::Any>> = None;
 
         // Классификация процессов и групп
         classify_all(&mut processes, &mut app_groups, &pattern_db, ml_classifier.as_deref());

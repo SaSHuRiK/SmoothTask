@@ -294,6 +294,7 @@ fn benchmark_config_creation(c: &mut Criterion) {
                     sched_latency_p99_threshold_ms: 20.0,
                     ui_loop_p95_threshold_ms: 16.67,
                 },
+                logging: LoggingConfig::default(),
                 paths: Paths {
                     snapshot_db_path: "/var/log/smoothtask/snapshots.db".to_string(),
                     patterns_dir: "/etc/smoothtask/patterns".to_string(),
@@ -303,6 +304,15 @@ fn benchmark_config_creation(c: &mut Criterion) {
                     system_metrics_cache_interval: 5,
                     process_metrics_cache_interval: 2,
                 },
+                notifications: NotificationConfig::default(),
+                model: ModelConfig {
+                    enabled: false,
+                    model_path: "models/ranker.onnx".to_string(),
+                    model_type: ModelType::Onnx,
+                },
+                ml_classifier: MLClassifierConfig::default(),
+                pattern_auto_update: PatternAutoUpdateConfig::default(),
+                ebpf: EbpfConfig::default(),
             };
             black_box(config)
         })
@@ -333,6 +343,7 @@ fn benchmark_config_serialization(c: &mut Criterion) {
             sched_latency_p99_threshold_ms: 20.0,
             ui_loop_p95_threshold_ms: 16.67,
         },
+        logging: LoggingConfig::default(),
         paths: Paths {
             snapshot_db_path: "/var/log/smoothtask/snapshots.db".to_string(),
             patterns_dir: "/etc/smoothtask/patterns".to_string(),
@@ -342,6 +353,15 @@ fn benchmark_config_serialization(c: &mut Criterion) {
             system_metrics_cache_interval: 5,
             process_metrics_cache_interval: 2,
         },
+        notifications: NotificationConfig::default(),
+        model: ModelConfig {
+            enabled: false,
+            model_path: "models/ranker.onnx".to_string(),
+            model_type: ModelType::Onnx,
+        },
+        ml_classifier: MLClassifierConfig::default(),
+        pattern_auto_update: PatternAutoUpdateConfig::default(),
+        ebpf: EbpfConfig::default(),
     };
 
     c.bench_function("config_serialization", |b| {
