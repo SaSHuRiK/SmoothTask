@@ -19,11 +19,13 @@
 //! - **input**: Отслеживание активности пользователя
 //! - **scheduling_latency**: Измерение задержек планировщика
 //! - **gpu**: Мониторинг GPU устройств и их метрик
+//! - **ebpf**: Высокопроизводительный сбор метрик через eBPF
 //! - **app_performance**: Метрики производительности приложений
 
 pub mod app_performance;
 pub mod audio;
 pub mod audio_pipewire;
+pub mod ebpf;
 pub mod gpu;
 pub mod input;
 pub mod process;
