@@ -259,6 +259,9 @@ impl WaylandIntrospector {
     /// 2. **Ошибка подключения**: не удалось подключиться к Wayland композитору.
     ///    Сообщение об ошибке включает детали ошибки подключения.
     ///
+    /// 3. **Ошибка создания очереди событий**: не удалось создать очередь событий Wayland.
+    ///    Сообщение об ошибке включает детали ошибки создания очереди.
+    ///
     /// # Примеры использования
     ///
     /// ## Базовое использование
@@ -385,6 +388,14 @@ impl WaylandIntrospector {
             std::thread::sleep(std::time::Duration::from_millis(10));
             self.connection.flush()
                 .map_err(|e| anyhow::anyhow!("Failed to flush Wayland connection: {}", e))?;
+        }
+
+        // Проверяем, нашли ли мы менеджер
+        if state.foreign_toplevel_manager.is_none() {
+            anyhow::bail!(
+                "Failed to find wlr-foreign-toplevel-manager after {} attempts. This may indicate that the Wayland compositor does not support the wlr-foreign-toplevel-management protocol or the protocol is not available.",
+                MAX_ATTEMPTS
+            );
         }
 
         // Если мы нашли менеджер, запрашиваем список текущих окон
@@ -923,5 +934,140 @@ mod tests {
 
         assert!(focused_window.is_focused());
         assert!(!background_window.is_focused());
+    }
+
+    #[test]
+    fn test_wayland_introspector_error_handling() {
+        // Тест проверяет обработку ошибок при создании интроспектора
+        // Временно отключаем Wayland для теста
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+
+        // Пробуем создать интроспектор без Wayland
+        match WaylandIntrospector::new() {
+            Ok(_) => {
+                // Если Wayland всё ещё доступен через socket, это нормально
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // Проверяем, что сообщение об ошибке информативно
+                assert!(
+                    msg.contains("not available") || msg.contains("not yet fully implemented"),
+                    "Error message should be informative, got: {}",
+                    msg
+                );
+                // Проверяем, что сообщение содержит инструкции по проверке
+                assert!(
+                    msg.contains("Check that") || msg.contains("WAYLAND_DISPLAY"),
+                    "Error message should contain troubleshooting instructions, got: {}",
+                    msg
+                );
+            }
+        }
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+    }
+
+    #[test]
+    fn test_wayland_introspector_process_events_error() {
+        // Тест проверяет обработку ошибок в методе process_events
+        // Создаём интроспектор (если возможно)
+        match WaylandIntrospector::new() {
+            Ok(mut introspector) => {
+                // Пробуем обработать события
+                match introspector.process_events() {
+                    Ok(_) => {
+                        // Если всё прошло успешно, это нормально
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        // Проверяем, что сообщение об ошибке информативно
+                        assert!(
+                            msg.contains("Failed to find") || msg.contains("wlr-foreign-toplevel-manager"),
+                            "Error message should be informative about missing manager, got: {}",
+                            msg
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                // Ошибка при создании - это нормально, если Wayland недоступен
+            }
+        }
+    }
+
+    #[test]
+    fn test_wayland_introspector_windows_error() {
+        // Тест проверяет обработку ошибок в методе windows()
+        match WaylandIntrospector::new() {
+            Ok(introspector) => {
+                match introspector.windows() {
+                    Ok(_) => {
+                        // Если всё прошло успешно, это нормально
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        // Проверяем, что сообщение об ошибке информативно
+                        assert!(
+                            msg.contains("not yet fully implemented") || msg.contains("windows()"),
+                            "Error message should be informative, got: {}",
+                            msg
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                // Ошибка при создании - это нормально, если Wayland недоступен
+            }
+        }
+    }
+
+    #[test]
+    fn test_wayland_introspector_error_messages_are_detailed() {
+        // Тест проверяет, что сообщения об ошибках содержат достаточно деталей
+        // для отладки
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+
+        match WaylandIntrospector::new() {
+            Ok(_) => {
+                // Если Wayland всё ещё доступен через socket, это нормально
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // Проверяем, что сообщение содержит достаточно деталей
+                assert!(
+                    msg.len() > 50, // Сообщение должно быть достаточно длинным
+                    "Error message should be detailed, got: {}",
+                    msg
+                );
+                // Проверяем, что сообщение содержит ключевые слова
+                assert!(
+                    msg.contains("Wayland") || msg.contains("available") || msg.contains("connect"),
+                    "Error message should contain relevant keywords, got: {}",
+                    msg
+                );
+            }
+        }
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
     }
 }
