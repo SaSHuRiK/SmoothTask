@@ -1950,10 +1950,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 14);
+        assert_eq!(json["count"], 15);
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 14);
+        assert_eq!(endpoints.len(), 15);
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -2594,8 +2594,8 @@ apps:
         let result = config_reload_handler(State(state)).await;
         let json = result.unwrap().0;
         
-        assert_eq!(json["status"], "success");
-        assert!(json["message"].as_str().unwrap().contains("Config reload requested"));
+        assert_eq!(json["status"], "warning");
+        assert!(json["message"].as_str().unwrap().contains("Config reload requested but config file path is not available"));
         assert!(json["current_config"].is_object());
         assert_eq!(json["current_config"]["polling_interval_ms"], 500);
         assert!(json["action_required"].is_string());
@@ -2718,7 +2718,7 @@ notifications:
             }
         }
         assert_eq!(json["status"], "success");
-        assert_eq!(json["message"], "Configuration successfully reloaded from file");
+        assert_eq!(json["message"], "Configuration successfully reloaded from file and applied");
         assert!(json["old_config"].is_object());
         assert!(json["new_config"].is_object());
         assert_eq!(json["config_path"], config_path);
