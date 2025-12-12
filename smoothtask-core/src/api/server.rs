@@ -42,7 +42,115 @@ pub struct ApiState {
 }
 
 /// Builder для ApiState, чтобы избежать слишком большого количества аргументов в конструкторах.
+///
+/// ApiStateBuilder предоставляет удобный способ создания ApiState с различными комбинациями
+/// данных. Это позволяет избежать проблем с большим количеством параметров в конструкторах
+/// и делает код более читаемым и поддерживаемым.
+///
+/// # Преимущества использования ApiStateBuilder
+///
+/// - **Читаемость**: Код становится более понятным, так как каждый вызов метода явно указывает,
+///   какие данные добавляются
+/// - **Гибкость**: Легко добавлять или удалять данные без изменения сигнатур функций
+/// - **Типобезопасность**: Все параметры проверяются на этапе компиляции
+/// - **Поддержка IDE**: Автодополнение и подсказки работают лучше с цепочкой методов
+///
+/// # Примеры использования
+///
+/// ## Базовый пример
+///
+/// ```no_run
+/// use smoothtask_core::api::ApiStateBuilder;
+/// use std::sync::Arc;
+/// use tokio::sync::RwLock;
+///
+/// let state = ApiStateBuilder::new()
+///     .with_daemon_stats(None)
+///     .with_system_metrics(None)
+///     .with_processes(None)
+///     .with_app_groups(None)
+///     .with_responsiveness_metrics(None)
+///     .with_config(None)
+///     .with_config_path(None)
+///     .with_pattern_database(None)
+///     .with_notification_manager(None)
+///     .build();
+/// ```
+///
+/// ## Пример с реальными данными
+///
+/// ```no_run
+/// use smoothtask_core::api::ApiStateBuilder;
+/// use smoothtask_core::{DaemonStats, config::config_struct::Config};
+/// use smoothtask_core::metrics::system::SystemMetrics;
+/// use smoothtask_core::logging::snapshots::{ProcessRecord, AppGroupRecord, ResponsivenessMetrics};
+/// use smoothtask_core::classify::rules::PatternDatabase;
+/// use smoothtask_core::notifications::NotificationManager;
+/// use std::sync::Arc;
+/// use tokio::sync::{RwLock, Mutex};
+///
+/// // Создаём тестовые данные
+/// let daemon_stats = Arc::new(RwLock::new(DaemonStats::new()));
+/// let system_metrics = Arc::new(RwLock::new(SystemMetrics::default()));
+/// let processes = Arc::new(RwLock::new(Vec::<ProcessRecord>::new()));
+/// let app_groups = Arc::new(RwLock::new(Vec::<AppGroupRecord>::new()));
+/// let responsiveness_metrics = Arc::new(RwLock::new(ResponsivenessMetrics::default()));
+/// let config = Arc::new(RwLock::new(Config::default()));
+/// let pattern_db = Arc::new(PatternDatabase::load("/path/to/patterns").unwrap());
+/// let notification_manager = Arc::new(Mutex::new(NotificationManager::new_stub()));
+///
+/// // Собираем состояние API
+/// let state = ApiStateBuilder::new()
+///     .with_daemon_stats(Some(daemon_stats))
+///     .with_system_metrics(Some(system_metrics))
+///     .with_processes(Some(processes))
+///     .with_app_groups(Some(app_groups))
+///     .with_responsiveness_metrics(Some(responsiveness_metrics))
+///     .with_config(Some(config))
+///     .with_config_path(Some("/path/to/config.yml".to_string()))
+///     .with_pattern_database(Some(pattern_db))
+///     .with_notification_manager(Some(notification_manager))
+///     .build();
+/// ```
+///
+/// ## Сравнение с устаревшими методами
+///
+/// До введения ApiStateBuilder код создания ApiState выглядел так:
+///
+/// ```no_run
+/// // Старый способ (устарел)
+/// let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
+///     daemon_stats,
+///     system_metrics,
+///     processes,
+///     app_groups,
+///     responsiveness_metrics,
+///     config,
+///     pattern_database,
+/// );
+/// ```
+///
+/// С ApiStateBuilder код становится более понятным и гибким:
+///
+/// ```no_run
+/// // Новый способ (рекомендуется)
+/// let state = ApiStateBuilder::new()
+///     .with_daemon_stats(Some(daemon_stats))
+///     .with_system_metrics(Some(system_metrics))
+///     .with_processes(Some(processes))
+///     .with_app_groups(Some(app_groups))
+///     .with_responsiveness_metrics(Some(responsiveness_metrics))
+///     .with_config(Some(config))
+///     .with_pattern_database(Some(pattern_db))
+///     .build();
+/// ```
+///
+/// # Методы
+///
+/// Каждый метод `with_*` принимает `Option<T>` и возвращает `Self`, что позволяет
+/// использовать цепочку вызовов (builder pattern).
 #[derive(Default)]
+#[allow(dead_code)]
 pub struct ApiStateBuilder {
     daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>, 
     system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>, 
@@ -56,55 +164,237 @@ pub struct ApiStateBuilder {
 }
 
 impl ApiStateBuilder {
+    /// Создаёт новый пустой ApiStateBuilder.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    ///
+    /// let builder = ApiStateBuilder::new();
+    /// // Теперь можно добавлять данные через методы with_*
+    /// ```
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Добавляет статистику работы демона в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `daemon_stats`: Статистика работы демона (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::DaemonStats;
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let daemon_stats = Arc::new(RwLock::new(DaemonStats::new()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_daemon_stats(Some(daemon_stats));
+    /// ```
     pub fn with_daemon_stats(mut self, daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>) -> Self {
         self.daemon_stats = daemon_stats;
         self
     }
 
+    /// Добавляет системные метрики в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `system_metrics`: Системные метрики (CPU, память, PSI и т.д.) (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::metrics::system::SystemMetrics;
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let system_metrics = Arc::new(RwLock::new(SystemMetrics::default()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_system_metrics(Some(system_metrics));
+    /// ```
     pub fn with_system_metrics(mut self, system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>) -> Self {
         self.system_metrics = system_metrics;
         self
     }
 
+    /// Добавляет список процессов в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `processes`: Список процессов (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::logging::snapshots::ProcessRecord;
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let processes = Arc::new(RwLock::new(Vec::<ProcessRecord>::new()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_processes(Some(processes));
+    /// ```
     pub fn with_processes(mut self, processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>) -> Self {
         self.processes = processes;
         self
     }
 
+    /// Добавляет группы приложений в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `app_groups`: Список групп приложений (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::logging::snapshots::AppGroupRecord;
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let app_groups = Arc::new(RwLock::new(Vec::<AppGroupRecord>::new()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_app_groups(Some(app_groups));
+    /// ```
     pub fn with_app_groups(mut self, app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>) -> Self {
         self.app_groups = app_groups;
         self
     }
 
+    /// Добавляет метрики отзывчивости в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `responsiveness_metrics`: Метрики отзывчивости системы (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::logging::snapshots::ResponsivenessMetrics;
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let responsiveness_metrics = Arc::new(RwLock::new(ResponsivenessMetrics::default()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_responsiveness_metrics(Some(responsiveness_metrics));
+    /// ```
     pub fn with_responsiveness_metrics(mut self, responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>) -> Self {
         self.responsiveness_metrics = responsiveness_metrics;
         self
     }
 
+    /// Добавляет конфигурацию демона в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `config`: Конфигурация демона (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::config::config_struct::Config;
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let config = Arc::new(RwLock::new(Config::default()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_config(Some(config));
+    /// ```
     pub fn with_config(mut self, config: Option<Arc<RwLock<crate::config::config_struct::Config>>>) -> Self {
         self.config = config;
         self
     }
 
+    /// Добавляет путь к конфигурационному файлу в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `config_path`: Путь к конфигурационному файлу (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    ///
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_config_path(Some("/path/to/config.yml".to_string()));
+    /// ```
     pub fn with_config_path(mut self, config_path: Option<String>) -> Self {
         self.config_path = config_path;
         self
     }
 
+    /// Добавляет базу паттернов для классификации процессов в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `pattern_database`: База паттернов (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::classify::rules::PatternDatabase;
+    /// use std::sync::Arc;
+    ///
+    /// let pattern_db = Arc::new(PatternDatabase::load("/path/to/patterns").unwrap());
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_pattern_database(Some(pattern_db));
+    /// ```
     pub fn with_pattern_database(mut self, pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>) -> Self {
         self.pattern_database = pattern_database;
         self
     }
 
+    /// Добавляет менеджер уведомлений в состояние API.
+    ///
+    /// # Параметры
+    ///
+    /// - `notification_manager`: Менеджер уведомлений (опционально)
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::notifications::NotificationManager;
+    /// use std::sync::Arc;
+    /// use tokio::sync::Mutex;
+    ///
+    /// let notification_manager = Arc::new(Mutex::new(NotificationManager::new_stub()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_notification_manager(Some(notification_manager));
+    /// ```
     pub fn with_notification_manager(mut self, notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>) -> Self {
         self.notification_manager = notification_manager;
         self
     }
 
+    /// Завершает построение и возвращает ApiState.
+    ///
+    /// Этот метод потребляет builder и возвращает готовое состояние API,
+    /// которое можно использовать для создания API сервера.
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    ///
+    /// let state = ApiStateBuilder::new()
+    ///     .with_daemon_stats(None)
+    ///     .with_system_metrics(None)
+    ///     .build();
+    /// ```
     pub fn build(self) -> ApiState {
         ApiState {
             daemon_stats: self.daemon_stats,
@@ -233,36 +523,6 @@ impl ApiState {
         }
     }
 
-    /// Создаёт новое состояние API сервера со всеми данными, включая метрики отзывчивости, конфигурацию и базу паттернов.
-    /// Используйте ApiStateBuilder для более гибкого создания состояния.
-    #[deprecated(note = "Use ApiStateBuilder instead")]
-    #[allow(clippy::too_many_arguments)]
-    #[allow(dead_code)]
-    pub fn with_all_and_responsiveness_and_config_and_patterns(
-        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
-        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
-        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
-        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        responsiveness_metrics: Option<
-            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
-        >,
-        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
-        pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
-        config_path: Option<String>,
-        notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
-    ) -> Self {
-        ApiStateBuilder::new()
-            .with_daemon_stats(daemon_stats)
-            .with_system_metrics(system_metrics)
-            .with_processes(processes)
-            .with_app_groups(app_groups)
-            .with_responsiveness_metrics(responsiveness_metrics)
-            .with_config(config)
-            .with_config_path(config_path)
-            .with_pattern_database(pattern_database)
-            .with_notification_manager(notification_manager)
-            .build()
-    }
 }
 
 impl Default for ApiState {
@@ -1088,6 +1348,8 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
 ///
 /// # Примеры использования
 ///
+/// ## Базовый пример
+///
 /// ```no_run
 /// use smoothtask_core::api::ApiServer;
 /// use std::net::SocketAddr;
@@ -1105,6 +1367,100 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
 /// # Ok(())
 /// # }
 /// ```
+///
+/// ## Пример с использованием ApiStateBuilder
+///
+/// ```no_run
+/// use smoothtask_core::api::{ApiServer, ApiStateBuilder};
+/// use smoothtask_core::{DaemonStats, config::config_struct::Config};
+/// use smoothtask_core::metrics::system::SystemMetrics;
+/// use smoothtask_core::logging::snapshots::{ProcessRecord, AppGroupRecord, ResponsivenessMetrics};
+/// use smoothtask_core::classify::rules::PatternDatabase;
+/// use smoothtask_core::notifications::NotificationManager;
+/// use std::net::SocketAddr;
+/// use std::sync::Arc;
+/// use tokio::sync::{RwLock, Mutex};
+///
+/// # async fn example() -> anyhow::Result<()> {
+/// // Создаём тестовые данные
+/// let daemon_stats = Arc::new(RwLock::new(DaemonStats::new()));
+/// let system_metrics = Arc::new(RwLock::new(SystemMetrics::default()));
+/// let processes = Arc::new(RwLock::new(Vec::<ProcessRecord>::new()));
+/// let app_groups = Arc::new(RwLock::new(Vec::<AppGroupRecord>::new()));
+/// let responsiveness_metrics = Arc::new(RwLock::new(ResponsivenessMetrics::default()));
+/// let config = Arc::new(RwLock::new(Config::default()));
+/// let pattern_db = Arc::new(PatternDatabase::load("/path/to/patterns").unwrap());
+/// let notification_manager = Arc::new(Mutex::new(NotificationManager::new_stub()));
+///
+/// // Используем ApiStateBuilder для создания состояния API
+/// let api_state = ApiStateBuilder::new()
+///     .with_daemon_stats(Some(daemon_stats))
+///     .with_system_metrics(Some(system_metrics))
+///     .with_processes(Some(processes))
+///     .with_app_groups(Some(app_groups))
+///     .with_responsiveness_metrics(Some(responsiveness_metrics))
+///     .with_config(Some(config))
+///     .with_config_path(Some("/path/to/config.yml".to_string()))
+///     .with_pattern_database(Some(pattern_db))
+///     .with_notification_manager(Some(notification_manager))
+///     .build();
+///
+/// // Создаём сервер с состоянием
+/// let addr: SocketAddr = "127.0.0.1:8080".parse()?;
+/// let server = ApiServer::with_state(addr, api_state);
+/// let handle = server.start().await?;
+///
+/// // Сервер работает в фоне
+/// // ...
+///
+/// // Остановка сервера
+/// handle.shutdown().await?;
+/// # Ok(())
+/// # }
+/// ```
+///
+/// ## Сравнение с устаревшими методами
+///
+/// До введения ApiStateBuilder код создания сервера с полным состоянием выглядел так:
+///
+/// ```no_run
+/// // Старый способ (устарел)
+/// let server = ApiServer::with_all_and_responsiveness_and_config_and_patterns(
+///     addr,
+///     daemon_stats,
+///     system_metrics,
+///     processes,
+///     app_groups,
+///     responsiveness_metrics,
+///     config,
+///     pattern_db,
+/// );
+/// ```
+///
+/// С ApiStateBuilder код становится более понятным и гибким:
+///
+/// ```no_run
+/// // Новый способ (рекомендуется)
+/// let api_state = ApiStateBuilder::new()
+///     .with_daemon_stats(Some(daemon_stats))
+///     .with_system_metrics(Some(system_metrics))
+///     .with_processes(Some(processes))
+///     .with_app_groups(Some(app_groups))
+///     .with_responsiveness_metrics(Some(responsiveness_metrics))
+///     .with_config(Some(config))
+///     .with_pattern_database(Some(pattern_db))
+///     .build();
+///
+/// let server = ApiServer::with_state(addr, api_state);
+/// ```
+///
+/// # Преимущества ApiStateBuilder
+///
+/// - **Читаемость**: Код становится более понятным и самодокументированным
+/// - **Гибкость**: Легко добавлять или удалять компоненты без изменения сигнатур
+/// - **Типобезопасность**: Все параметры проверяются на этапе компиляции
+/// - **Поддержка IDE**: Автодополнение работает лучше с цепочкой методов
+/// - **Документация**: Каждый метод имеет свою документацию с примерами
 pub struct ApiServer {
     /// Адрес для прослушивания
     addr: std::net::SocketAddr,
@@ -1176,6 +1532,19 @@ impl ApiServer {
         Self {
             addr,
             state: ApiState::with_all(daemon_stats, system_metrics, processes, app_groups),
+        }
+    }
+
+    /// Создаёт новый API сервер с переданным состоянием API.
+    ///
+    /// # Параметры
+    ///
+    /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
+    /// - `state`: Состояние API
+    pub fn with_state(addr: std::net::SocketAddr, state: ApiState) -> Self {
+        Self {
+            addr,
+            state,
         }
     }
 
@@ -1253,40 +1622,6 @@ impl ApiServer {
     /// - `system_metrics`: Системные метрики (опционально)
     /// - `processes`: Список процессов (опционально)
     /// - `app_groups`: Список групп приложений (опционально)
-    /// - `responsiveness_metrics`: Метрики отзывчивости (опционально)
-    /// - `config`: Конфигурация демона (опционально)
-    /// - `pattern_database`: База данных паттернов для классификации процессов (опционально)
-    /// - `config_path`: Путь к конфигурационному файлу (опционально)
-    #[allow(clippy::too_many_arguments)]
-    pub fn with_all_and_responsiveness_and_config_and_patterns(
-        addr: std::net::SocketAddr,
-        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
-        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
-        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
-        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        responsiveness_metrics: Option<
-            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
-        >,
-        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
-        pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
-        config_path: Option<String>,
-        notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
-    ) -> Self {
-        Self {
-            addr,
-            state: ApiStateBuilder::new()
-                .with_daemon_stats(daemon_stats)
-                .with_system_metrics(system_metrics)
-                .with_processes(processes)
-                .with_app_groups(app_groups)
-                .with_responsiveness_metrics(responsiveness_metrics)
-                .with_config(config)
-                .with_pattern_database(pattern_database)
-                .with_config_path(config_path)
-                .with_notification_manager(notification_manager)
-                .build(),
-        }
-    }
 
     /// Запускает API сервер в фоновой задаче.
     ///
@@ -2656,18 +2991,14 @@ apps:
         std::fs::create_dir_all(&temp_dir).unwrap();
         let pattern_db = PatternDatabase::load(&temp_dir).unwrap();
         let pattern_db_arc = Arc::new(pattern_db);
-        let server = ApiServer::with_all_and_responsiveness_and_config_and_patterns(
+        let api_state = ApiStateBuilder::new()
+            .with_config(Some(Arc::new(RwLock::new(config))))
+            .with_pattern_database(Some(pattern_db_arc))
+            .build();
+        let server = ApiServer {
             addr,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(Arc::new(RwLock::new(config))),
-            Some(pattern_db_arc),
-            None, // config_path not needed for this test
-            None, // notification_manager not needed for this test
-        );
+            state: api_state,
+        };
         // Проверяем, что сервер создан
         let _ = server;
     }
@@ -2800,17 +3131,10 @@ apps:
         std::fs::create_dir_all(&temp_dir).unwrap();
         let pattern_db = PatternDatabase::load(&temp_dir).unwrap();
         let pattern_db_arc = Arc::new(pattern_db);
-        let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(Arc::new(RwLock::new(config))),
-            Some(pattern_db_arc),
-            None, // config_path not needed for this test
-            None, // notification_manager not needed for this test
-        );
+        let state = ApiStateBuilder::new()
+            .with_config(Some(Arc::new(RwLock::new(config))))
+            .with_pattern_database(Some(pattern_db_arc))
+            .build();
         assert!(state.config.is_some());
         assert!(state.pattern_database.is_some());
         assert!(state.responsiveness_metrics.is_none());

@@ -5,4 +5,4 @@
 
 mod server;
 
-pub use server::{ApiServer, ApiServerHandle};
+pub use server::{ApiServer, ApiServerHandle, ApiStateBuilder};

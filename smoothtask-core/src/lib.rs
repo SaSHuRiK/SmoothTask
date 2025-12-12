@@ -19,7 +19,7 @@ use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
-use crate::api::{ApiServer, ApiServerHandle};
+use crate::api::{ApiServer, ApiServerHandle, ApiStateBuilder};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
 use crate::config::watcher::ConfigWatcher;
 use crate::config::config_struct::NotificationBackend;
@@ -722,18 +722,18 @@ pub async fn run_daemon(
         match api_addr_str.parse::<std::net::SocketAddr>() {
             Ok(addr) => {
                 info!("Starting API server on {}", addr);
-                let api_server = ApiServer::with_all_and_responsiveness_and_config_and_patterns(
-                    addr,
-                    Some(Arc::clone(&stats_arc)),
-                    Some(Arc::clone(&system_metrics_arc)),
-                    Some(Arc::clone(&processes_arc)),
-                    Some(Arc::clone(&app_groups_arc)),
-                    Some(Arc::clone(&responsiveness_metrics_arc)),
-                    Some(Arc::clone(&config_arc)),
-                    Some(Arc::clone(&pattern_db_arc)),
-                    Some(config_path.clone()),
-                    Some(Arc::clone(&notification_manager)),
-                );
+                let api_state = ApiStateBuilder::new()
+                    .with_daemon_stats(Some(Arc::clone(&stats_arc)))
+                    .with_system_metrics(Some(Arc::clone(&system_metrics_arc)))
+                    .with_processes(Some(Arc::clone(&processes_arc)))
+                    .with_app_groups(Some(Arc::clone(&app_groups_arc)))
+                    .with_responsiveness_metrics(Some(Arc::clone(&responsiveness_metrics_arc)))
+                    .with_config(Some(Arc::clone(&config_arc)))
+                    .with_pattern_database(Some(Arc::clone(&pattern_db_arc)))
+                    .with_config_path(Some(config_path.clone()))
+                    .with_notification_manager(Some(Arc::clone(&notification_manager)))
+                    .build();
+                let api_server = ApiServer::with_state(addr, api_state);
                 match api_server.start().await {
                     Ok(handle) => {
                         api_server_handle = Some(handle);
