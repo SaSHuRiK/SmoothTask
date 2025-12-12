@@ -79,15 +79,22 @@ default = ["libnotify", "ebpf"]
    - `enable_cpu_metrics`: Включение сбора CPU метрик через eBPF
    - `enable_memory_metrics`: Включение сбора метрик памяти через eBPF
    - `enable_syscall_monitoring`: Включение мониторинга системных вызовов
+   - `enable_network_monitoring`: Включение мониторинга сетевой активности
    - `collection_interval`: Интервал сбора метрик
    - `enable_caching`: Включение кэширования для уменьшения накладных расходов
    - `batch_size`: Размер batches для пакетной обработки
+   - `max_init_attempts`: Максимальное количество попыток инициализации
+   - `operation_timeout_ms`: Таймаут для операций eBPF в миллисекундах
 
 2. **EbpfMetrics** - Структура для хранения метрик:
    - `cpu_usage`: Использование CPU в процентах
    - `memory_usage`: Использование памяти в байтах
    - `syscall_count`: Количество системных вызовов
+   - `network_packets`: Количество сетевых пакетов
+   - `network_bytes`: Сетевой трафик в байтах
    - `timestamp`: Временная метка в наносекундах
+   - `syscall_details`: Детализированная статистика по системным вызовам (опционально)
+   - `network_details`: Детализированная статистика по сетевой активности (опционально)
 
 3. **EbpfMetricsCollector** - Основной коллектор:
    - `initialize()`: Инициализация eBPF программ
@@ -95,6 +102,11 @@ default = ["libnotify", "ebpf"]
    - `check_ebpf_support()`: Проверка поддержки eBPF в системе
    - `load_cpu_program()`: Загрузка eBPF программы для CPU метрик
    - `load_syscall_program()`: Загрузка eBPF программы для мониторинга системных вызовов
+   - `load_network_program()`: Загрузка eBPF программы для мониторинга сетевой активности
+   - `validate_config()`: Валидация конфигурации
+   - `get_last_error()`: Получение последней ошибки
+   - `is_initialized()`: Проверка состояния инициализации
+   - `reset()`: Сброс состояния коллектора
 
 ### eBPF программы
 
@@ -111,7 +123,7 @@ default = ["libnotify", "ebpf"]
    - Минимальные операции обновления для уменьшения накладных расходов
    - Атомарные операции для минимизации конфликтов
 
-3. **syscall_monitor.c** - Мониторинг системных вызовов:
+3. **syscall_monitor.c** - Базовый мониторинг системных вызовов:
    - Отслеживание всех системных вызовов через `tracepoint/syscalls/sys_enter_*`
    - Счетчик системных вызовов с временными метками
    - Поддержка анализа активности процессов
@@ -120,6 +132,19 @@ default = ["libnotify", "ebpf"]
    - Использует более специфичную точку трассировки `tracepoint/syscalls/sys_enter_execve`
    - Атомарное увеличение счетчика для минимизации конфликтов
    - Уменьшенная нагрузка на систему
+
+5. **syscall_monitor_advanced.c** - Расширенный мониторинг системных вызовов:
+   - Детализированная статистика по каждому системному вызову
+   - Отслеживание времени выполнения системных вызовов
+   - Поддержка анализа производительности системных вызовов
+   - Использует точки входа `tracepoint/syscalls/sys_enter_*` и `tracepoint/syscalls/sys_exit_*`
+   - Хранит статистику в хэш-карте для быстрого доступа
+
+6. **network_monitor.c** - Мониторинг сетевой активности:
+   - Отслеживание сетевых пакетов через `tracepoint/net/netif_receive_skb`
+   - Мониторинг TCP соединений через `tracepoint/sock/sock_inet_sock_set_state`
+   - Сбор статистики по IP адресам
+   - Поддержка анализа сетевого трафика
 
 ### Интеграция с системой
 
@@ -251,6 +276,40 @@ ls smoothtask-core/src/ebpf_programs/
 
 Программы должны быть доступны во время выполнения.
 
+### Ошибка: "Ошибка загрузки программы мониторинга сети"
+
+1. Проверьте, что файл `network_monitor.c` существует:
+   ```bash
+   ls smoothtask-core/src/ebpf_programs/network_monitor.c
+   ```
+
+2. Убедитесь, что у вас достаточно прав для загрузки eBPF программ:
+   ```bash
+   sudo setcap cap_bpf+ep /path/to/smoothtaskd
+   ```
+
+3. Проверьте, что ваше ядро поддерживает сетевые точки трассировки:
+   ```bash
+   grep -r "netif_receive_skb" /sys/kernel/debug/tracing/available_filter_functions
+   ```
+
+### Ошибка: "Ошибка загрузки программы мониторинга системных вызовов"
+
+1. Проверьте, что файл `syscall_monitor_advanced.c` существует:
+   ```bash
+   ls smoothtask-core/src/ebpf_programs/syscall_monitor_advanced.c
+   ```
+
+2. Убедитесь, что у вас достаточно прав для загрузки eBPF программ:
+   ```bash
+   sudo setcap cap_bpf+ep /path/to/smoothtaskd
+   ```
+
+3. Проверьте, что ваше ядро поддерживает точки трассировки системных вызовов:
+   ```bash
+   grep -r "sys_enter" /sys/kernel/debug/tracing/available_filter_functions
+   ```
+
 ## Тестирование eBPF функциональности
 
 ### Unit тесты
@@ -273,6 +332,7 @@ mod tests {
         assert!(config.enable_cpu_metrics);
         assert!(config.enable_memory_metrics);
         assert!(!config.enable_syscall_monitoring);
+        assert!(!config.enable_network_monitoring);
     }
 
     #[test]
@@ -281,6 +341,33 @@ mod tests {
         let mut collector = EbpfMetricsCollector::new(config);
         assert!(collector.initialize().is_ok());
         assert!(collector.collect_metrics().is_ok());
+    }
+
+    #[test]
+    fn test_ebpf_network_monitoring() {
+        let mut config = EbpfConfig::default();
+        config.enable_network_monitoring = true;
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        let metrics = collector.collect_metrics().unwrap();
+        assert!(metrics.network_packets >= 0);
+        assert!(metrics.network_bytes >= 0);
+    }
+
+    #[test]
+    fn test_ebpf_config_validation() {
+        let mut config = EbpfConfig::default();
+        let mut collector = EbpfMetricsCollector::new(config.clone());
+        
+        // Корректная конфигурация должна проходить валидацию
+        assert!(collector.validate_config().is_ok());
+        
+        // Тестируем некорректные конфигурации
+        config.batch_size = 0;
+        let mut collector = EbpfMetricsCollector::new(config.clone());
+        assert!(collector.validate_config().is_err());
     }
 }
 ```
@@ -296,11 +383,14 @@ cargo bench --features ebpf
 
 ## Будущие улучшения
 
-- **Расширенные метрики**: Добавление поддержки сетевых метрик, метрик диска
+- **Расширенные метрики**: Добавление поддержки метрик диска, метрик GPU
 - **Улучшенная интеграция**: Более тесная интеграция с основной системой метрик
 - **Динамическая загрузка**: Поддержка динамической загрузки и выгрузки eBPF программ
 - **Безопасность**: Улучшенная проверка безопасности eBPF программ
 - **Мониторинг**: Расширенный мониторинг и логирование eBPF операций
+- **Производительность**: Оптимизация существующих eBPF программ для снижения накладных расходов
+- **Совместимость**: Тестирование и поддержка различных версий ядра Linux
+- **Документация**: Расширение примеров использования и руководств по устранению неполадок
 
 ## Примеры использования
 
@@ -317,6 +407,53 @@ collector.initialize()?;
 
 let metrics = collector.collect_metrics()?;
 println!("Количество системных вызовов: {}", metrics.syscall_count);
+```
+
+### Мониторинг сетевой активности
+
+```rust
+let config = EbpfConfig {
+    enable_network_monitoring: true,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize()?;
+
+let metrics = collector.collect_metrics()?;
+println!("Сетевые пакеты: {}", metrics.network_packets);
+println!("Сетевой трафик: {} байт", metrics.network_bytes);
+
+// Доступ к детализированной статистике по IP адресам
+if let Some(network_details) = metrics.network_details {
+    for detail in network_details {
+        println!("IP: {:x}, отправлено: {} пакетов, получено: {} пакетов",
+                 detail.ip_address, detail.packets_sent, detail.packets_received);
+    }
+}
+```
+
+### Расширенный мониторинг системных вызовов
+
+```rust
+let config = EbpfConfig {
+    enable_syscall_monitoring: true,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize()?;
+
+let metrics = collector.collect_metrics()?;
+println!("Количество системных вызовов: {}", metrics.syscall_count);
+
+// Доступ к детализированной статистике по системным вызовам
+if let Some(syscall_details) = metrics.syscall_details {
+    for detail in syscall_details {
+        println!("Системный вызов {}: {} вызовов, среднее время: {} нс",
+                 detail.syscall_id, detail.count, detail.avg_time_ns);
+    }
+}
 ```
 
 ### Оптимизированный сбор метрик
