@@ -5,7 +5,7 @@
 //! использования ранее собранных метрик.
 
 use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
-use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics};
+use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics, NetworkMetrics, DiskMetrics};
 use smoothtask_core::metrics::process::collect_process_metrics;
 use std::sync::{Arc, Mutex};
 
@@ -131,6 +131,8 @@ fn test_system_metrics_caching_logic() {
                 pressure: smoothtask_core::metrics::system::PressureMetrics::default(),
                 temperature: smoothtask_core::metrics::system::TemperatureMetrics::default(),
                 power: smoothtask_core::metrics::system::PowerMetrics::default(),
+                network: NetworkMetrics::default(),
+                disk: DiskMetrics::default(),
             };
             system_metrics_cache = Some(mock_metrics);
             system_metrics_cache_iteration = current_iteration;

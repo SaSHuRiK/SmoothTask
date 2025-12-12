@@ -303,6 +303,84 @@ impl Default for PowerMetrics {
     }
 }
 
+/// Метрики сетевой активности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkMetrics {
+    /// Список сетевых интерфейсов
+    pub interfaces: Vec<NetworkInterface>,
+    /// Общее количество полученных байт
+    pub total_rx_bytes: u64,
+    /// Общее количество отправленных байт
+    pub total_tx_bytes: u64,
+}
+
+impl Default for NetworkMetrics {
+    fn default() -> Self {
+        Self {
+            interfaces: Vec::new(),
+            total_rx_bytes: 0,
+            total_tx_bytes: 0,
+        }
+    }
+}
+
+/// Информация о сетевом интерфейсе
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkInterface {
+    /// Имя интерфейса (например, "eth0", "wlan0")
+    pub name: String,
+    /// Полученные байты
+    pub rx_bytes: u64,
+    /// Отправленные байты
+    pub tx_bytes: u64,
+    /// Полученные пакеты
+    pub rx_packets: u64,
+    /// Отправленные пакеты
+    pub tx_packets: u64,
+    /// Ошибки приема
+    pub rx_errors: u64,
+    /// Ошибки передачи
+    pub tx_errors: u64,
+}
+
+/// Метрики дисковых операций
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiskMetrics {
+    /// Список дисковых устройств
+    pub devices: Vec<DiskDevice>,
+    /// Общее количество прочитанных байт
+    pub total_read_bytes: u64,
+    /// Общее количество записанных байт
+    pub total_write_bytes: u64,
+}
+
+impl Default for DiskMetrics {
+    fn default() -> Self {
+        Self {
+            devices: Vec::new(),
+            total_read_bytes: 0,
+            total_write_bytes: 0,
+        }
+    }
+}
+
+/// Информация о дисковом устройстве
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DiskDevice {
+    /// Имя устройства (например, "sda", "nvme0n1")
+    pub name: String,
+    /// Прочитанные байты
+    pub read_bytes: u64,
+    /// Записанные байты
+    pub write_bytes: u64,
+    /// Операции чтения
+    pub read_ops: u64,
+    /// Операции записи
+    pub write_ops: u64,
+    /// Время ввода-вывода в миллисекундах
+    pub io_time: u64,
+}
+
 /// Полный набор системных метрик, собранных из `/proc`.
 ///
 /// Содержит информацию о CPU, памяти, нагрузке системы и давлении ресурсов.
@@ -320,6 +398,10 @@ pub struct SystemMetrics {
     pub temperature: TemperatureMetrics,
     /// Метрики энергопотребления
     pub power: PowerMetrics,
+    /// Метрики сетевой активности
+    pub network: NetworkMetrics,
+    /// Метрики дисковых операций
+    pub disk: DiskMetrics,
 }
 
 impl SystemMetrics {
@@ -643,6 +725,10 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Собираем метрики температуры и энергопотребления
     let temperature = collect_temperature_metrics();
     let power = collect_power_metrics();
+    
+    // Собираем метрики сетевой активности и дисковых операций
+    let network = collect_network_metrics();
+    let disk = collect_disk_metrics();
 
     Ok(SystemMetrics {
         cpu_times,
@@ -651,6 +737,8 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
         pressure,
         temperature,
         power,
+        network,
+        disk,
     })
 }
 
@@ -745,6 +833,112 @@ fn collect_power_metrics() -> PowerMetrics {
     }
     
     power
+}
+
+/// Собирает метрики сетевой активности из /proc/net/dev
+fn collect_network_metrics() -> NetworkMetrics {
+    let mut network = NetworkMetrics::default();
+    let net_dev_path = Path::new("/proc/net/dev");
+    
+    if let Ok(contents) = fs::read_to_string(net_dev_path) {
+        let mut total_rx_bytes = 0;
+        let mut total_tx_bytes = 0;
+        
+        for line in contents.lines().skip(2) { // Пропускаем заголовки
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            
+            // Разбираем строку вида: "eth0: 12345678 1234 0 0 0 0 0 0 12345678 1234 0 0 0 0 0 0"
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 17 {
+                let interface_name = parts[0].trim_end_matches(':');
+                
+                // Извлекаем значения (пропускаем первый элемент - имя интерфейса)
+                let rx_bytes = parts[1].parse::<u64>().unwrap_or(0);
+                let rx_packets = parts[2].parse::<u64>().unwrap_or(0);
+                let rx_errors = parts[3].parse::<u64>().unwrap_or(0);
+                let tx_bytes = parts[9].parse::<u64>().unwrap_or(0);
+                let tx_packets = parts[10].parse::<u64>().unwrap_or(0);
+                let tx_errors = parts[11].parse::<u64>().unwrap_or(0);
+                
+                network.interfaces.push(NetworkInterface {
+                    name: interface_name.to_string(),
+                    rx_bytes,
+                    tx_bytes,
+                    rx_packets,
+                    tx_packets,
+                    rx_errors,
+                    tx_errors,
+                });
+                
+                total_rx_bytes += rx_bytes;
+                total_tx_bytes += tx_bytes;
+            }
+        }
+        
+        network.total_rx_bytes = total_rx_bytes;
+        network.total_tx_bytes = total_tx_bytes;
+    }
+    
+    network
+}
+
+/// Собирает метрики дисковых операций из /proc/diskstats
+fn collect_disk_metrics() -> DiskMetrics {
+    let mut disk = DiskMetrics::default();
+    let diskstats_path = Path::new("/proc/diskstats");
+    
+    if let Ok(contents) = fs::read_to_string(diskstats_path) {
+        let mut total_read_bytes = 0;
+        let mut total_write_bytes = 0;
+        
+        for line in contents.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            
+            // Разбираем строку вида: "8 0 sda 1234 0 5678 123 456 0 7890 1234 0 0 0 12345"
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 14 {
+                let device_name = parts[2].to_string();
+                
+                // Извлекаем значения (индексы 3-13)
+                let read_ops = parts[3].parse::<u64>().unwrap_or(0);
+                let _read_merged = parts[4].parse::<u64>().unwrap_or(0);
+                let read_sectors = parts[5].parse::<u64>().unwrap_or(0);
+                let _read_time = parts[6].parse::<u64>().unwrap_or(0);
+                let write_ops = parts[7].parse::<u64>().unwrap_or(0);
+                let _write_merged = parts[8].parse::<u64>().unwrap_or(0);
+                let write_sectors = parts[9].parse::<u64>().unwrap_or(0);
+                let _write_time = parts[10].parse::<u64>().unwrap_or(0);
+                let io_time = parts[14].parse::<u64>().unwrap_or(0);
+                
+                // Конвертируем секторы в байты (обычно 512 байт на сектор)
+                let read_bytes = read_sectors * 512;
+                let write_bytes = write_sectors * 512;
+                
+                disk.devices.push(DiskDevice {
+                    name: device_name,
+                    read_bytes,
+                    write_bytes,
+                    read_ops,
+                    write_ops,
+                    io_time,
+                });
+                
+                total_read_bytes += read_bytes;
+                total_write_bytes += write_bytes;
+            }
+        }
+        
+        disk.total_read_bytes = total_read_bytes;
+        disk.total_write_bytes = total_write_bytes;
+    }
+    
+    disk
 }
 
 fn read_file(path: &Path) -> Result<String> {
@@ -1502,6 +1696,8 @@ SwapFree:        4096000 kB
             pressure: PressureMetrics::default(),
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
         };
 
         let cur_metrics = SystemMetrics {
@@ -1522,6 +1718,8 @@ SwapFree:        4096000 kB
             pressure: prev_metrics.pressure.clone(),
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -1566,6 +1764,8 @@ SwapFree:        4096000 kB
             pressure: PressureMetrics::default(),
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
         };
 
         let cur_metrics = SystemMetrics {
@@ -1586,6 +1786,8 @@ SwapFree:        4096000 kB
             pressure: prev_metrics.pressure.clone(),
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -1786,6 +1988,8 @@ SwapFree:        4096000 kB
             pressure: PressureMetrics::default(),
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
         };
         
         // Проверяем, что метрики содержат новые поля
@@ -1812,5 +2016,179 @@ SwapFree:        4096000 kB
         let _power = collect_power_metrics();
         // В тестовой среде мы ожидаем пустые значения, так как нет реального powercap
         // Это нормальное поведение
+    }
+
+    #[test]
+    fn test_network_metrics_default() {
+        // Тест проверяет, что NetworkMetrics::default() возвращает пустые значения
+        let network = NetworkMetrics::default();
+        assert!(network.interfaces.is_empty());
+        assert_eq!(network.total_rx_bytes, 0);
+        assert_eq!(network.total_tx_bytes, 0);
+    }
+
+    #[test]
+    fn test_disk_metrics_default() {
+        // Тест проверяет, что DiskMetrics::default() возвращает пустые значения
+        let disk = DiskMetrics::default();
+        assert!(disk.devices.is_empty());
+        assert_eq!(disk.total_read_bytes, 0);
+        assert_eq!(disk.total_write_bytes, 0);
+    }
+
+    #[test]
+    fn test_network_metrics_serialization() {
+        // Тест проверяет, что NetworkMetrics корректно сериализуется
+        let mut network = NetworkMetrics::default();
+        network.interfaces.push(NetworkInterface {
+            name: "eth0".to_string(),
+            rx_bytes: 1000,
+            tx_bytes: 2000,
+            rx_packets: 100,
+            tx_packets: 200,
+            rx_errors: 1,
+            tx_errors: 2,
+        });
+        network.total_rx_bytes = 1000;
+        network.total_tx_bytes = 2000;
+        
+        let json = serde_json::to_string(&network).expect("Сериализация должна работать");
+        assert!(json.contains("eth0"));
+        assert!(json.contains("1000"));
+        assert!(json.contains("2000"));
+        
+        // Тест десериализации
+        let deserialized: NetworkMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        assert_eq!(deserialized.interfaces.len(), 1);
+        assert_eq!(deserialized.interfaces[0].name, "eth0");
+        assert_eq!(deserialized.total_rx_bytes, 1000);
+        assert_eq!(deserialized.total_tx_bytes, 2000);
+    }
+
+    #[test]
+    fn test_disk_metrics_serialization() {
+        // Тест проверяет, что DiskMetrics корректно сериализуется
+        let mut disk = DiskMetrics::default();
+        disk.devices.push(DiskDevice {
+            name: "sda".to_string(),
+            read_bytes: 1000000,
+            write_bytes: 2000000,
+            read_ops: 1000,
+            write_ops: 2000,
+            io_time: 500,
+        });
+        disk.total_read_bytes = 1000000;
+        disk.total_write_bytes = 2000000;
+        
+        let json = serde_json::to_string(&disk).expect("Сериализация должна работать");
+        assert!(json.contains("sda"));
+        assert!(json.contains("1000000"));
+        assert!(json.contains("2000000"));
+        
+        // Тест десериализации
+        let deserialized: DiskMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        assert_eq!(deserialized.devices.len(), 1);
+        assert_eq!(deserialized.devices[0].name, "sda");
+        assert_eq!(deserialized.total_read_bytes, 1000000);
+        assert_eq!(deserialized.total_write_bytes, 2000000);
+    }
+
+    #[test]
+    fn test_collect_network_metrics_fallback() {
+        // Тест проверяет, что collect_network_metrics работает корректно
+        // В реальной системе он вернет реальные данные, в тестовой среде - пустые
+        let network = collect_network_metrics();
+        // Проверяем, что структура корректно инициализирована
+        // В реальной системе могут быть данные, в тестовой - пустые
+        assert_eq!(network.total_rx_bytes >= network.interfaces.iter().map(|iface| iface.rx_bytes).sum::<u64>(), true);
+        assert_eq!(network.total_tx_bytes >= network.interfaces.iter().map(|iface| iface.tx_bytes).sum::<u64>(), true);
+    }
+
+    #[test]
+    fn test_collect_disk_metrics_fallback() {
+        // Тест проверяет, что collect_disk_metrics работает корректно
+        // В реальной системе он вернет реальные данные, в тестовой среде - пустые
+        let disk = collect_disk_metrics();
+        // Проверяем, что структура корректно инициализирована
+        // В реальной системе могут быть данные, в тестовой - пустые
+        assert_eq!(disk.total_read_bytes >= disk.devices.iter().map(|dev| dev.read_bytes).sum::<u64>(), true);
+        assert_eq!(disk.total_write_bytes >= disk.devices.iter().map(|dev| dev.write_bytes).sum::<u64>(), true);
+    }
+
+    #[test]
+    fn test_system_metrics_includes_network_and_disk() {
+        // Тест проверяет, что SystemMetrics включает новые поля сетевых и дисковых метрик
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes::default(),
+            memory: MemoryInfo::default(),
+            load_avg: LoadAvg::default(),
+            pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
+        };
+        
+        // Проверяем, что метрики содержат новые поля
+        assert!(metrics.network.interfaces.is_empty());
+        assert_eq!(metrics.network.total_rx_bytes, 0);
+        assert_eq!(metrics.network.total_tx_bytes, 0);
+        assert!(metrics.disk.devices.is_empty());
+        assert_eq!(metrics.disk.total_read_bytes, 0);
+        assert_eq!(metrics.disk.total_write_bytes, 0);
+    }
+
+    #[test]
+    fn test_parse_network_line() {
+        // Тест проверяет парсинг строки из /proc/net/dev
+        let line = "eth0: 12345678 1234 0 0 0 0 0 0 12345678 1234 0 0 0 0 0 0";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        
+        assert_eq!(parts.len(), 17);
+        let interface_name = parts[0].trim_end_matches(':');
+        assert_eq!(interface_name, "eth0");
+        
+        let rx_bytes = parts[1].parse::<u64>().unwrap();
+        let rx_packets = parts[2].parse::<u64>().unwrap();
+        let rx_errors = parts[3].parse::<u64>().unwrap();
+        let tx_bytes = parts[9].parse::<u64>().unwrap();
+        let tx_packets = parts[10].parse::<u64>().unwrap();
+        let tx_errors = parts[11].parse::<u64>().unwrap();
+        
+        assert_eq!(rx_bytes, 12345678);
+        assert_eq!(rx_packets, 1234);
+        assert_eq!(rx_errors, 0);
+        assert_eq!(tx_bytes, 12345678);
+        assert_eq!(tx_packets, 1234);
+        assert_eq!(tx_errors, 0);
+    }
+
+    #[test]
+    fn test_parse_disk_line() {
+        // Тест проверяет парсинг строки из /proc/diskstats
+        let line = "8 0 sda 1234 0 5678 123 456 0 7890 1234 0 0 0 12345";
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        
+        assert_eq!(parts.len(), 15);
+        let device_name = parts[2];
+        assert_eq!(device_name, "sda");
+        
+        let read_ops = parts[3].parse::<u64>().unwrap();
+        let read_sectors = parts[5].parse::<u64>().unwrap();
+        let write_ops = parts[7].parse::<u64>().unwrap();
+        let write_sectors = parts[9].parse::<u64>().unwrap();
+        let io_time = parts[14].parse::<u64>().unwrap();
+        
+        assert_eq!(read_ops, 1234);
+        assert_eq!(read_sectors, 5678);
+        assert_eq!(write_ops, 456);
+        assert_eq!(write_sectors, 7890);
+        assert_eq!(io_time, 12345);
+        
+        // Проверяем конвертацию секторов в байты
+        let read_bytes = read_sectors * 512;
+        let write_bytes = write_sectors * 512;
+        assert_eq!(read_bytes, 5678 * 512);
+        assert_eq!(write_bytes, 7890 * 512);
     }
 }
