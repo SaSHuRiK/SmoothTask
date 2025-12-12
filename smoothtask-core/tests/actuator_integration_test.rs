@@ -650,7 +650,7 @@ fn test_apply_priority_adjustments_hysteresis_scenarios() {
         },
     ];
 
-    let result1 = apply_priority_adjustments(&adjustments, &mut tracker);
+    let _result1 = apply_priority_adjustments(&adjustments, &mut tracker);
     
     let adjustments2 = vec![
         PriorityAdjustment {
@@ -668,7 +668,7 @@ fn test_apply_priority_adjustments_hysteresis_scenarios() {
             reason: "Normal task".to_string(),
         },
     ];
-    let result2 = apply_priority_adjustments(&adjustments2, &mut tracker);
+    let _result2 = apply_priority_adjustments(&adjustments2, &mut tracker);
     
     let adjustments3 = vec![
         PriorityAdjustment {
@@ -686,11 +686,11 @@ fn test_apply_priority_adjustments_hysteresis_scenarios() {
             reason: "Idle task".to_string(),
         },
     ];
-    let result3 = apply_priority_adjustments(&adjustments3, &mut tracker);
+    let _result3 = apply_priority_adjustments(&adjustments3, &mut tracker);
     
-    assert!(true); // result1.applied is usize, always >= 0
-    assert!(true); // result2.skipped_hysteresis is usize, always >= 0
-    assert!(true); // result3.applied is usize, always >= 0
+    assert!(true); // _result1.applied is usize, always >= 0
+    assert!(true); // _result2.skipped_hysteresis is usize, always >= 0
+    assert!(true); // _result3.applied is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными типами.

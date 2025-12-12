@@ -242,7 +242,9 @@ fn test_caching_with_dynamic_interval() {
     // Тестируем с разными интервалами
     let intervals = vec![1, 2, 3, 5];
     
-    for _ in intervals {
+    for interval in intervals {
+        let mut cache: Option<u64> = None;
+        let mut cache_iteration: u64 = 0;
         
         for current_iteration in 1..=10 {
             let need_update = cache.is_none() ||
@@ -338,7 +340,7 @@ fn test_real_system_metrics_collection() {
     if result.is_ok() {
         let metrics = result.unwrap();
         // Проверяем, что метрики содержат разумные значения
-        assert!(metrics.cpu_times.user >= 0);
+        assert!(metrics.cpu_times.user > 0);
         assert!(metrics.memory.mem_total_kb > 0);
     } else {
         // В некоторых окружениях /proc может быть недоступен
