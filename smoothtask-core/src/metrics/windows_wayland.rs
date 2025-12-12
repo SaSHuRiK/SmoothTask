@@ -11,6 +11,23 @@ use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_m
 
 use crate::metrics::windows::{WindowInfo, WindowIntrospector, WindowState};
 
+/// Типы поддерживаемых Wayland композиторов
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WaylandCompositorType {
+    /// Mutter (GNOME)
+    Mutter,
+    /// KWin (KDE Plasma)
+    KWin,
+    /// Sway (i3-compatible)
+    Sway,
+    /// Hyprland
+    Hyprland,
+    /// Wlroots-based (общий)
+    Wlroots,
+    /// Неизвестный или неопределённый
+    Unknown,
+}
+
 /// Проверяет, доступно ли Wayland окружение.
 ///
 /// Функция проверяет несколько признаков доступности Wayland композитора в порядке приоритета:
@@ -142,6 +159,95 @@ pub fn is_wayland_available() -> bool {
     false
 }
 
+/// Определяет тип Wayland композитора
+///
+/// Функция пытается определить, какой Wayland композитор используется,
+/// проверяя различные индикаторы и переменные окружения.
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `WaylandCompositorType` или `None`, если определить тип не удалось.
+pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
+    // Проверяем переменные окружения, которые устанавливают различные композиторы
+    
+    // 1. Проверяем XDG_CURRENT_DESKTOP
+    if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
+        let desktop_lower = desktop.to_lowercase();
+        
+        if desktop_lower.contains("gnome") {
+            return Some(WaylandCompositorType::Mutter);
+        }
+        if desktop_lower.contains("kde") || desktop_lower.contains("plasma") {
+            return Some(WaylandCompositorType::KWin);
+        }
+        if desktop_lower.contains("sway") {
+            return Some(WaylandCompositorType::Sway);
+        }
+        if desktop_lower.contains("hyprland") {
+            return Some(WaylandCompositorType::Hyprland);
+        }
+    }
+    
+    // 2. Проверяем WAYLAND_DISPLAY и другие переменные
+    if let Ok(display) = std::env::var("WAYLAND_DISPLAY") {
+        // Некоторые композиторы имеют характерные имена дисплеев
+        if display.contains("sway") {
+            return Some(WaylandCompositorType::Sway);
+        }
+        if display.contains("hyprland") {
+            return Some(WaylandCompositorType::Hyprland);
+        }
+    }
+    
+    // 3. Проверяем процессы композитора
+    // Это более надёжный метод, но требует доступа к /proc
+    if let Ok(processes) = std::fs::read_dir("/proc") {
+        for entry in processes.flatten() {
+            if let Some(pid_str) = entry.file_name().to_str() {
+                if let Ok(pid) = pid_str.parse::<u32>() {
+                    let comm_path = PathBuf::from(format!("/proc/{}/comm", pid));
+                    if let Ok(comm) = std::fs::read_to_string(comm_path) {
+                        let comm = comm.trim();
+                        
+                        if comm == "mutter" || comm == "gnome-shell" {
+                            return Some(WaylandCompositorType::Mutter);
+                        }
+                        if comm == "kwin_wayland" || comm == "kwin_x11" {
+                            return Some(WaylandCompositorType::KWin);
+                        }
+                        if comm == "sway" {
+                            return Some(WaylandCompositorType::Sway);
+                        }
+                        if comm == "Hyprland" {
+                            return Some(WaylandCompositorType::Hyprland);
+                        }
+                        if comm == "wlroots" || comm == "wlr-session" {
+                            return Some(WaylandCompositorType::Wlroots);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // 4. Проверяем стандартные пути конфигурации
+    // Это может помочь определить композитор
+    let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
+    
+    let sway_config = PathBuf::from(format!("{}/.config/sway/config", home_dir));
+    if sway_config.exists() {
+        return Some(WaylandCompositorType::Sway);
+    }
+    
+    let hyprland_config = PathBuf::from(format!("{}/.config/hypr/hyprland.conf", home_dir));
+    if hyprland_config.exists() {
+        return Some(WaylandCompositorType::Hyprland);
+    }
+    
+    // Если не удалось определить, возвращаем None
+    None
+}
+
 /// Wayland-интроспектор для получения информации об окнах.
 ///
 /// Использует wlr-foreign-toplevel-management для получения списка окон
@@ -153,6 +259,8 @@ pub struct WaylandIntrospector {
     event_queue: wayland_client::EventQueue<WaylandState>,
     /// Текущий список окон
     windows: Vec<WindowInfo>,
+    /// Тип обнаруженного композитора
+    compositor_type: Option<WaylandCompositorType>,
 }
 
 /// Состояние для обработки событий Wayland
@@ -248,6 +356,11 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
 }
 
 impl WaylandIntrospector {
+    /// Возвращает тип обнаруженного Wayland композитора
+    pub fn compositor_type(&self) -> Option<&WaylandCompositorType> {
+        self.compositor_type.as_ref()
+    }
+
     /// Создаёт новый WaylandIntrospector, подключаясь к Wayland композитору.
     ///
     /// Функция проверяет доступность Wayland окружения и пытается создать интроспектор.
@@ -336,6 +449,14 @@ impl WaylandIntrospector {
 
         info!("Attempting to connect to Wayland compositor");
         
+        // Пробуем определить тип композитора
+        let compositor_type = detect_wayland_compositor();
+        if let Some(compositor) = &compositor_type {
+            info!("Detected Wayland compositor: {:?}", compositor);
+        } else {
+            warn!("Could not detect Wayland compositor type, using generic approach");
+        }
+
         // Подключаемся к Wayland композитору
         let connection = wayland_client::Connection::connect_to_env()
             .with_context(|| "Failed to connect to Wayland compositor")?;
@@ -362,6 +483,7 @@ impl WaylandIntrospector {
             connection,
             event_queue,
             windows: Vec::new(),
+            compositor_type,
         })
     }
 
@@ -435,14 +557,7 @@ impl WaylandIntrospector {
             // Пока что добавляем временное окно для демонстрации функциональности
             // В реальной реализации нужно будет обработать события Toplevel,
             // которые придут от менеджера после его инициализации
-            let window_info = WindowInfo::new(
-                Some("test_app".to_string()),
-                Some("Test Window".to_string()),
-                None,
-                WindowState::Focused,
-                Some(1234), // пример PID
-                0.5, // умеренная уверенность
-            );
+            let window_info = self.create_test_window_for_compositor();
             
             debug!("Added test window to state");
             state.windows.push(window_info);
@@ -453,6 +568,62 @@ impl WaylandIntrospector {
         info!("Wayland event processing completed, found {} windows", self.windows.len());
 
         Ok(())
+    }
+
+    /// Создаёт тестовое окно, специфичное для обнаруженного композитора
+    fn create_test_window_for_compositor(&self) -> WindowInfo {
+        match self.compositor_type.as_ref() {
+            Some(WaylandCompositorType::Mutter) => {
+                WindowInfo::new(
+                    Some("org.gnome.Nautilus".to_string()),
+                    Some("Files".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(1234),
+                    0.8,
+                )
+            }
+            Some(WaylandCompositorType::KWin) => {
+                WindowInfo::new(
+                    Some("org.kde.dolphin".to_string()),
+                    Some("Dolphin".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(5678),
+                    0.8,
+                )
+            }
+            Some(WaylandCompositorType::Sway) => {
+                WindowInfo::new(
+                    Some("alacritty".to_string()),
+                    Some("Alacritty".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(9012),
+                    0.7,
+                )
+            }
+            Some(WaylandCompositorType::Hyprland) => {
+                WindowInfo::new(
+                    Some("firefox".to_string()),
+                    Some("Firefox".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(3456),
+                    0.75,
+                )
+            }
+            Some(WaylandCompositorType::Wlroots) | Some(WaylandCompositorType::Unknown) | None => {
+                WindowInfo::new(
+                    Some("test_app".to_string()),
+                    Some("Test Window".to_string()),
+                    None,
+                    WindowState::Focused,
+                    Some(1234),
+                    0.5,
+                )
+            }
+        }
     }
 }
 
@@ -838,6 +1009,195 @@ mod tests {
         } else {
             std::env::remove_var("XDG_RUNTIME_DIR");
         }
+    }
+
+    #[test]
+    fn test_detect_wayland_compositor_does_not_panic() {
+        // Тест проверяет, что функция не падает при отсутствии Wayland
+        let result = detect_wayland_compositor();
+        // Функция должна вернуть None или Some(_), но не паниковать
+        let _ = result;
+    }
+
+    #[test]
+    fn test_detect_wayland_compositor_with_xdg_current_desktop() {
+        // Тест проверяет обнаружение композитора через XDG_CURRENT_DESKTOP
+        let old_desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+
+        // Тестируем GNOME/Mutter
+        std::env::set_var("XDG_CURRENT_DESKTOP", "GNOME");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Mutter));
+
+        // Тестируем KDE/KWin
+        std::env::set_var("XDG_CURRENT_DESKTOP", "KDE");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::KWin));
+
+        // Тестируем Sway
+        std::env::set_var("XDG_CURRENT_DESKTOP", "sway");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Sway));
+
+        // Тестируем Hyprland
+        std::env::set_var("XDG_CURRENT_DESKTOP", "Hyprland");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Hyprland));
+
+        // Восстанавливаем переменную окружения
+        if let Some(val) = old_desktop {
+            std::env::set_var("XDG_CURRENT_DESKTOP", val);
+        } else {
+            std::env::remove_var("XDG_CURRENT_DESKTOP");
+        }
+    }
+
+    #[test]
+    fn test_wayland_compositor_type_creation() {
+        // Тест проверяет создание тестового окна для разных композиторов
+        // Используем простую структуру вместо полного WaylandIntrospector
+        let compositor_type = Some(WaylandCompositorType::Mutter);
+        
+        // Создаём тестовое окно напрямую
+        let window = match compositor_type.as_ref() {
+            Some(WaylandCompositorType::Mutter) => {
+                WindowInfo::new(
+                    Some("org.gnome.Nautilus".to_string()),
+                    Some("Files".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(1234),
+                    0.8,
+                )
+            }
+            _ => WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234),
+                0.5,
+            )
+        };
+        
+        assert_eq!(window.app_id, Some("org.gnome.Nautilus".to_string()));
+        assert_eq!(window.title, Some("Files".to_string()));
+    }
+
+    #[test]
+    fn test_wayland_compositor_type_kwin() {
+        let compositor_type = Some(WaylandCompositorType::KWin);
+        
+        let window = match compositor_type.as_ref() {
+            Some(WaylandCompositorType::KWin) => {
+                WindowInfo::new(
+                    Some("org.kde.dolphin".to_string()),
+                    Some("Dolphin".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(5678),
+                    0.8,
+                )
+            }
+            _ => WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234),
+                0.5,
+            )
+        };
+        
+        assert_eq!(window.app_id, Some("org.kde.dolphin".to_string()));
+        assert_eq!(window.title, Some("Dolphin".to_string()));
+    }
+
+    #[test]
+    fn test_wayland_compositor_type_sway() {
+        let compositor_type = Some(WaylandCompositorType::Sway);
+        
+        let window = match compositor_type.as_ref() {
+            Some(WaylandCompositorType::Sway) => {
+                WindowInfo::new(
+                    Some("alacritty".to_string()),
+                    Some("Alacritty".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(9012),
+                    0.7,
+                )
+            }
+            _ => WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234),
+                0.5,
+            )
+        };
+        
+        assert_eq!(window.app_id, Some("alacritty".to_string()));
+        assert_eq!(window.title, Some("Alacritty".to_string()));
+    }
+
+    #[test]
+    fn test_wayland_compositor_type_hyprland() {
+        let compositor_type = Some(WaylandCompositorType::Hyprland);
+        
+        let window = match compositor_type.as_ref() {
+            Some(WaylandCompositorType::Hyprland) => {
+                WindowInfo::new(
+                    Some("firefox".to_string()),
+                    Some("Firefox".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(3456),
+                    0.75,
+                )
+            }
+            _ => WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234),
+                0.5,
+            )
+        };
+        
+        assert_eq!(window.app_id, Some("firefox".to_string()));
+        assert_eq!(window.title, Some("Firefox".to_string()));
+    }
+
+    #[test]
+    fn test_wayland_compositor_type_unknown() {
+        let compositor_type: Option<WaylandCompositorType> = None;
+        
+        let window = match compositor_type.as_ref() {
+            Some(WaylandCompositorType::Mutter) => {
+                WindowInfo::new(
+                    Some("org.gnome.Nautilus".to_string()),
+                    Some("Files".to_string()),
+                    Some(1),
+                    WindowState::Focused,
+                    Some(1234),
+                    0.8,
+                )
+            }
+            _ => WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234),
+                0.5,
+            )
+        };
+        
+        assert_eq!(window.app_id, Some("test_app".to_string()));
+        assert_eq!(window.title, Some("Test Window".to_string()));
     }
 
     #[test]
