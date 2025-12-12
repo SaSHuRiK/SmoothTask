@@ -97,6 +97,8 @@ pub struct EbpfConfig {
     pub enable_filesystem_monitoring: bool,
     /// Включить мониторинг процесс-специфичных метрик
     pub enable_process_monitoring: bool,
+    /// Включить мониторинг энергопотребления процессов
+    pub enable_process_energy_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
     /// Включить кэширование метрик для уменьшения накладных расходов
@@ -133,6 +135,7 @@ impl Default for EbpfConfig {
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
             enable_process_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -348,6 +351,25 @@ pub struct ProcessStat {
     pub name: String,
 }
 
+/// Статистика по энергопотреблению процессов
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessEnergyStat {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Идентификатор потока
+    pub tgid: u32,
+    /// Потребление энергии в микроджоулях
+    pub energy_uj: u64,
+    /// Последнее обновление в наносекундах
+    pub last_update_ns: u64,
+    /// Идентификатор CPU
+    pub cpu_id: u32,
+    /// Имя процесса
+    pub name: String,
+    /// Потребление энергии в ваттах (вычисленное)
+    pub energy_w: f32,
+}
+
 /// Структура для хранения eBPF метрик
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EbpfMetrics {
@@ -397,6 +419,8 @@ pub struct EbpfMetrics {
     pub filesystem_details: Option<Vec<FilesystemStat>>,
     /// Детализированная статистика по процесс-специфичным метрикам (опционально)
     pub process_details: Option<Vec<ProcessStat>>,
+    /// Детализированная статистика по энергопотреблению процессов (опционально)
+    pub process_energy_details: Option<Vec<ProcessEnergyStat>>,
 }
 
 /// Конфигурация порогов для уведомлений eBPF
@@ -842,6 +866,8 @@ pub struct EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     process_monitoring_program: Option<Program>,
     #[cfg(feature = "ebpf")]
+    process_energy_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
     gpu_program: Option<Program>,
     #[cfg(feature = "ebpf")]
     cpu_temperature_program: Option<Program>,
@@ -859,6 +885,8 @@ pub struct EbpfMetricsCollector {
     connection_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     process_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    process_energy_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     gpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
@@ -912,6 +940,8 @@ impl EbpfMetricsCollector {
             #[cfg(feature = "ebpf")]
             process_monitoring_program: None,
             #[cfg(feature = "ebpf")]
+            process_energy_program: None,
+            #[cfg(feature = "ebpf")]
             gpu_program: None,
             #[cfg(feature = "ebpf")]
             filesystem_program: None,
@@ -927,6 +957,8 @@ impl EbpfMetricsCollector {
             connection_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             process_maps: Vec::new(),
+            #[cfg(feature = "ebpf")]
+            process_energy_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             gpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
@@ -1412,6 +1444,24 @@ impl EbpfMetricsCollector {
                         let error_msg = format!("Ошибка загрузки программы мониторинга процесс-специфичных метрик: {}. Проверьте доступ к информации о процессах", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("ProcessMonitoring: {}", e));
+                        error_count += 1;
+                        self.last_error = Some(error_msg);
+                    }
+                }
+            }
+
+            if self.config.enable_process_energy_monitoring {
+                match self.load_process_energy_program() {
+                    Ok(_) => {
+                        success_count += 1;
+                        tracing::info!(
+                            "Программа мониторинга энергопотребления процессов успешно загружена"
+                        );
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Ошибка загрузки программы мониторинга энергопотребления процессов: {}. Проверьте доступ к энергетическим сенсорам и права доступа", e);
+                        tracing::error!("{}", error_msg);
+                        detailed_errors.push(format!("ProcessEnergy: {}", e));
                         error_count += 1;
                         self.last_error = Some(error_msg);
                     }
@@ -2056,6 +2106,44 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга энергопотребления процессов
+    #[cfg(feature = "ebpf")]
+    fn load_process_energy_program(&mut self) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        use std::path::Path;
+
+        let program_path = Path::new("src/ebpf_programs/process_energy.c");
+
+        if !program_path.exists() {
+            tracing::warn!(
+                "eBPF программа для мониторинга энергопотребления процессов не найдена: {:?}",
+                program_path
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Загрузка eBPF программы для мониторинга энергопотребления процессов: {:?}",
+            program_path
+        );
+
+        // Загрузка eBPF программы
+        let program = load_ebpf_program_from_file(program_path.to_str().unwrap())?;
+
+        // Сохранение программы
+        self.process_energy_program = Some(program);
+
+        // Загрузка карт из программы
+        self.process_energy_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "process_energy_map")?;
+        self.process_energy_maps.extend(
+            self.load_maps_from_program(program_path.to_str().unwrap(), "global_energy_map")?,
+        );
+
+        tracing::info!("eBPF программа для мониторинга энергопотребления процессов успешно загружена с {} картами", self.process_energy_maps.len());
+        Ok(())
+    }
+
     /// Загрузить eBPF программу для мониторинга файловой системы
     #[cfg(feature = "ebpf")]
     fn load_filesystem_program(&mut self) -> Result<()> {
@@ -2534,6 +2622,13 @@ impl EbpfMetricsCollector {
             0
         };
 
+        // Собираем метрики энергопотребления процессов
+        let process_energy_details = if self.config.enable_process_energy_monitoring {
+            self.collect_process_energy_stats()?
+        } else {
+            None
+        };
+
         let cpu_usage = cpu_usage?;
         let memory_usage = memory_usage?;
         let syscall_count = syscall_count?;
@@ -2571,6 +2666,7 @@ impl EbpfMetricsCollector {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         );
 
         let collection_time = start_time.elapsed();
@@ -2611,6 +2707,7 @@ impl EbpfMetricsCollector {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         })
     }
 
@@ -2626,6 +2723,7 @@ impl EbpfMetricsCollector {
         Option<Vec<CpuTemperatureStat>>,
         Option<Vec<ProcessStat>>,
         Option<Vec<FilesystemStat>>,
+        Option<Vec<ProcessEnergyStat>>,
     ) {
         use rayon::prelude::*;
 
@@ -2680,6 +2778,13 @@ impl EbpfMetricsCollector {
                     None
                 }
             }),
+            std::thread::spawn(|| {
+                if self.config.enable_process_energy_monitoring {
+                    self.collect_process_energy_stats()
+                } else {
+                    None
+                }
+            }),
         ];
 
         let syscall_details = results[0].join().unwrap();
@@ -2689,6 +2794,7 @@ impl EbpfMetricsCollector {
         let cpu_temperature_details = results[4].join().unwrap();
         let process_details = results[5].join().unwrap();
         let filesystem_details = results[6].join().unwrap();
+        let process_energy_details = results[7].join().unwrap();
 
         (
             syscall_details,
@@ -2698,6 +2804,7 @@ impl EbpfMetricsCollector {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         )
     }
 
@@ -2716,6 +2823,7 @@ impl EbpfMetricsCollector {
         cpu_temperature_details: Option<Vec<CpuTemperatureStat>>,
         process_details: Option<Vec<ProcessStat>>,
         filesystem_details: Option<Vec<FilesystemStat>>,
+        process_energy_details: Option<Vec<ProcessEnergyStat>>,
     ) -> (
         Option<Vec<SyscallStat>>,
         Option<Vec<NetworkStat>>,
@@ -2724,6 +2832,7 @@ impl EbpfMetricsCollector {
         Option<Vec<CpuTemperatureStat>>,
         Option<Vec<ProcessStat>>,
         Option<Vec<FilesystemStat>>,
+        Option<Vec<ProcessEnergyStat>>,
     ) {
         // Ограничиваем количество системных вызовов
         let syscall_details = syscall_details.map(|mut details| {
@@ -2809,6 +2918,18 @@ impl EbpfMetricsCollector {
             details
         });
 
+        // Ограничиваем количество статистик энергопотребления процессов
+        let process_energy_details = process_energy_details.map(|mut details| {
+            if details.len() > self.max_cached_details {
+                details.truncate(self.max_cached_details);
+                tracing::debug!(
+                    "Ограничено количество статистик энергопотребления процессов до {}",
+                    self.max_cached_details
+                );
+            }
+            details
+        });
+
         (
             syscall_details,
             network_details,
@@ -2817,6 +2938,7 @@ impl EbpfMetricsCollector {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         )
     }
 
@@ -3381,6 +3503,61 @@ impl EbpfMetricsCollector {
         }
 
         Ok(active_count)
+    }
+
+    /// Собрать статистику энергопотребления процессов из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_process_energy_stats(&self) -> Result<Option<Vec<ProcessEnergyStat>>> {
+        use libbpf_rs::Map;
+
+        if !self.config.enable_process_energy_monitoring {
+            return Ok(None);
+        }
+
+        // Пробуем получить доступ к картам энергопотребления процессов
+        if self.process_energy_maps.is_empty() {
+            tracing::warn!("Карты энергопотребления процессов не инициализированы");
+            return Ok(None);
+        }
+
+        let mut energy_stats = Vec::new();
+
+        for map in &self.process_energy_maps {
+            // Используем функцию итерации по ключам для получения всех записей энергопотребления
+            match iterate_ebpf_map_keys::<ProcessEnergyStat>(map, 10240) {
+                Ok(stats) => {
+                    for stat in stats {
+                        // Конвертируем энергию из микроджоулей в ватты (упрощенная конвертация)
+                        let energy_w = if stat.last_update_ns > 0 {
+                            // Упрощенная конвертация: предполагаем 1 секунду интервала
+                            stat.energy_uj as f32 / 1_000_000.0
+                        } else {
+                            0.0
+                        };
+
+                        energy_stats.push(ProcessEnergyStat {
+                            pid: stat.pid,
+                            tgid: stat.tgid,
+                            energy_uj: stat.energy_uj,
+                            last_update_ns: stat.last_update_ns,
+                            cpu_id: stat.cpu_id,
+                            name: stat.name.clone(),
+                            energy_w,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по карте энергопотребления процессов: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        if energy_stats.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(energy_stats))
+        }
     }
 
     /// Собрать количество операций с файловой системой из eBPF карт
@@ -4710,6 +4887,7 @@ mod tests {
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
             enable_process_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -4776,6 +4954,7 @@ mod tests {
             gpu_details: None,
             process_details: None,
             filesystem_details: None,
+            process_energy_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5118,6 +5297,7 @@ mod tests {
             enable_filesystem_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_process_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5189,6 +5369,7 @@ mod tests {
             gpu_details: None,
             process_details: None,
             filesystem_details: None,
+            process_energy_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5287,6 +5468,7 @@ mod tests {
             enable_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_process_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5362,6 +5544,7 @@ mod tests {
             gpu_details: None,
             process_details: None,
             filesystem_details: None,
+            process_energy_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -6028,6 +6211,7 @@ mod tests {
             enable_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -6087,6 +6271,7 @@ mod tests {
             enable_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             enable_notifications: false,
@@ -6126,6 +6311,7 @@ mod tests {
             enable_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
+            enable_process_energy_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -6768,6 +6954,7 @@ mod ebpf_memory_optimization_tests {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -6776,6 +6963,7 @@ mod ebpf_memory_optimization_tests {
             metrics.cpu_temperature_details.take(),
             metrics.process_details.take(),
             metrics.filesystem_details.take(),
+            metrics.process_energy_details.take(),
         );
 
         metrics.syscall_details = syscall_details;
@@ -6785,6 +6973,7 @@ mod ebpf_memory_optimization_tests {
         metrics.cpu_temperature_details = cpu_temperature_details;
         metrics.process_details = process_details;
         metrics.filesystem_details = filesystem_details;
+        metrics.process_energy_details = process_energy_details;
 
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.syscall_details {
@@ -6889,6 +7078,7 @@ mod ebpf_memory_optimization_tests {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -6897,6 +7087,7 @@ mod ebpf_memory_optimization_tests {
             metrics.cpu_temperature_details.take(),
             metrics.process_details.take(),
             metrics.filesystem_details.take(),
+            metrics.process_energy_details.take(),
         );
 
         metrics.syscall_details = syscall_details;
@@ -6906,6 +7097,7 @@ mod ebpf_memory_optimization_tests {
         metrics.cpu_temperature_details = cpu_temperature_details;
         metrics.process_details = process_details;
         metrics.filesystem_details = filesystem_details;
+        metrics.process_energy_details = process_energy_details;
 
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.process_details {
@@ -7019,10 +7211,12 @@ mod ebpf_memory_optimization_tests {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
         ) = collector.optimize_detailed_stats(
             Some(syscall_details),
             Some(network_details),
             Some(connection_details),
+            None,
             None,
             None,
             None,
@@ -7033,6 +7227,13 @@ mod ebpf_memory_optimization_tests {
         if let Some(details) = syscall_details {
             assert_eq!(details.len(), 2, "Количество системных вызовов должно быть ограничено до 2");
         }
+
+        // Проверяем, что None значения остаются None
+        assert!(gpu_details.is_none());
+        assert!(cpu_temperature_details.is_none());
+        assert!(process_details.is_none());
+        assert!(filesystem_details.is_none());
+        assert!(process_energy_details.is_none());
 
         if let Some(details) = network_details {
             assert_eq!(details.len(), 2, "Количество сетевых статистик должно быть ограничено до 2");
@@ -7047,5 +7248,161 @@ mod ebpf_memory_optimization_tests {
         assert!(cpu_temperature_details.is_none());
         assert!(process_details.is_none());
         assert!(filesystem_details.is_none());
+    }
+}
+
+#[cfg(test)]
+mod test_process_energy {
+    use super::*;
+
+    #[test]
+    fn test_process_energy_stat_default() {
+        // Тест проверяет, что ProcessEnergyStat корректно создается с значениями по умолчанию
+        let stat = ProcessEnergyStat {
+            pid: 123,
+            tgid: 456,
+            energy_uj: 1000,
+            last_update_ns: 123456789,
+            cpu_id: 0,
+            name: "test_process".to_string(),
+            energy_w: 0.001,
+        };
+
+        assert_eq!(stat.pid, 123);
+        assert_eq!(stat.tgid, 456);
+        assert_eq!(stat.energy_uj, 1000);
+        assert_eq!(stat.last_update_ns, 123456789);
+        assert_eq!(stat.cpu_id, 0);
+        assert_eq!(stat.name, "test_process");
+        assert_eq!(stat.energy_w, 0.001);
+    }
+
+    #[test]
+    fn test_process_energy_stat_serialization() {
+        // Тест проверяет, что ProcessEnergyStat корректно сериализуется
+        let stat = ProcessEnergyStat {
+            pid: 123,
+            tgid: 456,
+            energy_uj: 1000,
+            last_update_ns: 123456789,
+            cpu_id: 0,
+            name: "test_process".to_string(),
+            energy_w: 0.001,
+        };
+
+        let json = serde_json::to_string(&stat).expect("Сериализация должна работать");
+        let deserialized: ProcessEnergyStat = serde_json::from_str(&json).expect("Десериализация должна работать");
+
+        assert_eq!(deserialized.pid, 123);
+        assert_eq!(deserialized.tgid, 456);
+        assert_eq!(deserialized.energy_uj, 1000);
+        assert_eq!(deserialized.last_update_ns, 123456789);
+        assert_eq!(deserialized.cpu_id, 0);
+        assert_eq!(deserialized.name, "test_process");
+        assert_eq!(deserialized.energy_w, 0.001);
+    }
+
+    #[test]
+    fn test_process_energy_config() {
+        // Тест проверяет, что конфигурация process_energy_monitoring корректно работает
+        let mut config = EbpfConfig::default();
+        assert!(!config.enable_process_energy_monitoring, "По умолчанию должно быть отключено");
+
+        config.enable_process_energy_monitoring = true;
+        assert!(config.enable_process_energy_monitoring, "Должно включаться");
+    }
+
+    #[test]
+    fn test_ebpf_metrics_with_process_energy() {
+        // Тест проверяет, что EbpfMetrics корректно хранит process_energy_details
+        let mut metrics = EbpfMetrics::default();
+        assert!(metrics.process_energy_details.is_none(), "По умолчанию должно быть None");
+
+        let energy_stats = vec![
+            ProcessEnergyStat {
+                pid: 123,
+                tgid: 456,
+                energy_uj: 1000,
+                last_update_ns: 123456789,
+                cpu_id: 0,
+                name: "test_process".to_string(),
+                energy_w: 0.001,
+            },
+            ProcessEnergyStat {
+                pid: 789,
+                tgid: 101112,
+                energy_uj: 2000,
+                last_update_ns: 123456790,
+                cpu_id: 1,
+                name: "another_process".to_string(),
+                energy_w: 0.002,
+            },
+        ];
+
+        metrics.process_energy_details = Some(energy_stats.clone());
+        assert!(metrics.process_energy_details.is_some(), "Должно быть Some");
+
+        if let Some(details) = &metrics.process_energy_details {
+            assert_eq!(details.len(), 2, "Должно быть 2 записи");
+            assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
+            assert_eq!(details[1].pid, 789, "Второй процесс должен иметь PID 789");
+        }
+    }
+
+    #[test]
+    fn test_process_energy_optimization() {
+        // Тест проверяет, что optimize_detailed_stats корректно обрабатывает process_energy_details
+        let mut collector = EbpfMetricsCollector::new(EbpfConfig {
+            enable_process_energy_monitoring: false,
+            ..Default::default()
+        });
+        collector.max_cached_details = 1;
+
+        let energy_stats = vec![
+            ProcessEnergyStat {
+                pid: 123,
+                tgid: 456,
+                energy_uj: 1000,
+                last_update_ns: 123456789,
+                cpu_id: 0,
+                name: "test_process".to_string(),
+                energy_w: 0.001,
+            },
+            ProcessEnergyStat {
+                pid: 789,
+                tgid: 101112,
+                energy_uj: 2000,
+                last_update_ns: 123456790,
+                cpu_id: 1,
+                name: "another_process".to_string(),
+                energy_w: 0.002,
+            },
+        ];
+
+        let (
+            _syscall_details,
+            _network_details,
+            _connection_details,
+            _gpu_details,
+            _cpu_temperature_details,
+            _process_details,
+            _filesystem_details,
+            process_energy_details,
+        ) = collector.optimize_detailed_stats(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(energy_stats),
+        );
+
+        if let Some(details) = process_energy_details {
+            assert_eq!(details.len(), 1, "Количество статистик энергопотребления должно быть ограничено до 1");
+        } else {
+            panic!("process_energy_details должно быть Some");
+        }
     }
 }

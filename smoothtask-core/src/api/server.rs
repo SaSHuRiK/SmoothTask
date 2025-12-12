@@ -50,6 +50,8 @@ pub struct ApiState {
     performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,
     /// Коллектор метрик для сбора данных о сетевых соединениях (опционально)
     metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
+    /// Последние eBPF метрики (опционально)
+    metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
 }
 
 /// Кэш для часто запрашиваемых данных API.
@@ -63,6 +65,8 @@ pub struct ApiCache {
     cached_metrics_json: Option<(Value, Instant)>,
     /// Кэшированная версия конфигурации (JSON)
     cached_config_json: Option<(Value, Instant)>,
+    /// Кэшированная версия данных об энергопотреблении процессов (JSON)
+    cached_process_energy_json: Option<(Value, Instant)>,
     /// Время жизни кэша (в секундах)
     cache_ttl_seconds: u64,
 }
@@ -87,6 +91,7 @@ impl ApiCache {
         self.cached_appgroups_json = None;
         self.cached_metrics_json = None;
         self.cached_config_json = None;
+        self.cached_process_energy_json = None;
     }
 }
 
@@ -255,7 +260,6 @@ impl ApiPerformanceMetrics {
 ///
 /// Каждый метод `with_*` принимает `Option<T>` и возвращает `Self`, что позволяет
 /// использовать цепочку вызовов (builder pattern).
-#[derive(Default)]
 #[allow(dead_code)]
 pub struct ApiStateBuilder {
     daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
@@ -272,6 +276,28 @@ pub struct ApiStateBuilder {
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
     metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
+    metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+}
+
+impl Default for ApiStateBuilder {
+    fn default() -> Self {
+        Self {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: None,
+            config_path: None,
+            pattern_database: None,
+            notification_manager: None,
+            cache: None,
+            log_storage: None,
+            performance_metrics: None,
+            metrics_collector: None,
+            metrics: None,
+        }
+    }
 }
 
 impl ApiStateBuilder {
@@ -648,6 +674,7 @@ impl ApiStateBuilder {
                 .performance_metrics
                 .unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
             metrics_collector: self.metrics_collector,
+            metrics: self.metrics,
         }
     }
 }
@@ -669,6 +696,7 @@ impl ApiState {
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         }
     }
 
@@ -688,6 +716,7 @@ impl ApiState {
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         }
     }
 
@@ -709,6 +738,7 @@ impl ApiState {
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         }
     }
 
@@ -733,6 +763,7 @@ impl ApiState {
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         }
     }
 
@@ -758,6 +789,7 @@ impl ApiState {
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         }
     }
 
@@ -786,6 +818,7 @@ impl ApiState {
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         }
     }
 
@@ -942,6 +975,11 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/processes/:pid",
                 "method": "GET",
                 "description": "Получение информации о конкретном процессе по PID"
+            },
+            {
+                "path": "/api/processes/energy",
+                "method": "GET",
+                "description": "Получение статистики энергопотребления процессов"
             },
             {
                 "path": "/api/appgroups",
@@ -1621,6 +1659,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/responsiveness", get(responsiveness_handler))
         .route("/api/processes", get(processes_handler))
         .route("/api/processes/:pid", get(process_by_pid_handler))
+        .route("/api/processes/energy", get(process_energy_handler))
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
@@ -1786,6 +1825,82 @@ async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>,
             Ok(Json(result))
         }
     }
+}
+
+/// Обработчик для endpoint `/api/processes/energy`.
+///
+/// Возвращает статистику энергопотребления процессов (если доступны).
+async fn process_energy_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+
+    if let Some((cached_json, cache_time)) = &cache_write.cached_process_energy_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+
+            trace!("Cache hit for process_energy_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+
+    // Пробуем получить данные из eBPF метрик
+    let mut result = json!({
+        "status": "degraded",
+        "process_energy": null,
+        "count": 0,
+        "message": "Process energy monitoring not available",
+        "suggestion": "Enable process energy monitoring in configuration and ensure eBPF support",
+        "component_status": check_component_availability(&state),
+        "cache_info": {
+            "cached": false,
+            "ttl_seconds": cache_write.cache_ttl_seconds
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    });
+
+    // Пробуем получить доступ к eBPF метрикам
+    if let Some(metrics_arc) = &state.metrics {
+        let metrics = metrics_arc.read().await;
+        if let Some(ebpf_metrics) = &metrics.ebpf {
+            if let Some(energy_details) = &ebpf_metrics.process_energy_details {
+                result = json!({
+                    "status": "ok",
+                    "process_energy": energy_details,
+                    "count": energy_details.len(),
+                    "total_energy_uj": energy_details.iter().map(|s| s.energy_uj).sum::<u64>(),
+                    "total_energy_w": energy_details.iter().map(|s| s.energy_w).sum::<f32>(),
+                    "cache_info": {
+                        "cached": false,
+                        "ttl_seconds": cache_write.cache_ttl_seconds
+                    },
+                    "timestamp": Utc::now().to_rfc3339()
+                });
+            }
+        }
+    }
+
+    // Кэшируем результат
+    cache_write.cached_process_energy_json = Some((result.clone(), Instant::now()));
+
+    trace!("Cached process energy data (count: {})", result["count"]);
+    Ok(Json(result))
 }
 
 /// Обработчик для endpoint `/api/appgroups`.
@@ -3270,6 +3385,7 @@ mod tests {
                 enable_cpu_temperature_monitoring: false,
                 enable_filesystem_monitoring: false,
                 enable_process_monitoring: false,
+                enable_process_energy_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -3374,6 +3490,7 @@ mod tests {
                 enable_cpu_temperature_monitoring: false,
                 enable_filesystem_monitoring: false,
                 enable_process_monitoring: false,
+                enable_process_energy_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -5250,6 +5367,7 @@ max_candidates: 200
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         };
 
         let payload = json!({
@@ -5291,6 +5409,7 @@ max_candidates: 200
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         };
 
         let payload = json!({
@@ -5339,6 +5458,7 @@ max_candidates: 200
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
+            metrics: None,
         };
 
         // Пустой payload - должны использоваться значения по умолчанию
@@ -6137,4 +6257,174 @@ fn is_connection_active(last_activity: u64) -> bool {
     // 30 секунд в наносекундах
     let timeout_ns = 30_000_000_000;
     current_time.saturating_sub(last_activity) < timeout_ns
+}
+
+#[cfg(test)]
+mod test_process_energy_api {
+    use super::*;
+    use crate::metrics::ebpf::{EbpfMetrics, ProcessEnergyStat};
+    use axum::http::StatusCode;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    #[tokio::test]
+    async fn test_process_energy_handler_without_metrics() {
+        // Тест проверяет, что обработчик корректно работает без доступных метрик
+        let state = ApiState {
+            metrics: None,
+            ..ApiState::default()
+        };
+
+        let response = process_energy_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json_response.0.to_string()).unwrap();
+
+        assert_eq!(
+            value["status"].as_str().unwrap(),
+            "degraded",
+            "Статус должен быть degraded"
+        );
+        assert_eq!(
+            value["count"].as_u64().unwrap(),
+            0,
+            "Количество должно быть 0"
+        );
+        assert!(
+            value["process_energy"].is_null(),
+            "Данные об энергопотреблении должны быть null"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_energy_handler_with_metrics() {
+        // Тест проверяет, что обработчик корректно работает с доступными метриками
+        let energy_stats = vec![
+            ProcessEnergyStat {
+                pid: 123,
+                tgid: 456,
+                energy_uj: 1000,
+                last_update_ns: 123456789,
+                cpu_id: 0,
+                name: "test_process".to_string(),
+                energy_w: 0.001,
+            },
+            ProcessEnergyStat {
+                pid: 789,
+                tgid: 101112,
+                energy_uj: 2000,
+                last_update_ns: 123456790,
+                cpu_id: 1,
+                name: "another_process".to_string(),
+                energy_w: 0.002,
+            },
+        ];
+
+        let ebpf_metrics = EbpfMetrics {
+            process_energy_details: Some(energy_stats.clone()),
+            ..EbpfMetrics::default()
+        };
+
+        let system_metrics = crate::metrics::system::SystemMetrics {
+            ebpf: Some(ebpf_metrics),
+            ..crate::metrics::system::SystemMetrics::default()
+        };
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            ..ApiState::default()
+        };
+
+        let response = process_energy_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json_response.0.to_string()).unwrap();
+
+        assert_eq!(
+            value["status"].as_str().unwrap(),
+            "ok",
+            "Статус должен быть ok"
+        );
+        assert_eq!(
+            value["count"].as_u64().unwrap(),
+            2,
+            "Количество должно быть 2"
+        );
+        assert!(
+            value["process_energy"].is_array(),
+            "Данные об энергопотреблении должны быть массивом"
+        );
+        assert_eq!(
+            value["process_energy"][0]["pid"].as_u64().unwrap(),
+            123,
+            "Первый процесс должен иметь PID 123"
+        );
+        assert_eq!(
+            value["process_energy"][1]["pid"].as_u64().unwrap(),
+            789,
+            "Второй процесс должен иметь PID 789"
+        );
+        assert_eq!(
+            value["total_energy_uj"].as_u64().unwrap(),
+            3000,
+            "Общее потребление энергии должно быть 3000 микроджоулей"
+        );
+        assert_eq!(
+            value["total_energy_w"].as_f64().unwrap(),
+            0.003,
+            "Общее потребление энергии должно быть 0.003 ватт"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_energy_handler_cache() {
+        // Тест проверяет, что обработчик корректно использует кэш
+        let energy_stats = vec![ProcessEnergyStat {
+            pid: 123,
+            tgid: 456,
+            energy_uj: 1000,
+            last_update_ns: 123456789,
+            cpu_id: 0,
+            name: "test_process".to_string(),
+            energy_w: 0.001,
+        }];
+
+        let ebpf_metrics = EbpfMetrics {
+            process_energy_details: Some(energy_stats.clone()),
+            ..EbpfMetrics::default()
+        };
+
+        let system_metrics = crate::metrics::system::SystemMetrics {
+            ebpf: Some(ebpf_metrics),
+            ..crate::metrics::system::SystemMetrics::default()
+        };
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            cache: Some(Arc::new(RwLock::new(ApiCache {
+                cache_ttl_seconds: 60,
+                ..ApiCache::default()
+            }))),
+            ..ApiState::default()
+        };
+
+        // Первый вызов - кэш должен быть создан
+        let response1 = process_energy_handler(State(state.clone())).await;
+        assert!(response1.is_ok(), "Первый вызов должен успешно выполниться");
+
+        // Второй вызов - должен использовать кэш
+        let response2 = process_energy_handler(State(state)).await;
+        assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
+
+        let json_response1 = response1.unwrap();
+        let json_response2 = response2.unwrap();
+
+        // Результаты должны быть идентичны
+        assert_eq!(
+            json_response1.0, json_response2.0,
+            "Результаты должны быть идентичны при использовании кэша"
+        );
+    }
 }
