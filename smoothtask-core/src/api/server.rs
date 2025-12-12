@@ -3204,7 +3204,7 @@ mod tests {
         use crate::config::config_struct::{
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -3854,7 +3854,7 @@ apps:
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
         use crate::logging::snapshots::ResponsivenessMetrics;
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -3935,7 +3935,7 @@ apps:
         use crate::config::config_struct::{
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -4010,7 +4010,7 @@ apps:
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
         use crate::logging::snapshots::ResponsivenessMetrics;
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -4090,7 +4090,7 @@ apps:
         use crate::config::config_struct::{
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -4292,7 +4292,7 @@ apps:
             NotificationBackend, NotificationConfig, NotificationLevel, Paths,
             PatternAutoUpdateConfig, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
 
         let config = Config {
             polling_interval_ms: 500,
@@ -4678,7 +4678,7 @@ max_candidates: 200
         use crate::config::config_struct::{
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
 
         let config = Config {
             polling_interval_ms: 1000,
@@ -4806,7 +4806,7 @@ max_candidates: 200
         use crate::config::config_struct::{
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
 
         let config = Config {
             polling_interval_ms: 1000,
@@ -4891,7 +4891,7 @@ max_candidates: 200
         use crate::config::config_struct::{
             CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
         };
-        use crate::metrics::ebpf::{EbpfConfig, EbpfFilterConfig};
+        use crate::metrics::ebpf::EbpfConfig;
 
         let config = Config {
             polling_interval_ms: 1000,
