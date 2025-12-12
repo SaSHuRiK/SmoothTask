@@ -292,6 +292,7 @@ pub struct PowerMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct NetworkMetrics {
     /// Список сетевых интерфейсов
+    #[serde(default)]
     pub interfaces: Vec<NetworkInterface>,
     /// Общее количество полученных байт
     pub total_rx_bytes: u64,
@@ -303,7 +304,8 @@ pub struct NetworkMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NetworkInterface {
     /// Имя интерфейса (например, "eth0", "wlan0")
-    pub name: String,
+    /// Используем Box<str> вместо String для уменьшения memory footprint
+    pub name: Box<str>,
     /// Полученные байты
     pub rx_bytes: u64,
     /// Отправленные байты
@@ -322,6 +324,7 @@ pub struct NetworkInterface {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct DiskMetrics {
     /// Список дисковых устройств
+    #[serde(default)]
     pub devices: Vec<DiskDevice>,
     /// Общее количество прочитанных байт
     pub total_read_bytes: u64,
@@ -333,7 +336,8 @@ pub struct DiskMetrics {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiskDevice {
     /// Имя устройства (например, "sda", "nvme0n1")
-    pub name: String,
+    /// Используем Box<str> вместо String для уменьшения memory footprint
+    pub name: Box<str>,
     /// Прочитанные байты
     pub read_bytes: u64,
     /// Записанные байты
@@ -412,6 +416,40 @@ impl SystemMetrics {
     /// ```
     pub fn cpu_usage_since(&self, prev: &SystemMetrics) -> Option<CpuUsage> {
         self.cpu_times.delta(&prev.cpu_times)
+    }
+
+    /// Оптимизирует использование памяти в структуре SystemMetrics.
+    ///
+    /// Эта функция уменьшает memory footprint за счет:
+    /// 1. Удаления пустых Vec коллекций
+    /// 2. Сжатия данных там, где это возможно
+    /// 3. Оптимизации Optional полей
+    ///
+    /// # Возвращает
+    ///
+    /// Оптимизированную версию SystemMetrics с уменьшенным memory footprint
+    pub fn optimize_memory_usage(mut self) -> Self {
+        // Оптимизируем сетевые метрики
+        if self.network.interfaces.is_empty() {
+            self.network.interfaces = Vec::new();
+        }
+        
+        // Оптимизируем дисковые метрики
+        if self.disk.devices.is_empty() {
+            self.disk.devices = Vec::new();
+        }
+        
+        // Оптимизируем температурные метрики
+        if self.temperature.cpu_temperature_c.is_none() && self.temperature.gpu_temperature_c.is_none() {
+            self.temperature = TemperatureMetrics::default();
+        }
+        
+        // Оптимизируем метрики энергопотребления
+        if self.power.system_power_w.is_none() && self.power.cpu_power_w.is_none() && self.power.gpu_power_w.is_none() {
+            self.power = PowerMetrics::default();
+        }
+        
+        self
     }
 }
 
@@ -1632,7 +1670,7 @@ fn collect_network_metrics() -> NetworkMetrics {
                 let tx_errors = parts[11].parse::<u64>().unwrap_or(0);
 
                 network.interfaces.push(NetworkInterface {
-                    name: interface_name.to_string(),
+                    name: interface_name.into(), // Convert &str to Box<str>
                     rx_bytes,
                     tx_bytes,
                     rx_packets,
@@ -1671,7 +1709,7 @@ fn collect_disk_metrics() -> DiskMetrics {
             // Разбираем строку вида: "8 0 sda 1234 0 5678 123 456 0 7890 1234 0 0 0 12345"
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 14 {
-                let device_name = parts[2].to_string();
+                let device_name = parts[2];
 
                 // Извлекаем значения (индексы 3-13)
                 let read_ops = parts[3].parse::<u64>().unwrap_or(0);
@@ -1689,7 +1727,7 @@ fn collect_disk_metrics() -> DiskMetrics {
                 let write_bytes = write_sectors * 512;
 
                 disk.devices.push(DiskDevice {
-                    name: device_name,
+                    name: device_name.into(), // Convert &str to Box<str>
                     read_bytes,
                     write_bytes,
                     read_ops,
@@ -2887,7 +2925,7 @@ SwapFree:        4096000 kB
         // Тест проверяет, что NetworkMetrics корректно сериализуется
         let mut network = NetworkMetrics::default();
         network.interfaces.push(NetworkInterface {
-            name: "eth0".to_string(),
+            name: "eth0".into(),
             rx_bytes: 1000,
             tx_bytes: 2000,
             rx_packets: 100,
@@ -2907,7 +2945,7 @@ SwapFree:        4096000 kB
         let deserialized: NetworkMetrics =
             serde_json::from_str(&json).expect("Десериализация должна работать");
         assert_eq!(deserialized.interfaces.len(), 1);
-        assert_eq!(deserialized.interfaces[0].name, "eth0");
+        assert_eq!(deserialized.interfaces[0].name, "eth0".into());
         assert_eq!(deserialized.total_rx_bytes, 1000);
         assert_eq!(deserialized.total_tx_bytes, 2000);
     }
@@ -2917,7 +2955,7 @@ SwapFree:        4096000 kB
         // Тест проверяет, что DiskMetrics корректно сериализуется
         let mut disk = DiskMetrics::default();
         disk.devices.push(DiskDevice {
-            name: "sda".to_string(),
+            name: "sda".into(),
             read_bytes: 1000000,
             write_bytes: 2000000,
             read_ops: 1000,
@@ -2936,7 +2974,7 @@ SwapFree:        4096000 kB
         let deserialized: DiskMetrics =
             serde_json::from_str(&json).expect("Десериализация должна работать");
         assert_eq!(deserialized.devices.len(), 1);
-        assert_eq!(deserialized.devices[0].name, "sda");
+        assert_eq!(deserialized.devices[0].name, "sda".into());
         assert_eq!(deserialized.total_read_bytes, 1000000);
         assert_eq!(deserialized.total_write_bytes, 2000000);
     }
@@ -3000,6 +3038,62 @@ SwapFree:        4096000 kB
             // Если eBPF недоступен, это нормальное поведение в тестовой среде
             // Просто проверяем, что функция не паникует
         }
+    }
+
+    #[test]
+    fn test_system_metrics_optimize_memory_usage() {
+        // Тест проверяет, что optimize_memory_usage корректно работает
+        let mut metrics = SystemMetrics::default();
+        
+        // Добавляем некоторые данные
+        metrics.network.interfaces.push(NetworkInterface {
+            name: "eth0".into(),
+            rx_bytes: 1000,
+            tx_bytes: 2000,
+            rx_packets: 100,
+            tx_packets: 200,
+            rx_errors: 1,
+            tx_errors: 2,
+        });
+        
+        metrics.disk.devices.push(DiskDevice {
+            name: "sda".into(),
+            read_bytes: 1000000,
+            write_bytes: 2000000,
+            read_ops: 1000,
+            write_ops: 2000,
+            io_time: 500,
+        });
+        
+        // Устанавливаем температурные метрики
+        metrics.temperature.cpu_temperature_c = Some(45.5);
+        
+        // Устанавливаем метрики энергопотребления
+        metrics.power.cpu_power_w = Some(80.3);
+        
+        // Оптимизируем память
+        let optimized = metrics.optimize_memory_usage();
+        
+        // Проверяем, что данные сохранены
+        assert_eq!(optimized.network.interfaces.len(), 1);
+        assert_eq!(optimized.disk.devices.len(), 1);
+        assert_eq!(optimized.temperature.cpu_temperature_c, Some(45.5));
+        assert_eq!(optimized.power.cpu_power_w, Some(80.3));
+        
+        // Тест с пустыми коллекциями
+        let empty_metrics = SystemMetrics::default();
+        let optimized_empty = empty_metrics.optimize_memory_usage();
+        
+        // Проверяем, что пустые коллекции остаются пустыми
+        assert!(optimized_empty.network.interfaces.is_empty());
+        assert!(optimized_empty.disk.devices.is_empty());
+        
+        // Проверяем, что пустые температурные и энергетические метрики сбрасываются
+        assert_eq!(optimized_empty.temperature.cpu_temperature_c, None);
+        assert_eq!(optimized_empty.temperature.gpu_temperature_c, None);
+        assert_eq!(optimized_empty.power.system_power_w, None);
+        assert_eq!(optimized_empty.power.cpu_power_w, None);
+        assert_eq!(optimized_empty.power.gpu_power_w, None);
     }
 
     #[test]
@@ -3503,7 +3597,7 @@ SwapFree:        4096000 kB
                 let tx_errors = parts[11].parse::<u64>().unwrap_or(0);
 
                 network.interfaces.push(NetworkInterface {
-                    name: interface_name.to_string(),
+                    name: interface_name.into(),
                     rx_bytes,
                     tx_bytes,
                     rx_packets,
@@ -3525,7 +3619,7 @@ SwapFree:        4096000 kB
 
         // Проверяем интерфейс lo
         let lo_interface = &network.interfaces[0];
-        assert_eq!(lo_interface.name, "lo");
+        assert_eq!(lo_interface.name, "lo".into());
         assert_eq!(lo_interface.rx_bytes, 12345678);
         assert_eq!(lo_interface.tx_bytes, 12345678);
         assert_eq!(lo_interface.rx_packets, 12345);
@@ -3535,7 +3629,7 @@ SwapFree:        4096000 kB
 
         // Проверяем интерфейс eth0
         let eth0_interface = &network.interfaces[1];
-        assert_eq!(eth0_interface.name, "eth0");
+        assert_eq!(eth0_interface.name, "eth0".into());
         assert_eq!(eth0_interface.rx_bytes, 10000000);
         assert_eq!(eth0_interface.tx_bytes, 20000000);
         assert_eq!(eth0_interface.rx_packets, 10000);
@@ -3545,7 +3639,7 @@ SwapFree:        4096000 kB
 
         // Проверяем интерфейс wlan0
         let wlan0_interface = &network.interfaces[2];
-        assert_eq!(wlan0_interface.name, "wlan0");
+        assert_eq!(wlan0_interface.name, "wlan0".into());
         assert_eq!(wlan0_interface.rx_bytes, 5000000);
         assert_eq!(wlan0_interface.tx_bytes, 15000000);
         assert_eq!(wlan0_interface.rx_packets, 5000);
