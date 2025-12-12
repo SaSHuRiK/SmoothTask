@@ -282,7 +282,7 @@ impl AudioIntrospector for StaticAudioIntrospector {
 ///
 /// ```rust,no_run
 /// use smoothtask_core::metrics::audio::create_audio_introspector_with_fallback;
-/// 
+///
 /// let audio_introspector = create_audio_introspector_with_fallback();
 /// // audio_introspector будет автоматически использовать PipeWire, если доступен,
 /// // или статический интроспектор, если PipeWire недоступен
@@ -290,7 +290,7 @@ impl AudioIntrospector for StaticAudioIntrospector {
 pub fn create_audio_introspector_with_fallback() -> Box<dyn AudioIntrospector> {
     // Пробуем создать PipeWire интроспектор
     let pipewire_introspector = PipeWireIntrospector::new();
-    
+
     // Проверяем доступность PipeWire
     match pipewire_introspector.check_pipewire_available() {
         Ok(true) => {
@@ -395,7 +395,7 @@ mod tests {
         // Тест проверяет, что функция create_audio_introspector_with_fallback
         // возвращает корректный интроспектор
         let mut introspector = create_audio_introspector_with_fallback();
-        
+
         // Проверяем, что интроспектор может быть использован
         // В тестовой среде pw-dump может быть недоступен, поэтому мы проверяем
         // что либо метрики успешно получены, либо ошибка корректно обработана
@@ -403,7 +403,7 @@ mod tests {
         // В тестовой среде без PipeWire это может быть ошибка, что нормально
         // Главное, что функция не падает и возвращает Result
         assert!(metrics.is_ok() || metrics.is_err());
-        
+
         let clients = introspector.clients();
         // Аналогично для клиентов
         assert!(clients.is_ok() || clients.is_err());
@@ -414,20 +414,20 @@ mod tests {
         // Тест проверяет, что fallback механизм работает корректно
         // даже если PipeWire недоступен
         let mut introspector = create_audio_introspector_with_fallback();
-        
+
         // В любом случае должен быть возвращен рабочий интроспектор
         let metrics_result = introspector.audio_metrics();
         // В тестовой среде без PipeWire это может быть ошибка, что нормально
         assert!(metrics_result.is_ok() || metrics_result.is_err());
-        
+
         let clients_result = introspector.clients();
         assert!(clients_result.is_ok() || clients_result.is_err());
-        
+
         // Если метрики успешно получены, проверяем их валидность
         if let Ok(metrics) = metrics_result {
             assert!(metrics.validate_period());
         }
-        
+
         // Если клиенты успешно получены, проверяем что это вектор
         if let Ok(clients) = clients_result {
             assert!(clients.is_empty() || !clients.is_empty()); // Любой результат валиден
@@ -438,21 +438,21 @@ mod tests {
     fn test_audio_introspector_error_scenarios() {
         // Тест проверяет обработку различных сценариев ошибок
         // в аудио-интроспекторе
-        
+
         // Тест 1: Статический интроспектор всегда работает
         let mut static_introspector = StaticAudioIntrospector::empty();
         let static_metrics = static_introspector.audio_metrics();
         assert!(static_metrics.is_ok());
-        
+
         let static_clients = static_introspector.clients();
         assert!(static_clients.is_ok());
-        
+
         // Тест 2: Fallback функция всегда возвращает рабочий интроспектор
         let mut fallback_introspector = create_audio_introspector_with_fallback();
         let fallback_metrics = fallback_introspector.audio_metrics();
         // В тестовой среде это может быть ошибка, но функция не должна падать
         assert!(fallback_metrics.is_ok() || fallback_metrics.is_err());
-        
+
         let fallback_clients = fallback_introspector.clients();
         assert!(fallback_clients.is_ok() || fallback_clients.is_err());
     }
@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn test_audio_introspector_edge_cases() {
         // Тест проверяет edge cases для аудио-интроспекторов
-        
+
         // Тест 1: Пустые метрики
         let mut empty_introspector = StaticAudioIntrospector::empty();
         let empty_metrics = empty_introspector.audio_metrics().unwrap();
@@ -468,26 +468,25 @@ mod tests {
         assert_eq!(empty_metrics.xruns.len(), 0);
         assert_eq!(empty_metrics.clients.len(), 0);
         assert!(empty_metrics.validate_period());
-        
+
         // Тест 2: Статический интроспектор с кастомными метриками
         let now = SystemTime::now();
         let mut custom_metrics = AudioMetrics::empty(now, now);
         custom_metrics.xrun_count = 3;
-        
+
         let mut custom_introspector = StaticAudioIntrospector::new(custom_metrics.clone(), vec![]);
         let returned_metrics = custom_introspector.audio_metrics().unwrap();
         assert_eq!(returned_metrics.xrun_count, 3);
-        
+
         // Тест 3: Проверяем, что clients() метод работает корректно
-        let clients = vec![
-            AudioClientInfo {
-                pid: 1234,
-                buffer_size_samples: Some(1024),
-                sample_rate_hz: Some(48000),
-            },
-        ];
-        
-        let introspector_with_clients = StaticAudioIntrospector::new(AudioMetrics::empty(now, now), clients.clone());
+        let clients = vec![AudioClientInfo {
+            pid: 1234,
+            buffer_size_samples: Some(1024),
+            sample_rate_hz: Some(48000),
+        }];
+
+        let introspector_with_clients =
+            StaticAudioIntrospector::new(AudioMetrics::empty(now, now), clients.clone());
         let clients_result = introspector_with_clients.clients();
         assert!(clients_result.is_ok());
         let returned_clients = clients_result.unwrap();

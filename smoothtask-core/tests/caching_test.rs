@@ -4,9 +4,14 @@
 //! Кэширование позволяет снизить нагрузку на систему за счёт повторного
 //! использования ранее собранных метрик.
 
-use smoothtask_core::config::config_struct::{CacheIntervals, Config, LoggingConfig, ModelConfig, Paths, PolicyMode, Thresholds};
-use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics, NetworkMetrics, DiskMetrics};
+use smoothtask_core::config::config_struct::{
+    CacheIntervals, Config, LoggingConfig, ModelConfig, Paths, PolicyMode, Thresholds,
+};
 use smoothtask_core::metrics::process::collect_process_metrics;
+use smoothtask_core::metrics::system::{
+    collect_system_metrics, CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, ProcPaths,
+    SystemMetrics,
+};
 use std::sync::{Arc, Mutex};
 
 /// Тест проверяет, что CacheIntervals создаётся с дефолтными значениями.
@@ -16,7 +21,7 @@ fn test_cache_intervals_default() {
         system_metrics_cache_interval: 3,
         process_metrics_cache_interval: 1,
     };
-    
+
     assert_eq!(cache_intervals.system_metrics_cache_interval, 3);
     assert_eq!(cache_intervals.process_metrics_cache_interval, 1);
 }
@@ -28,7 +33,7 @@ fn test_cache_intervals_custom() {
         system_metrics_cache_interval: 5,
         process_metrics_cache_interval: 2,
     };
-    
+
     assert_eq!(cache_intervals.system_metrics_cache_interval, 5);
     assert_eq!(cache_intervals.process_metrics_cache_interval, 2);
 }
@@ -40,10 +45,10 @@ fn test_cache_intervals_serialize_deserialize() {
         system_metrics_cache_interval: 7,
         process_metrics_cache_interval: 3,
     };
-    
+
     let serialized = serde_yaml::to_string(&cache_intervals).unwrap();
     let deserialized: CacheIntervals = serde_yaml::from_str(&serialized).unwrap();
-    
+
     assert_eq!(deserialized.system_metrics_cache_interval, 7);
     assert_eq!(deserialized.process_metrics_cache_interval, 3);
 }
@@ -97,10 +102,11 @@ fn test_config_includes_cache_intervals() {
             model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
         ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
-        pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+        pattern_auto_update:
+            smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
         ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
     };
-    
+
     assert_eq!(config.cache_intervals.system_metrics_cache_interval, 5);
     assert_eq!(config.cache_intervals.process_metrics_cache_interval, 2);
 }
@@ -113,12 +119,13 @@ fn test_system_metrics_caching_logic() {
     let mut system_metrics_cache: Option<SystemMetrics> = None;
     let mut system_metrics_cache_iteration: u64 = 0;
     let system_metrics_cache_interval = 3u64;
-    
+
     // Имитируем несколько итераций
     for current_iteration in 1..=10 {
-        let need_update = system_metrics_cache.is_none() ||
-            (current_iteration - system_metrics_cache_iteration) >= system_metrics_cache_interval;
-        
+        let need_update = system_metrics_cache.is_none()
+            || (current_iteration - system_metrics_cache_iteration)
+                >= system_metrics_cache_interval;
+
         if need_update {
             // Имитируем обновление кэша
             let mock_metrics = SystemMetrics {
@@ -153,13 +160,13 @@ fn test_system_metrics_caching_logic() {
                 power: smoothtask_core::metrics::system::PowerMetrics::default(),
                 network: NetworkMetrics::default(),
                 disk: DiskMetrics::default(),
-                gpu: None, // GPU metrics are optional
+                gpu: None,  // GPU metrics are optional
                 ebpf: None, // eBPF metrics are optional
             };
             system_metrics_cache = Some(mock_metrics);
             system_metrics_cache_iteration = current_iteration;
         }
-        
+
         // Проверяем, что кэш обновляется каждые 3 итерации
         if current_iteration == 1 {
             // Первая итерация: кэш должен быть создан
@@ -193,21 +200,23 @@ fn test_system_metrics_caching_logic() {
 #[test]
 fn test_process_metrics_caching_logic() {
     // Создаём кэш и тестируем логику обновления
-    let mut process_metrics_cache: Option<Vec<smoothtask_core::logging::snapshots::ProcessRecord>> = None;
+    let mut process_metrics_cache: Option<Vec<smoothtask_core::logging::snapshots::ProcessRecord>> =
+        None;
     let mut process_metrics_cache_iteration: u64 = 0;
     let process_metrics_cache_interval = 1u64; // По умолчанию кэширование отключено
-    
+
     // Имитируем несколько итераций
     for current_iteration in 1..=5 {
-        let need_update = process_metrics_cache.is_none() ||
-            (current_iteration - process_metrics_cache_iteration) >= process_metrics_cache_interval;
-        
+        let need_update = process_metrics_cache.is_none()
+            || (current_iteration - process_metrics_cache_iteration)
+                >= process_metrics_cache_interval;
+
         if need_update {
             // Имитируем обновление кэша
             process_metrics_cache = Some(Vec::new());
             process_metrics_cache_iteration = current_iteration;
         }
-        
+
         // Проверяем, что кэш обновляется на каждой итерации (интервал = 1)
         assert!(process_metrics_cache.is_some());
         assert_eq!(process_metrics_cache_iteration, current_iteration);
@@ -220,43 +229,43 @@ fn test_caching_with_interval_2() {
     let mut cache: Option<String> = None;
     let mut cache_iteration: u64 = 0;
     let cache_interval = 2u64;
-    
+
     // Имитируем 6 итераций
     for current_iteration in 1..=6 {
-        let need_update = cache.is_none() ||
-            (current_iteration - cache_iteration) >= cache_interval;
-        
+        let need_update =
+            cache.is_none() || (current_iteration - cache_iteration) >= cache_interval;
+
         if need_update {
             cache = Some(format!("data_{}", current_iteration));
             cache_iteration = current_iteration;
         }
-        
+
         // Проверяем ожидаемое поведение
         match current_iteration {
             1 => {
                 assert_eq!(cache_iteration, 1);
                 assert_eq!(cache.as_ref().unwrap(), "data_1");
-            },
+            }
             2 => {
                 assert_eq!(cache_iteration, 1); // Кэш не обновляется (2-1=1 < 2)
                 assert_eq!(cache.as_ref().unwrap(), "data_1");
-            },
+            }
             3 => {
                 assert_eq!(cache_iteration, 3); // Кэш обновляется (3-1=2 >= 2)
                 assert_eq!(cache.as_ref().unwrap(), "data_3");
-            },
+            }
             4 => {
                 assert_eq!(cache_iteration, 3); // Кэш не обновляется (4-3=1 < 2)
                 assert_eq!(cache.as_ref().unwrap(), "data_3");
-            },
+            }
             5 => {
                 assert_eq!(cache_iteration, 5); // Кэш обновляется (5-3=2 >= 2)
                 assert_eq!(cache.as_ref().unwrap(), "data_5");
-            },
+            }
             6 => {
                 assert_eq!(cache_iteration, 5); // Кэш не обновляется (6-5=1 < 2)
                 assert_eq!(cache.as_ref().unwrap(), "data_5");
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -267,20 +276,19 @@ fn test_caching_with_interval_2() {
 fn test_caching_with_dynamic_interval() {
     // Тестируем с разными интервалами
     let intervals = vec![1, 2, 3, 5];
-    
+
     for interval in intervals {
         let mut cache: Option<u64> = None;
         let mut cache_iteration: u64 = 0;
-        
+
         for current_iteration in 1..=10 {
-            let need_update = cache.is_none() ||
-                (current_iteration - cache_iteration) >= interval;
-            
+            let need_update = cache.is_none() || (current_iteration - cache_iteration) >= interval;
+
             if need_update {
                 cache = Some(current_iteration);
                 cache_iteration = current_iteration;
             }
-            
+
             // Проверяем, что кэш обновляется с правильным интервалом
             if interval == 1 {
                 // Для интервала 1 кэш обновляется на каждой итерации
@@ -317,34 +325,34 @@ fn test_caching_edge_cases() {
     let mut cache: Option<String> = None;
     let mut cache_iteration: u64 = 0;
     let cache_interval = 0; // Это не должно происходить, но тестируем на устойчивость
-    
+
     // При интервале 0 кэш должен обновляться на каждой итерации
     for current_iteration in 1..=3 {
-        let need_update = cache.is_none() ||
-            (current_iteration - cache_iteration) >= cache_interval;
-        
+        let need_update =
+            cache.is_none() || (current_iteration - cache_iteration) >= cache_interval;
+
         if need_update {
             cache = Some(format!("data_{}", current_iteration));
             cache_iteration = current_iteration;
         }
-        
+
         assert_eq!(cache_iteration, current_iteration);
     }
-    
+
     // Тест 2: Очень большой интервал
     let mut cache2: Option<String> = None;
     let mut cache_iteration2: u64 = 0;
     let cache_interval2 = 1000;
-    
+
     for current_iteration in 1..=5 {
-        let need_update = cache2.is_none() ||
-            (current_iteration - cache_iteration2) >= cache_interval2;
-        
+        let need_update =
+            cache2.is_none() || (current_iteration - cache_iteration2) >= cache_interval2;
+
         if need_update {
             cache2 = Some(format!("data_{}", current_iteration));
             cache_iteration2 = current_iteration;
         }
-        
+
         // При большом интервале кэш должен обновляться только на первой итерации
         assert_eq!(cache_iteration2, 1);
     }
@@ -356,11 +364,11 @@ fn test_caching_edge_cases() {
 fn test_real_system_metrics_collection() {
     // Проверяем, что мы можем собрать реальные системные метрики
     let proc_paths = ProcPaths::default();
-    
+
     // Этот тест может не пройти в окружениях без /proc (например, в некоторых CI)
     // поэтому мы используем Result и игнорируем ошибки
     let result = collect_system_metrics(&proc_paths);
-    
+
     // В большинстве Linux систем этот вызов должен завершиться успешно
     // Если нет, это может быть ожидаемо в тестовых окружениях
     if result.is_ok() {
@@ -371,7 +379,10 @@ fn test_real_system_metrics_collection() {
     } else {
         // В некоторых окружениях /proc может быть недоступен
         // Это не является ошибкой теста
-        eprintln!("Warning: Could not collect real system metrics: {}", result.unwrap_err());
+        eprintln!(
+            "Warning: Could not collect real system metrics: {}",
+            result.unwrap_err()
+        );
     }
 }
 
@@ -381,13 +392,13 @@ fn test_real_system_metrics_collection() {
 fn test_real_process_metrics_collection() {
     // Проверяем, что мы можем собрать реальные метрики процессов
     let result = collect_process_metrics();
-    
+
     // В большинстве Linux систем этот вызов должен завершиться успешно
     if result.is_ok() {
         let processes = result.unwrap();
         // Должен быть хотя бы один процесс (текущий процесс)
         assert!(!processes.is_empty());
-        
+
         // Проверяем, что процессы содержат разумные данные
         for process in &processes {
             assert!(process.pid > 0);
@@ -396,7 +407,10 @@ fn test_real_process_metrics_collection() {
         }
     } else {
         // В некоторых окружениях /proc может быть недоступен
-        eprintln!("Warning: Could not collect real process metrics: {}", result.unwrap_err());
+        eprintln!(
+            "Warning: Could not collect real process metrics: {}",
+            result.unwrap_err()
+        );
     }
 }
 
@@ -449,65 +463,72 @@ fn test_cache_configuration_integration() {
             model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
         ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
-        pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+        pattern_auto_update:
+            smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
         ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
         policy_mode: PolicyMode::Hybrid,
     };
-    
+
     // Проверяем, что конфигурация корректно создана
     assert_eq!(config.polling_interval_ms, 500);
     assert_eq!(config.cache_intervals.system_metrics_cache_interval, 5);
     assert_eq!(config.cache_intervals.process_metrics_cache_interval, 2);
-    
+
     // Проверяем, что конфигурацию можно сериализовать
     let serialized = serde_yaml::to_string(&config).unwrap();
     assert!(serialized.contains("system_metrics_cache_interval: 5"));
     assert!(serialized.contains("process_metrics_cache_interval: 2"));
-    
+
     // Проверяем, что конфигурацию можно десериализовать
     let deserialized: Config = serde_yaml::from_str(&serialized).unwrap();
-    assert_eq!(deserialized.cache_intervals.system_metrics_cache_interval, 5);
-    assert_eq!(deserialized.cache_intervals.process_metrics_cache_interval, 2);
+    assert_eq!(
+        deserialized.cache_intervals.system_metrics_cache_interval,
+        5
+    );
+    assert_eq!(
+        deserialized.cache_intervals.process_metrics_cache_interval,
+        2
+    );
 }
 
 /// Тест проверяет, что кэширование корректно работает в многопоточном окружении.
 #[test]
 fn test_caching_thread_safety() {
     use std::sync::Mutex;
-    
+
     let cache = Mutex::new(Option::<String>::None);
     let cache_iteration = Mutex::new(0u64);
     let cache_interval = 2u64;
-    
+
     // Имитируем несколько итераций в многопоточном окружении
     for current_iteration in 1..=6 {
         let mut cache_guard = cache.lock().unwrap();
         let mut cache_iteration_guard = cache_iteration.lock().unwrap();
-        
-        let need_update = cache_guard.is_none() ||
-            (current_iteration - *cache_iteration_guard) >= cache_interval;
-        
+
+        let need_update =
+            cache_guard.is_none() || (current_iteration - *cache_iteration_guard) >= cache_interval;
+
         if need_update {
             *cache_guard = Some(format!("data_{}", current_iteration));
             *cache_iteration_guard = current_iteration;
         }
-        
+
         drop(cache_guard);
         drop(cache_iteration_guard);
-        
+
         // Проверяем ожидаемое поведение
         let cache_guard = cache.lock().unwrap();
         let cache_iteration_guard = cache_iteration.lock().unwrap();
-        
+
         match current_iteration {
             1 | 3 | 5 => {
                 assert_eq!(*cache_iteration_guard, current_iteration);
                 assert!(cache_guard.is_some());
-            },
+            }
             2 | 4 | 6 => {
                 assert_eq!(*cache_iteration_guard, current_iteration - 1);
                 assert!(cache_guard.is_some());
-            },
+            }
             _ => unreachable!(),
         }
     }
@@ -519,28 +540,28 @@ fn test_caching_with_arc() {
     let cache = Arc::new(Mutex::new(Option::<String>::None));
     let cache_iteration = Arc::new(Mutex::new(0u64));
     let cache_interval = 3u64;
-    
+
     // Имитируем несколько итераций
     for current_iteration in 1..=9 {
         let mut cache_guard = cache.lock().unwrap();
         let mut cache_iteration_guard = cache_iteration.lock().unwrap();
-        
-        let need_update = cache_guard.is_none() ||
-            (current_iteration - *cache_iteration_guard) >= cache_interval;
-        
+
+        let need_update =
+            cache_guard.is_none() || (current_iteration - *cache_iteration_guard) >= cache_interval;
+
         if need_update {
             *cache_guard = Some(format!("data_{}", current_iteration));
             *cache_iteration_guard = current_iteration;
         }
-        
+
         // Проверяем ожидаемое поведение
         match current_iteration {
             1 | 4 | 7 => {
                 assert_eq!(*cache_iteration_guard, current_iteration);
-            },
+            }
             2 | 3 | 5 | 6 | 8 | 9 => {
                 assert!(*cache_iteration_guard < current_iteration);
-            },
+            }
             _ => unreachable!(),
         }
     }

@@ -21,20 +21,22 @@ use tracing::{debug, error, info, warn};
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
 use crate::api::{ApiServer, ApiServerHandle, ApiStateBuilder};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
-use crate::config::watcher::ConfigWatcher;
 use crate::config::config_struct::NotificationBackend;
+use crate::config::watcher::ConfigWatcher;
 use crate::notifications::{Notification, NotificationManager, NotificationType};
 // #[cfg(feature = "libnotify")]
 // use crate::notifications::LibnotifyNotifier;
-use crate::logging::snapshots::{GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger};
+use crate::logging::snapshots::{
+    GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger,
+};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{
-    collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, ProcPaths,
-    SystemMetrics, TemperatureMetrics, PowerMetrics, NetworkMetrics, DiskMetrics,
+    collect_system_metrics, CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics,
+    PowerMetrics, PressureMetrics, ProcPaths, SystemMetrics, TemperatureMetrics,
 };
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
@@ -559,7 +561,10 @@ pub async fn run_daemon(
                         warn!("Failed to connect to D-Bus: {}, falling back to stub", e);
                         NotificationManager::new_stub_with_logging(Arc::clone(&log_storage))
                     } else {
-                        NotificationManager::new_dbus_with_logging(notifier, Arc::clone(&log_storage))
+                        NotificationManager::new_dbus_with_logging(
+                            notifier,
+                            Arc::clone(&log_storage),
+                        )
                     }
                 }
                 #[cfg(not(feature = "dbus"))]
@@ -581,7 +586,9 @@ pub async fn run_daemon(
 
     // Инициализация подсистем
     let mut snapshot_logger = {
-        if initial_config.enable_snapshot_logging && !initial_config.paths.snapshot_db_path.is_empty() {
+        if initial_config.enable_snapshot_logging
+            && !initial_config.paths.snapshot_db_path.is_empty()
+        {
             info!(
                 "Initializing snapshot logger at: {}",
                 initial_config.paths.snapshot_db_path
@@ -652,23 +659,28 @@ pub async fn run_daemon(
         "Loading pattern database from: {}",
         initial_config.paths.patterns_dir
     );
-    let pattern_db = PatternDatabase::load(&initial_config.paths.patterns_dir).with_context(|| {
-        format!(
-            "Failed to load pattern database from {}. \
+    let pattern_db =
+        PatternDatabase::load(&initial_config.paths.patterns_dir).with_context(|| {
+            format!(
+                "Failed to load pattern database from {}. \
             Ensure the directory exists and is readable, and contains valid YAML pattern files.",
-            initial_config.paths.patterns_dir
-        )
-    })?;
+                initial_config.paths.patterns_dir
+            )
+        })?;
     info!(
         "Loaded {} patterns from database",
         pattern_db.all_patterns().len()
     );
 
     // Инициализация ConfigWatcher для динамической перезагрузки конфигурации
-    let config_watcher = ConfigWatcher::new(&config_path)
-        .with_context(|| format!("Failed to initialize config watcher for file: {}", config_path))?;
+    let config_watcher = ConfigWatcher::new(&config_path).with_context(|| {
+        format!(
+            "Failed to initialize config watcher for file: {}",
+            config_path
+        )
+    })?;
     let mut config_change_receiver = config_watcher.change_receiver();
-    
+
     // Запускаем задачу для мониторинга изменений конфигурационного файла
     let _config_watcher_handle = config_watcher.start_watching();
     info!("Config watcher started for file: {}", config_path);
@@ -682,12 +694,15 @@ pub async fn run_daemon(
     // Кэш для системных метрик (обновляется каждые N итераций)
     let mut system_metrics_cache: Option<SystemMetrics> = None;
     let mut system_metrics_cache_iteration: u64 = 0;
-    let mut system_metrics_cache_interval = initial_config.cache_intervals.system_metrics_cache_interval;
+    let mut system_metrics_cache_interval =
+        initial_config.cache_intervals.system_metrics_cache_interval;
 
     // Кэш для метрик процессов (обновляется каждые N итераций)
     let mut process_metrics_cache: Option<Vec<ProcessRecord>> = None;
     let mut process_metrics_cache_iteration: u64 = 0;
-    let mut process_metrics_cache_interval = initial_config.cache_intervals.process_metrics_cache_interval;
+    let mut process_metrics_cache_interval = initial_config
+        .cache_intervals
+        .process_metrics_cache_interval;
 
     // Инициализация структур данных для API сервера
     let stats_arc = Arc::new(tokio::sync::RwLock::new(DaemonStats::new()));
@@ -790,9 +805,13 @@ pub async fn run_daemon(
         let notification = Notification::new(
             NotificationType::Info,
             "SmoothTask Daemon Started",
-            format!("SmoothTask daemon has started successfully (dry_run: {})", dry_run),
-        ).with_details(format!("Configuration loaded from: {}", config_path));
-        
+            format!(
+                "SmoothTask daemon has started successfully (dry_run: {})",
+                dry_run
+            ),
+        )
+        .with_details(format!("Configuration loaded from: {}", config_path));
+
         if let Err(e) = notification_manager.lock().await.send(&notification).await {
             warn!("Failed to send startup notification: {}", e);
         }
@@ -825,31 +844,34 @@ pub async fn run_daemon(
                             *config_guard = new_config;
                         }
                         info!("Configuration reloaded successfully");
-                        
+
                         // Обновляем зависимые компоненты
                         let config_guard = config_arc.read().await;
-                        
+
                         // 1. Обновляем кэш интервалов
-                        system_metrics_cache_interval = config_guard.cache_intervals.system_metrics_cache_interval;
-                        process_metrics_cache_interval = config_guard.cache_intervals.process_metrics_cache_interval;
-                        
+                        system_metrics_cache_interval =
+                            config_guard.cache_intervals.system_metrics_cache_interval;
+                        process_metrics_cache_interval =
+                            config_guard.cache_intervals.process_metrics_cache_interval;
+
                         // 2. Обновляем idle threshold для input tracker
-                        let new_idle_threshold = Duration::from_secs(config_guard.thresholds.user_idle_timeout_sec);
+                        let new_idle_threshold =
+                            Duration::from_secs(config_guard.thresholds.user_idle_timeout_sec);
                         if let Ok(mut tracker) = input_tracker.lock() {
                             tracker.set_idle_threshold(new_idle_threshold);
                         }
-                        
+
                         // 3. Обновляем policy engine с новой конфигурацией
                         drop(config_guard); // Освобождаем lock перед созданием нового policy_engine
                         policy_engine = PolicyEngine::new(config_arc.read().await.clone());
                         info!("Policy engine updated with new configuration");
-                        
+
                         // 4. Конфигурация в API сервере обновляется автоматически,
                         // так как он использует тот же Arc<RwLock<Config>>
-                        
+
                         // 5. Сбрасываем флаг изменения конфигурации
                         config_change_receiver.borrow_and_update();
-                        
+
                         info!("All components updated with new configuration");
                     }
                 }
@@ -873,7 +895,7 @@ pub async fn run_daemon(
 
         // Читаем текущую конфигурацию для этой итерации
         let config_snapshot = config_arc.read().await.clone();
-        
+
         // Сбор снапшота с кэшированием для оптимизации производительности
         let snapshot = match collect_snapshot_with_caching(
             &proc_paths,
@@ -902,7 +924,8 @@ pub async fn run_daemon(
                     info!("Shutdown signal received, exiting main loop");
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(config_snapshot.polling_interval_ms)).await;
+                tokio::time::sleep(Duration::from_millis(config_snapshot.polling_interval_ms))
+                    .await;
                 // Проверяем shutdown после sleep
                 if *shutdown_rx.borrow_and_update() {
                     info!("Shutdown signal received, exiting main loop");
@@ -933,12 +956,17 @@ pub async fn run_daemon(
             debug!("ML-классификатор отключен в конфигурации");
             None
         };
-        
+
         #[cfg(not(any(feature = "catboost", feature = "onnx")))]
         let ml_classifier: Option<Box<dyn std::any::Any>> = None;
 
         // Классификация процессов и групп
-        classify_all(&mut processes, &mut app_groups, &pattern_db, ml_classifier.as_deref());
+        classify_all(
+            &mut processes,
+            &mut app_groups,
+            &pattern_db,
+            ml_classifier.as_deref(),
+        );
 
         // Обновляем app_group_id в процессах на основе группировки
         for process in &mut processes {
@@ -983,7 +1011,7 @@ pub async fn run_daemon(
                     "Applied {} priority adjustments ({} skipped due to hysteresis, {} errors)",
                     apply_result.applied, apply_result.skipped_hysteresis, apply_result.errors
                 );
-                
+
                 // Отправляем уведомление о изменении приоритетов
                 if notification_manager.lock().await.is_enabled() {
                     let notification = crate::notifications::Notification::new(
@@ -1000,7 +1028,7 @@ pub async fn run_daemon(
                         apply_result.errors,
                         adjustments.len()
                     ));
-                    
+
                     if let Err(e) = notification_manager.lock().await.send(&notification).await {
                         warn!("Failed to send priority change notification: {}", e);
                     }
@@ -1011,7 +1039,7 @@ pub async fn run_daemon(
                     "Failed to apply {} priority adjustments",
                     apply_result.errors
                 );
-                
+
                 // Отправляем уведомление об ошибках при изменении приоритетов
                 if notification_manager.lock().await.is_enabled() {
                     let notification = crate::notifications::Notification::new(
@@ -1021,12 +1049,13 @@ pub async fn run_daemon(
                             "Failed to apply {} priority adjustments",
                             apply_result.errors
                         ),
-                    ).with_details(format!(
+                    )
+                    .with_details(format!(
                         "{} errors occurred while applying priority adjustments to {} processes",
                         apply_result.errors,
                         adjustments.len()
                     ));
-                    
+
                     if let Err(e) = notification_manager.lock().await.send(&notification).await {
                         warn!("Failed to send priority error notification: {}", e);
                     }
@@ -1548,9 +1577,8 @@ pub async fn collect_snapshot_with_caching(
     let snapshot_id = timestamp.timestamp_millis() as u64;
 
     // Проверяем, нужно ли обновлять кэш системных метрик
-    let need_update_system_metrics = 
-        system_metrics_cache.is_none() ||
-        (current_iteration - *system_metrics_cache_iteration) >= system_metrics_cache_interval;
+    let need_update_system_metrics = system_metrics_cache.is_none()
+        || (current_iteration - *system_metrics_cache_iteration) >= system_metrics_cache_interval;
 
     let system_metrics = if need_update_system_metrics {
         // Кэш устарел, обновляем системные метрики
@@ -1567,12 +1595,12 @@ pub async fn collect_snapshot_with_caching(
         // Обновляем кэш
         *system_metrics_cache = Some(new_system_metrics.clone());
         *system_metrics_cache_iteration = current_iteration;
-        
+
         debug!(
             "Updated system metrics cache (iteration {})",
             current_iteration
         );
-        
+
         new_system_metrics
     } else {
         // Используем кэшированные системные метрики
@@ -1593,9 +1621,8 @@ pub async fn collect_snapshot_with_caching(
     *prev_cpu_times = Some(system_metrics.clone());
 
     // Проверяем, нужно ли обновлять кэш метрик процессов
-    let need_update_process_metrics = 
-        process_metrics_cache.is_none() ||
-        (current_iteration - *process_metrics_cache_iteration) >= process_metrics_cache_interval;
+    let need_update_process_metrics = process_metrics_cache.is_none()
+        || (current_iteration - *process_metrics_cache_iteration) >= process_metrics_cache_interval;
 
     let mut processes = if need_update_process_metrics {
         // Кэш устарел, обновляем метрики процессов
@@ -1609,12 +1636,12 @@ pub async fn collect_snapshot_with_caching(
         // Обновляем кэш
         *process_metrics_cache = Some(new_processes.clone());
         *process_metrics_cache_iteration = current_iteration;
-        
+
         debug!(
             "Updated process metrics cache (iteration {})",
             current_iteration
         );
-        
+
         new_processes
     } else {
         // Используем кэшированные метрики процессов
@@ -1699,7 +1726,10 @@ pub async fn collect_snapshot_with_caching(
                 "Failed to join audio metrics task: {}. Using empty audio metrics.",
                 e
             );
-            (AudioMetrics::empty(SystemTime::now(), SystemTime::now()), Vec::new())
+            (
+                AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
+                Vec::new(),
+            )
         }
     };
 
@@ -1771,14 +1801,15 @@ pub async fn collect_snapshot_with_caching(
         audio_xruns_delta: Some(audio_metrics.xrun_count as u64),
         ui_loop_p95_ms: latency_collector.p95(),
         frame_jank_ratio: None, // Will be computed later
-        bad_responsiveness: input_metrics.user_active && 
-            input_metrics.time_since_last_input_ms
-                .is_some_and(|time_since_input| 
+        bad_responsiveness: input_metrics.user_active
+            && input_metrics
+                .time_since_last_input_ms
+                .is_some_and(|time_since_input| {
                     time_since_input > thresholds.user_idle_timeout_sec * 1000
-                ),
+                }),
         responsiveness_score: None, // Will be computed later
     };
-    
+
     // Compute the remaining fields
     responsiveness_metrics.compute(&global_metrics, thresholds);
 

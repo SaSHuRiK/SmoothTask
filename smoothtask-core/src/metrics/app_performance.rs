@@ -24,52 +24,50 @@ fn get_current_time_counter() -> u128 {
     GLOBAL_TIME_COUNTER.load(std::sync::atomic::Ordering::SeqCst) as u128
 }
 
-
-
 /// Метрики производительности для отдельного приложения.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct AppPerformanceMetrics {
     /// Идентификатор процесса
     pub pid: u32,
-    
+
     /// Имя процесса
     pub name: String,
-    
+
     /// Средняя задержка отклика (в миллисекундах)
     /// Это может быть задержка обработки событий, задержка рендеринга и т.д.
     pub avg_latency_ms: f64,
-    
+
     /// Максимальная задержка отклика (в миллисекундах)
     pub max_latency_ms: f64,
-    
+
     /// Минимальная задержка отклика (в миллисекундах)
     pub min_latency_ms: f64,
-    
+
     /// Количество замеров задержки
     pub latency_samples: u32,
-    
+
     /// Средний FPS (кадров в секунду) для графических приложений
     /// 0.0 если метрика не применима
     pub avg_fps: f64,
-    
+
     /// Минимальный FPS
     pub min_fps: f64,
-    
+
     /// Максимальный FPS
     pub max_fps: f64,
-    
+
     /// Количество замеров FPS
     pub fps_samples: u32,
-    
+
     /// Среднее использование CPU приложением (в процентах)
     pub avg_cpu_usage: f64,
-    
+
     /// Среднее использование памяти приложением (в мегабайтах)
     pub avg_memory_usage_mb: f64,
-    
+
     /// Количество сбоев/ошибок за период
     pub error_count: u32,
-    
+
     /// Время последнего обновления метрик (в миллисекундах с момента запуска)
     /// Для тестирования используем простой счетчик
     pub last_updated_ms: u128,
@@ -95,43 +93,46 @@ impl AppPerformanceMetrics {
             last_updated_ms: 0,
         }
     }
-    
+
     /// Добавляет новый замер задержки.
     pub fn add_latency_sample(&mut self, latency_ms: f64) {
         self.latency_samples += 1;
-        
+
         // Обновляем среднее значение
         if self.latency_samples == 1 {
             self.avg_latency_ms = latency_ms;
         } else {
-            self.avg_latency_ms = (self.avg_latency_ms * (self.latency_samples - 1) as f64 + latency_ms) / self.latency_samples as f64;
+            self.avg_latency_ms = (self.avg_latency_ms * (self.latency_samples - 1) as f64
+                + latency_ms)
+                / self.latency_samples as f64;
         }
-        
+
         // Обновляем мин/макс
         self.min_latency_ms = self.min_latency_ms.min(latency_ms);
         self.max_latency_ms = self.max_latency_ms.max(latency_ms);
-        
+
         self.last_updated_ms = increment_time_counter();
     }
-    
+
     /// Добавляет новый замер FPS.
     pub fn add_fps_sample(&mut self, fps: f64) {
         self.fps_samples += 1;
-        
+
         // Обновляем среднее значение
         if self.fps_samples == 1 {
             self.avg_fps = fps;
         } else {
-            self.avg_fps = (self.avg_fps * (self.fps_samples - 1) as f64 + fps) / self.fps_samples as f64;
+            self.avg_fps =
+                (self.avg_fps * (self.fps_samples - 1) as f64 + fps) / self.fps_samples as f64;
         }
-        
+
         // Обновляем мин/макс
         self.min_fps = self.min_fps.min(fps);
         self.max_fps = self.max_fps.max(fps);
-        
+
         self.last_updated_ms = increment_time_counter();
     }
-    
+
     /// Обновляет использование CPU.
     pub fn update_cpu_usage(&mut self, cpu_usage: f64) {
         // Для CPU мы используем скользящее среднее
@@ -143,7 +144,7 @@ impl AppPerformanceMetrics {
         }
         self.last_updated_ms = increment_time_counter();
     }
-    
+
     /// Обновляет использование памяти.
     pub fn update_memory_usage(&mut self, memory_usage_mb: f64) {
         // Для памяти мы используем скользящее среднее
@@ -155,13 +156,13 @@ impl AppPerformanceMetrics {
         }
         self.last_updated_ms = increment_time_counter();
     }
-    
+
     /// Увеличивает счетчик ошибок.
     pub fn increment_error_count(&mut self) {
         self.error_count += 1;
         self.last_updated_ms = increment_time_counter();
     }
-    
+
     /// Сбрасывает все счетчики и метрики.
     pub fn reset(&mut self) {
         self.avg_latency_ms = 0.0;
@@ -177,9 +178,9 @@ impl AppPerformanceMetrics {
         self.error_count = 0;
         self.last_updated_ms = increment_time_counter();
     }
-    
+
     /// Проверяет, устарели ли метрики (не обновлялись дольше заданного времени).
-    /// 
+    ///
     /// Примечание: Эта реализация использует простой счетчик времени с момента последнего обновления.
     /// Для точного отслеживания времени нужно использовать внешний источник времени.
     pub fn is_stale(&self, max_age: Duration) -> bool {
@@ -187,7 +188,7 @@ impl AppPerformanceMetrics {
         if self.last_updated_ms == 0 {
             return false;
         }
-        
+
         let current_time = get_current_time_counter();
         let age = current_time.saturating_sub(self.last_updated_ms);
         Duration::from_millis(age as u64) > max_age
@@ -199,7 +200,7 @@ impl AppPerformanceMetrics {
 pub struct AppPerformanceCollection {
     /// Метрики для отдельных приложений
     pub apps: HashMap<u32, AppPerformanceMetrics>,
-    
+
     /// Глобальные метрики производительности
     pub global: GlobalAppPerformanceMetrics,
 }
@@ -212,22 +213,22 @@ impl AppPerformanceCollection {
             global: GlobalAppPerformanceMetrics::default(),
         }
     }
-    
+
     /// Добавляет или обновляет метрики для приложения.
     pub fn update_app(&mut self, metrics: AppPerformanceMetrics) {
         self.apps.insert(metrics.pid, metrics);
     }
-    
+
     /// Получает метрики для приложения по PID.
     pub fn get_app(&self, pid: u32) -> Option<&AppPerformanceMetrics> {
         self.apps.get(&pid)
     }
-    
+
     /// Удаляет устаревшие метрики (не обновлявшиеся дольше заданного времени).
     pub fn cleanup_stale(&mut self, max_age: Duration) {
         self.apps.retain(|_, metrics| !metrics.is_stale(max_age));
     }
-    
+
     /// Обновляет глобальные метрики на основе текущих метрик приложений.
     pub fn update_global_metrics(&mut self) {
         let mut total_latency = 0.0;
@@ -236,7 +237,7 @@ impl AppPerformanceCollection {
         let mut total_memory = 0.0;
         let mut total_errors = 0;
         let mut app_count = 0;
-        
+
         for metrics in self.apps.values() {
             if metrics.latency_samples > 0 {
                 total_latency += metrics.avg_latency_ms;
@@ -253,11 +254,27 @@ impl AppPerformanceCollection {
             }
             total_errors += metrics.error_count;
         }
-        
-        self.global.avg_latency_ms = if app_count > 0 { total_latency / app_count as f64 } else { 0.0 };
-        self.global.avg_fps = if app_count > 0 { total_fps / app_count as f64 } else { 0.0 };
-        self.global.avg_cpu_usage = if app_count > 0 { total_cpu / app_count as f64 } else { 0.0 };
-        self.global.avg_memory_usage_mb = if app_count > 0 { total_memory / app_count as f64 } else { 0.0 };
+
+        self.global.avg_latency_ms = if app_count > 0 {
+            total_latency / app_count as f64
+        } else {
+            0.0
+        };
+        self.global.avg_fps = if app_count > 0 {
+            total_fps / app_count as f64
+        } else {
+            0.0
+        };
+        self.global.avg_cpu_usage = if app_count > 0 {
+            total_cpu / app_count as f64
+        } else {
+            0.0
+        };
+        self.global.avg_memory_usage_mb = if app_count > 0 {
+            total_memory / app_count as f64
+        } else {
+            0.0
+        };
         self.global.total_error_count = total_errors;
         self.global.active_app_count = app_count;
     }
@@ -268,19 +285,19 @@ impl AppPerformanceCollection {
 pub struct GlobalAppPerformanceMetrics {
     /// Средняя задержка отклика по всем приложениям
     pub avg_latency_ms: f64,
-    
+
     /// Средний FPS по всем приложениям
     pub avg_fps: f64,
-    
+
     /// Среднее использование CPU по всем приложениям
     pub avg_cpu_usage: f64,
-    
+
     /// Среднее использование памяти по всем приложениям
     pub avg_memory_usage_mb: f64,
-    
+
     /// Общее количество ошибок по всем приложениям
     pub total_error_count: u32,
-    
+
     /// Количество активных приложений с метриками
     pub active_app_count: u32,
 }
@@ -291,7 +308,7 @@ pub struct GlobalAppPerformanceMetrics {
 pub struct AppPerformanceCollector {
     /// Текущая коллекция метрик
     collection: AppPerformanceCollection,
-    
+
     /// Максимальный возраст метрик перед удалением
     max_metrics_age: Duration,
 }
@@ -304,29 +321,27 @@ impl AppPerformanceCollector {
             max_metrics_age,
         }
     }
-    
+
     /// Собирает метрики производительности приложений.
     /// В текущей реализации это заглушка, которая будет расширена.
     pub fn collect(&mut self) -> Result<&AppPerformanceCollection> {
         // Пока это заглушка - в будущем здесь будет реальный сбор метрик
         // из различных источников (eBPF, системные вызовы, интеграция с приложениями)
-        
+
         // Очищаем устаревшие метрики
         self.collection.cleanup_stale(self.max_metrics_age);
-        
+
         // Обновляем глобальные метрики
         self.collection.update_global_metrics();
-        
+
         Ok(&self.collection)
     }
-    
+
     /// Получает текущую коллекцию метрик.
     pub fn collection(&self) -> &AppPerformanceCollection {
         &self.collection
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -346,13 +361,13 @@ mod tests {
     #[test]
     fn test_add_latency_sample() {
         let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-        
+
         metrics.add_latency_sample(10.0);
         assert_eq!(metrics.latency_samples, 1);
         assert_eq!(metrics.avg_latency_ms, 10.0);
         assert_eq!(metrics.min_latency_ms, 10.0);
         assert_eq!(metrics.max_latency_ms, 10.0);
-        
+
         metrics.add_latency_sample(20.0);
         assert_eq!(metrics.latency_samples, 2);
         assert_eq!(metrics.avg_latency_ms, 15.0);
@@ -363,13 +378,13 @@ mod tests {
     #[test]
     fn test_add_fps_sample() {
         let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-        
+
         metrics.add_fps_sample(60.0);
         assert_eq!(metrics.fps_samples, 1);
         assert_eq!(metrics.avg_fps, 60.0);
         assert_eq!(metrics.min_fps, 60.0);
         assert_eq!(metrics.max_fps, 60.0);
-        
+
         metrics.add_fps_sample(30.0);
         assert_eq!(metrics.fps_samples, 2);
         assert_eq!(metrics.avg_fps, 45.0);
@@ -380,10 +395,10 @@ mod tests {
     #[test]
     fn test_update_cpu_usage() {
         let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-        
+
         metrics.update_cpu_usage(50.0);
         assert_eq!(metrics.avg_cpu_usage, 50.0);
-        
+
         metrics.update_cpu_usage(75.0);
         // 50 * 0.7 + 75 * 0.3 = 35 + 22.5 = 57.5
         assert_eq!(metrics.avg_cpu_usage, 57.5);
@@ -392,32 +407,32 @@ mod tests {
     #[test]
     fn test_is_stale() {
         let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-        
+
         // Новые метрики (не обновлявшиеся) не должны быть устаревшими
         assert!(!metrics.is_stale(Duration::from_secs(1)));
-        
+
         // Обновим метрики
         metrics.add_latency_sample(10.0);
-        
+
         // Имитируем прохождение времени, увеличивая счетчик
         // В реальном сценарии это бы сделало время, но для теста мы делаем это вручную
         for _ in 0..100 {
             increment_time_counter();
         }
-        
+
         assert!(metrics.is_stale(Duration::from_millis(50)));
     }
 
     #[test]
     fn test_app_performance_collection() {
         let mut collection = AppPerformanceCollection::new();
-        
+
         let metrics1 = AppPerformanceMetrics::new(1, "app1".to_string());
         let metrics2 = AppPerformanceMetrics::new(2, "app2".to_string());
-        
+
         collection.update_app(metrics1);
         collection.update_app(metrics2);
-        
+
         assert_eq!(collection.apps.len(), 2);
         assert!(collection.get_app(1).is_some());
         assert!(collection.get_app(2).is_some());
@@ -427,24 +442,24 @@ mod tests {
     #[test]
     fn test_cleanup_stale() {
         let mut collection = AppPerformanceCollection::new();
-        
+
         let mut metrics1 = AppPerformanceMetrics::new(1, "app1".to_string());
         let mut metrics2 = AppPerformanceMetrics::new(2, "app2".to_string());
-        
+
         // Обновим метрики, чтобы они имели timestamp
         metrics1.add_latency_sample(10.0);
         metrics2.add_latency_sample(20.0);
-        
+
         // Добавим метрики
         collection.update_app(metrics1);
         collection.update_app(metrics2);
-        
+
         // Подождем немного
         thread::sleep(Duration::from_millis(100));
-        
+
         // Очистим устаревшие (с возрастом 50мс)
         collection.cleanup_stale(Duration::from_millis(50));
-        
+
         // Обе метрики должны быть удалены
         assert_eq!(collection.apps.len(), 0);
     }
@@ -452,20 +467,20 @@ mod tests {
     #[test]
     fn test_update_global_metrics() {
         let mut collection = AppPerformanceCollection::new();
-        
+
         let mut metrics1 = AppPerformanceMetrics::new(1, "app1".to_string());
         metrics1.add_latency_sample(10.0);
         metrics1.update_cpu_usage(50.0);
-        
+
         let mut metrics2 = AppPerformanceMetrics::new(2, "app2".to_string());
         metrics2.add_latency_sample(20.0);
         metrics2.update_cpu_usage(75.0);
-        
+
         collection.update_app(metrics1);
         collection.update_app(metrics2);
-        
+
         collection.update_global_metrics();
-        
+
         assert_eq!(collection.global.avg_latency_ms, 15.0);
         assert_eq!(collection.global.avg_cpu_usage, 62.5);
         assert_eq!(collection.global.active_app_count, 2);
@@ -474,10 +489,10 @@ mod tests {
     #[test]
     fn test_collector() {
         let mut collector = AppPerformanceCollector::new(Duration::from_secs(1));
-        
+
         let result = collector.collect();
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
         assert_eq!(collection.apps.len(), 0);
         assert_eq!(collection.global.active_app_count, 0);

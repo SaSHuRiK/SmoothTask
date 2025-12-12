@@ -74,7 +74,7 @@
 //!
 //! // Теперь процессы имеют классификацию на основе паттернов и ML
 //! for process in &processes {
-//!     println!("PID {}: type={:?}, tags={:?}", 
+//!     println!("PID {}: type={:?}, tags={:?}",
 //!              process.pid, process.process_type, process.tags);
 //! }
 //! ```

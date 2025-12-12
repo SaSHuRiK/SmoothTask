@@ -134,7 +134,11 @@ impl PatternUpdateResult {
             if self.removed_files > 0 {
                 parts.push(format!("{} removed", self.removed_files));
             }
-            format!("Updated: {} ({} patterns)", parts.join(", "), self.patterns_after)
+            format!(
+                "Updated: {} ({} patterns)",
+                parts.join(", "),
+                self.patterns_after
+            )
         }
     }
 }
@@ -167,8 +171,7 @@ impl PatternUpdateResult {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Clone)]
-#[derive(Default)]
+#[derive(Debug, Clone, Default)]
 pub struct PatternDatabase {
     /// Маппинг категория -> список паттернов.
     patterns_by_category: HashMap<PatternCategory, Vec<AppPattern>>,
@@ -219,7 +222,10 @@ impl PatternDatabase {
         // Проверяем, существует ли директория
         if !patterns_dir.exists() {
             error!("Директория с паттернами не существует: {:?}", patterns_dir);
-            return Err(anyhow!("Директория с паттернами не существует: {:?}", patterns_dir));
+            return Err(anyhow!(
+                "Директория с паттернами не существует: {:?}",
+                patterns_dir
+            ));
         }
 
         if !patterns_dir.is_dir() {
@@ -227,15 +233,21 @@ impl PatternDatabase {
             return Err(anyhow!("Путь не является директорией: {:?}", patterns_dir));
         }
 
-        let entries = fs::read_dir(patterns_dir)
-            .with_context(|| format!("Не удалось прочитать директорию с паттернами: {:?}", patterns_dir))?;
+        let entries = fs::read_dir(patterns_dir).with_context(|| {
+            format!(
+                "Не удалось прочитать директорию с паттернами: {:?}",
+                patterns_dir
+            )
+        })?;
 
         let mut total_patterns = 0;
         let mut total_files = 0;
         let mut invalid_files = 0;
 
         for entry in entries {
-            let entry = entry.with_context(|| format!("Ошибка при чтении записи в директории {:?}", patterns_dir))?;
+            let entry = entry.with_context(|| {
+                format!("Ошибка при чтении записи в директории {:?}", patterns_dir)
+            })?;
             let path = entry.path();
 
             // Пропускаем не-YAML файлы
@@ -253,8 +265,9 @@ impl PatternDatabase {
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("Не удалось прочитать файл паттернов: {:?}", path))?;
 
-            let pattern_file: PatternFile = serde_yaml::from_str(&content)
-                .with_context(|| format!("Не удалось разобрать YAML в файле паттернов: {:?}", path))?;
+            let pattern_file: PatternFile = serde_yaml::from_str(&content).with_context(|| {
+                format!("Не удалось разобрать YAML в файле паттернов: {:?}", path)
+            })?;
 
             // Валидация паттернов
             if !Self::validate_pattern_file(&pattern_file) {
@@ -273,7 +286,10 @@ impl PatternDatabase {
 
             for app in apps.clone() {
                 if !Self::validate_app_pattern(&app) {
-                    error!("Некорректный паттерн приложения в файле {:?}: {:?}", path, app.name);
+                    error!(
+                        "Некорректный паттерн приложения в файле {:?}: {:?}",
+                        path, app.name
+                    );
                     continue;
                 }
                 all_patterns.push((category.clone(), app));
@@ -283,11 +299,16 @@ impl PatternDatabase {
             patterns_by_category.insert(category, apps);
         }
 
-        info!("Загрузка паттернов завершена: {} файлов, {} паттернов, {} недопустимых файлов", 
-              total_files, total_patterns, invalid_files);
+        info!(
+            "Загрузка паттернов завершена: {} файлов, {} паттернов, {} недопустимых файлов",
+            total_files, total_patterns, invalid_files
+        );
 
         if total_patterns == 0 {
-            warn!("Не найдено ни одного допустимого паттерна в директории {:?}", patterns_dir);
+            warn!(
+                "Не найдено ни одного допустимого паттерна в директории {:?}",
+                patterns_dir
+            );
         }
 
         Ok(Self {
@@ -338,7 +359,10 @@ impl PatternDatabase {
         // Проверяем, существует ли директория
         if !patterns_dir.exists() {
             error!("Директория с паттернами не существует: {:?}", patterns_dir);
-            return Err(anyhow!("Директория с паттернами не существует: {:?}", patterns_dir));
+            return Err(anyhow!(
+                "Директория с паттернами не существует: {:?}",
+                patterns_dir
+            ));
         }
 
         if !patterns_dir.is_dir() {
@@ -346,8 +370,12 @@ impl PatternDatabase {
             return Err(anyhow!("Путь не является директорией: {:?}", patterns_dir));
         }
 
-        let entries = fs::read_dir(patterns_dir)
-            .with_context(|| format!("Не удалось прочитать директорию с паттернами: {:?}", patterns_dir))?;
+        let entries = fs::read_dir(patterns_dir).with_context(|| {
+            format!(
+                "Не удалось прочитать директорию с паттернами: {:?}",
+                patterns_dir
+            )
+        })?;
 
         let mut total_patterns = 0;
         let mut total_files = 0;
@@ -355,14 +383,18 @@ impl PatternDatabase {
         let mut changed_files = 0;
 
         // Собираем текущие имена файлов для сравнения
-        let current_files: HashSet<_> = self.all_patterns.iter()
+        let current_files: HashSet<_> = self
+            .all_patterns
+            .iter()
             .map(|(_, pattern)| pattern.name.clone())
             .collect();
 
         let mut new_file_names = HashSet::new();
 
         for entry in entries {
-            let entry = entry.with_context(|| format!("Ошибка при чтении записи в директории {:?}", patterns_dir))?;
+            let entry = entry.with_context(|| {
+                format!("Ошибка при чтении записи в директории {:?}", patterns_dir)
+            })?;
             let path = entry.path();
 
             // Пропускаем не-YAML файлы
@@ -380,8 +412,9 @@ impl PatternDatabase {
             let content = fs::read_to_string(&path)
                 .with_context(|| format!("Не удалось прочитать файл паттернов: {:?}", path))?;
 
-            let pattern_file: PatternFile = serde_yaml::from_str(&content)
-                .with_context(|| format!("Не удалось разобрать YAML в файле паттернов: {:?}", path))?;
+            let pattern_file: PatternFile = serde_yaml::from_str(&content).with_context(|| {
+                format!("Не удалось разобрать YAML в файле паттернов: {:?}", path)
+            })?;
 
             // Валидация паттернов
             if !Self::validate_pattern_file(&pattern_file) {
@@ -400,24 +433,29 @@ impl PatternDatabase {
 
             for app in apps.clone() {
                 if !Self::validate_app_pattern(&app) {
-                    error!("Некорректный паттерн приложения в файле {:?}: {:?}", path, app.name);
+                    error!(
+                        "Некорректный паттерн приложения в файле {:?}: {:?}",
+                        path, app.name
+                    );
                     continue;
                 }
-                
+
                 // Отслеживаем новые имена паттернов
                 new_file_names.insert(app.name.clone());
-                
+
                 // Проверяем, изменился ли паттерн
-                let pattern_changed = self.all_patterns.iter()
+                let pattern_changed = self
+                    .all_patterns
+                    .iter()
                     .find(|(_, existing_pattern)| existing_pattern.name == app.name)
                     .map(|(_, existing_pattern)| existing_pattern != &app)
                     .unwrap_or(true);
-                    
+
                 if pattern_changed {
                     changed_files += 1;
                     debug!("Паттерн {} был изменён или является новым", app.name);
                 }
-                
+
                 new_all_patterns.push((category.clone(), app));
                 total_patterns += 1;
             }
@@ -430,7 +468,10 @@ impl PatternDatabase {
         let removed_count = removed_patterns.len();
 
         if !removed_patterns.is_empty() {
-            debug!("Обнаружено {} удалённых паттернов: {:?}", removed_count, removed_patterns);
+            debug!(
+                "Обнаружено {} удалённых паттернов: {:?}",
+                removed_count, removed_patterns
+            );
         }
 
         // Проверяем новые паттерны
@@ -438,7 +479,10 @@ impl PatternDatabase {
         let new_files = added_patterns.len();
 
         if new_files > 0 {
-            debug!("Обнаружено {} новых паттернов: {:?}", new_files, added_patterns);
+            debug!(
+                "Обнаружено {} новых паттернов: {:?}",
+                new_files, added_patterns
+            );
         }
 
         info!("Перезагрузка паттернов завершена: {} файлов, {} паттернов, {} недопустимых файлов, {} изменений, {} новых паттернов, {} удалённых паттернов",
@@ -482,22 +526,31 @@ impl PatternDatabase {
 
         // Проверяем, существует ли директория
         if !patterns_dir.exists() {
-            return Err(anyhow!("Директория с паттернами не существует: {:?}", patterns_dir));
+            return Err(anyhow!(
+                "Директория с паттернами не существует: {:?}",
+                patterns_dir
+            ));
         }
 
         if !patterns_dir.is_dir() {
             return Err(anyhow!("Путь не является директорией: {:?}", patterns_dir));
         }
 
-        let entries = fs::read_dir(patterns_dir)
-            .with_context(|| format!("Не удалось прочитать директорию с паттернами: {:?}", patterns_dir))?;
+        let entries = fs::read_dir(patterns_dir).with_context(|| {
+            format!(
+                "Не удалось прочитать директорию с паттернами: {:?}",
+                patterns_dir
+            )
+        })?;
 
         let mut file_count = 0;
         let mut total_patterns = 0;
         let mut current_patterns: HashSet<String> = HashSet::new();
 
         for entry in entries {
-            let entry = entry.with_context(|| format!("Ошибка при чтении записи в директории {:?}", patterns_dir))?;
+            let entry = entry.with_context(|| {
+                format!("Ошибка при чтении записи в директории {:?}", patterns_dir)
+            })?;
             let path = entry.path();
 
             // Пропускаем не-YAML файлы
@@ -521,7 +574,10 @@ impl PatternDatabase {
             let pattern_file: PatternFile = match serde_yaml::from_str(&content) {
                 Ok(pattern_file) => pattern_file,
                 Err(e) => {
-                    warn!("Не удалось разобрать YAML в файле паттернов {:?}: {}", path, e);
+                    warn!(
+                        "Не удалось разобрать YAML в файле паттернов {:?}: {}",
+                        path, e
+                    );
                     continue;
                 }
             };
@@ -536,7 +592,9 @@ impl PatternDatabase {
         }
 
         // Сравниваем с текущими паттернами
-        let current_names: HashSet<_> = self.all_patterns.iter()
+        let current_names: HashSet<_> = self
+            .all_patterns
+            .iter()
             .map(|(_, pattern)| pattern.name.clone())
             .collect();
 
@@ -565,8 +623,16 @@ impl PatternDatabase {
         }
 
         // Проверяем, что категория содержит только допустимые символы
-        if !pattern_file.category.0.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
-            error!("Категория паттерна содержит недопустимые символы: {}", pattern_file.category.0);
+        if !pattern_file
+            .category
+            .0
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            error!(
+                "Категория паттерна содержит недопустимые символы: {}",
+                pattern_file.category.0
+            );
             return false;
         }
 
@@ -582,37 +648,57 @@ impl PatternDatabase {
         }
 
         // Проверяем, что имя содержит только допустимые символы
-        if !app_pattern.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
-            error!("Имя паттерна приложения содержит недопустимые символы: {}", app_pattern.name);
+        if !app_pattern
+            .name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+        {
+            error!(
+                "Имя паттерна приложения содержит недопустимые символы: {}",
+                app_pattern.name
+            );
             return false;
         }
 
         // Проверяем, что хотя бы один паттерн задан
-        if app_pattern.exe_patterns.is_empty() && 
-           app_pattern.desktop_patterns.is_empty() && 
-           app_pattern.cgroup_patterns.is_empty() {
-            error!("Паттерн приложения {} не содержит ни одного правила сопоставления", app_pattern.name);
+        if app_pattern.exe_patterns.is_empty()
+            && app_pattern.desktop_patterns.is_empty()
+            && app_pattern.cgroup_patterns.is_empty()
+        {
+            error!(
+                "Паттерн приложения {} не содержит ни одного правила сопоставления",
+                app_pattern.name
+            );
             return false;
         }
 
         // Проверяем, что паттерны не пустые
         for pattern in &app_pattern.exe_patterns {
             if pattern.trim().is_empty() {
-                error!("Паттерн exe не может быть пустым в приложении {}", app_pattern.name);
+                error!(
+                    "Паттерн exe не может быть пустым в приложении {}",
+                    app_pattern.name
+                );
                 return false;
             }
         }
 
         for pattern in &app_pattern.desktop_patterns {
             if pattern.trim().is_empty() {
-                error!("Паттерн desktop не может быть пустым в приложении {}", app_pattern.name);
+                error!(
+                    "Паттерн desktop не может быть пустым в приложении {}",
+                    app_pattern.name
+                );
                 return false;
             }
         }
 
         for pattern in &app_pattern.cgroup_patterns {
             if pattern.trim().is_empty() {
-                error!("Паттерн cgroup не может быть пустым в приложении {}", app_pattern.name);
+                error!(
+                    "Паттерн cgroup не может быть пустым в приложении {}",
+                    app_pattern.name
+                );
                 return false;
             }
         }
@@ -794,8 +880,10 @@ pub fn classify_process(
     ml_classifier: Option<&dyn MLClassifier>,
     desktop_id: Option<&str>,
 ) {
-    debug!("Классификация процесса PID {}: exe={:?}, desktop_id={:?}", 
-           process.pid, process.exe, desktop_id);
+    debug!(
+        "Классификация процесса PID {}: exe={:?}, desktop_id={:?}",
+        process.pid, process.exe, desktop_id
+    );
 
     // Извлекаем desktop_id из systemd_unit, если не передан явно
     let desktop_id = desktop_id.or_else(|| {
@@ -816,10 +904,16 @@ pub fn classify_process(
     );
 
     if matches.is_empty() {
-        debug!("Для процесса PID {} не найдено совпадающих паттернов", process.pid);
+        debug!(
+            "Для процесса PID {} не найдено совпадающих паттернов",
+            process.pid
+        );
     } else {
-        debug!("Найдено {} совпадающих паттернов для процесса PID {}", 
-               matches.len(), process.pid);
+        debug!(
+            "Найдено {} совпадающих паттернов для процесса PID {}",
+            matches.len(),
+            process.pid
+        );
         for (category, pattern) in &matches {
             debug!("  - Категория: {}, Паттерн: {}", category.0, pattern.name);
         }
@@ -839,27 +933,33 @@ pub fn classify_process(
     // Применяем ML-классификацию, если доступен
     if let Some(classifier) = ml_classifier {
         let ml_result = classifier.classify(process);
-        
-        debug!("Результаты ML-классификации для PID {}: type={:?}, confidence={:.2}, tags={:?}",
-               process.pid, ml_result.process_type, ml_result.confidence, ml_result.tags);
-        
+
+        debug!(
+            "Результаты ML-классификации для PID {}: type={:?}, confidence={:.2}, tags={:?}",
+            process.pid, ml_result.process_type, ml_result.confidence, ml_result.tags
+        );
+
         // Объединяем результаты паттерн-классификации и ML-классификации
         if let Some(ml_type) = ml_result.process_type {
             // Если ML уверен в предсказании, используем его тип
             if ml_result.confidence > 0.7 {
                 if let Some(ref pattern_type) = process_type {
                     if pattern_type != &ml_type {
-                        info!("ML-классификатор переопределил тип процесса PID {}: {} -> {}", 
-                              process.pid, pattern_type, ml_type);
+                        info!(
+                            "ML-классификатор переопределил тип процесса PID {}: {} -> {}",
+                            process.pid, pattern_type, ml_type
+                        );
                     }
                 }
                 process_type = Some(ml_type);
             } else {
-                debug!("ML-классификатор предложил тип {} с низкой уверенностью ({:.2})", 
-                       ml_type, ml_result.confidence);
+                debug!(
+                    "ML-классификатор предложил тип {} с низкой уверенностью ({:.2})",
+                    ml_type, ml_result.confidence
+                );
             }
         }
-        
+
         // Добавляем теги из ML-классификации
         for tag in ml_result.tags {
             all_tags.insert(tag);
@@ -872,11 +972,15 @@ pub fn classify_process(
     process.tags.sort();
 
     if let Some(ref process_type) = process.process_type {
-        info!("Процесс PID {} классифицирован как '{}' с тегами: {:?}", 
-              process.pid, process_type, process.tags);
+        info!(
+            "Процесс PID {} классифицирован как '{}' с тегами: {:?}",
+            process.pid, process_type, process.tags
+        );
     } else {
-        debug!("Процесс PID {} не классифицирован (теги: {:?})", 
-               process.pid, process.tags);
+        debug!(
+            "Процесс PID {} не классифицирован (теги: {:?})",
+            process.pid, process.tags
+        );
     }
 }
 
@@ -887,15 +991,21 @@ pub fn classify_process(
     _ml_classifier: Option<&dyn std::any::Any>,
     desktop_id: Option<&str>,
 ) {
-    debug!("Классификация процесса PID {}: exe={:?}, desktop_id={:?}", 
-           process.pid, process.exe, desktop_id);
+    debug!(
+        "Классификация процесса PID {}: exe={:?}, desktop_id={:?}",
+        process.pid, process.exe, desktop_id
+    );
 
     // Извлекаем desktop_id из systemd_unit, если не передан явно
     let desktop_id = desktop_id.or(process.systemd_unit.as_deref());
 
     // Паттерн-базированная классификация (без ML)
-    let matches = pattern_db.match_process(process.exe.as_deref(), desktop_id, process.cgroup_path.as_deref());
-    
+    let matches = pattern_db.match_process(
+        process.exe.as_deref(),
+        desktop_id,
+        process.cgroup_path.as_deref(),
+    );
+
     // Собираем все теги из совпадающих паттернов
     let mut all_tags = HashSet::new();
     for (_, pattern) in &matches {
@@ -903,16 +1013,20 @@ pub fn classify_process(
             all_tags.insert(tag.clone());
         }
     }
-    
+
     // Выбираем process_type из первой категории
     if let Some((category, _)) = matches.first() {
         process.process_type = Some(category.0.clone());
         process.tags = all_tags.into_iter().collect();
-        debug!("Процесс PID {} классифицирован как {:?} (теги: {:?})",
-               process.pid, process.process_type, process.tags);
+        debug!(
+            "Процесс PID {} классифицирован как {:?} (теги: {:?})",
+            process.pid, process.process_type, process.tags
+        );
     } else {
-        debug!("Процесс PID {} не классифицирован (теги: {:?})", 
-               process.pid, process.tags);
+        debug!(
+            "Процесс PID {} не классифицирован (теги: {:?})",
+            process.pid, process.tags
+        );
     }
 }
 
@@ -935,8 +1049,10 @@ pub fn classify_app_group(
     processes: &[ProcessRecord],
     _pattern_db: &PatternDatabase,
 ) {
-    debug!("Классификация AppGroup {} (root_pid={})", 
-           app_group.app_group_id, app_group.root_pid);
+    debug!(
+        "Классификация AppGroup {} (root_pid={})",
+        app_group.app_group_id, app_group.root_pid
+    );
 
     // Находим процессы этой группы
     let group_processes: Vec<&ProcessRecord> = processes
@@ -949,16 +1065,21 @@ pub fn classify_app_group(
         return;
     }
 
-    debug!("Найдено {} процессов в AppGroup {}", 
-           group_processes.len(), app_group.app_group_id);
+    debug!(
+        "Найдено {} процессов в AppGroup {}",
+        group_processes.len(),
+        app_group.app_group_id
+    );
 
     // Собираем все теги и типы из процессов группы
     let mut all_tags = HashSet::new();
     let mut process_types = HashSet::new();
 
     for process in group_processes {
-        debug!("  - Процесс PID {}: type={:?}, tags={:?}", 
-               process.pid, process.process_type, process.tags);
+        debug!(
+            "  - Процесс PID {}: type={:?}, tags={:?}",
+            process.pid, process.process_type, process.tags
+        );
 
         // Добавляем теги процесса
         for tag in &process.tags {
@@ -975,8 +1096,10 @@ pub fn classify_app_group(
     app_group.tags = all_tags.into_iter().collect();
     app_group.tags.sort();
 
-    debug!("Агрегированные теги для AppGroup {}: {:?}", 
-           app_group.app_group_id, app_group.tags);
+    debug!(
+        "Агрегированные теги для AppGroup {}: {:?}",
+        app_group.app_group_id, app_group.tags
+    );
 
     // Если все процессы имеют один тип, можно установить app_name
     // (это можно улучшить позже)
@@ -985,12 +1108,16 @@ pub fn classify_app_group(
         // Но лучше оставить app_name как есть, так как он может быть более специфичным
         let _ = process_types.iter().next();
     } else if process_types.len() > 1 {
-        debug!("AppGroup {} содержит процессы с разными типами: {:?}", 
-               app_group.app_group_id, process_types);
+        debug!(
+            "AppGroup {} содержит процессы с разными типами: {:?}",
+            app_group.app_group_id, process_types
+        );
     }
 
-    info!("AppGroup {} классифицирована с тегами: {:?}", 
-          app_group.app_group_id, app_group.tags);
+    info!(
+        "AppGroup {} классифицирована с тегами: {:?}",
+        app_group.app_group_id, app_group.tags
+    );
 }
 
 /// Классифицирует все процессы и группы в снапшоте.
@@ -1038,7 +1165,7 @@ mod tests {
     use super::*;
     use std::path::PathBuf;
     use tempfile::TempDir;
-    
+
     #[cfg(any(feature = "catboost", feature = "onnx"))]
     use crate::classify::ml_classifier::StubMLClassifier;
 
@@ -1750,7 +1877,7 @@ apps:
         // Должны быть теги и от паттернов, и от ML
         assert!(process.tags.contains(&"browser".to_string())); // от паттернов
         assert!(process.tags.contains(&"high_cpu".to_string())); // от ML
-        
+
         // Тип должен быть от паттернов (так как ML уверенность < 0.7 для cpu_intensive)
         assert_eq!(process.process_type, Some("browser".to_string()));
     }
@@ -1825,7 +1952,7 @@ apps:
         assert!(process.tags.contains(&"browser".to_string())); // от паттернов
         assert!(process.tags.contains(&"audio".to_string())); // от ML
         assert!(process.tags.contains(&"realtime".to_string())); // от ML
-        
+
         // Тип должен быть от ML (так как уверенность > 0.7 для audio)
         assert_eq!(process.process_type, Some("audio".to_string()));
     }
@@ -1902,7 +2029,7 @@ apps:
         let nonexistent_dir = Path::new("/nonexistent/patterns/directory");
         let result = PatternDatabase::load(nonexistent_dir);
         assert!(result.is_err());
-        
+
         // Проверяем, что ошибка содержит информативное сообщение
         let err = result.unwrap_err();
         assert!(err.to_string().contains("не существует"));
@@ -1916,7 +2043,7 @@ apps:
         // Создаем пустую директорию
         let db = PatternDatabase::load(patterns_dir);
         assert!(db.is_ok()); // Должно успешно загрузиться, но без паттернов
-        
+
         let db = db.unwrap();
         assert_eq!(db.all_patterns().len(), 0);
     }
@@ -2236,18 +2363,18 @@ apps:
 
         // Перезагружаем паттерны
         let result = db.reload(patterns_dir).expect("reload patterns");
-        
+
         assert!(result.has_changes());
         assert_eq!(result.new_files, 1);
         assert_eq!(result.changed_files, 0);
         assert_eq!(result.removed_files, 0);
         assert_eq!(result.patterns_before, 1);
         assert_eq!(result.patterns_after, 2);
-        
+
         // Проверяем, что новый паттерн загружен
         let updated_count = db.all_patterns().len();
         assert_eq!(updated_count, 2);
-        
+
         // Проверяем, что можно найти новый паттерн
         let matches = db.match_process(Some("code"), None, None);
         assert_eq!(matches.len(), 1);
@@ -2274,7 +2401,7 @@ apps:
         );
 
         let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
-        
+
         // Изменяем существующий паттерн
         create_test_pattern_file(
             patterns_dir,
@@ -2291,12 +2418,12 @@ apps:
 
         // Перезагружаем паттерны
         let result = db.reload(patterns_dir).expect("reload patterns");
-        
+
         assert!(result.has_changes());
         assert_eq!(result.changed_files, 1);
         assert_eq!(result.new_files, 0);
         assert_eq!(result.removed_files, 0);
-        
+
         // Проверяем, что паттерн обновлён
         let matches = db.match_process(Some("firefox-bin"), None, None);
         assert_eq!(matches.len(), 1);
@@ -2346,12 +2473,12 @@ apps:
 
         // Перезагружаем паттерны
         let result = db.reload(patterns_dir).expect("reload patterns");
-        
+
         assert!(result.has_changes());
         assert_eq!(result.removed_files, 1);
         assert_eq!(result.patterns_before, 2);
         assert_eq!(result.patterns_after, 1);
-        
+
         // Проверяем, что паттерн удалён
         assert_eq!(db.all_patterns().len(), 1);
         let matches = db.match_process(Some("chrome"), None, None);
@@ -2378,11 +2505,11 @@ apps:
         );
 
         let db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
-        
+
         // Проверяем, что изменений нет
         let has_changes = db.has_changes(patterns_dir).expect("check changes");
         assert!(!has_changes);
-        
+
         // Добавляем новый паттерн
         create_test_pattern_file(
             patterns_dir,
@@ -2396,7 +2523,7 @@ apps:
     tags: ["ide"]
 "#,
         );
-        
+
         // Проверяем, что изменения обнаружены
         let has_changes = db.has_changes(patterns_dir).expect("check changes");
         assert!(has_changes);
@@ -2422,11 +2549,11 @@ apps:
         );
 
         let db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
-        
+
         // Проверяем, что изменений нет
         let has_changes = db.has_changes(patterns_dir).expect("check changes");
         assert!(!has_changes);
-        
+
         // Проверяем ещё раз (без изменений)
         let has_changes = db.has_changes(patterns_dir).expect("check changes");
         assert!(!has_changes);
@@ -2446,7 +2573,10 @@ apps:
         };
 
         assert!(result.has_changes());
-        assert_eq!(result.summary(), "Updated: 1 changed, 2 new, 1 removed (5 patterns)");
+        assert_eq!(
+            result.summary(),
+            "Updated: 1 changed, 2 new, 1 removed (5 patterns)"
+        );
 
         let no_change_result = PatternUpdateResult {
             total_files: 1,
@@ -2460,7 +2590,10 @@ apps:
         };
 
         assert!(!no_change_result.has_changes());
-        assert_eq!(no_change_result.summary(), "No changes detected (3 patterns)");
+        assert_eq!(
+            no_change_result.summary(),
+            "No changes detected (3 patterns)"
+        );
     }
 
     #[test]
@@ -2483,7 +2616,7 @@ apps:
         );
 
         let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
-        
+
         // Проверяем обработку ошибок для несуществующей директории
         let result = db.reload("/nonexistent/patterns");
         assert!(result.is_err());
@@ -2511,7 +2644,7 @@ apps:
         );
 
         let db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
-        
+
         // Проверяем обработку ошибок для несуществующей директории
         let result = db.has_changes("/nonexistent/patterns");
         assert!(result.is_err());
@@ -2540,11 +2673,11 @@ apps:
 
         let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
         let initial_patterns = db.all_patterns().len();
-        
+
         // Пытаемся перезагрузить из несуществующей директории
         let result = db.reload("/nonexistent/patterns");
         assert!(result.is_err());
-        
+
         // Проверяем, что существующие паттерны сохранены
         assert_eq!(db.all_patterns().len(), initial_patterns);
     }

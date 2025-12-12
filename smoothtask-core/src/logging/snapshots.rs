@@ -384,7 +384,10 @@ impl SnapshotLogger {
         let conn = Connection::open(db_path.as_ref())
             .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
 
-        let logger = SnapshotLogger { conn, log_rotator: None };
+        let logger = SnapshotLogger {
+            conn,
+            log_rotator: None,
+        };
         logger.init_schema()?;
         Ok(logger)
     }
@@ -423,7 +426,9 @@ impl SnapshotLogger {
         let conn = Connection::open(db_path.as_ref())
             .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
 
-        let log_rotator = if logging_config.log_max_size_bytes > 0 || logging_config.log_rotation_interval_sec > 0 {
+        let log_rotator = if logging_config.log_max_size_bytes > 0
+            || logging_config.log_rotation_interval_sec > 0
+        {
             Some(LogRotator::new(
                 logging_config.log_max_size_bytes,
                 logging_config.log_max_rotated_files,
@@ -573,10 +578,10 @@ impl SnapshotLogger {
         Self::insert_processes(&tx, snapshot)?;
         Self::insert_app_groups(&tx, snapshot)?;
         tx.commit()?;
-        
+
         // Выполняем ротацию лога после записи снапшота
         self.rotate_log_if_needed()?;
-        
+
         Ok(())
     }
 
@@ -611,14 +616,14 @@ impl SnapshotLogger {
             // Получаем путь к файлу базы данных
             let db_path_str = self.conn.path().unwrap_or("snapshots.db");
             let db_path = Path::new(db_path_str);
-            
+
             // Получаем текущий размер файла
             let _current_size = get_log_file_size(db_path)?;
-            
+
             // Выполняем ротацию, если необходимо
             rotator.rotate_log(db_path)?;
         }
-        
+
         Ok(())
     }
 
@@ -1242,7 +1247,10 @@ mod tests {
             .expect("logger with logging config created");
 
         // Проверяем, что логгер создан и имеет ротатор
-        assert!(logger.log_rotator.is_some(), "Logger should have a log rotator");
+        assert!(
+            logger.log_rotator.is_some(),
+            "Logger should have a log rotator"
+        );
     }
 
     #[test]
@@ -1250,11 +1258,13 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let db_path = temp_dir.path().join("test_snapshots.db");
 
-        let logger = SnapshotLogger::new(&db_path)
-            .expect("logger without logging config created");
+        let logger = SnapshotLogger::new(&db_path).expect("logger without logging config created");
 
         // Проверяем, что логгер создан без ротатора
-        assert!(logger.log_rotator.is_none(), "Logger should not have a log rotator");
+        assert!(
+            logger.log_rotator.is_none(),
+            "Logger should not have a log rotator"
+        );
     }
 
     #[test]
@@ -1278,8 +1288,11 @@ mod tests {
         logger.log_snapshot(&snapshot).expect("snapshot logged");
 
         // Проверяем, что логгер имеет ротатор
-        assert!(logger.log_rotator.is_some(), "Logger should have a log rotator");
-        
+        assert!(
+            logger.log_rotator.is_some(),
+            "Logger should have a log rotator"
+        );
+
         // Проверяем, что конфигурация ротации правильная
         if let Some(rotator) = &logger.log_rotator {
             let (max_size, max_files, compression, interval) = rotator.get_config();
@@ -1316,11 +1329,13 @@ mod tests {
         let db_files: Vec<_> = fs::read_dir(temp_dir.path())
             .expect("read dir")
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry.path().extension().is_some_and(|ext| ext == "db")
-            })
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "db"))
             .collect();
 
-        assert_eq!(db_files.len(), 1, "Should have only one DB file when rotation is disabled");
+        assert_eq!(
+            db_files.len(),
+            1,
+            "Should have only one DB file when rotation is disabled"
+        );
     }
 }

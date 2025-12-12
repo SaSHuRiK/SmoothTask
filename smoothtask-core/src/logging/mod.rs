@@ -12,6 +12,6 @@
 //! - **rotation**: Функциональность для ротации логов, сжатия и управления файлами логов
 //! - **log_storage**: Хранилище логов приложения для предоставления через API
 
+pub mod log_storage;
 pub mod rotation;
 pub mod snapshots;
-pub mod log_storage;

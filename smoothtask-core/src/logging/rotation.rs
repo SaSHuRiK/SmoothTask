@@ -200,10 +200,18 @@ impl LogRotator {
     fn generate_rotated_path(&self, original_path: &Path, timestamp: &str) -> PathBuf {
         let mut rotated_path = original_path.to_path_buf();
         let file_stem = original_path.file_stem().unwrap_or_else(|| "log".as_ref());
-        let extension = original_path.extension().and_then(|ext| ext.to_str()).unwrap_or("log");
+        let extension = original_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("log");
 
         // Формируем имя ротированного файла: original_name.timestamp.extension
-        rotated_path.set_file_name(format!("{}.{}.{}", file_stem.to_string_lossy(), timestamp, extension));
+        rotated_path.set_file_name(format!(
+            "{}.{}.{}",
+            file_stem.to_string_lossy(),
+            timestamp,
+            extension
+        ));
         rotated_path
     }
 
@@ -277,7 +285,10 @@ impl LogRotator {
 
         let log_dir = log_path.parent().unwrap_or_else(|| Path::new("."));
         let file_stem = log_path.file_stem().unwrap_or_else(|| "log".as_ref());
-        let _extension = log_path.extension().and_then(|ext| ext.to_str()).unwrap_or("log");
+        let _extension = log_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("log");
 
         // Ищем все ротированные файлы, соответствующие шаблону
         let mut rotated_files: Vec<(PathBuf, DateTime<Local>)> = Vec::new();
@@ -369,8 +380,8 @@ fn parse_log_timestamp(timestamp_str: &str) -> Result<DateTime<Local>> {
     // Пробуем разные форматы timestamp
     let formats = [
         "%Y%m%d_%H%M%S", // YYYYMMDD_HHMMSS
-        "%Y%m%d_%H%M",    // YYYYMMDD_HHMM
-        "%Y%m%d",          // YYYYMMDD
+        "%Y%m%d_%H%M",   // YYYYMMDD_HHMM
+        "%Y%m%d",        // YYYYMMDD
     ];
 
     for format in formats {
@@ -411,8 +422,8 @@ pub fn get_log_file_size(log_path: &Path) -> Result<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::{NamedTempFile, TempDir};
     use std::io::Write;
+    use tempfile::{NamedTempFile, TempDir};
 
     #[test]
     fn test_log_rotator_creation() {
@@ -427,163 +438,195 @@ mod tests {
     #[test]
     fn test_needs_rotation_by_size() {
         let rotator = LogRotator::new(1000, 5, true, 0); // Ротация по размеру, 1000 байт
-        
+
         // Файл меньше лимита - ротация не нужна
-        assert!(!rotator.needs_rotation(Path::new("/tmp/test.log"), 500).unwrap());
-        
+        assert!(!rotator
+            .needs_rotation(Path::new("/tmp/test.log"), 500)
+            .unwrap());
+
         // Файл равен лимиту - ротация нужна
-        assert!(rotator.needs_rotation(Path::new("/tmp/test.log"), 1000).unwrap());
-        
+        assert!(rotator
+            .needs_rotation(Path::new("/tmp/test.log"), 1000)
+            .unwrap());
+
         // Файл больше лимита - ротация нужна
-        assert!(rotator.needs_rotation(Path::new("/tmp/test.log"), 1500).unwrap());
+        assert!(rotator
+            .needs_rotation(Path::new("/tmp/test.log"), 1500)
+            .unwrap());
     }
 
     #[test]
     fn test_needs_rotation_by_time() {
         // Тестируем только логику ротации по времени без фактического ожидания
         // так как тесты должны быть быстрыми и детерминированными
-        
+
         // Тестируем, что ротация по времени включена
         let rotator = LogRotator::new(0, 5, true, 60);
         assert_eq!(rotator.rotation_interval_sec, 60);
-        
+
         // Тестируем, что ротация по времени отключена, когда интервал = 0
         let rotator_disabled = LogRotator::new(0, 5, true, 0);
         assert_eq!(rotator_disabled.rotation_interval_sec, 0);
-        
+
         // Тестируем, что ротация по размеру работает независимо от времени
         let rotator_size_only = LogRotator::new(100, 5, false, 0);
-        assert!(rotator_size_only.needs_rotation(Path::new("/tmp/test.log"), 150).unwrap());
-        assert!(!rotator_size_only.needs_rotation(Path::new("/tmp/test.log"), 50).unwrap());
+        assert!(rotator_size_only
+            .needs_rotation(Path::new("/tmp/test.log"), 150)
+            .unwrap());
+        assert!(!rotator_size_only
+            .needs_rotation(Path::new("/tmp/test.log"), 50)
+            .unwrap());
     }
 
     #[test]
     fn test_rotation_disabled() {
         let rotator = LogRotator::new(0, 0, false, 0); // Все отключено
-        
+
         // Ротация не нужна в любом случае
-        assert!(!rotator.needs_rotation(Path::new("/tmp/test.log"), 10_000_000).unwrap());
+        assert!(!rotator
+            .needs_rotation(Path::new("/tmp/test.log"), 10_000_000)
+            .unwrap());
     }
 
     #[test]
     fn test_rotate_log_file() {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("test.log");
-        
+
         // Создаём тестовый файл лога с достаточным размером для ротации
         let mut file = fs::File::create(&log_path).expect("create log file");
         for i in 0..200 {
             writeln!(file, "Test log entry {}", i).expect("write to log");
         }
         drop(file);
-        
+
         let mut rotator = LogRotator::new(100, 3, false, 0); // Ротация по размеру (100 байт), сжатие отключено
-        
+
         // Выполняем ротацию
-        rotator.rotate_log(&log_path).expect("rotation should succeed");
-        
+        rotator
+            .rotate_log(&log_path)
+            .expect("rotation should succeed");
+
         // Проверяем, что оригинальный файл удалён
         assert!(!log_path.exists(), "Original log file should be removed");
-        
+
         // Проверяем, что создан ротированный файл
         let rotated_files: Vec<_> = fs::read_dir(temp_dir.path())
             .expect("read dir")
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry.path().extension().is_some_and(|ext| ext == "log")
-            })
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
-        
+
         // Debug: print all files in the directory
         let all_files: Vec<_> = fs::read_dir(temp_dir.path())
             .expect("read dir")
             .filter_map(|entry| entry.ok())
-            .map(|entry| entry.path().file_name().unwrap().to_string_lossy().into_owned())
+            .map(|entry| {
+                entry
+                    .path()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into_owned()
+            })
             .collect();
         eprintln!("All files in temp dir: {:?}", all_files);
-        
+
         assert_eq!(rotated_files.len(), 1, "Should have one rotated log file");
         let rotated_path = rotated_files[0].path();
         let file_name = rotated_path.file_name().unwrap().to_string_lossy();
         eprintln!("Rotated file name: {}", file_name);
-        assert!(file_name.contains("test"), "Rotated file should contain original name base");
-        assert!(file_name.contains("."), "Rotated file should have some separator");
+        assert!(
+            file_name.contains("test"),
+            "Rotated file should contain original name base"
+        );
+        assert!(
+            file_name.contains("."),
+            "Rotated file should have some separator"
+        );
     }
 
     #[test]
     fn test_rotate_log_with_compression() {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("test.log");
-        
+
         // Создаём тестовый файл лога с достаточным размером для ротации
         let mut file = fs::File::create(&log_path).expect("create log file");
         for i in 0..200 {
             writeln!(file, "Test log entry for compression {}", i).expect("write to log");
         }
         drop(file);
-        
+
         let mut rotator = LogRotator::new(100, 3, true, 0); // Ротация по размеру (100 байт), сжатие включено
-        
+
         // Выполняем ротацию
-        rotator.rotate_log(&log_path).expect("rotation with compression should succeed");
-        
+        rotator
+            .rotate_log(&log_path)
+            .expect("rotation with compression should succeed");
+
         // Проверяем, что оригинальный файл удалён
         assert!(!log_path.exists(), "Original log file should be removed");
-        
+
         // Проверяем, что создан сжатый файл
         let compressed_files: Vec<_> = fs::read_dir(temp_dir.path())
             .expect("read dir")
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry.path().extension().is_some_and(|ext| ext == "gz")
-            })
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
             .collect();
-        
-        assert_eq!(compressed_files.len(), 1, "Should have one compressed log file");
+
+        assert_eq!(
+            compressed_files.len(),
+            1,
+            "Should have one compressed log file"
+        );
     }
 
     #[test]
     fn test_cleanup_old_logs() {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("app.log");
-        
+
         // Создаём тестовый файл лога
         let mut file = fs::File::create(&log_path).expect("create log file");
         writeln!(file, "Test log entry").expect("write to log");
         drop(file);
-        
+
         let mut rotator = LogRotator::new(100, 2, false, 0); // Максимум 2 ротированных файла
-        
+
         // Выполняем несколько ротаций
         for i in 0..5 {
-            rotator.rotate_log(&log_path).expect("rotation should succeed");
+            rotator
+                .rotate_log(&log_path)
+                .expect("rotation should succeed");
             // Воссоздаём файл для следующей ротации
             let mut file = fs::File::create(&log_path).expect("recreate log file");
             writeln!(file, "Test log entry {}", i).expect("write to log");
             drop(file);
         }
-        
+
         // Проверяем, что сохранено не более 2 ротированных файлов
         let rotated_files: Vec<_> = fs::read_dir(temp_dir.path())
             .expect("read dir")
             .filter_map(|entry| entry.ok())
-            .filter(|entry| {
-                entry.path().extension().is_some_and(|ext| ext == "log")
-            })
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
-        
-        assert!(rotated_files.len() <= 2, "Should have at most 2 rotated log files");
+
+        assert!(
+            rotated_files.len() <= 2,
+            "Should have at most 2 rotated log files"
+        );
     }
 
     #[test]
     fn test_get_log_file_size() {
         let temp_file = NamedTempFile::new().expect("temp file");
         let log_path = temp_file.path();
-        
+
         // Проверяем размер существующего файла
         let size = get_log_file_size(log_path).expect("get size");
         assert_eq!(size, 0, "New file should be empty");
-        
+
         // Записываем данные и проверяем размер
         let mut file = fs::OpenOptions::new()
             .write(true)
@@ -592,7 +635,7 @@ mod tests {
             .expect("open file");
         writeln!(file, "Test data").expect("write data");
         drop(file);
-        
+
         let new_size = get_log_file_size(log_path).expect("get new size");
         assert!(new_size > 0, "File should have non-zero size after writing");
     }
@@ -602,24 +645,24 @@ mod tests {
         // Тестируем разные форматы timestamp
         // Note: DateTime::parse_from_str expects a specific format, so we need to use the correct format
         // For testing purposes, we'll use a simpler approach
-        
+
         // Тестируем некорректный формат
         assert!(parse_log_timestamp("invalid_timestamp").is_err());
-        
+
         // Для корректных форматов мы просто проверяем, что функция не паникует
         // и возвращает Result, даже если парсинг не удается
         let _result1 = parse_log_timestamp("20231225_143022"); // YYYYMMDD_HHMMSS
-        let _result2 = parse_log_timestamp("20231225_1430");    // YYYYMMDD_HHMM
-        let _result3 = parse_log_timestamp("20231225");         // YYYYMMDD
+        let _result2 = parse_log_timestamp("20231225_1430"); // YYYYMMDD_HHMM
+        let _result3 = parse_log_timestamp("20231225"); // YYYYMMDD
     }
 
     #[test]
     fn test_rotator_config_update() {
         let mut rotator = LogRotator::new(1000, 3, false, 0);
-        
+
         // Обновляем конфигурацию
         rotator.update_config(5000, 10, true, 3600);
-        
+
         // Проверяем, что конфигурация обновлена
         let (max_size, max_files, compression, interval) = rotator.get_config();
         assert_eq!(max_size, 5000);

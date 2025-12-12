@@ -70,26 +70,16 @@ impl PatternWatcher {
 
         // Проверяем, что директория существует и доступна для чтения
         if !path.exists() {
-            anyhow::bail!(
-                "Patterns directory does not exist: {}",
-                path.display()
-            );
+            anyhow::bail!("Patterns directory does not exist: {}", path.display());
         }
 
         if !path.is_dir() {
-            anyhow::bail!(
-                "Patterns path is not a directory: {}",
-                path.display()
-            );
+            anyhow::bail!("Patterns path is not a directory: {}", path.display());
         }
 
         // Проверяем права на чтение
         if let Err(e) = std::fs::metadata(path) {
-            anyhow::bail!(
-                "Cannot access patterns directory {}: {}",
-                path.display(),
-                e
-            );
+            anyhow::bail!("Cannot access patterns directory {}: {}", path.display(), e);
         }
 
         // Создаём канал для уведомлений об изменениях
@@ -183,8 +173,7 @@ impl PatternWatcher {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher: RecommendedWatcher = Watcher::new(
             tx,
-            notify::Config::default()
-                .with_poll_interval(std::time::Duration::from_secs(1)),
+            notify::Config::default().with_poll_interval(std::time::Duration::from_secs(1)),
         )?;
 
         // Начинаем наблюдение за директорией
@@ -195,7 +184,7 @@ impl PatternWatcher {
             // Устанавливаем таймаут для периодической проверки
             let interval = Duration::from_secs(config.interval_sec);
             let timeout = time::sleep(interval);
-            
+
             // Используем select! без явного pinning для избежания PhantomPinned ошибок
             tokio::select! {
                 // Периодическая проверка изменений
@@ -204,7 +193,7 @@ impl PatternWatcher {
                         "Performing periodic pattern update check (interval: {}s)",
                         config.interval_sec
                     );
-                    
+
                     // Выполняем проверку и обновление
                     if let Err(e) = Self::check_and_update_patterns(
                         &patterns_dir,
@@ -219,7 +208,7 @@ impl PatternWatcher {
                     }
                 }
             }
-            
+
             // Обработка событий файловой системы с использованием неблокирующего recv
             match rx.try_recv() {
                 Ok(Ok(event)) => {
@@ -228,17 +217,16 @@ impl PatternWatcher {
                         if event_path.starts_with(path) {
                             match event.kind {
                                 EventKind::Modify(notify::event::ModifyKind::Data(_)) => {
-                                    debug!(
-                                        "Patterns directory change detected: {:?}",
-                                        event_path
-                                    );
+                                    debug!("Patterns directory change detected: {:?}", event_path);
                                     // Выполняем проверку и обновление
                                     if let Err(e) = Self::check_and_update_patterns(
                                         &patterns_dir,
                                         &pattern_db,
                                         &change_sender,
                                         &config,
-                                    ).await {
+                                    )
+                                    .await
+                                    {
                                         error!(
                                             "Error during pattern update after filesystem event: {}",
                                             e
@@ -256,7 +244,9 @@ impl PatternWatcher {
                                         &pattern_db,
                                         &change_sender,
                                         &config,
-                                    ).await {
+                                    )
+                                    .await
+                                    {
                                         error!(
                                             "Error during pattern update after create event: {}",
                                             e
@@ -274,7 +264,9 @@ impl PatternWatcher {
                                         &pattern_db,
                                         &change_sender,
                                         &config,
-                                    ).await {
+                                    )
+                                    .await
+                                    {
                                         error!(
                                             "Error during pattern update after remove event: {}",
                                             e
@@ -292,10 +284,7 @@ impl PatternWatcher {
                     }
                 }
                 Ok(Err(e)) => {
-                    error!(
-                        "Error receiving filesystem event: {}",
-                        e
-                    );
+                    error!("Error receiving filesystem event: {}", e);
                     // Продолжаем работу, не завершаем мониторинг
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
@@ -349,9 +338,7 @@ impl PatternWatcher {
 
             // Отправляем уведомление об изменении
             if change_sender.send(update_result.clone()).is_err() {
-                warn!(
-                    "Failed to send pattern update notification - no active receivers"
-                );
+                warn!("Failed to send pattern update notification - no active receivers");
             }
 
             // Уведомляем пользователя, если включено
@@ -370,9 +357,9 @@ impl PatternWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
     use std::sync::Arc;
+    use tempfile::tempdir;
     use tokio::sync::Mutex;
 
     fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) -> std::path::PathBuf {
@@ -401,7 +388,7 @@ apps:
         );
 
         let pattern_db = Arc::new(Mutex::new(
-            PatternDatabase::load(&patterns_dir).expect("load patterns")
+            PatternDatabase::load(&patterns_dir).expect("load patterns"),
         ));
 
         let config = PatternWatcherConfig {
@@ -410,8 +397,8 @@ apps:
             notify_on_update: false,
         };
 
-        let watcher = PatternWatcher::new(&patterns_dir, pattern_db, config)
-            .expect("watcher creation");
+        let watcher =
+            PatternWatcher::new(&patterns_dir, pattern_db, config).expect("watcher creation");
 
         assert_eq!(watcher.patterns_dir(), patterns_dir);
     }
@@ -471,7 +458,7 @@ apps:
         );
 
         let pattern_db = Arc::new(Mutex::new(
-            PatternDatabase::load(&patterns_dir).expect("load patterns")
+            PatternDatabase::load(&patterns_dir).expect("load patterns"),
         ));
 
         let config = PatternWatcherConfig {
@@ -480,8 +467,8 @@ apps:
             notify_on_update: false,
         };
 
-        let watcher = PatternWatcher::new(&patterns_dir, pattern_db, config)
-            .expect("watcher creation");
+        let watcher =
+            PatternWatcher::new(&patterns_dir, pattern_db, config).expect("watcher creation");
 
         let receiver = watcher.change_receiver();
 
@@ -510,7 +497,7 @@ apps:
         );
 
         let pattern_db = Arc::new(Mutex::new(
-            PatternDatabase::load(&patterns_dir).expect("load patterns")
+            PatternDatabase::load(&patterns_dir).expect("load patterns"),
         ));
 
         let config = PatternWatcherConfig {
@@ -519,8 +506,8 @@ apps:
             notify_on_update: false,
         };
 
-        let watcher = PatternWatcher::new(&patterns_dir, pattern_db, config)
-            .expect("watcher creation");
+        let watcher =
+            PatternWatcher::new(&patterns_dir, pattern_db, config).expect("watcher creation");
 
         let handle = watcher.start_watching();
 
@@ -565,6 +552,9 @@ apps:
         };
 
         assert!(!no_change_result.has_changes());
-        assert_eq!(no_change_result.summary(), "No changes detected (3 patterns)");
+        assert_eq!(
+            no_change_result.summary(),
+            "No changes detected (3 patterns)"
+        );
     }
 }

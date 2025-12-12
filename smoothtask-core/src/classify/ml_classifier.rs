@@ -6,9 +6,9 @@
 
 use crate::config::config_struct::{MLClassifierConfig, ModelType};
 use crate::logging::snapshots::ProcessRecord;
+use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::Path;
-use anyhow::{Context, Result};
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "catboost")]
@@ -140,7 +140,8 @@ impl MLClassifier for StubMLClassifier {
 
         // Простая эвристика: высокий IO
         if let Some(io_read) = process.io_read_bytes {
-            if io_read > 1024 * 1024 { // > 1MB
+            if io_read > 1024 * 1024 {
+                // > 1MB
                 tags.insert("high_io".to_string());
                 // Выбираем тип с наивысшей уверенностью
                 if 0.6 > confidence {
@@ -209,8 +210,6 @@ enum CatBoostModel {
     Stub,
 }
 
-
-
 impl CatBoostMLClassifier {
     /// Создать новый CatBoost ML-классификатор.
     ///
@@ -222,11 +221,15 @@ impl CatBoostMLClassifier {
     ///
     /// Результат с новым классификатором или ошибкой при загрузке модели.
     pub fn new(config: MLClassifierConfig) -> Result<Self> {
-        info!("Создание CatBoost ML-классификатора с конфигурацией: {:?}", config);
+        info!(
+            "Создание CatBoost ML-классификатора с конфигурацией: {:?}",
+            config
+        );
 
         let model = if config.enabled {
-            Self::load_model(&config)
-                .with_context(|| format!("Не удалось загрузить модель из {:?}", config.model_path))?
+            Self::load_model(&config).with_context(|| {
+                format!("Не удалось загрузить модель из {:?}", config.model_path)
+            })?
         } else {
             info!("ML-классификатор отключен в конфигурации, используется заглушка");
             CatBoostModel::Stub
@@ -246,10 +249,11 @@ impl CatBoostMLClassifier {
     /// Загруженная модель или ошибка.
     fn load_model(config: &MLClassifierConfig) -> Result<CatBoostModel> {
         let model_path = Path::new(&config.model_path);
-        
+
         if !model_path.exists() {
             return Err(anyhow::anyhow!(
-                "Файл модели не найден: {}", config.model_path
+                "Файл модели не найден: {}",
+                config.model_path
             ));
         }
 
@@ -271,7 +275,9 @@ impl CatBoostMLClassifier {
                 }
                 #[cfg(not(feature = "catboost"))]
                 {
-                    Err(anyhow::anyhow!("ML поддержка отключена (и CatBoost, и ONNX отключены)"))
+                    Err(anyhow::anyhow!(
+                        "ML поддержка отключена (и CatBoost, и ONNX отключены)"
+                    ))
                 }
             }
         } else {
@@ -282,7 +288,9 @@ impl CatBoostMLClassifier {
             }
             #[cfg(not(feature = "catboost"))]
             {
-                Err(anyhow::anyhow!("ML поддержка отключена (CatBoost отключен)"))
+                Err(anyhow::anyhow!(
+                    "ML поддержка отключена (CatBoost отключен)"
+                ))
             }
         }
     }
@@ -384,13 +392,9 @@ impl MLClassifier for CatBoostMLClassifier {
     fn classify(&self, process: &ProcessRecord) -> MLClassificationResult {
         match &self.model {
             #[cfg(feature = "catboost")]
-            CatBoostModel::Json(model) => {
-                self.classify_with_catboost(model, process)
-            }
+            CatBoostModel::Json(model) => self.classify_with_catboost(model, process),
             #[cfg(feature = "onnx")]
-            CatBoostModel::Onnx(session) => {
-                self.classify_with_onnx(session, process)
-            }
+            CatBoostModel::Onnx(session) => self.classify_with_onnx(session, process),
             CatBoostModel::Stub => {
                 debug!("ML-классификатор отключен, используется заглушка");
                 StubMLClassifier::new().classify(process)
@@ -411,7 +415,11 @@ impl CatBoostMLClassifier {
     /// # Возвращает
     ///
     /// Результат классификации.
-    fn classify_with_catboost(&self, model: &CatBoostClassifier, process: &ProcessRecord) -> MLClassificationResult {
+    fn classify_with_catboost(
+        &self,
+        model: &CatBoostClassifier,
+        process: &ProcessRecord,
+    ) -> MLClassificationResult {
         let features = self.process_to_features(process);
 
         // Преобразуем фичи в формат, ожидаемый CatBoost
@@ -447,7 +455,7 @@ impl CatBoostMLClassifier {
                 };
 
                 let mut tags = HashSet::new();
-                
+
                 // Добавляем теги на основе типа
                 match process_type {
                     "gui" => {
@@ -478,7 +486,10 @@ impl CatBoostMLClassifier {
                 }
             }
             Err(e) => {
-                error!("Ошибка при предсказании с использованием CatBoost модели: {}", e);
+                error!(
+                    "Ошибка при предсказании с использованием CatBoost модели: {}",
+                    e
+                );
                 MLClassificationResult {
                     process_type: Some("unknown".to_string()),
                     tags: vec!["ml_error".to_string()],
@@ -501,13 +512,16 @@ impl CatBoostMLClassifier {
     /// # Возвращает
     ///
     /// Результат классификации.
-    fn classify_with_onnx(&self, session: &Session, process: &ProcessRecord) -> MLClassificationResult {
+    fn classify_with_onnx(
+        &self,
+        session: &Session,
+        process: &ProcessRecord,
+    ) -> MLClassificationResult {
         let features = self.process_to_features(process);
 
         // Создаем входной тензор
         let input_tensor = ort::Tensor::from_array(
-            ort::Array::from_shape_vec((1, features.len()), features)
-                .unwrap()
+            ort::Array::from_shape_vec((1, features.len()), features).unwrap(),
         );
 
         let inputs = ort::inputs! {
@@ -529,7 +543,10 @@ impl CatBoostMLClassifier {
 
                         // Находим класс с максимальной вероятностью
                         let max_prob = probabilities.iter().fold(f32::MIN, |a, &b| a.max(b));
-                        let class_idx = probabilities.iter().position(|&p| p == max_prob).unwrap_or(0);
+                        let class_idx = probabilities
+                            .iter()
+                            .position(|&p| p == max_prob)
+                            .unwrap_or(0);
 
                         // Преобразуем индекс класса в тип процесса
                         let process_type = match class_idx {
@@ -545,7 +562,7 @@ impl CatBoostMLClassifier {
                         };
 
                         let mut tags = HashSet::new();
-                        
+
                         // Добавляем теги на основе типа
                         match process_type {
                             "gui" => {
@@ -576,7 +593,7 @@ impl CatBoostMLClassifier {
                         };
                     }
                 }
-                
+
                 warn!("ONNX модель вернула неожиданный формат вывода");
             }
             Err(e) => {
@@ -753,7 +770,7 @@ mod tests {
 
         let classifier = create_ml_classifier(config);
         assert!(classifier.is_ok());
-        
+
         // Должен вернуть StubMLClassifier
         let classifier = classifier.unwrap();
         let result = classifier.classify(&create_test_process());
@@ -773,7 +790,7 @@ mod tests {
 
         let classifier = create_ml_classifier(config);
         assert!(classifier.is_err());
-        
+
         // Должна быть ошибка о отсутствующем файле
         let err = classifier.unwrap_err();
         assert!(err.to_string().contains("не найден"));
@@ -792,7 +809,7 @@ mod tests {
 
         let classifier = CatBoostMLClassifier::new(config).unwrap();
         let mut process = create_test_process();
-        
+
         // Устанавливаем различные значения
         process.cpu_share_1s = Some(0.25);
         process.cpu_share_10s = Some(0.5);
@@ -812,20 +829,20 @@ mod tests {
         process.has_active_stream = true;
 
         let features = classifier.process_to_features(&process);
-        
+
         // Проверяем, что фичи извлечены правильно
         assert_eq!(features.len(), 16); // 8 числовых + 8 булевых
-        
+
         // Проверяем числовые фичи
         assert_eq!(features[0], 0.25); // cpu_share_1s
-        assert_eq!(features[1], 0.5);  // cpu_share_10s
-        assert_eq!(features[2], 2.0);  // io_read_bytes в MB
-        assert_eq!(features[3], 1.0);  // io_write_bytes в MB
+        assert_eq!(features[1], 0.5); // cpu_share_10s
+        assert_eq!(features[2], 2.0); // io_read_bytes в MB
+        assert_eq!(features[3], 1.0); // io_write_bytes в MB
         assert_eq!(features[4], 100.0); // rss_mb
-        assert_eq!(features[5], 50.0);  // swap_mb
+        assert_eq!(features[5], 50.0); // swap_mb
         assert_eq!(features[6], 1000.0); // voluntary_ctx
-        assert_eq!(features[7], 500.0);  // involuntary_ctx
-        
+        assert_eq!(features[7], 500.0); // involuntary_ctx
+
         // Проверяем булевые фичи (должны быть 1.0)
         for feature in &features[8..16] {
             assert_eq!(*feature, 1.0);
@@ -847,15 +864,15 @@ mod tests {
         let process = create_test_process(); // Все значения по умолчанию (None/0)
 
         let features = classifier.process_to_features(&process);
-        
+
         // Проверяем, что фичи извлечены правильно
         assert_eq!(features.len(), 16);
-        
+
         // Проверяем числовые фичи (должны быть 0.0)
         for feature in &features[0..8] {
             assert_eq!(*feature, 0.0);
         }
-        
+
         // Проверяем булевые фичи (должны быть 0.0)
         for feature in &features[8..16] {
             assert_eq!(*feature, 0.0);

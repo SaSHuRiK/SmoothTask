@@ -106,10 +106,8 @@ pub fn is_controller_available(controller: &str) -> bool {
 
     match fs::read_to_string(&controllers_file) {
         Ok(content) => {
-            let available_controllers: Vec<&str> = content
-                .split_whitespace()
-                .collect();
-            
+            let available_controllers: Vec<&str> = content.split_whitespace().collect();
+
             if available_controllers.contains(&controller) {
                 debug!("Controller '{}' is available", controller);
                 true
@@ -158,10 +156,7 @@ pub fn read_cgroup_param(cgroup_path: &Path, param_name: &str) -> Result<Option<
     let param_file = cgroup_path.join(param_name);
 
     if !param_file.exists() {
-        debug!(
-            "Parameter file {:?} does not exist",
-            param_file
-        );
+        debug!("Parameter file {:?} does not exist", param_file);
         return Ok(None);
     }
 
@@ -209,13 +204,12 @@ pub fn read_cgroup_param(cgroup_path: &Path, param_name: &str) -> Result<Option<
 pub fn write_cgroup_param(cgroup_path: &Path, param_name: &str, value: &str) -> Result<()> {
     let param_file = cgroup_path.join(param_name);
 
-    fs::write(&param_file, value)
-        .with_context(|| 
-            format!(
-                "Failed to write cgroup parameter {} = '{}' to {:?}",
-                param_name, value, cgroup_path
-            )
+    fs::write(&param_file, value).with_context(|| {
+        format!(
+            "Failed to write cgroup parameter {} = '{}' to {:?}",
+            param_name, value, cgroup_path
         )
+    })
 }
 
 /// Создать cgroup для приложения.
@@ -248,12 +242,7 @@ pub fn create_app_cgroup(app_group_id: &str) -> Result<PathBuf> {
     // Создаём директорию, если её нет
     if !app_cgroup_path.exists() {
         fs::create_dir_all(&app_cgroup_path)
-            .with_context(|| 
-                format!(
-                    "Failed to create cgroup directory: {:?}",
-                    app_cgroup_path
-                )
-            )?;
+            .with_context(|| format!("Failed to create cgroup directory: {:?}", app_cgroup_path))?;
         debug!(cgroup = ?app_cgroup_path, "Created cgroup directory");
     }
 
@@ -289,7 +278,7 @@ pub fn create_app_cgroup(app_group_id: &str) -> Result<PathBuf> {
 pub fn remove_cgroup_if_empty(cgroup_path: &Path) -> Result<bool> {
     // Проверяем, есть ли процессы в cgroup
     let procs_file = cgroup_path.join("cgroup.procs");
-    
+
     if !procs_file.exists() {
         debug!("cgroup.procs file does not exist, cgroup may not exist");
         return Ok(false);
@@ -298,16 +287,12 @@ pub fn remove_cgroup_if_empty(cgroup_path: &Path) -> Result<bool> {
     match fs::read_to_string(&procs_file) {
         Ok(content) => {
             let procs: Vec<&str> = content.split_whitespace().collect();
-            
+
             if procs.is_empty() {
                 // Cgroup пустой, можно удалять
-                fs::remove_dir(cgroup_path)
-                    .with_context(|| 
-                        format!(
-                            "Failed to remove empty cgroup directory: {:?}",
-                            cgroup_path
-                        )
-                    )?;
+                fs::remove_dir(cgroup_path).with_context(|| {
+                    format!("Failed to remove empty cgroup directory: {:?}", cgroup_path)
+                })?;
                 debug!(cgroup = ?cgroup_path, "Removed empty cgroup directory");
                 Ok(true)
             } else {
@@ -320,10 +305,7 @@ pub fn remove_cgroup_if_empty(cgroup_path: &Path) -> Result<bool> {
             }
         }
         Err(e) => {
-            warn!(
-                "Failed to read cgroup.procs for {:?}: {}",
-                cgroup_path, e
-            );
+            warn!("Failed to read cgroup.procs for {:?}: {}", cgroup_path, e);
             Ok(false)
         }
     }
@@ -355,12 +337,7 @@ pub fn move_process_to_cgroup(pid: i32, cgroup_path: &Path) -> Result<()> {
     let cgroup_procs_file = cgroup_path.join("cgroup.procs");
 
     fs::write(&cgroup_procs_file, pid.to_string())
-        .with_context(|| 
-            format!(
-                "Failed to move pid {} to cgroup {:?}",
-                pid, cgroup_path
-            )
-        )
+        .with_context(|| format!("Failed to move pid {} to cgroup {:?}", pid, cgroup_path))
 }
 
 /// Проверить, находится ли процесс в указанном cgroup.
@@ -402,10 +379,7 @@ pub fn is_process_in_cgroup(pid: i32, cgroup_path: &Path) -> Result<bool> {
             Ok(procs.contains(&pid_str.as_str()))
         }
         Err(e) => {
-            warn!(
-                "Failed to read cgroup.procs for {:?}: {}",
-                cgroup_path, e
-            );
+            warn!("Failed to read cgroup.procs for {:?}: {}", cgroup_path, e);
             Ok(false)
         }
     }
@@ -447,14 +421,11 @@ pub fn get_processes_in_cgroup(cgroup_path: &Path) -> Result<Vec<i32>> {
                 .split_whitespace()
                 .filter_map(|s| s.parse::<i32>().ok())
                 .collect();
-            
+
             Ok(pids)
         }
         Err(e) => {
-            warn!(
-                "Failed to read cgroup.procs for {:?}: {}",
-                cgroup_path, e
-            );
+            warn!("Failed to read cgroup.procs for {:?}: {}", cgroup_path, e);
             Ok(Vec::new())
         }
     }
@@ -495,7 +466,7 @@ mod tests {
         // Тест проверяет обработку несуществующего файла параметра
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
-        
+
         let result = read_cgroup_param(cgroup_path, "cpu.weight");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
@@ -507,10 +478,10 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
         let param_file = cgroup_path.join("cpu.weight");
-        
+
         // Создаём файл с тестовым значением
         fs::write(&param_file, "200").unwrap();
-        
+
         let result = read_cgroup_param(cgroup_path, "cpu.weight");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Some("200".to_string()));
@@ -521,14 +492,14 @@ mod tests {
         // Тест проверяет создание файла параметра
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
-        
+
         let result = write_cgroup_param(cgroup_path, "cpu.weight", "150");
         assert!(result.is_ok());
-        
+
         // Проверяем, что файл был создан
         let param_file = cgroup_path.join("cpu.weight");
         assert!(param_file.exists());
-        
+
         // Проверяем содержимое файла
         let content = fs::read_to_string(&param_file).unwrap();
         assert_eq!(content, "150");
@@ -539,15 +510,15 @@ mod tests {
         // Тест проверяет создание директории cgroup
         let temp_dir = tempdir().unwrap();
         let temp_path = temp_dir.path().to_path_buf();
-        
+
         // Создаём временный корень cgroup
         let cgroup_root = temp_path.join("cgroup");
         fs::create_dir_all(&cgroup_root).unwrap();
-        
+
         // Создаём файл cgroup.controllers, чтобы имитировать cgroup v2
         let controllers_file = cgroup_root.join("cgroup.controllers");
         fs::write(&controllers_file, "cpu memory").unwrap();
-        
+
         // Мокаем get_cgroup_root, чтобы использовать временный путь
         // Для этого создадим временную функцию
         fn create_test_app_cgroup(app_group_id: &str, cgroup_root: &Path) -> Result<PathBuf> {
@@ -561,10 +532,10 @@ mod tests {
 
             Ok(app_cgroup_path)
         }
-        
+
         let result = create_test_app_cgroup("test-app", &cgroup_root);
         assert!(result.is_ok());
-        
+
         let cgroup_path = result.unwrap();
         assert!(cgroup_path.exists());
         assert!(cgroup_path.ends_with("smoothtask/app-test-app"));
@@ -575,14 +546,14 @@ mod tests {
         // Тест проверяет создание файла cgroup.procs
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
-        
+
         let result = move_process_to_cgroup(1234, cgroup_path);
         assert!(result.is_ok());
-        
+
         // Проверяем, что файл был создан
         let procs_file = cgroup_path.join("cgroup.procs");
         assert!(procs_file.exists());
-        
+
         // Проверяем содержимое файла
         let content = fs::read_to_string(&procs_file).unwrap();
         assert_eq!(content, "1234");
@@ -593,7 +564,7 @@ mod tests {
         // Тест проверяет обработку несуществующего файла cgroup.procs
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
-        
+
         let result = is_process_in_cgroup(1234, cgroup_path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
@@ -605,14 +576,14 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
         let procs_file = cgroup_path.join("cgroup.procs");
-        
+
         // Создаём файл с тестовыми PID
         fs::write(&procs_file, "1234 5678").unwrap();
-        
+
         let result = is_process_in_cgroup(1234, cgroup_path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), true);
-        
+
         let result = is_process_in_cgroup(9999, cgroup_path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
@@ -623,7 +594,7 @@ mod tests {
         // Тест проверяет обработку несуществующего файла cgroup.procs
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
-        
+
         let result = get_processes_in_cgroup(cgroup_path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), Vec::<i32>::new());
@@ -635,13 +606,13 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
         let procs_file = cgroup_path.join("cgroup.procs");
-        
+
         // Создаём файл с тестовыми PID
         fs::write(&procs_file, "1234 5678 9012").unwrap();
-        
+
         let result = get_processes_in_cgroup(cgroup_path);
         assert!(result.is_ok());
-        
+
         let processes = result.unwrap();
         assert_eq!(processes.len(), 3);
         assert!(processes.contains(&1234));
@@ -655,13 +626,13 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
         let procs_file = cgroup_path.join("cgroup.procs");
-        
+
         // Создаём файл с невалидными PID
         fs::write(&procs_file, "1234 invalid 5678").unwrap();
-        
+
         let result = get_processes_in_cgroup(cgroup_path);
         assert!(result.is_ok());
-        
+
         let processes = result.unwrap();
         // Должны быть только валидные PID (1234 и 5678)
         // Функция должна пропустить "invalid" и вернуть только валидные PID
@@ -675,7 +646,7 @@ mod tests {
         // Тест проверяет обработку несуществующего cgroup
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
-        
+
         let result = remove_cgroup_if_empty(cgroup_path);
         assert!(result.is_ok());
         assert!(!result.unwrap());
@@ -687,31 +658,34 @@ mod tests {
         // В реальных cgroups, когда cgroup.procs пустой, это означает, что cgroup пустой
         // и может быть удалён. Однако в тестовом окружении мы не можем полностью имитировать
         // поведение cgroups, поэтому тестируем только логику проверки пустого cgroup.procs
-        
+
         // Создаём временную директорию и внутри неё тестовую директорию cgroup
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path().join("test-cgroup");
-        
+
         // Создаём директорию cgroup
         fs::create_dir(&cgroup_path).unwrap();
-        
+
         // Создаём пустой файл cgroup.procs
         let procs_file = cgroup_path.join("cgroup.procs");
         fs::write(&procs_file, "").unwrap();
-        
+
         // Проверяем, что функция правильно определяет пустой cgroup
         // (в реальности она бы удалила cgroup, но в тесте мы просто проверяем логику)
         let result = remove_cgroup_if_empty(&cgroup_path);
-        
+
         // В реальной системе это бы сработало, но в тестовом окружении
         // мы просто проверяем, что функция правильно обрабатывает пустой cgroup.procs
         // и пытается удалить cgroup (даже если это не удаётся из-за тестового окружения)
-        
+
         // Проверяем, что функция не паникует и возвращает результат
         // В реальной системе с правильными правами и настройками cgroups
         // этот тест бы прошёл успешно
-        assert!(result.is_ok() || result.is_err(), "Function should return a result");
-        
+        assert!(
+            result.is_ok() || result.is_err(),
+            "Function should return a result"
+        );
+
         // В тестовом окружении мы ожидаем, что функция попытается удалить cgroup
         // и либо преуспеет (если у неё есть права), либо вернёт ошибку
         // Главное - что она не паникует и правильно обрабатывает пустой cgroup.procs
@@ -723,14 +697,14 @@ mod tests {
         let temp_dir = tempdir().unwrap();
         let cgroup_path = temp_dir.path();
         let procs_file = cgroup_path.join("cgroup.procs");
-        
+
         // Создаём файл cgroup.procs с PID
         fs::write(&procs_file, "1234").unwrap();
-        
+
         let result = remove_cgroup_if_empty(cgroup_path);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), false);
-        
+
         // Проверяем, что cgroup не был удалён
         assert!(cgroup_path.exists());
     }
@@ -739,21 +713,21 @@ mod tests {
     fn test_cgroup_functions_with_real_paths() {
         // Тест проверяет работу функций с реальными путями cgroup
         // (если cgroup v2 доступен в системе)
-        
+
         if !is_cgroup_v2_available() {
             // Если cgroup v2 недоступен, пропускаем тест
             return;
         }
-        
+
         let cgroup_root = get_cgroup_root();
-        
+
         // Проверяем, что корень cgroup существует
         assert!(cgroup_root.exists());
-        
+
         // Проверяем, что файл cgroup.controllers существует
         let controllers_file = cgroup_root.join("cgroup.controllers");
         assert!(controllers_file.exists());
-        
+
         // Проверяем доступность контроллера cpu
         let cpu_available = is_controller_available("cpu");
         // Результат может быть true или false в зависимости от системы

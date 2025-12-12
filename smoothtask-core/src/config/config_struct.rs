@@ -507,7 +507,7 @@ pub struct CacheIntervals {
     /// - Значение должно быть >= 1
     #[serde(default = "default_system_metrics_cache_interval")]
     pub system_metrics_cache_interval: u64,
-    
+
     /// Интервал кэширования метрик процессов (в итерациях).
     ///
     /// Определяет, как часто обновляются метрики процессов.
@@ -576,7 +576,7 @@ pub struct NotificationConfig {
     /// - Рекомендуется включать уведомления только при необходимости мониторинга
     #[serde(default = "default_notifications_enabled")]
     pub enabled: bool,
-    
+
     /// Тип бэкенда для отправки уведомлений.
     ///
     /// Определяет, какой бэкенд будет использоваться для отправки уведомлений.
@@ -594,7 +594,7 @@ pub struct NotificationConfig {
     /// - Для production использования рекомендуется использовать `libnotify`
     #[serde(default = "default_notification_backend")]
     pub backend: NotificationBackend,
-    
+
     /// Имя приложения для уведомлений.
     ///
     /// Определяет имя приложения, которое будет отображаться в уведомлениях.
@@ -609,7 +609,7 @@ pub struct NotificationConfig {
     /// - Имя не должно быть пустым
     #[serde(default = "default_notification_app_name")]
     pub app_name: String,
-    
+
     /// Минимальный уровень важности для отправки уведомлений.
     ///
     /// Определяет минимальный уровень важности уведомлений, которые будут отправляться.
@@ -654,7 +654,7 @@ pub struct ModelConfig {
     /// - Для использования ML-модели также необходимо установить `policy_mode: hybrid`
     #[serde(default = "default_model_enabled")]
     pub enabled: bool,
-    
+
     /// Путь к ONNX файлу модели для ранжирования.
     ///
     /// Определяет путь к файлу модели в формате ONNX, которая будет использоваться
@@ -671,7 +671,7 @@ pub struct ModelConfig {
     /// - Рекомендуется использовать абсолютные пути для production
     #[serde(default = "default_model_path")]
     pub model_path: String,
-    
+
     /// Тип ML-модели для ранжирования.
     ///
     /// Определяет формат модели: CatBoost JSON или ONNX.

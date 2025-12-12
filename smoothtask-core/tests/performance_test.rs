@@ -1,21 +1,21 @@
 //! Performance tests using criterion-like approach
 
-use std::time::Instant;
 use smoothtask_core::metrics::windows::WindowIntrospector;
+use std::time::Instant;
 
 #[test]
 fn test_simple_operation_performance() {
     // Simple performance test
     let start = Instant::now();
-    
+
     let mut sum = 0u64;
     for i in 0..1000 {
         sum = sum.wrapping_add(i);
     }
-    
+
     let duration = start.elapsed();
     println!("Simple operation took: {:?}", duration);
-    
+
     // Just verify it works
     assert!(sum > 0);
 }
@@ -24,7 +24,7 @@ fn test_simple_operation_performance() {
 fn test_system_metrics_collection_performance() {
     use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
     use std::path::PathBuf;
-    
+
     let proc_paths = ProcPaths {
         stat: PathBuf::from("/proc/stat"),
         meminfo: PathBuf::from("/proc/meminfo"),
@@ -33,11 +33,11 @@ fn test_system_metrics_collection_performance() {
         pressure_io: PathBuf::from("/proc/pressure/io"),
         pressure_memory: PathBuf::from("/proc/pressure/memory"),
     };
-    
+
     let start = Instant::now();
     let result = collect_system_metrics(&proc_paths);
     let duration = start.elapsed();
-    
+
     println!("System metrics collection took: {:?}", duration);
     assert!(result.is_ok());
 }
@@ -45,11 +45,11 @@ fn test_system_metrics_collection_performance() {
 #[test]
 fn test_process_metrics_collection_performance() {
     use smoothtask_core::metrics::process::collect_process_metrics;
-    
+
     let start = Instant::now();
     let result = collect_process_metrics();
     let duration = start.elapsed();
-    
+
     println!("Process metrics collection took: {:?}", duration);
     assert!(result.is_ok());
 }
@@ -57,7 +57,7 @@ fn test_process_metrics_collection_performance() {
 #[test]
 fn test_window_introspector_performance() {
     use smoothtask_core::metrics::windows::{StaticWindowIntrospector, WindowInfo, WindowState};
-    
+
     // Create test windows
     let test_windows = vec![
         WindowInfo::new(
@@ -77,21 +77,23 @@ fn test_window_introspector_performance() {
             0.8,
         ),
     ];
-    
+
     let start = Instant::now();
     let introspector = StaticWindowIntrospector::new(test_windows);
     let duration = start.elapsed();
-    
+
     println!("Window introspector creation took: {:?}", duration);
     assert_eq!(introspector.windows().unwrap().len(), 2);
 }
 
 #[test]
 fn test_config_creation_performance() {
-    use smoothtask_core::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
-    
+    use smoothtask_core::config::config_struct::{
+        CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+    };
+
     let start = Instant::now();
-    
+
     // Create multiple configs to measure performance
     for _ in 0..100 {
         let _config = Config {
@@ -140,19 +142,23 @@ fn test_config_creation_performance() {
                 model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
             },
             ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
-            pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+            pattern_auto_update:
+                smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
             ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
         };
     }
-    
+
     let duration = start.elapsed();
     println!("100 config creations took: {:?}", duration);
 }
 
 #[test]
 fn test_window_operations_performance() {
-    use smoothtask_core::metrics::windows::{build_pid_to_window_map, get_window_info_by_pid, select_focused_window, StaticWindowIntrospector, WindowInfo, WindowState};
-    
+    use smoothtask_core::metrics::windows::{
+        build_pid_to_window_map, get_window_info_by_pid, select_focused_window,
+        StaticWindowIntrospector, WindowInfo, WindowState,
+    };
+
     // Create test windows
     let test_windows = vec![
         WindowInfo::new(
@@ -180,27 +186,27 @@ fn test_window_operations_performance() {
             0.8,
         ),
     ];
-    
+
     let introspector = StaticWindowIntrospector::new(test_windows.clone());
-    
+
     // Test select_focused_window
     let start = Instant::now();
     let focused = select_focused_window(&test_windows);
     let duration1 = start.elapsed();
     println!("select_focused_window took: {:?}", duration1);
-    
+
     // Test build_pid_to_window_map
     let start = Instant::now();
     let pid_map = build_pid_to_window_map(&introspector);
     let duration2 = start.elapsed();
     println!("build_pid_to_window_map took: {:?}", duration2);
-    
+
     // Test get_window_info_by_pid
     let start = Instant::now();
     let window_info = get_window_info_by_pid(&introspector, 2);
     let duration3 = start.elapsed();
     println!("get_window_info_by_pid took: {:?}", duration3);
-    
+
     assert!(focused.is_some());
     assert!(!pid_map.unwrap().is_empty());
     assert!(window_info.is_ok());

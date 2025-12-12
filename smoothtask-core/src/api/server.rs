@@ -13,14 +13,10 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info, trace};
-
-
-
-
 
 /// Состояние API сервера.
 #[derive(Clone)]
@@ -37,35 +33,36 @@ pub struct ApiState {
     responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>,
     /// Текущая конфигурация демона (опционально)
     /// Используем Arc<RwLock<Config>> для поддержки динамического обновления конфигурации
-    config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+    config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
     /// Путь к конфигурационному файлу (опционально)
     config_path: Option<String>,
     /// База данных паттернов для классификации процессов (опционально)
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
     /// Менеджер уведомлений для отправки уведомлений через API (опционально)
-    notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
+    notification_manager:
+        Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>,
     /// Кэш для часто запрашиваемых данных (опционально)
     /// Используется для оптимизации производительности API
-    cache: Option<Arc<RwLock<ApiCache>>>,  
+    cache: Option<Arc<RwLock<ApiCache>>>,
     /// Хранилище логов для предоставления через API (опционально)
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     /// Метрики производительности API
-    performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,  
+    performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,
 }
 
 /// Кэш для часто запрашиваемых данных API.
 #[derive(Default, Debug)]
 pub struct ApiCache {
     /// Кэшированная версия данных о процессах (JSON)
-    cached_processes_json: Option<(Value, Instant)>,  
+    cached_processes_json: Option<(Value, Instant)>,
     /// Кэшированная версия данных о группах приложений (JSON)
-    cached_appgroups_json: Option<(Value, Instant)>,  
+    cached_appgroups_json: Option<(Value, Instant)>,
     /// Кэшированная версия системных метрик (JSON)
-    cached_metrics_json: Option<(Value, Instant)>,  
+    cached_metrics_json: Option<(Value, Instant)>,
     /// Кэшированная версия конфигурации (JSON)
-    cached_config_json: Option<(Value, Instant)>,  
+    cached_config_json: Option<(Value, Instant)>,
     /// Время жизни кэша (в секундах)
-    cache_ttl_seconds: u64,  
+    cache_ttl_seconds: u64,
 }
 
 impl ApiCache {
@@ -95,15 +92,15 @@ impl ApiCache {
 #[derive(Default, Debug)]
 pub struct ApiPerformanceMetrics {
     /// Общее количество запросов
-    pub total_requests: u64,  
+    pub total_requests: u64,
     /// Количество кэш-хитов
-    pub cache_hits: u64,  
+    pub cache_hits: u64,
     /// Количество кэш-миссов
-    pub cache_misses: u64,  
+    pub cache_misses: u64,
     /// Общее время обработки запросов (в микросекундах)
-    pub total_processing_time_us: u64,  
+    pub total_processing_time_us: u64,
     /// Время последнего запроса (для мониторинга активности)
-    pub last_request_time: Option<Instant>,  
+    pub last_request_time: Option<Instant>,
 }
 
 impl ApiPerformanceMetrics {
@@ -259,18 +256,19 @@ impl ApiPerformanceMetrics {
 #[derive(Default)]
 #[allow(dead_code)]
 pub struct ApiStateBuilder {
-    daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>, 
-    system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>, 
-    processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>, 
-    app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>, 
-    responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>, 
-    config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+    daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+    system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+    processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+    app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+    responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>,
+    config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
     config_path: Option<String>,
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
-    notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
-    cache: Option<Arc<RwLock<ApiCache>>>,  
+    notification_manager:
+        Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>,
+    cache: Option<Arc<RwLock<ApiCache>>>,
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
-    performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,  
+    performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
 }
 
 impl ApiStateBuilder {
@@ -306,7 +304,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_daemon_stats(Some(daemon_stats));
     /// ```
-    pub fn with_daemon_stats(mut self, daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>) -> Self {
+    pub fn with_daemon_stats(
+        mut self,
+        daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
+    ) -> Self {
         self.daemon_stats = daemon_stats;
         self
     }
@@ -329,7 +330,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_system_metrics(Some(system_metrics));
     /// ```
-    pub fn with_system_metrics(mut self, system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>) -> Self {
+    pub fn with_system_metrics(
+        mut self,
+        system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
+    ) -> Self {
         self.system_metrics = system_metrics;
         self
     }
@@ -352,7 +356,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_processes(Some(processes));
     /// ```
-    pub fn with_processes(mut self, processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>) -> Self {
+    pub fn with_processes(
+        mut self,
+        processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
+    ) -> Self {
         self.processes = processes;
         self
     }
@@ -375,7 +382,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_app_groups(Some(app_groups));
     /// ```
-    pub fn with_app_groups(mut self, app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>) -> Self {
+    pub fn with_app_groups(
+        mut self,
+        app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
+    ) -> Self {
         self.app_groups = app_groups;
         self
     }
@@ -398,7 +408,12 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_responsiveness_metrics(Some(responsiveness_metrics));
     /// ```
-    pub fn with_responsiveness_metrics(mut self, responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>) -> Self {
+    pub fn with_responsiveness_metrics(
+        mut self,
+        responsiveness_metrics: Option<
+            Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
+        >,
+    ) -> Self {
         self.responsiveness_metrics = responsiveness_metrics;
         self
     }
@@ -421,7 +436,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_config(Some(config));
     /// ```
-    pub fn with_config(mut self, config: Option<Arc<RwLock<crate::config::config_struct::Config>>>) -> Self {
+    pub fn with_config(
+        mut self,
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
+    ) -> Self {
         self.config = config;
         self
     }
@@ -462,7 +480,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_pattern_database(Some(pattern_db));
     /// ```
-    pub fn with_pattern_database(mut self, pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>) -> Self {
+    pub fn with_pattern_database(
+        mut self,
+        pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+    ) -> Self {
         self.pattern_database = pattern_database;
         self
     }
@@ -485,7 +506,12 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_notification_manager(Some(notification_manager));
     /// ```
-    pub fn with_notification_manager(mut self, notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>) -> Self {
+    pub fn with_notification_manager(
+        mut self,
+        notification_manager: Option<
+            Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>,
+        >,
+    ) -> Self {
         self.notification_manager = notification_manager;
         self
     }
@@ -529,7 +555,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_performance_metrics(Some(metrics));
     /// ```
-    pub fn with_performance_metrics(mut self, performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>) -> Self {
+    pub fn with_performance_metrics(
+        mut self,
+        performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
+    ) -> Self {
         self.performance_metrics = performance_metrics;
         self
     }
@@ -551,7 +580,10 @@ impl ApiStateBuilder {
     /// let builder = ApiStateBuilder::new()
     ///     .with_log_storage(Some(log_storage));
     /// ```
-    pub fn with_log_storage(mut self, log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>) -> Self {
+    pub fn with_log_storage(
+        mut self,
+        log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
+    ) -> Self {
         self.log_storage = log_storage;
         self
     }
@@ -584,7 +616,9 @@ impl ApiStateBuilder {
             notification_manager: self.notification_manager,
             cache: self.cache,
             log_storage: self.log_storage,
-            performance_metrics: self.performance_metrics.unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
+            performance_metrics: self
+                .performance_metrics
+                .unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
         }
     }
 }
@@ -675,7 +709,7 @@ impl ApiState {
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
         processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
         app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
     ) -> Self {
         Self {
             daemon_stats,
@@ -702,7 +736,7 @@ impl ApiState {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
     ) -> Self {
         Self {
             daemon_stats,
@@ -756,7 +790,7 @@ async fn health_handler() -> Json<Value> {
 async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     let start_time = state.performance_metrics.read().await.last_request_time;
     let uptime_seconds = start_time.map(|t| t.elapsed().as_secs()).unwrap_or(0);
-    
+
     // Проверка доступности основных компонентов
     let daemon_stats_available = state.daemon_stats.is_some();
     let system_metrics_available = state.system_metrics.is_some();
@@ -764,10 +798,10 @@ async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<V
     let app_groups_available = state.app_groups.is_some();
     let config_available = state.config.is_some();
     let pattern_database_available = state.pattern_database.is_some();
-    
+
     // Получение метрик производительности
     let perf_metrics = state.performance_metrics.read().await;
-    
+
     Ok(Json(json!({
         "status": "ok",
         "service": "smoothtaskd",
@@ -1098,18 +1132,21 @@ async fn patterns_handler(State(state): State<ApiState>) -> Result<Json<Value>, 
 ///
 /// - Требует наличия notification_manager в состоянии API
 /// - Возвращает информацию об отправленном уведомлении и статусе отправки
-async fn notifications_test_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+async fn notifications_test_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
     match &state.notification_manager {
         Some(notification_manager_arc) => {
             let notification_manager = notification_manager_arc.lock().await;
-            
+
             // Создаём тестовое уведомление
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Info,
                 "Test Notification",
                 "This is a test notification from SmoothTask API",
-            ).with_details("Sent via /api/notifications/test endpoint");
-            
+            )
+            .with_details("Sent via /api/notifications/test endpoint");
+
             // Отправляем уведомление
             match notification_manager.send(&notification).await {
                 Ok(_) => {
@@ -1165,39 +1202,39 @@ async fn notifications_custom_handler(
     match &state.notification_manager {
         Some(notification_manager_arc) => {
             let notification_manager = notification_manager_arc.lock().await;
-            
+
             // Извлекаем параметры уведомления из payload
             let notification_type = match payload.get("type").and_then(|v| v.as_str()) {
                 Some("critical") => crate::notifications::NotificationType::Critical,
                 Some("warning") => crate::notifications::NotificationType::Warning,
                 Some(_) | None => crate::notifications::NotificationType::Info,
             };
-            
-            let title = payload.get("title")
+
+            let title = payload
+                .get("title")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Custom Notification")
                 .to_string();
-            
-            let message = payload.get("message")
+
+            let message = payload
+                .get("message")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Custom notification message")
                 .to_string();
-            
-            let details = payload.get("details")
+
+            let details = payload
+                .get("details")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string());
-            
+
             // Создаём уведомление
-            let mut notification = crate::notifications::Notification::new(
-                notification_type,
-                title,
-                message,
-            );
-            
+            let mut notification =
+                crate::notifications::Notification::new(notification_type, title, message);
+
             if let Some(details_str) = details {
                 notification = notification.with_details(details_str);
             }
-            
+
             // Отправляем уведомление
             match notification_manager.send(&notification).await {
                 Ok(_) => {
@@ -1240,7 +1277,9 @@ async fn notifications_custom_handler(
 ///
 /// Возвращает текущее состояние системы уведомлений.
 /// Включает информацию о том, включены ли уведомления, используемый бэкенд и текущую конфигурацию.
-async fn notifications_status_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+async fn notifications_status_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
     // Получаем текущую конфигурацию уведомлений
     let notification_config = match &state.config {
         Some(config_arc) => {
@@ -1249,7 +1288,7 @@ async fn notifications_status_handler(State(state): State<ApiState>) -> Result<J
         }
         None => None,
     };
-    
+
     // Получаем информацию о менеджере уведомлений
     let notification_manager_info = match &state.notification_manager {
         Some(notification_manager_arc) => {
@@ -1261,7 +1300,7 @@ async fn notifications_status_handler(State(state): State<ApiState>) -> Result<J
         }
         None => None,
     };
-    
+
     Ok(Json(json!({
         "status": "ok",
         "notifications": {
@@ -1278,7 +1317,7 @@ async fn notifications_status_handler(State(state): State<ApiState>) -> Result<J
 /// Включает информацию о количестве запросов, кэш-хитах, времени обработки и т.д.
 async fn performance_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     let perf_metrics = state.performance_metrics.read().await;
-    
+
     Ok(Json(json!({
         "status": "ok",
         "performance_metrics": {
@@ -1354,14 +1393,14 @@ async fn logs_handler(
         Some(log_storage) => {
             // Получаем записи логов, отфильтрованные по уровню
             let entries = log_storage.get_entries_by_level(min_level).await;
-            
+
             // Применяем лимит
             let limited_entries = if limit > 0 && entries.len() > limit {
                 entries.into_iter().rev().take(limit).rev().collect()
             } else {
                 entries
             };
-            
+
             // Преобразуем записи в JSON
             let logs: Vec<Value> = limited_entries
                 .into_iter()
@@ -1372,15 +1411,15 @@ async fn logs_handler(
                         "target": entry.target,
                         "message": entry.message,
                     });
-                    
+
                     if let Some(fields) = entry.fields {
                         log_json["fields"] = fields;
                     }
-                    
+
                     log_json
                 })
                 .collect();
-            
+
             Ok(Json(json!({
                 "status": "ok",
                 "logs": logs,
@@ -1427,53 +1466,71 @@ async fn notifications_config_handler(
         Some(config_arc) => {
             // Пробуем обновить конфигурацию уведомлений
             let mut config_guard = config_arc.write().await;
-            
+
             // Обновляем параметры уведомлений, если они предоставлены
             if let Some(enabled) = payload.get("enabled").and_then(|v| v.as_bool()) {
                 config_guard.notifications.enabled = enabled;
             }
-            
+
             if let Some(backend_str) = payload.get("backend").and_then(|v| v.as_str()) {
                 match backend_str {
-                    "stub" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Stub,
-                    "libnotify" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Libnotify,
-                    "dbus" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Dbus,
+                    "stub" => {
+                        config_guard.notifications.backend =
+                            crate::config::config_struct::NotificationBackend::Stub
+                    }
+                    "libnotify" => {
+                        config_guard.notifications.backend =
+                            crate::config::config_struct::NotificationBackend::Libnotify
+                    }
+                    "dbus" => {
+                        config_guard.notifications.backend =
+                            crate::config::config_struct::NotificationBackend::Dbus
+                    }
                     _ => {
                         tracing::warn!("Unknown notification backend: {}", backend_str);
                     }
                 }
             }
-            
+
             if let Some(app_name) = payload.get("app_name").and_then(|v| v.as_str()) {
                 config_guard.notifications.app_name = app_name.to_string();
             }
-            
+
             if let Some(min_level_str) = payload.get("min_level").and_then(|v| v.as_str()) {
                 match min_level_str {
-                    "critical" => config_guard.notifications.min_level = crate::config::config_struct::NotificationLevel::Critical,
-                    "warning" => config_guard.notifications.min_level = crate::config::config_struct::NotificationLevel::Warning,
-                    "info" => config_guard.notifications.min_level = crate::config::config_struct::NotificationLevel::Info,
+                    "critical" => {
+                        config_guard.notifications.min_level =
+                            crate::config::config_struct::NotificationLevel::Critical
+                    }
+                    "warning" => {
+                        config_guard.notifications.min_level =
+                            crate::config::config_struct::NotificationLevel::Warning
+                    }
+                    "info" => {
+                        config_guard.notifications.min_level =
+                            crate::config::config_struct::NotificationLevel::Info
+                    }
                     _ => {
                         tracing::warn!("Unknown notification level: {}", min_level_str);
                     }
                 }
             }
-            
+
             // Также обновляем менеджер уведомлений, если он доступен
             if let Some(notification_manager_arc) = &state.notification_manager {
                 let mut notification_manager = notification_manager_arc.lock().await;
-                
+
                 // Обновляем состояние включения уведомлений
                 if let Some(enabled) = payload.get("enabled").and_then(|v| v.as_bool()) {
                     notification_manager.set_enabled(enabled);
                 }
             }
-            
+
             // Возвращаем обновлённую конфигурацию
             let updated_config = config_guard.notifications.clone();
-            
+
             tracing::info!("Notification configuration updated successfully");
-            
+
             Ok(Json(json!({
                 "status": "success",
                 "message": "Notification configuration updated successfully",
@@ -1510,9 +1567,18 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/patterns", get(patterns_handler))
         .route("/api/system", get(system_handler))
         .route("/api/notifications/test", post(notifications_test_handler))
-        .route("/api/notifications/custom", post(notifications_custom_handler))
-        .route("/api/notifications/status", get(notifications_status_handler))
-        .route("/api/notifications/config", post(notifications_config_handler))
+        .route(
+            "/api/notifications/custom",
+            post(notifications_custom_handler),
+        )
+        .route(
+            "/api/notifications/status",
+            get(notifications_status_handler),
+        )
+        .route(
+            "/api/notifications/config",
+            post(notifications_config_handler),
+        )
         .route("/api/performance", get(performance_handler))
         .route("/api/logs", get(logs_handler))
         .with_state(state)
@@ -1564,33 +1630,33 @@ async fn metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, S
 async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     // Начинаем отслеживание производительности
     let _start_time = Instant::now();
-    
+
     // Обновляем метрики производительности
     let mut perf_metrics = state.performance_metrics.write().await;
     perf_metrics.increment_requests();
     drop(perf_metrics); // Освобождаем блокировку
-    
+
     // Пробуем использовать кэш
     let cache = state.get_or_create_cache();
     let mut cache_write = cache.write().await;
-    
+
     if let Some((cached_json, cache_time)) = &cache_write.cached_processes_json {
         if cache_write.is_cache_valid(cache_time) {
             // Кэш актуален - используем его
             let mut perf_metrics = state.performance_metrics.write().await;
             perf_metrics.increment_cache_hits();
             drop(perf_metrics);
-            
+
             trace!("Cache hit for processes_handler");
             return Ok(Json(cached_json.clone()));
         }
     }
-    
+
     // Кэш не актуален или отсутствует - получаем свежие данные
     let mut perf_metrics = state.performance_metrics.write().await;
     perf_metrics.increment_cache_misses();
     drop(perf_metrics);
-    
+
     match &state.processes {
         Some(processes_arc) => {
             let processes = processes_arc.read().await;
@@ -1603,10 +1669,10 @@ async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>,
                     "ttl_seconds": cache_write.cache_ttl_seconds
                 }
             });
-            
+
             // Кэшируем результат
             cache_write.cached_processes_json = Some((result.clone(), Instant::now()));
-            
+
             trace!("Cached processes data (count: {})", processes.len());
             Ok(Json(result))
         }
@@ -1621,10 +1687,10 @@ async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>,
                     "ttl_seconds": cache_write.cache_ttl_seconds
                 }
             });
-            
+
             // Кэшируем результат (даже если данных нет)
             cache_write.cached_processes_json = Some((result.clone(), Instant::now()));
-            
+
             trace!("Cached empty processes data");
             Ok(Json(result))
         }
@@ -1637,33 +1703,33 @@ async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>,
 async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     // Начинаем отслеживание производительности
     let _start_time = Instant::now();
-    
+
     // Обновляем метрики производительности
     let mut perf_metrics = state.performance_metrics.write().await;
     perf_metrics.increment_requests();
     drop(perf_metrics); // Освобождаем блокировку
-    
+
     // Пробуем использовать кэш
     let cache = state.get_or_create_cache();
     let mut cache_write = cache.write().await;
-    
+
     if let Some((cached_json, cache_time)) = &cache_write.cached_appgroups_json {
         if cache_write.is_cache_valid(cache_time) {
             // Кэш актуален - используем его
             let mut perf_metrics = state.performance_metrics.write().await;
             perf_metrics.increment_cache_hits();
             drop(perf_metrics);
-            
+
             trace!("Cache hit for appgroups_handler");
             return Ok(Json(cached_json.clone()));
         }
     }
-    
+
     // Кэш не актуален или отсутствует - получаем свежие данные
     let mut perf_metrics = state.performance_metrics.write().await;
     perf_metrics.increment_cache_misses();
     drop(perf_metrics);
-    
+
     match &state.app_groups {
         Some(app_groups_arc) => {
             let app_groups = app_groups_arc.read().await;
@@ -1676,10 +1742,10 @@ async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>,
                     "ttl_seconds": cache_write.cache_ttl_seconds
                 }
             });
-            
+
             // Кэшируем результат
             cache_write.cached_appgroups_json = Some((result.clone(), Instant::now()));
-            
+
             trace!("Cached appgroups data (count: {})", app_groups.len());
             Ok(Json(result))
         }
@@ -1694,10 +1760,10 @@ async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>,
                     "ttl_seconds": cache_write.cache_ttl_seconds
                 }
             });
-            
+
             // Кэшируем результат (даже если данных нет)
             cache_write.cached_appgroups_json = Some((result.clone(), Instant::now()));
-            
+
             trace!("Cached empty appgroups data");
             Ok(Json(result))
         }
@@ -1729,7 +1795,10 @@ async fn process_by_pid_handler(
     // Проверяем, что PID находится в разумном диапазоне
     // Максимальный PID в Linux обычно ограничен (по умолчанию 32768, но может быть до 4194304)
     if pid > 4_194_304 {
-        error!("PID value {} is too large. Maximum reasonable PID value is 4194304", pid);
+        error!(
+            "PID value {} is too large. Maximum reasonable PID value is 4194304",
+            pid
+        );
         return Ok(Json(json!({
             "status": "error",
             "error": "invalid_input",
@@ -1746,11 +1815,11 @@ async fn process_by_pid_handler(
     match &state.processes {
         Some(processes_arc) => {
             let processes = processes_arc.read().await;
-            
+
             // Добавляем отладочную информацию о количестве доступных процессов
             let process_count = processes.len();
             tracing::debug!("Looking for PID {} among {} processes", pid, process_count);
-            
+
             match processes.iter().find(|p| p.pid == pid) {
                 Some(process) => {
                     tracing::info!("Successfully found process with PID {}", pid);
@@ -1760,7 +1829,10 @@ async fn process_by_pid_handler(
                     })))
                 }
                 None => {
-                    error!("Process with PID {} not found among {} processes", pid, process_count);
+                    error!(
+                        "Process with PID {} not found among {} processes",
+                        pid, process_count
+                    );
                     Ok(Json(json!({
                         "status": "error",
                         "error": "not_found",
@@ -1811,7 +1883,10 @@ async fn appgroup_by_id_handler(
 
     // Проверяем, что ID имеет разумную длину
     if id.len() > 256 {
-        error!("App group ID is too long: {} characters (max 256)", id.len());
+        error!(
+            "App group ID is too long: {} characters (max 256)",
+            id.len()
+        );
         return Ok(Json(json!({
             "status": "error",
             "error": "invalid_input",
@@ -1825,7 +1900,9 @@ async fn appgroup_by_id_handler(
     }
 
     // Проверяем, что ID содержит только допустимые символы
-    if !id.chars().all(|c| c.is_ascii() && (c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':')) {
+    if !id.chars().all(|c| {
+        c.is_ascii() && (c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':')
+    }) {
         error!("App group ID contains invalid characters: {}", id);
         return Ok(Json(json!({
             "status": "error",
@@ -1843,11 +1920,15 @@ async fn appgroup_by_id_handler(
     match &state.app_groups {
         Some(app_groups_arc) => {
             let app_groups = app_groups_arc.read().await;
-            
+
             // Добавляем отладочную информацию о количестве доступных групп
             let group_count = app_groups.len();
-            tracing::debug!("Looking for app group with ID '{}' among {} groups", id, group_count);
-            
+            tracing::debug!(
+                "Looking for app group with ID '{}' among {} groups",
+                id,
+                group_count
+            );
+
             match app_groups.iter().find(|g| g.app_group_id == id) {
                 Some(app_group) => {
                     tracing::info!("Successfully found app group with ID '{}'", id);
@@ -1857,7 +1938,10 @@ async fn appgroup_by_id_handler(
                     })))
                 }
                 None => {
-                    error!("App group with ID '{}' not found among {} groups", id, group_count);
+                    error!(
+                        "App group with ID '{}' not found among {} groups",
+                        id, group_count
+                    );
                     Ok(Json(json!({
                         "status": "error",
                         "error": "not_found",
@@ -1917,7 +2001,7 @@ async fn config_handler(State(state): State<ApiState>) -> Result<Json<Value>, St
                 "status": "ok",
                 "config": serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
             })))
-        },
+        }
         None => Ok(Json(json!({
             "status": "ok",
             "config": null,
@@ -1949,27 +2033,27 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
                 Ok(new_config) => {
                     // Успешно загрузили новую конфигурацию
                     // Теперь мы можем напрямую обновить конфигурацию через Arc<RwLock<Config>>
-                    
+
                     // Сохраняем старую конфигурацию для ответа
                     let old_config = {
                         let config_guard = config_arc.read().await;
                         serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
                     };
-                    
+
                     // Обновляем конфигурацию
                     {
                         let mut config_guard = config_arc.write().await;
                         *config_guard = new_config;
                     }
-                    
+
                     tracing::info!("API config reload successful: loaded and applied new configuration from {}", config_path);
-                    
+
                     // Получаем новую конфигурацию для ответа
                     let new_config_value = {
                         let config_guard = config_arc.read().await;
                         serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
                     };
-                    
+
                     Ok(Json(json!({
                         "status": "success",
                         "message": "Configuration successfully reloaded from file and applied",
@@ -1982,24 +2066,27 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
                 Err(e) => {
                     // Ошибка загрузки конфигурации
                     tracing::error!("API config reload failed from {}: {}", config_path, e);
-                    
+
                     // Получаем текущую конфигурацию для ответа
                     let current_config = {
                         let config_guard = config_arc.read().await;
                         serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
                     };
-                    
+
                     // Разбираем тип ошибки для более детального сообщения
-                    let error_type = if e.to_string().contains("YAML") || e.to_string().contains("yaml") {
-                        "yaml_parse_error"
-                    } else if e.to_string().contains("file") || e.to_string().contains("File") {
-                        "file_error"
-                    } else if e.to_string().contains("permission") || e.to_string().contains("Permission") {
-                        "permission_error"
-                    } else {
-                        "unknown_error"
-                    };
-                    
+                    let error_type =
+                        if e.to_string().contains("YAML") || e.to_string().contains("yaml") {
+                            "yaml_parse_error"
+                        } else if e.to_string().contains("file") || e.to_string().contains("File") {
+                            "file_error"
+                        } else if e.to_string().contains("permission")
+                            || e.to_string().contains("Permission")
+                        {
+                            "permission_error"
+                        } else {
+                            "unknown_error"
+                        };
+
                     Ok(Json(json!({
                         "status": "error",
                         "error_type": error_type,
@@ -2023,13 +2110,13 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
         (Some(config_arc), None) => {
             // Конфигурация доступна, но путь к файлу неизвестен
             tracing::warn!("API config reload requested but config path is not available");
-            
+
             // Получаем текущую конфигурацию для ответа
             let current_config = {
                 let config_guard = config_arc.read().await;
                 serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
             };
-            
+
             Ok(Json(json!({
                 "status": "warning",
                 "message": "Config reload requested but config file path is not available",
@@ -2248,10 +2335,7 @@ impl ApiServer {
     /// - `addr`: Адрес для прослушивания (например, "127.0.0.1:8080")
     /// - `state`: Состояние API
     pub fn with_state(addr: std::net::SocketAddr, state: ApiState) -> Self {
-        Self {
-            addr,
-            state,
-        }
+        Self { addr, state }
     }
 
     /// Создаёт новый API сервер со всеми данными, включая конфигурацию.
@@ -2270,7 +2354,7 @@ impl ApiServer {
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
         processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
         app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
     ) -> Self {
         Self {
             addr,
@@ -2304,7 +2388,7 @@ impl ApiServer {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>,
     ) -> Self {
         Self {
             addr,
@@ -2410,9 +2494,9 @@ impl ApiServerHandle {
 mod tests {
     use super::*;
     use std::net::SocketAddr;
-    
+
     // Import notification types for test configurations
-    use crate::config::config_struct::{ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
+    use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
     use crate::metrics::ebpf::EbpfConfig;
 
     #[tokio::test]
@@ -2466,7 +2550,8 @@ mod tests {
     #[test]
     fn test_api_state_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics, NetworkMetrics, DiskMetrics,
+            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -2515,7 +2600,8 @@ mod tests {
     fn test_api_state_with_all() {
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics, NetworkMetrics, DiskMetrics,
+            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -2636,7 +2722,8 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_handler_with_metrics() {
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics, NetworkMetrics, DiskMetrics,
+            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -2691,7 +2778,8 @@ mod tests {
     #[test]
     fn test_api_server_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics, NetworkMetrics, DiskMetrics,
+            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let addr: SocketAddr = "127.0.0.1:8082".parse().unwrap();
         let metrics = SystemMetrics {
@@ -2868,7 +2956,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_handler_with_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds, NotificationConfig, NotificationBackend, ModelConfig, ModelType, MLClassifierConfig, PatternAutoUpdateConfig, NotificationLevel};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig, ModelConfig, ModelType,
+            NotificationBackend, NotificationConfig, NotificationLevel, Paths,
+            PatternAutoUpdateConfig, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
@@ -2942,7 +3034,6 @@ mod tests {
                 enable_aggressive_caching: false,
                 aggressive_cache_interval_ms: 5000,
             },
-
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
@@ -2964,7 +3055,10 @@ mod tests {
 
     #[test]
     fn test_api_state_with_all_and_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds, ModelConfig, ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig, ModelConfig, ModelType,
+            Paths, PatternAutoUpdateConfig, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
@@ -3095,7 +3189,9 @@ mod tests {
 
     #[test]
     fn test_api_server_with_all_and_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
@@ -3180,13 +3276,13 @@ mod tests {
         let value: Value = json.0;
         assert_eq!(value["status"], "error");
         assert_eq!(value["error"], "invalid_input");
-        assert!(value["message"]
-            .as_str()
-            .unwrap()
-            .contains("too large"));
+        assert!(value["message"].as_str().unwrap().contains("too large"));
         // Check that details are included
         assert!(value["details"]["constraint"].as_str().unwrap() == "must be <= 4194304");
-        assert!(value["details"]["note"].as_str().unwrap().contains("Maximum PID in Linux"));
+        assert!(value["details"]["note"]
+            .as_str()
+            .unwrap()
+            .contains("Maximum PID in Linux"));
     }
 
     #[tokio::test]
@@ -3350,9 +3446,15 @@ mod tests {
         let value: Value = json.0;
         assert_eq!(value["status"], "error");
         assert_eq!(value["error"], "invalid_input");
-        assert!(value["message"].as_str().unwrap().contains("invalid characters"));
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("invalid characters"));
         // Check that details are included
-        assert!(value["details"]["constraint"].as_str().unwrap().contains("alphanumeric"));
+        assert!(value["details"]["constraint"]
+            .as_str()
+            .unwrap()
+            .contains("alphanumeric"));
     }
 
     #[tokio::test]
@@ -3531,7 +3633,7 @@ mod tests {
         assert_eq!(value["status"], "ok");
         assert!(value["performance_metrics"].is_object());
         assert!(value["cache_info"].is_object());
-        
+
         let perf_metrics = &value["performance_metrics"];
         assert_eq!(perf_metrics["total_requests"], 0);
         assert_eq!(perf_metrics["cache_hits"], 0);
@@ -3541,7 +3643,7 @@ mod tests {
         assert_eq!(perf_metrics["total_processing_time_us"], 0);
         assert!(perf_metrics["last_request_time"].is_null());
         assert_eq!(perf_metrics["requests_per_second"], 0.0);
-        
+
         let cache_info = &value["cache_info"];
         assert_eq!(cache_info["enabled"], false);
         assert!(cache_info["ttl_seconds"].is_null());
@@ -3682,7 +3784,8 @@ apps:
         let addr: SocketAddr = "127.0.0.1:8084".parse().unwrap();
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics, NetworkMetrics, DiskMetrics,
+            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -3735,9 +3838,11 @@ apps:
 
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
-        use crate::metrics::ebpf::EbpfConfig;
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::logging::snapshots::ResponsivenessMetrics;
+        use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -3815,7 +3920,9 @@ apps:
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
@@ -3887,9 +3994,11 @@ apps:
 
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config() {
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
-        use crate::metrics::ebpf::EbpfConfig;
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::logging::snapshots::ResponsivenessMetrics;
+        use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -3966,7 +4075,9 @@ apps:
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
@@ -4057,12 +4168,12 @@ apps:
 
         let result = health_detailed_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap().0;
         assert_eq!(json["status"], "ok");
         assert_eq!(json["service"], "smoothtaskd");
         assert_eq!(json["uptime_seconds"], 0);
-        
+
         let components = &json["components"];
         assert_eq!(components["daemon_stats"], false);
         assert_eq!(components["system_metrics"], false);
@@ -4070,12 +4181,12 @@ apps:
         assert_eq!(components["app_groups"], false);
         assert_eq!(components["config"], false);
         assert_eq!(components["pattern_database"], false);
-        
+
         let performance = &json["performance"];
         assert_eq!(performance["total_requests"], 0);
         assert_eq!(performance["cache_hit_rate"], 0.0);
         assert_eq!(performance["average_processing_time_us"], 0.0);
-        
+
         assert!(json["timestamp"].is_string());
     }
 
@@ -4083,11 +4194,18 @@ apps:
     async fn test_health_detailed_handler_with_data() {
         // Тестируем обработчик health_detailed_handler с данными
         let daemon_stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
-        let system_metrics = Arc::new(RwLock::new(crate::metrics::system::SystemMetrics::default()));
-        let processes = Arc::new(RwLock::new(Vec::<crate::logging::snapshots::ProcessRecord>::new()));
-        let app_groups = Arc::new(RwLock::new(Vec::<crate::logging::snapshots::AppGroupRecord>::new()));
+        let system_metrics =
+            Arc::new(RwLock::new(crate::metrics::system::SystemMetrics::default()));
+        let processes = Arc::new(RwLock::new(
+            Vec::<crate::logging::snapshots::ProcessRecord>::new(),
+        ));
+        let app_groups = Arc::new(RwLock::new(
+            Vec::<crate::logging::snapshots::AppGroupRecord>::new(),
+        ));
         let config = Arc::new(RwLock::new(crate::config::config_struct::Config::default()));
-        let pattern_db = Arc::new(crate::classify::rules::PatternDatabase::load("/tmp/test_patterns").unwrap_or_default());
+        let pattern_db = Arc::new(
+            crate::classify::rules::PatternDatabase::load("/tmp/test_patterns").unwrap_or_default(),
+        );
 
         let state = ApiStateBuilder::new()
             .with_daemon_stats(Some(daemon_stats))
@@ -4103,11 +4221,11 @@ apps:
 
         let result = health_detailed_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap().0;
         assert_eq!(json["status"], "ok");
         assert_eq!(json["service"], "smoothtaskd");
-        
+
         let components = &json["components"];
         assert_eq!(components["daemon_stats"], true);
         assert_eq!(components["system_metrics"], true);
@@ -4115,7 +4233,7 @@ apps:
         assert_eq!(components["app_groups"], true);
         assert_eq!(components["config"], true);
         assert_eq!(components["pattern_database"], true);
-        
+
         assert!(json["timestamp"].is_string());
     }
 
@@ -4149,7 +4267,7 @@ apps:
         let state = ApiState::new();
         let result = config_reload_handler(State(state)).await;
         let json = result.unwrap().0;
-        
+
         assert_eq!(json["status"], "error");
         assert!(json["message"].as_str().unwrap().contains("not available"));
     }
@@ -4157,9 +4275,13 @@ apps:
     #[tokio::test]
     async fn test_config_reload_handler_with_config() {
         // Тест для config_reload_handler когда конфигурация доступна
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds, NotificationConfig, NotificationBackend, ModelConfig, ModelType, MLClassifierConfig, PatternAutoUpdateConfig, NotificationLevel};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig, ModelConfig, ModelType,
+            NotificationBackend, NotificationConfig, NotificationLevel, Paths,
+            PatternAutoUpdateConfig, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
-        
+
         let config = Config {
             polling_interval_ms: 500,
             max_candidates: 150,
@@ -4221,12 +4343,15 @@ apps:
             .with_pattern_database(None)
             .with_notification_manager(None)
             .build();
-        
+
         let result = config_reload_handler(State(state)).await;
         let json = result.unwrap().0;
-        
+
         assert_eq!(json["status"], "warning");
-        assert!(json["message"].as_str().unwrap().contains("Config reload requested but config file path is not available"));
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("Config reload requested but config file path is not available"));
         assert!(json["current_config"].is_object());
         assert_eq!(json["current_config"]["polling_interval_ms"], 500);
         assert!(json["action_required"].is_string());
@@ -4276,11 +4401,11 @@ notifications:
   app_name: "SmoothTask"
   min_level: warning
 "#;
-        
+
         std::fs::write(&config_file_path, config_file_content).expect("write config");
         // Создаём директорию patterns_dir, так как она требуется для валидации конфигурации
         std::fs::create_dir_all("/tmp/patterns").expect("create patterns dir");
-        
+
         // Создаём текущую конфигурацию (отличную от файла)
         let current_config = crate::config::config_struct::Config {
             polling_interval_ms: 500,
@@ -4331,10 +4456,10 @@ notifications:
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
         };
-        
+
         let config_arc = Arc::new(RwLock::new(current_config));
         let config_path = config_file_path.to_str().unwrap().to_string();
-        
+
         let state = ApiStateBuilder::new()
             .with_daemon_stats(None)
             .with_system_metrics(None)
@@ -4346,10 +4471,10 @@ notifications:
             .with_pattern_database(None)
             .with_notification_manager(None)
             .build();
-        
+
         let result = config_reload_handler(State(state)).await;
         assert!(result.is_ok(), "Config reload handler failed");
-        
+
         let json = result.unwrap().0;
         if json["status"] != "success" {
             eprintln!("Config reload failed with message: {}", json["message"]);
@@ -4358,15 +4483,18 @@ notifications:
             }
         }
         assert_eq!(json["status"], "success");
-        assert_eq!(json["message"], "Configuration successfully reloaded from file and applied");
+        assert_eq!(
+            json["message"],
+            "Configuration successfully reloaded from file and applied"
+        );
         assert!(json["old_config"].is_object());
         assert!(json["new_config"].is_object());
         assert_eq!(json["config_path"], config_path);
-        
+
         // Проверяем, что старая конфигурация соответствует текущей
         assert_eq!(json["old_config"]["polling_interval_ms"], 500);
         assert_eq!(json["old_config"]["max_candidates"], 150);
-        
+
         // Проверяем, что новая конфигурация загружена из файла
         assert_eq!(json["new_config"]["polling_interval_ms"], 1000);
         assert_eq!(json["new_config"]["max_candidates"], 200);
@@ -4382,9 +4510,9 @@ notifications:
 polling_interval_ms: 50  # Слишком маленькое значение
 max_candidates: 200
 "#;
-        
+
         std::fs::write(&config_file_path, invalid_config_content).expect("write invalid config");
-        
+
         let current_config = crate::config::config_struct::Config {
             polling_interval_ms: 500,
             max_candidates: 150,
@@ -4434,10 +4562,10 @@ max_candidates: 200
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
         };
-        
+
         let config_arc = Arc::new(RwLock::new(current_config));
         let config_path = config_file_path.to_str().unwrap().to_string();
-        
+
         let state = ApiStateBuilder::new()
             .with_daemon_stats(None)
             .with_system_metrics(None)
@@ -4449,13 +4577,16 @@ max_candidates: 200
             .with_pattern_database(None)
             .with_notification_manager(None)
             .build();
-        
+
         let result = config_reload_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap().0;
         assert_eq!(json["status"], "error");
-        assert!(json["message"].as_str().unwrap().contains("Failed to reload configuration"));
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("Failed to reload configuration"));
         assert!(json["current_config"].is_object());
         assert_eq!(json["config_path"], config_path);
         assert!(json["action_required"].is_string());
@@ -4467,11 +4598,14 @@ max_candidates: 200
         let state = ApiState::new();
         let result = notifications_test_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "error");
-        assert!(value["message"].as_str().unwrap().contains("Notification manager not available"));
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Notification manager not available"));
         assert_eq!(value["backend"], "none");
     }
 
@@ -4479,10 +4613,10 @@ max_candidates: 200
     async fn test_notifications_test_handler_with_manager() {
         // Тест для notifications_test_handler когда менеджер уведомлений доступен
         use crate::notifications::NotificationManager;
-        
+
         let notification_manager = NotificationManager::new_stub();
         let notification_manager_arc = Arc::new(tokio::sync::Mutex::new(notification_manager));
-        
+
         let state = ApiStateBuilder::new()
             .with_daemon_stats(None)
             .with_system_metrics(None)
@@ -4494,17 +4628,20 @@ max_candidates: 200
             .with_pattern_database(None)
             .with_notification_manager(Some(notification_manager_arc))
             .build();
-        
+
         let result = notifications_test_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "success");
         assert_eq!(value["message"], "Test notification sent successfully");
         assert!(value["notification"].is_object());
         assert_eq!(value["notification"]["title"], "Test Notification");
-        assert_eq!(value["notification"]["message"], "This is a test notification from SmoothTask API");
+        assert_eq!(
+            value["notification"]["message"],
+            "This is a test notification from SmoothTask API"
+        );
         assert_eq!(value["backend"], "stub");
     }
 
@@ -4514,7 +4651,7 @@ max_candidates: 200
         let state = ApiState::new();
         let result = notifications_status_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "ok");
@@ -4526,9 +4663,11 @@ max_candidates: 200
     #[tokio::test]
     async fn test_notifications_status_handler_with_config() {
         // Тест для notifications_status_handler когда конфигурация доступна
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
-        
+
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -4578,13 +4717,13 @@ max_candidates: 200
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
         };
-        
+
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
-        
+
         let result = notifications_status_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "ok");
@@ -4601,10 +4740,10 @@ max_candidates: 200
     async fn test_notifications_status_handler_with_manager() {
         // Тест для notifications_status_handler когда менеджер уведомлений доступен
         use crate::notifications::NotificationManager;
-        
+
         let notification_manager = NotificationManager::new_stub();
         let notification_manager_arc = Arc::new(tokio::sync::Mutex::new(notification_manager));
-        
+
         let state = ApiStateBuilder::new()
             .with_daemon_stats(None)
             .with_system_metrics(None)
@@ -4616,10 +4755,10 @@ max_candidates: 200
             .with_pattern_database(None)
             .with_notification_manager(Some(notification_manager_arc))
             .build();
-        
+
         let result = notifications_status_handler(State(state)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "ok");
@@ -4639,19 +4778,24 @@ max_candidates: 200
         });
         let result = notifications_config_handler(State(state), Json(payload)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "error");
-        assert!(value["message"].as_str().unwrap().contains("Config not available"));
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Config not available"));
     }
 
     #[tokio::test]
     async fn test_notifications_config_handler_with_config() {
         // Тест для notifications_config_handler когда конфигурация доступна
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
-        
+
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -4701,24 +4845,27 @@ max_candidates: 200
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
         };
-        
+
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
-        
+
         let payload = json!({
             "enabled": true,
             "backend": "libnotify",
             "app_name": "SmoothTask Test",
             "min_level": "info"
         });
-        
+
         let result = notifications_config_handler(State(state), Json(payload)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "success");
-        assert_eq!(value["message"], "Notification configuration updated successfully");
+        assert_eq!(
+            value["message"],
+            "Notification configuration updated successfully"
+        );
         assert!(value["config"].is_object());
         assert_eq!(value["config"]["enabled"], true);
         assert_eq!(value["config"]["backend"], "libnotify");
@@ -4729,9 +4876,11 @@ max_candidates: 200
     #[tokio::test]
     async fn test_notifications_config_handler_partial_update() {
         // Тест для notifications_config_handler с частичным обновлением
-        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+        };
         use crate::metrics::ebpf::EbpfConfig;
-        
+
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -4781,18 +4930,18 @@ max_candidates: 200
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
         };
-        
+
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
-        
+
         // Обновляем только enabled
         let payload = json!({
             "enabled": true
         });
-        
+
         let result = notifications_config_handler(State(state), Json(payload)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "success");
@@ -4810,16 +4959,16 @@ max_candidates: 200
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
         assert_eq!(json["count"], 22); // Обновлено с 21 до 22
-        
+
         let endpoints = json["endpoints"].as_array().unwrap();
         assert_eq!(endpoints.len(), 22);
-        
+
         // Проверяем наличие новых endpoints
         let endpoint_paths: Vec<&str> = endpoints
             .iter()
             .map(|e| e["path"].as_str().unwrap())
             .collect();
-        
+
         assert!(endpoint_paths.contains(&"/api/notifications/test"));
         assert!(endpoint_paths.contains(&"/api/notifications/custom"));
         assert!(endpoint_paths.contains(&"/api/notifications/status"));
@@ -4827,7 +4976,7 @@ max_candidates: 200
         assert!(endpoint_paths.contains(&"/api/performance"));
         assert!(endpoint_paths.contains(&"/api/logs"));
     }
-    
+
     #[tokio::test]
     async fn test_notifications_custom_handler_without_manager() {
         // Тест для notifications_custom_handler когда notification_manager не доступен
@@ -4845,28 +4994,32 @@ max_candidates: 200
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         };
-        
+
         let payload = json!({
             "type": "info",
             "title": "Test Title",
             "message": "Test Message"
         });
-        
+
         let result = notifications_custom_handler(State(state), Json(payload)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap().0;
         assert_eq!(json["status"], "error");
         assert_eq!(json["backend"], "none");
-        assert!(json["message"].as_str().unwrap().contains("Notification manager not available"));
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("Notification manager not available"));
     }
-    
+
     #[tokio::test]
     async fn test_notifications_custom_handler_with_manager() {
         // Тест для notifications_custom_handler с доступным notification_manager
         use crate::notifications::NotificationManager;
-        
-        let notification_manager = Arc::new(tokio::sync::Mutex::new(NotificationManager::new_stub()));
+
+        let notification_manager =
+            Arc::new(tokio::sync::Mutex::new(NotificationManager::new_stub()));
         let state = ApiState {
             daemon_stats: None,
             system_metrics: None,
@@ -4881,32 +5034,39 @@ max_candidates: 200
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         };
-        
+
         let payload = json!({
             "type": "warning",
             "title": "Custom Warning",
             "message": "This is a custom warning message",
             "details": "Additional details about the warning"
         });
-        
+
         let result = notifications_custom_handler(State(state), Json(payload)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap().0;
         assert_eq!(json["status"], "success");
         assert_eq!(json["backend"], "stub");
         assert_eq!(json["notification"]["type"], "WARNING");
         assert_eq!(json["notification"]["title"], "Custom Warning");
-        assert_eq!(json["notification"]["message"], "This is a custom warning message");
-        assert_eq!(json["notification"]["details"], "Additional details about the warning");
+        assert_eq!(
+            json["notification"]["message"],
+            "This is a custom warning message"
+        );
+        assert_eq!(
+            json["notification"]["details"],
+            "Additional details about the warning"
+        );
     }
-    
+
     #[tokio::test]
     async fn test_notifications_custom_handler_default_values() {
         // Тест для notifications_custom_handler с значениями по умолчанию
         use crate::notifications::NotificationManager;
-        
-        let notification_manager = Arc::new(tokio::sync::Mutex::new(NotificationManager::new_stub()));
+
+        let notification_manager =
+            Arc::new(tokio::sync::Mutex::new(NotificationManager::new_stub()));
         let state = ApiState {
             daemon_stats: None,
             system_metrics: None,
@@ -4921,18 +5081,21 @@ max_candidates: 200
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         };
-        
+
         // Пустой payload - должны использоваться значения по умолчанию
         let payload = json!({});
-        
+
         let result = notifications_custom_handler(State(state), Json(payload)).await;
         assert!(result.is_ok());
-        
+
         let json = result.unwrap().0;
         assert_eq!(json["status"], "success");
         assert_eq!(json["notification"]["type"], "INFO");
         assert_eq!(json["notification"]["title"], "Custom Notification");
-        assert_eq!(json["notification"]["message"], "Custom notification message");
+        assert_eq!(
+            json["notification"]["message"],
+            "Custom notification message"
+        );
         assert!(json["notification"]["details"].is_null());
     }
 
@@ -4940,16 +5103,13 @@ max_candidates: 200
     async fn test_logs_handler_without_log_storage() {
         // Тест для logs_handler без хранилища логов
         let state = ApiState::new();
-        
-        let result = logs_handler(
-            State(state),
-            Query(HashMap::new())
-        ).await;
-        
+
+        let result = logs_handler(State(state), Query(HashMap::new())).await;
+
         assert!(result.is_ok());
         let json = result.unwrap();
         let value: Value = json.0;
-        
+
         assert_eq!(value["status"], "ok");
         assert_eq!(value["count"], 0);
         assert!(value["logs"].is_array());
@@ -4961,57 +5121,60 @@ max_candidates: 200
     async fn test_logs_handler_with_log_storage() {
         // Тест для logs_handler с хранилищем логов
         use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(100));
-        
+
         // Добавляем тестовые записи
-        log_storage.add_entry(LogEntry::new(
-            LogLevel::Info,
-            "test_module",
-            "Test info message"
-        )).await;
-        
-        log_storage.add_entry(LogEntry::new(
-            LogLevel::Warn,
-            "test_module",
-            "Test warning message"
-        )).await;
-        
-        log_storage.add_entry(LogEntry::new(
-            LogLevel::Error,
-            "test_module",
-            "Test error message"
-        )).await;
-        
+        log_storage
+            .add_entry(LogEntry::new(
+                LogLevel::Info,
+                "test_module",
+                "Test info message",
+            ))
+            .await;
+
+        log_storage
+            .add_entry(LogEntry::new(
+                LogLevel::Warn,
+                "test_module",
+                "Test warning message",
+            ))
+            .await;
+
+        log_storage
+            .add_entry(LogEntry::new(
+                LogLevel::Error,
+                "test_module",
+                "Test error message",
+            ))
+            .await;
+
         let state = ApiStateBuilder::new()
             .with_log_storage(Some(log_storage))
             .build();
-        
-        let result = logs_handler(
-            State(state),
-            Query(HashMap::new())
-        ).await;
-        
+
+        let result = logs_handler(State(state), Query(HashMap::new())).await;
+
         assert!(result.is_ok());
         let json = result.unwrap();
         let value: Value = json.0;
-        
+
         assert_eq!(value["status"], "ok");
         assert_eq!(value["count"], 3);
         assert!(value["logs"].is_array());
-        
+
         let logs = value["logs"].as_array().unwrap();
         assert_eq!(logs.len(), 3);
-        
+
         // Проверяем структуру логов
         assert_eq!(logs[0]["level"], "INFO");
         assert_eq!(logs[0]["target"], "test_module");
         assert_eq!(logs[0]["message"], "Test info message");
-        
+
         assert_eq!(logs[1]["level"], "WARN");
         assert_eq!(logs[1]["target"], "test_module");
         assert_eq!(logs[1]["message"], "Test warning message");
-        
+
         assert_eq!(logs[2]["level"], "ERROR");
         assert_eq!(logs[2]["target"], "test_module");
         assert_eq!(logs[2]["message"], "Test error message");
@@ -5021,36 +5184,43 @@ max_candidates: 200
     async fn test_logs_handler_with_level_filter() {
         // Тест для logs_handler с фильтрацией по уровню
         use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(100));
-        
+
         // Добавляем тестовые записи разных уровней
-        log_storage.add_entry(LogEntry::new(LogLevel::Trace, "test", "Trace message")).await;
-        log_storage.add_entry(LogEntry::new(LogLevel::Debug, "test", "Debug message")).await;
-        log_storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Info message")).await;
-        log_storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warn message")).await;
-        log_storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error message")).await;
-        
+        log_storage
+            .add_entry(LogEntry::new(LogLevel::Trace, "test", "Trace message"))
+            .await;
+        log_storage
+            .add_entry(LogEntry::new(LogLevel::Debug, "test", "Debug message"))
+            .await;
+        log_storage
+            .add_entry(LogEntry::new(LogLevel::Info, "test", "Info message"))
+            .await;
+        log_storage
+            .add_entry(LogEntry::new(LogLevel::Warn, "test", "Warn message"))
+            .await;
+        log_storage
+            .add_entry(LogEntry::new(LogLevel::Error, "test", "Error message"))
+            .await;
+
         let state = ApiStateBuilder::new()
             .with_log_storage(Some(log_storage))
             .build();
-        
+
         // Тестируем фильтрацию по уровню WARN
         let mut params = HashMap::new();
         params.insert("level".to_string(), "warn".to_string());
-        
-        let result = logs_handler(
-            State(state),
-            Query(params)
-        ).await;
-        
+
+        let result = logs_handler(State(state), Query(params)).await;
+
         assert!(result.is_ok());
         let json = result.unwrap();
         let value: Value = json.0;
-        
+
         assert_eq!(value["status"], "ok");
         assert_eq!(value["count"], 2); // Только WARN и ERROR
-        
+
         let logs = value["logs"].as_array().unwrap();
         assert_eq!(logs[0]["level"], "WARN");
         assert_eq!(logs[1]["level"], "ERROR");
@@ -5060,39 +5230,38 @@ max_candidates: 200
     async fn test_logs_handler_with_limit() {
         // Тест для logs_handler с лимитом
         use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(100));
-        
+
         // Добавляем 5 тестовых записей
         for i in 1..=5 {
-            log_storage.add_entry(LogEntry::new(
-                LogLevel::Info,
-                "test",
-                format!("Message {}", i)
-            )).await;
+            log_storage
+                .add_entry(LogEntry::new(
+                    LogLevel::Info,
+                    "test",
+                    format!("Message {}", i),
+                ))
+                .await;
         }
-        
+
         let state = ApiStateBuilder::new()
             .with_log_storage(Some(log_storage))
             .build();
-        
+
         // Тестируем лимит 3
         let mut params = HashMap::new();
         params.insert("limit".to_string(), "3".to_string());
-        
-        let result = logs_handler(
-            State(state),
-            Query(params)
-        ).await;
-        
+
+        let result = logs_handler(State(state), Query(params)).await;
+
         assert!(result.is_ok());
         let json = result.unwrap();
         let value: Value = json.0;
-        
+
         assert_eq!(value["status"], "ok");
         assert_eq!(value["count"], 3);
         assert_eq!(value["filter"]["limit"], 3);
-        
+
         let logs = value["logs"].as_array().unwrap();
         assert_eq!(logs.len(), 3);
         // Должны быть последние 3 сообщения
@@ -5105,9 +5274,9 @@ max_candidates: 200
     async fn test_logs_handler_with_fields() {
         // Тест для logs_handler с дополнительными полями
         use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(100));
-        
+
         // Добавляем запись с дополнительными полями
         let mut entry = LogEntry::new(LogLevel::Info, "test", "Message with fields");
         let fields = serde_json::json!({
@@ -5116,25 +5285,22 @@ max_candidates: 200
             "status": "success"
         });
         entry = entry.with_fields(fields);
-        
+
         log_storage.add_entry(entry).await;
-        
+
         let state = ApiStateBuilder::new()
             .with_log_storage(Some(log_storage))
             .build();
-        
-        let result = logs_handler(
-            State(state),
-            Query(HashMap::new())
-        ).await;
-        
+
+        let result = logs_handler(State(state), Query(HashMap::new())).await;
+
         assert!(result.is_ok());
         let json = result.unwrap();
         let value: Value = json.0;
-        
+
         assert_eq!(value["status"], "ok");
         assert_eq!(value["count"], 1);
-        
+
         let log = &value["logs"][0];
         assert_eq!(log["message"], "Message with fields");
         assert!(log["fields"].is_object());

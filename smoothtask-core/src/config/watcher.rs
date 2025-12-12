@@ -24,13 +24,13 @@ pub struct ConfigWatcher {
 
 impl ConfigWatcher {
     /// Создаёт новый ConfigWatcher для указанного конфигурационного файла.
-    /// 
+    ///
     /// # Аргументы
     /// * `config_path` - Путь к конфигурационному файлу для мониторинга.
-    /// 
+    ///
     /// # Возвращает
     /// `Result<Self>` - ConfigWatcher, готовый к использованию.
-    /// 
+    ///
     /// # Ошибки
     /// Возвращает ошибку, если:
     /// - Указанный путь не существует
@@ -39,57 +39,47 @@ impl ConfigWatcher {
     pub fn new(config_path: impl Into<String>) -> Result<Self> {
         let config_path = config_path.into();
         let path = Path::new(&config_path);
-        
+
         // Проверяем, что файл существует и доступен для чтения
         if !path.exists() {
-            anyhow::bail!(
-                "Config file does not exist: {}",
-                path.display()
-            );
+            anyhow::bail!("Config file does not exist: {}", path.display());
         }
-        
+
         if !path.is_file() {
-            anyhow::bail!(
-                "Config path is not a file: {}",
-                path.display()
-            );
+            anyhow::bail!("Config path is not a file: {}", path.display());
         }
-        
+
         // Проверяем права на чтение
         if let Err(e) = std::fs::metadata(path) {
-            anyhow::bail!(
-                "Cannot access config file {}: {}",
-                path.display(),
-                e
-            );
+            anyhow::bail!("Cannot access config file {}: {}", path.display(), e);
         }
-        
+
         // Создаём канал для уведомлений об изменениях
         let (change_sender, change_receiver) = watch::channel(false);
-        
+
         Ok(Self {
             config_path,
             change_sender,
             change_receiver,
         })
     }
-    
+
     /// Возвращает путь к конфигурационному файлу.
     pub fn config_path(&self) -> &str {
         &self.config_path
     }
-    
+
     /// Возвращает приёмник для уведомлений об изменениях.
     /// Когда файл изменяется, приёмник получит сигнал.
     pub fn change_receiver(&self) -> watch::Receiver<bool> {
         self.change_receiver.clone()
     }
-    
+
     /// Запускает задачу для мониторинга изменений конфигурационного файла.
-    /// 
+    ///
     /// # Возвращает
     /// `tokio::task::JoinHandle<Result<()>>` - Handle для управления задачей мониторинга.
-    /// 
+    ///
     /// # Примечания
     /// Задача будет работать в фоновом режиме и отправлять уведомления через канал,
     /// когда файл будет изменён. Задача завершится, когда будет отменена (через Drop handle)
@@ -97,18 +87,16 @@ impl ConfigWatcher {
     pub fn start_watching(&self) -> tokio::task::JoinHandle<Result<()>> {
         let config_path = self.config_path.clone();
         let change_sender = self.change_sender.clone();
-        
-        tokio::spawn(async move {
-            Self::watch_config_file(config_path, change_sender).await
-        })
+
+        tokio::spawn(async move { Self::watch_config_file(config_path, change_sender).await })
     }
-    
+
     /// Основная функция мониторинга изменений конфигурационного файла.
-    /// 
+    ///
     /// # Аргументы
     /// * `config_path` - Путь к конфигурационному файлу.
     /// * `change_sender` - Отправитель для уведомлений об изменениях.
-    /// 
+    ///
     /// # Возвращает
     /// `Result<()>` - Ok, если мониторинг завершён успешно, иначе ошибка.
     async fn watch_config_file(
@@ -116,29 +104,28 @@ impl ConfigWatcher {
         change_sender: watch::Sender<bool>,
     ) -> Result<()> {
         use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-        
+
         let path = Path::new(&config_path);
-        let parent_dir = path.parent().with_context(
-            || format!("Cannot determine parent directory for config file: {}", config_path)
-        )?;
-        
+        let parent_dir = path.parent().with_context(|| {
+            format!(
+                "Cannot determine parent directory for config file: {}",
+                config_path
+            )
+        })?;
+
         // Создаём watcher
         let (tx, rx) = std::sync::mpsc::channel();
         let mut watcher: RecommendedWatcher = Watcher::new(
             tx,
-            notify::Config::default()
-                .with_poll_interval(std::time::Duration::from_secs(1)),
+            notify::Config::default().with_poll_interval(std::time::Duration::from_secs(1)),
         )?;
-        
+
         // Начинаем наблюдение за родительской директорией
         // (наблюдаем за директорией, а не за файлом, чтобы не пропустить события)
         watcher.watch(parent_dir, RecursiveMode::NonRecursive)?;
-        
-        tracing::info!(
-            "Started watching config file for changes: {}",
-            config_path
-        );
-        
+
+        tracing::info!("Started watching config file for changes: {}", config_path);
+
         // Основной цикл обработки событий
         while let Ok(event) = rx.recv() {
             match event {
@@ -154,11 +141,8 @@ impl ConfigWatcher {
                             // (например, изменение метаданных)
                             match modify_kind {
                                 notify::event::ModifyKind::Data(_) => {
-                                    tracing::info!(
-                                        "Config file changed: {}",
-                                        config_path
-                                    );
-                                    
+                                    tracing::info!("Config file changed: {}", config_path);
+
                                     // Отправляем сигнал об изменении
                                     if change_sender.send(true).is_err() {
                                         tracing::warn!(
@@ -185,10 +169,7 @@ impl ConfigWatcher {
                     // Если файл был удалён, это критическая ситуация
                     if let Some(event_path) = paths.first() {
                         if event_path == path {
-                            tracing::error!(
-                                "Config file was removed: {}",
-                                config_path
-                            );
+                            tracing::error!("Config file was removed: {}", config_path);
                             anyhow::bail!(
                                 "Config file was removed during monitoring: {}",
                                 config_path
@@ -204,11 +185,8 @@ impl ConfigWatcher {
                     // Если файл был создан (например, после удаления и повторного создания)
                     if let Some(event_path) = paths.first() {
                         if event_path == path {
-                            tracing::info!(
-                                "Config file was recreated: {}",
-                                config_path
-                            );
-                            
+                            tracing::info!("Config file was recreated: {}", config_path);
+
                             // Отправляем сигнал об изменении
                             if change_sender.send(true).is_err() {
                                 tracing::warn!(
@@ -226,18 +204,12 @@ impl ConfigWatcher {
                     );
                 }
                 Err(e) => {
-                    tracing::error!(
-                        "Error receiving filesystem event: {}",
-                        e
-                    );
-                    anyhow::bail!(
-                        "Filesystem watcher error: {}",
-                        e
-                    );
+                    tracing::error!("Error receiving filesystem event: {}", e);
+                    anyhow::bail!("Filesystem watcher error: {}", e);
                 }
             }
         }
-        
+
         Ok(())
     }
 }
@@ -251,11 +223,11 @@ mod tests {
     fn test_config_watcher_creation() {
         let temp_file = NamedTempFile::new().expect("tempfile");
         let file_path = temp_file.path().to_str().unwrap().to_string();
-        
+
         let watcher = ConfigWatcher::new(&file_path).expect("watcher creation");
         assert_eq!(watcher.config_path(), file_path);
     }
-    
+
     #[test]
     fn test_config_watcher_rejects_nonexistent_file() {
         let result = ConfigWatcher::new("/nonexistent/config.yml");
@@ -263,47 +235,47 @@ mod tests {
         let err = result.unwrap_err();
         assert!(err.to_string().contains("does not exist"));
     }
-    
+
     #[test]
     fn test_config_watcher_rejects_directory() {
         let temp_dir = tempfile::tempdir().expect("tempdir");
         let dir_path = temp_dir.path().to_str().unwrap().to_string();
-        
+
         let result = ConfigWatcher::new(&dir_path);
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(err.to_string().contains("not a file"));
     }
-    
+
     #[tokio::test]
     async fn test_config_watcher_receiver() {
         let temp_file = NamedTempFile::new().expect("tempfile");
         let file_path = temp_file.path().to_str().unwrap().to_string();
-        
+
         let watcher = ConfigWatcher::new(&file_path).expect("watcher creation");
         let receiver = watcher.change_receiver();
-        
+
         // Проверяем, что изначально нет изменений
         assert!(!*receiver.borrow());
     }
-    
+
     #[tokio::test]
     async fn test_config_watcher_start_watching() {
         let temp_file = NamedTempFile::new().expect("tempfile");
         let file_path = temp_file.path().to_str().unwrap().to_string();
-        
+
         let watcher = ConfigWatcher::new(&file_path).expect("watcher creation");
         let handle = watcher.start_watching();
-        
+
         // Даём задаче немного времени для запуска
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        
+
         // Задача должна продолжать работать
         assert!(!handle.is_finished());
-        
+
         // Отменяем задачу
         handle.abort();
-        
+
         // Проверяем, что задача завершилась
         assert!(handle.is_finished());
     }

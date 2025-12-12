@@ -6,15 +6,15 @@
 //! - обработка ошибок при применении приоритетов
 //! - интеграция с другими модулями (policy, logging)
 
+use chrono::Utc;
 use smoothtask_core::actuator::{
     apply_priority_adjustments, plan_priority_changes, HysteresisTracker, PriorityAdjustment,
 };
 use smoothtask_core::logging::snapshots::{
     AppGroupRecord, GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot,
 };
-use smoothtask_core::policy::engine::PolicyResult;
 use smoothtask_core::policy::classes::PriorityClass;
-use chrono::Utc;
+use smoothtask_core::policy::engine::PolicyResult;
 use std::collections::HashMap;
 
 fn create_test_snapshot() -> Snapshot {
@@ -53,14 +53,14 @@ fn create_test_snapshot() -> Snapshot {
             create_test_app_group("app3", 1003),
         ],
         responsiveness: ResponsivenessMetrics {
-        sched_latency_p95_ms: None,
-        sched_latency_p99_ms: None,
-        audio_xruns_delta: None,
-        ui_loop_p95_ms: None,
-        frame_jank_ratio: None,
-        bad_responsiveness: false,
-        responsiveness_score: None,
-    },
+            sched_latency_p95_ms: None,
+            sched_latency_p99_ms: None,
+            audio_xruns_delta: None,
+            ui_loop_p95_ms: None,
+            frame_jank_ratio: None,
+            bad_responsiveness: false,
+            responsiveness_score: None,
+        },
     }
 }
 
@@ -176,10 +176,7 @@ fn test_plan_priority_changes_for_different_classes() {
 /// Тест проверяет работу гистерезиса.
 #[test]
 fn test_hysteresis_blocks_rapid_changes() {
-    let mut tracker = HysteresisTracker::with_params(
-        std::time::Duration::from_secs(10),
-        1,
-    );
+    let mut tracker = HysteresisTracker::with_params(std::time::Duration::from_secs(10), 1);
 
     let _adjustment = PriorityAdjustment {
         pid: 1001,
@@ -251,7 +248,7 @@ fn test_full_integration_plan_and_apply() {
 #[test]
 fn test_plan_priority_changes_handles_processes_without_appgroup() {
     let mut snapshot = create_test_snapshot();
-    
+
     if let Some(process) = snapshot.processes.iter_mut().find(|p| p.pid == 1003) {
         process.app_group_id = None;
     }
@@ -276,22 +273,20 @@ fn test_plan_priority_changes_handles_processes_without_policy() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает ошибки применения.
 #[test]
 fn test_apply_priority_adjustments_handles_errors_gracefully() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: 999999,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: 999999,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -322,31 +317,26 @@ fn test_plan_priority_changes_edge_cases() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает гистерезис.
 #[test]
 fn test_apply_priority_adjustments_with_hysteresis() {
-    let mut tracker = HysteresisTracker::with_params(
-        std::time::Duration::from_secs(10),
-        1,
-    );
+    let mut tracker = HysteresisTracker::with_params(std::time::Duration::from_secs(10), 1);
 
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: 1001,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: 1001,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let result1 = apply_priority_adjustments(&adjustments, &mut tracker);
     let result2 = apply_priority_adjustments(&adjustments, &mut tracker);
-    
+
     // Verify hysteresis is working - second call should skip more changes
     assert!(result2.skipped_hysteresis >= result1.skipped_hysteresis);
 }
@@ -361,9 +351,12 @@ fn test_plan_priority_changes_priority_combinations() {
 
     for adj in &adjustments {
         let expected_params = adj.target_class.params();
-        
+
         assert_eq!(adj.target_nice, expected_params.nice.nice);
-        assert_eq!(adj.target_latency_nice, expected_params.latency_nice.latency_nice);
+        assert_eq!(
+            adj.target_latency_nice,
+            expected_params.latency_nice.latency_nice
+        );
         assert_eq!(adj.target_ionice, expected_params.ionice);
         assert_eq!(adj.target_cpu_weight, expected_params.cgroup.cpu_weight);
     }
@@ -415,7 +408,7 @@ fn test_apply_priority_adjustments_partial_success() {
 #[test]
 fn test_plan_priority_changes_process_states() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.state = "S".to_string();
@@ -433,22 +426,20 @@ fn test_plan_priority_changes_process_states() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные классы приоритетов.
 #[test]
 fn test_apply_priority_adjustments_priority_classes() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::CritInteractive,
-            current_nice: 0,
-            target_nice: -15,
-            current_latency_nice: None,
-            target_latency_nice: -15,
-            current_ionice: None,
-            target_ionice: PriorityClass::CritInteractive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 250,
-            reason: "Critical interactive".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::CritInteractive,
+        current_nice: 0,
+        target_nice: -15,
+        current_latency_nice: None,
+        target_latency_nice: -15,
+        current_ionice: None,
+        target_ionice: PriorityClass::CritInteractive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 250,
+        reason: "Critical interactive".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -465,9 +456,18 @@ fn test_plan_priority_changes_multiple_appgroups() {
 
     let adjustments = plan_priority_changes(&snapshot, &policy_results);
 
-    let app1_adjustments: Vec<_> = adjustments.iter().filter(|a| a.app_group_id == "app1").collect();
-    let app2_adjustments: Vec<_> = adjustments.iter().filter(|a| a.app_group_id == "app2").collect();
-    let app3_adjustments: Vec<_> = adjustments.iter().filter(|a| a.app_group_id == "app3").collect();
+    let app1_adjustments: Vec<_> = adjustments
+        .iter()
+        .filter(|a| a.app_group_id == "app1")
+        .collect();
+    let app2_adjustments: Vec<_> = adjustments
+        .iter()
+        .filter(|a| a.app_group_id == "app2")
+        .collect();
+    let app3_adjustments: Vec<_> = adjustments
+        .iter()
+        .filter(|a| a.app_group_id == "app3")
+        .collect();
 
     assert!(!app1_adjustments.is_empty());
     assert!(!app2_adjustments.is_empty());
@@ -478,31 +478,29 @@ fn test_plan_priority_changes_multiple_appgroups() {
 #[test]
 fn test_apply_priority_adjustments_history_cleanup() {
     let mut tracker = HysteresisTracker::new();
-    
+
     tracker.record_change(1001, PriorityClass::Interactive);
     tracker.record_change(1002, PriorityClass::Background);
 
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: 1001,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Normal,
-            current_nice: 0,
-            target_nice: 0,
-            current_latency_nice: None,
-            target_latency_nice: 0,
-            current_ionice: None,
-            target_ionice: PriorityClass::Normal.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 100,
-            reason: "Normal task".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: 1001,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Normal,
+        current_nice: 0,
+        target_nice: 0,
+        current_latency_nice: None,
+        target_latency_nice: 0,
+        current_ionice: None,
+        target_ionice: PriorityClass::Normal.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 100,
+        reason: "Normal task".to_string(),
+    }];
 
     let _result = apply_priority_adjustments(&adjustments, &mut tracker);
-    
+
     tracker.cleanup(&[1001]);
-    
+
     assert_eq!(tracker.history.len(), 1);
     assert!(tracker.history.contains_key(&1001));
     assert!(!tracker.history.contains_key(&1002));
@@ -512,7 +510,7 @@ fn test_apply_priority_adjustments_history_cleanup() {
 #[test]
 fn test_plan_priority_changes_process_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.cpu_share_1s = Some(50.0);
@@ -530,31 +528,29 @@ fn test_plan_priority_changes_process_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения.
 #[test]
 fn test_apply_priority_adjustments_application_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
-    
+
     let result1 = apply_priority_adjustments(&adjustments, &mut hysteresis);
     let result2 = apply_priority_adjustments(&adjustments, &mut hysteresis);
-    
+
     hysteresis.cleanup(&[std::process::id() as i32]);
     let _result3 = apply_priority_adjustments(&adjustments, &mut hysteresis);
-    
+
     assert!(true); // result1.applied is usize, always >= 0
     assert!(result2.skipped_hysteresis >= result1.skipped_hysteresis);
     assert!(true); // _result3.applied is usize, always >= 0
@@ -564,7 +560,7 @@ fn test_apply_priority_adjustments_application_scenarios() {
 #[test]
 fn test_plan_priority_changes_process_tags() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.tags.push("gui".to_string());
@@ -582,22 +578,20 @@ fn test_plan_priority_changes_process_tags() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные комбинации параметров.
 #[test]
 fn test_apply_priority_adjustments_parameter_combinations() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: Some(0),
-            target_latency_nice: -10,
-            current_ionice: Some((2, 4)),
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: Some(100),
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: Some(0),
+        target_latency_nice: -10,
+        current_ionice: Some((2, 4)),
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: Some(100),
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -610,7 +604,7 @@ fn test_apply_priority_adjustments_parameter_combinations() {
 #[test]
 fn test_plan_priority_changes_window_states() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.window_state = Some("focused".to_string());
@@ -628,66 +622,57 @@ fn test_plan_priority_changes_window_states() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии гистерезиса.
 #[test]
 fn test_apply_priority_adjustments_hysteresis_scenarios() {
-    let mut tracker = HysteresisTracker::with_params(
-        std::time::Duration::from_secs(5),
-        2,
-    );
+    let mut tracker = HysteresisTracker::with_params(std::time::Duration::from_secs(5), 2);
 
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: 1001,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: 1001,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let _result1 = apply_priority_adjustments(&adjustments, &mut tracker);
-    
-    let adjustments2 = vec![
-        PriorityAdjustment {
-            pid: 1001,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Normal,
-            current_nice: 0,
-            target_nice: 0,
-            current_latency_nice: None,
-            target_latency_nice: 0,
-            current_ionice: None,
-            target_ionice: PriorityClass::Normal.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 100,
-            reason: "Normal task".to_string(),
-        },
-    ];
+
+    let adjustments2 = vec![PriorityAdjustment {
+        pid: 1001,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Normal,
+        current_nice: 0,
+        target_nice: 0,
+        current_latency_nice: None,
+        target_latency_nice: 0,
+        current_ionice: None,
+        target_ionice: PriorityClass::Normal.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 100,
+        reason: "Normal task".to_string(),
+    }];
     let _result2 = apply_priority_adjustments(&adjustments2, &mut tracker);
-    
-    let adjustments3 = vec![
-        PriorityAdjustment {
-            pid: 1001,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Idle,
-            current_nice: 0,
-            target_nice: 19,
-            current_latency_nice: None,
-            target_latency_nice: 19,
-            current_ionice: None,
-            target_ionice: PriorityClass::Idle.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 10,
-            reason: "Idle task".to_string(),
-        },
-    ];
+
+    let adjustments3 = vec![PriorityAdjustment {
+        pid: 1001,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Idle,
+        current_nice: 0,
+        target_nice: 19,
+        current_latency_nice: None,
+        target_latency_nice: 19,
+        current_ionice: None,
+        target_ionice: PriorityClass::Idle.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 10,
+        reason: "Idle task".to_string(),
+    }];
     let _result3 = apply_priority_adjustments(&adjustments3, &mut tracker);
-    
+
     assert!(true); // _result1.applied is usize, always >= 0
     assert!(true); // _result2.skipped_hysteresis is usize, always >= 0
     assert!(true); // _result3.applied is usize, always >= 0
@@ -697,7 +682,7 @@ fn test_apply_priority_adjustments_hysteresis_scenarios() {
 #[test]
 fn test_plan_priority_changes_process_types() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.process_type = Some("gui".to_string());
@@ -715,22 +700,20 @@ fn test_plan_priority_changes_process_types() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения приоритетов.
 #[test]
 fn test_apply_priority_adjustments_priority_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::CritInteractive,
-            current_nice: 0,
-            target_nice: -15,
-            current_latency_nice: None,
-            target_latency_nice: -15,
-            current_ionice: None,
-            target_ionice: PriorityClass::CritInteractive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 250,
-            reason: "Critical interactive".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::CritInteractive,
+        current_nice: 0,
+        target_nice: -15,
+        current_latency_nice: None,
+        target_latency_nice: -15,
+        current_ionice: None,
+        target_ionice: PriorityClass::CritInteractive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 250,
+        reason: "Critical interactive".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -743,7 +726,7 @@ fn test_apply_priority_adjustments_priority_scenarios() {
 #[test]
 fn test_plan_priority_changes_audio_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.is_audio_client = true;
@@ -760,22 +743,20 @@ fn test_plan_priority_changes_audio_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения cgroups.
 #[test]
 fn test_apply_priority_adjustments_cgroup_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: Some(100),
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: Some(100),
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -788,7 +769,7 @@ fn test_apply_priority_adjustments_cgroup_scenarios() {
 #[test]
 fn test_plan_priority_changes_input_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.env_has_display = true;
@@ -805,22 +786,20 @@ fn test_plan_priority_changes_input_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения ionice.
 #[test]
 fn test_apply_priority_adjustments_ionice_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Background,
-            current_nice: 0,
-            target_nice: 10,
-            current_latency_nice: None,
-            target_latency_nice: 10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Background.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 50,
-            reason: "Background task".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Background,
+        current_nice: 0,
+        target_nice: 10,
+        current_latency_nice: None,
+        target_latency_nice: 10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Background.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 50,
+        reason: "Background task".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -833,7 +812,7 @@ fn test_apply_priority_adjustments_ionice_scenarios() {
 #[test]
 fn test_plan_priority_changes_scheduler_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.voluntary_ctx = Some(10000);
@@ -850,22 +829,20 @@ fn test_plan_priority_changes_scheduler_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения latency_nice.
 #[test]
 fn test_apply_priority_adjustments_latency_nice_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::CritInteractive,
-            current_nice: 0,
-            target_nice: -15,
-            current_latency_nice: None,
-            target_latency_nice: -15,
-            current_ionice: None,
-            target_ionice: PriorityClass::CritInteractive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 250,
-            reason: "Critical interactive".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::CritInteractive,
+        current_nice: 0,
+        target_nice: -15,
+        current_latency_nice: None,
+        target_latency_nice: -15,
+        current_ionice: None,
+        target_ionice: PriorityClass::CritInteractive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 250,
+        reason: "Critical interactive".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -878,7 +855,7 @@ fn test_apply_priority_adjustments_latency_nice_scenarios() {
 #[test]
 fn test_plan_priority_changes_memory_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.rss_mb = Some(500);
@@ -894,22 +871,20 @@ fn test_plan_priority_changes_memory_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения nice.
 #[test]
 fn test_apply_priority_adjustments_nice_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -922,7 +897,7 @@ fn test_apply_priority_adjustments_nice_scenarios() {
 #[test]
 fn test_plan_priority_changes_io_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.io_read_bytes = Some(1024 * 1024 * 100);
@@ -938,22 +913,20 @@ fn test_plan_priority_changes_io_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения приоритетов для процессов с различными состояниями.
 #[test]
 fn test_apply_priority_adjustments_process_state_scenarios() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None,
-            target_latency_nice: -10,
-            current_ionice: None,
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None,
-            target_cpu_weight: 200,
-            reason: "Focused GUI".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None,
+        target_latency_nice: -10,
+        current_ionice: None,
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None,
+        target_cpu_weight: 200,
+        reason: "Focused GUI".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -966,7 +939,7 @@ fn test_apply_priority_adjustments_process_state_scenarios() {
 #[test]
 fn test_plan_priority_changes_cpu_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.cpu_share_1s = Some(90.0);
@@ -1024,7 +997,7 @@ fn test_apply_priority_adjustments_appgroup_scenarios() {
 #[test]
 fn test_plan_priority_changes_responsiveness_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     snapshot.responsiveness = ResponsivenessMetrics {
         sched_latency_p95_ms: Some(5.0),
         sched_latency_p99_ms: Some(10.0),
@@ -1086,7 +1059,7 @@ fn test_apply_priority_adjustments_reason_scenarios() {
 #[test]
 fn test_plan_priority_changes_system_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     snapshot.global = GlobalMetrics {
         cpu_user: 0.8,
         cpu_system: 0.1,
@@ -1160,7 +1133,7 @@ fn test_apply_priority_adjustments_comprehensive_scenarios() {
 #[test]
 fn test_plan_priority_changes_comprehensive_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.cpu_share_1s = Some(80.0);
@@ -1189,22 +1162,20 @@ fn test_plan_priority_changes_comprehensive_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает различные сценарии применения приоритетов для процессов с различными метриками и состояниями.
 #[test]
 fn test_apply_priority_adjustments_comprehensive_application() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: Some(0),
-            target_latency_nice: -10,
-            current_ionice: Some((2, 4)),
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: Some(100),
-            target_cpu_weight: 200,
-            reason: "Comprehensive test scenario".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: Some(0),
+        target_latency_nice: -10,
+        current_ionice: Some((2, 4)),
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: Some(100),
+        target_cpu_weight: 200,
+        reason: "Comprehensive test scenario".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -1218,7 +1189,7 @@ fn test_apply_priority_adjustments_comprehensive_application() {
 #[test]
 fn test_plan_priority_changes_comprehensive_scenarios() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.cpu_share_1s = Some(90.0);
@@ -1292,7 +1263,7 @@ fn test_apply_priority_adjustments_comprehensive_parameters() {
 #[test]
 fn test_plan_priority_changes_comprehensive_integration() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.cpu_share_1s = Some(95.0);
@@ -1384,7 +1355,7 @@ fn test_apply_priority_adjustments_comprehensive_integration() {
 #[test]
 fn test_plan_priority_changes_comprehensive_full_integration() {
     let mut snapshot = create_test_snapshot();
-    
+
     for process in &mut snapshot.processes {
         if process.pid == 1001 {
             process.cpu_share_1s = Some(99.0);
@@ -1505,10 +1476,12 @@ fn test_apply_priority_adjustments_comprehensive_full_integration() {
 #[test]
 fn test_plan_priority_changes_handles_invalid_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     // Добавляем процесс с некорректными метриками
-    snapshot.processes.push(create_test_process(1004, "invalid", "app4"));
-    
+    snapshot
+        .processes
+        .push(create_test_process(1004, "invalid", "app4"));
+
     // Устанавливаем некорректные значения
     if let Some(process) = snapshot.processes.iter_mut().find(|p| p.pid == 1004) {
         process.cpu_share_1s = Some(-10.0); // Отрицательное значение CPU
@@ -1526,22 +1499,20 @@ fn test_plan_priority_changes_handles_invalid_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает процессы с некорректными приоритетами.
 #[test]
 fn test_apply_priority_adjustments_handles_invalid_priorities() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::CritInteractive,
-            current_nice: i32::MIN, // Минимальное значение nice
-            target_nice: i32::MAX, // Максимальное значение nice
-            current_latency_nice: Some(i32::MIN),
-            target_latency_nice: i32::MAX,
-            current_ionice: Some((i32::MIN, i32::MIN)),
-            target_ionice: PriorityClass::CritInteractive.ionice(),
-            current_cpu_weight: Some(u32::MIN),
-            target_cpu_weight: u32::MAX,
-            reason: "Invalid priorities test".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::CritInteractive,
+        current_nice: i32::MIN, // Минимальное значение nice
+        target_nice: i32::MAX,  // Максимальное значение nice
+        current_latency_nice: Some(i32::MIN),
+        target_latency_nice: i32::MAX,
+        current_ionice: Some((i32::MIN, i32::MIN)),
+        target_ionice: PriorityClass::CritInteractive.ionice(),
+        current_cpu_weight: Some(u32::MIN),
+        target_cpu_weight: u32::MAX,
+        reason: "Invalid priorities test".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -1557,10 +1528,12 @@ fn test_apply_priority_adjustments_handles_invalid_priorities() {
 #[test]
 fn test_plan_priority_changes_handles_missing_metrics() {
     let mut snapshot = create_test_snapshot();
-    
+
     // Добавляем процесс с отсутствующими метриками
-    snapshot.processes.push(create_test_process(1004, "missing", "app4"));
-    
+    snapshot
+        .processes
+        .push(create_test_process(1004, "missing", "app4"));
+
     // Удаляем все опциональные метрики
     if let Some(process) = snapshot.processes.iter_mut().find(|p| p.pid == 1004) {
         process.cpu_share_1s = None;
@@ -1585,22 +1558,20 @@ fn test_plan_priority_changes_handles_missing_metrics() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает процессы с отсутствующими приоритетами.
 #[test]
 fn test_apply_priority_adjustments_handles_missing_priorities() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::Interactive,
-            current_nice: 0,
-            target_nice: -10,
-            current_latency_nice: None, // Отсутствующий latency_nice
-            target_latency_nice: -10,
-            current_ionice: None, // Отсутствующий ionice
-            target_ionice: PriorityClass::Interactive.ionice(),
-            current_cpu_weight: None, // Отсутствующий cpu.weight
-            target_cpu_weight: 200,
-            reason: "Missing priorities test".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::Interactive,
+        current_nice: 0,
+        target_nice: -10,
+        current_latency_nice: None, // Отсутствующий latency_nice
+        target_latency_nice: -10,
+        current_ionice: None, // Отсутствующий ionice
+        target_ionice: PriorityClass::Interactive.ionice(),
+        current_cpu_weight: None, // Отсутствующий cpu.weight
+        target_cpu_weight: 200,
+        reason: "Missing priorities test".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -1616,10 +1587,12 @@ fn test_apply_priority_adjustments_handles_missing_priorities() {
 #[test]
 fn test_plan_priority_changes_handles_extreme_values() {
     let mut snapshot = create_test_snapshot();
-    
+
     // Добавляем процесс с экстремальными значениями
-    snapshot.processes.push(create_test_process(1004, "extreme", "app4"));
-    
+    snapshot
+        .processes
+        .push(create_test_process(1004, "extreme", "app4"));
+
     // Устанавливаем экстремальные значения
     if let Some(process) = snapshot.processes.iter_mut().find(|p| p.pid == 1004) {
         process.cpu_share_1s = Some(1000.0); // Очень высокое использование CPU
@@ -1639,22 +1612,20 @@ fn test_plan_priority_changes_handles_extreme_values() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает процессы с экстремальными приоритетами.
 #[test]
 fn test_apply_priority_adjustments_handles_extreme_priorities() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::CritInteractive,
-            current_nice: -20, // Минимальное значение nice
-            target_nice: 19, // Максимальное значение nice
-            current_latency_nice: Some(-20),
-            target_latency_nice: 19,
-            current_ionice: Some((1, 0)), // Реальный класс ionice
-            target_ionice: PriorityClass::CritInteractive.ionice(),
-            current_cpu_weight: Some(1),
-            target_cpu_weight: 10000,
-            reason: "Extreme priorities test".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::CritInteractive,
+        current_nice: -20, // Минимальное значение nice
+        target_nice: 19,   // Максимальное значение nice
+        current_latency_nice: Some(-20),
+        target_latency_nice: 19,
+        current_ionice: Some((1, 0)), // Реальный класс ionice
+        target_ionice: PriorityClass::CritInteractive.ionice(),
+        current_cpu_weight: Some(1),
+        target_cpu_weight: 10000,
+        reason: "Extreme priorities test".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -1670,10 +1641,12 @@ fn test_apply_priority_adjustments_handles_extreme_priorities() {
 #[test]
 fn test_plan_priority_changes_handles_unusual_states() {
     let mut snapshot = create_test_snapshot();
-    
+
     // Добавляем процесс с нестандартными состояниями
-    snapshot.processes.push(create_test_process(1004, "unusual", "app4"));
-    
+    snapshot
+        .processes
+        .push(create_test_process(1004, "unusual", "app4"));
+
     // Устанавливаем нестандартные состояния
     if let Some(process) = snapshot.processes.iter_mut().find(|p| p.pid == 1004) {
         process.state = "Z".to_string(); // Зомби процесс
@@ -1695,22 +1668,20 @@ fn test_plan_priority_changes_handles_unusual_states() {
 /// Тест проверяет, что функция apply_priority_adjustments корректно обрабатывает процессы с нестандартными параметрами.
 #[test]
 fn test_apply_priority_adjustments_handles_unusual_parameters() {
-    let adjustments = vec![
-        PriorityAdjustment {
-            pid: std::process::id() as i32,
-            app_group_id: "app1".to_string(),
-            target_class: PriorityClass::CritInteractive,
-            current_nice: 0,
-            target_nice: -15,
-            current_latency_nice: Some(0),
-            target_latency_nice: -15,
-            current_ionice: Some((3, 7)), // Idle класс ionice
-            target_ionice: PriorityClass::CritInteractive.ionice(),
-            current_cpu_weight: Some(100),
-            target_cpu_weight: 250,
-            reason: "Unusual parameters test".to_string(),
-        },
-    ];
+    let adjustments = vec![PriorityAdjustment {
+        pid: std::process::id() as i32,
+        app_group_id: "app1".to_string(),
+        target_class: PriorityClass::CritInteractive,
+        current_nice: 0,
+        target_nice: -15,
+        current_latency_nice: Some(0),
+        target_latency_nice: -15,
+        current_ionice: Some((3, 7)), // Idle класс ionice
+        target_ionice: PriorityClass::CritInteractive.ionice(),
+        current_cpu_weight: Some(100),
+        target_cpu_weight: 250,
+        reason: "Unusual parameters test".to_string(),
+    }];
 
     let mut hysteresis = HysteresisTracker::new();
     let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
@@ -1721,4 +1692,3 @@ fn test_apply_priority_adjustments_handles_unusual_parameters() {
     assert!(result.applied > 0 || result.applied == 0);
     assert!(true); // errors is usize, always >= 0
 }
-

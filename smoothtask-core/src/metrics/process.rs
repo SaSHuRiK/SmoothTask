@@ -107,7 +107,7 @@ use std::fs;
 ///         Vec::new()
 ///     }
 /// };
-/// 
+///
 /// // Продолжение работы даже при отсутствии данных о процессах
 /// if processes.is_empty() {
 ///     tracing::warn!("Нет данных о процессах, работаем в деградированном режиме");
@@ -910,7 +910,8 @@ Gid:    1000 1000 1000 1000
         // Тест обработки сложных путей systemd
         assert_eq!(
             extract_systemd_unit(&Some(
-                "/user.slice/user-1000.slice/session-2.scope/app.slice/firefox-1234.scope".to_string()
+                "/user.slice/user-1000.slice/session-2.scope/app.slice/firefox-1234.scope"
+                    .to_string()
             )),
             Some("firefox-1234.scope".to_string())
         );
@@ -985,7 +986,7 @@ Gid:    1000 1000 1000 1000
         fs::create_dir_all(&proc_dir).unwrap();
 
         // environ с специальными символами
-        let env_content = 
+        let env_content =
             "DISPLAY=:0\0TERM=xterm-256color\0SSH_CLIENT=192.168.1.1 22 33\0LANG=en_US.UTF-8\0";
         fs::write(proc_dir.join("environ"), env_content).unwrap();
 
@@ -1022,7 +1023,8 @@ Gid:    1000 1000 1000 1000
         fs::create_dir_all(&proc_dir).unwrap();
 
         // Максимальные значения UID/GID
-        let max_status = format!(
+        let max_status =
+            format!(
             "Name:   test_process\nState:  R (running)\nUid:    {} {} {} {}\nGid:    {} {} {} {}\n",
             u32::MAX, u32::MAX, u32::MAX, u32::MAX,
             u32::MAX, u32::MAX, u32::MAX, u32::MAX
@@ -1052,7 +1054,8 @@ Gid:    1000 1000 1000 1000
         assert_eq!(gid, u32::MAX);
 
         // Нулевые значения UID/GID
-        let zero_status = "Name:   test_process\nState:  R (running)\nUid:    0 0 0 0\nGid:    0 0 0 0\n";
+        let zero_status =
+            "Name:   test_process\nState:  R (running)\nUid:    0 0 0 0\nGid:    0 0 0 0\n";
         fs::write(proc_dir.join("status"), zero_status).unwrap();
 
         let contents = fs::read_to_string(&status_path).unwrap();
@@ -1131,8 +1134,7 @@ Gid:    1000 1000 1000 1000
         fs::create_dir_all(&proc_dir).unwrap();
 
         // environ с Unicode символами
-        let env_content = 
-            "DISPLAY=:0\0TERM=xterm-256color\0LANG=ru_RU.UTF-8\0USER=Пользователь\0";
+        let env_content = "DISPLAY=:0\0TERM=xterm-256color\0LANG=ru_RU.UTF-8\0USER=Пользователь\0";
         fs::write(proc_dir.join("environ"), env_content).unwrap();
 
         let path = proc_dir.join("environ");

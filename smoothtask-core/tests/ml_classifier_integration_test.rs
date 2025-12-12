@@ -7,7 +7,9 @@
 //! - Производительность и надежность
 
 #[cfg(any(feature = "catboost", feature = "onnx"))]
-use smoothtask_core::classify::ml_classifier::{create_ml_classifier, MLClassifier, MLClassificationResult};
+use smoothtask_core::classify::ml_classifier::{
+    create_ml_classifier, MLClassificationResult, MLClassifier,
+};
 use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherConfig};
 use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
 use smoothtask_core::config::config_struct::MLClassifierConfig;
@@ -15,8 +17,8 @@ use smoothtask_core::logging::snapshots::ProcessRecord;
 use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tempfile::{tempdir, TempDir};
+use tokio::sync::Mutex;
 
 fn create_test_process() -> ProcessRecord {
     ProcessRecord {
@@ -213,7 +215,8 @@ apps:
         patterns_dir.to_str().unwrap(),
         pattern_db.clone(),
         watcher_config,
-    ).expect("watcher creation");
+    )
+    .expect("watcher creation");
 
     // Создаем ML-классификатор
     let ml_config = MLClassifierConfig {
@@ -319,10 +322,10 @@ fn test_ml_classifier_feature_extraction_comprehensive() {
 
     // Тестируем извлечение фич
     let features = classifier.process_to_features(&process);
-    
+
     // Проверяем, что все фичи извлечены правильно
     assert_eq!(features.len(), 16); // 8 числовых + 8 булевых
-    
+
     // Проверяем числовые фичи
     assert_eq!(features[0], 0.8); // cpu_share_1s
     assert_eq!(features[1], 0.6); // cpu_share_10s
@@ -332,7 +335,7 @@ fn test_ml_classifier_feature_extraction_comprehensive() {
     assert_eq!(features[5], 200.0); // swap_mb
     assert_eq!(features[6], 10000.0); // voluntary_ctx
     assert_eq!(features[7], 5000.0); // involuntary_ctx
-    
+
     // Проверяем булевые фичи (должны быть 1.0)
     for i in 8..16 {
         assert_eq!(features[i], 1.0);
@@ -385,9 +388,9 @@ apps:
         "gui".to_string(),
         "interactive".to_string(),
     ]);
-    
+
     let actual_tags = HashSet::from_iter(process.tags.iter().cloned());
-    
+
     for tag in expected_tags {
         assert!(actual_tags.contains(&tag), "Expected tag {} not found", tag);
     }
@@ -409,14 +412,18 @@ fn test_ml_classifier_performance_metrics() {
 
     // Тестируем производительность на большом количестве процессов
     let start_time = std::time::Instant::now();
-    
+
     for _ in 0..1000 {
         let process = create_test_process();
         let _result = classifier.classify(&process);
     }
-    
+
     let duration = start_time.elapsed();
-    
+
     // Должно выполняться быстро (менее 100мс для 1000 процессов)
-    assert!(duration.as_millis() < 100, "Performance test failed: took {}ms", duration.as_millis());
+    assert!(
+        duration.as_millis() < 100,
+        "Performance test failed: took {}ms",
+        duration.as_millis()
+    );
 }

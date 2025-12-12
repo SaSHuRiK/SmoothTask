@@ -542,7 +542,10 @@ impl PolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::config_struct::{CacheIntervals, Config, MLClassifierConfig, ModelConfig, ModelType, NotificationBackend, NotificationConfig, NotificationLevel, PatternAutoUpdateConfig, Paths, Thresholds};
+    use crate::config::config_struct::{
+        CacheIntervals, Config, MLClassifierConfig, ModelConfig, ModelType, NotificationBackend,
+        NotificationConfig, NotificationLevel, Paths, PatternAutoUpdateConfig, Thresholds,
+    };
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};
     use crate::metrics::ebpf::EbpfConfig;
     use chrono::Utc;
@@ -1257,35 +1260,33 @@ mod tests {
         // Тест hybrid режима с отключенной моделью
         let mut config = create_hybrid_config();
         config.model.enabled = false;
-        
+
         let engine = PolicyEngine::new(config);
         let mut snapshot = create_test_snapshot();
-        
-        let app_groups = vec![
-            AppGroupRecord {
-                app_group_id: "test-group".to_string(),
-                root_pid: 1000,
-                process_ids: vec![1000],
-                app_name: None,
-                total_cpu_share: Some(0.1),
-                total_io_read_bytes: None,
-                total_io_write_bytes: None,
-                total_rss_mb: Some(100),
-                has_gui_window: false,
-                is_focused_group: false,
-                tags: vec![],
-                priority_class: None,
-            },
-        ];
-        
+
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "test-group".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: None,
+            total_cpu_share: Some(0.1),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        }];
+
         snapshot.app_groups = app_groups;
-        
+
         let results = engine.evaluate_snapshot(&snapshot);
-        
+
         // Должен быть результат для группы
         assert_eq!(results.len(), 1);
         let result = results.get("test-group").unwrap();
-        
+
         // Должен использовать ML-ранкер (StubRanker в данном случае)
         assert!(result.reason.contains("ml-ranker"));
     }
@@ -1296,35 +1297,33 @@ mod tests {
         let mut config = create_hybrid_config();
         config.model.enabled = true;
         config.model.model_path = "/nonexistent/path/model.onnx".to_string();
-        
+
         let engine = PolicyEngine::new(config);
         let mut snapshot = create_test_snapshot();
-        
-        let app_groups = vec![
-            AppGroupRecord {
-                app_group_id: "test-group".to_string(),
-                root_pid: 1000,
-                process_ids: vec![1000],
-                app_name: None,
-                total_cpu_share: Some(0.1),
-                total_io_read_bytes: None,
-                total_io_write_bytes: None,
-                total_rss_mb: Some(100),
-                has_gui_window: false,
-                is_focused_group: false,
-                tags: vec![],
-                priority_class: None,
-            },
-        ];
-        
+
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "test-group".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: None,
+            total_cpu_share: Some(0.1),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        }];
+
         snapshot.app_groups = app_groups;
-        
+
         let results = engine.evaluate_snapshot(&snapshot);
-        
+
         // Должен быть результат для группы
         assert_eq!(results.len(), 1);
         let result = results.get("test-group").unwrap();
-        
+
         // Должен использовать ML-ранкер (StubRanker в данном случае из-за ошибки загрузки)
         assert!(result.reason.contains("ml-ranker"));
     }
@@ -1335,32 +1334,30 @@ mod tests {
         let config = create_test_config();
         let engine = PolicyEngine::new(config);
         let mut snapshot = create_test_snapshot();
-        
-        let app_groups = vec![
-            AppGroupRecord {
-                app_group_id: "test-group".to_string(),
-                root_pid: 1000,
-                process_ids: vec![1000],
-                app_name: None,
-                total_cpu_share: Some(0.1),
-                total_io_read_bytes: None,
-                total_io_write_bytes: None,
-                total_rss_mb: Some(100),
-                has_gui_window: false,
-                is_focused_group: false,
-                tags: vec![],
-                priority_class: None,
-            },
-        ];
-        
+
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "test-group".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: None,
+            total_cpu_share: Some(0.1),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        }];
+
         snapshot.app_groups = app_groups;
-        
+
         let results = engine.evaluate_snapshot(&snapshot);
-        
+
         // Должен быть результат для группы
         assert_eq!(results.len(), 1);
         let result = results.get("test-group").unwrap();
-        
+
         // В rules-only режиме должен использовать дефолтный приоритет
         assert_eq!(result.priority_class, PriorityClass::Normal);
         assert!(result.reason.contains("default"));

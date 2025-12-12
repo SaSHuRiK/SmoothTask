@@ -4,13 +4,17 @@
 //! информации об окнах через wlr-foreign-toplevel-management-unstable-v1 протокол.
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
 use std::collections::HashMap;
+use std::path::PathBuf;
 use tracing::{debug, error, info, instrument, warn};
 use wayland_client::protocol::wl_registry::WlRegistry;
 use wayland_client::Proxy;
-use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1};
-use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::{self, ZwlrForeignToplevelHandleV1};
+use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::{
+    self, ZwlrForeignToplevelHandleV1,
+};
+use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::{
+    self, ZwlrForeignToplevelManagerV1,
+};
 
 use crate::metrics::windows::{WindowInfo, WindowIntrospector, WindowState};
 
@@ -172,11 +176,11 @@ pub fn is_wayland_available() -> bool {
 /// Возвращает `WaylandCompositorType` или `None`, если определить тип не удалось.
 pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
     // Проверяем переменные окружения, которые устанавливают различные композиторы
-    
+
     // 1. Проверяем XDG_CURRENT_DESKTOP
     if let Ok(desktop) = std::env::var("XDG_CURRENT_DESKTOP") {
         let desktop_lower = desktop.to_lowercase();
-        
+
         if desktop_lower.contains("gnome") {
             return Some(WaylandCompositorType::Mutter);
         }
@@ -190,7 +194,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             return Some(WaylandCompositorType::Hyprland);
         }
     }
-    
+
     // 2. Проверяем WAYLAND_DISPLAY и другие переменные
     if let Ok(display) = std::env::var("WAYLAND_DISPLAY") {
         // Некоторые композиторы имеют характерные имена дисплеев
@@ -201,7 +205,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             return Some(WaylandCompositorType::Hyprland);
         }
     }
-    
+
     // 3. Проверяем процессы композитора
     // Это более надёжный метод, но требует доступа к /proc
     if let Ok(processes) = std::fs::read_dir("/proc") {
@@ -211,7 +215,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
                     let comm_path = PathBuf::from(format!("/proc/{}/comm", pid));
                     if let Ok(comm) = std::fs::read_to_string(comm_path) {
                         let comm = comm.trim();
-                        
+
                         if comm == "mutter" || comm == "gnome-shell" {
                             return Some(WaylandCompositorType::Mutter);
                         }
@@ -232,21 +236,21 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             }
         }
     }
-    
+
     // 4. Проверяем стандартные пути конфигурации
     // Это может помочь определить композитор
     let home_dir = std::env::var("HOME").unwrap_or_else(|_| "/root".to_string());
-    
+
     let sway_config = PathBuf::from(format!("{}/.config/sway/config", home_dir));
     if sway_config.exists() {
         return Some(WaylandCompositorType::Sway);
     }
-    
+
     let hyprland_config = PathBuf::from(format!("{}/.config/hypr/hyprland.conf", home_dir));
     if hyprland_config.exists() {
         return Some(WaylandCompositorType::Hyprland);
     }
-    
+
     // Если не удалось определить, возвращаем None
     None
 }
@@ -294,17 +298,27 @@ impl wayland_client::Dispatch<WlRegistry, ()> for WaylandState {
     ) {
         // Обработка событий реестра
         match event {
-            wayland_client::protocol::wl_registry::Event::Global { name, interface, version } => {
-                debug!("Registry global event: interface={}, version={}", interface, version);
-                
+            wayland_client::protocol::wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => {
+                debug!(
+                    "Registry global event: interface={}, version={}",
+                    interface, version
+                );
+
                 // Ищем wlr-foreign-toplevel-manager
                 if interface == "wlr-foreign-toplevel-management-unstable-v1" {
-                    info!("Found wlr-foreign-toplevel-management-unstable-v1 global (name={})", name);
-                    
+                    info!(
+                        "Found wlr-foreign-toplevel-management-unstable-v1 global (name={})",
+                        name
+                    );
+
                     // Привязываемся к глобальному объекту
                     let manager = proxy.bind(name, version, _qhandle, ());
                     state.foreign_toplevel_manager = Some(manager);
-                    
+
                     // Запрашиваем список текущих окон
                     if state.foreign_toplevel_manager.is_some() {
                         debug!("Requesting current window list from manager");
@@ -340,28 +354,30 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
         match event {
             zwlr_foreign_toplevel_manager_v1::Event::Toplevel { toplevel } => {
                 info!("New toplevel window detected");
-                
+
                 // Сохраняем toplevel объект для дальнейшей обработки
                 state.toplevels.insert(toplevel.id(), toplevel);
-                
+
                 // Создаем новое окно с временными данными
                 let window_info = WindowInfo::new(
-                    None, // app_id будет обновлен позже
+                    None,                           // app_id будет обновлен позже
                     Some("Loading...".to_string()), // title будет обновлен позже
-                    None, // workspace пока не поддерживается
-                    WindowState::Background, // состояние по умолчанию
-                    None, // pid будет обновлен позже
-                    0.0, // confidence
+                    None,                           // workspace пока не поддерживается
+                    WindowState::Background,        // состояние по умолчанию
+                    None,                           // pid будет обновлен позже
+                    0.0,                            // confidence
                 );
-                
+
                 // Добавляем окно в список
                 let window_index = state.windows.len();
                 state.windows.push(window_info);
-                
+
                 // Получаем ID из последнего добавленного toplevel
                 if let Some((last_toplevel_id, _)) = state.toplevels.iter().last() {
                     // Сохраняем отображение toplevel -> window
-                    state.toplevel_to_window_index.insert(last_toplevel_id.clone(), window_index);
+                    state
+                        .toplevel_to_window_index
+                        .insert(last_toplevel_id.clone(), window_index);
                     debug!("Added new toplevel to state: {:?}", last_toplevel_id);
                 }
             }
@@ -432,8 +448,6 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelHandleV1, ()> for WaylandState 
         }
     }
 }
-
-
 
 impl WaylandIntrospector {
     /// Возвращает тип обнаруженного Wayland композитора
@@ -528,7 +542,7 @@ impl WaylandIntrospector {
         }
 
         info!("Attempting to connect to Wayland compositor");
-        
+
         // Пробуем определить тип композитора
         let compositor_type = detect_wayland_compositor();
         if let Some(compositor) = &compositor_type {
@@ -540,7 +554,7 @@ impl WaylandIntrospector {
         // Подключаемся к Wayland композитору
         let connection = wayland_client::Connection::connect_to_env()
             .with_context(|| "Failed to connect to Wayland compositor")?;
-        
+
         info!("Successfully connected to Wayland compositor");
 
         // Создаём очередь событий для обработки асинхронных событий
@@ -558,7 +572,7 @@ impl WaylandIntrospector {
 
         // Получаем реестр для поиска глобальных объектов
         let _registry = connection.display().get_registry(&queue_handle, ());
-        
+
         debug!("Wayland registry created, searching for wlr-foreign-toplevel-manager");
 
         // Создаём интроспектор с базовой структурой
@@ -582,7 +596,7 @@ impl WaylandIntrospector {
     #[instrument(skip(self))]
     fn process_events(&mut self) -> Result<()> {
         debug!("Starting Wayland event processing");
-        
+
         // Создаём состояние для обработки событий
         let mut state = WaylandState {
             foreign_toplevel_manager: None,
@@ -600,29 +614,43 @@ impl WaylandIntrospector {
         const MAX_ATTEMPTS: u32 = 10;
 
         while attempts < MAX_ATTEMPTS {
-            debug!("Processing Wayland events (attempt {}/{})", attempts + 1, MAX_ATTEMPTS);
-            
+            debug!(
+                "Processing Wayland events (attempt {}/{})",
+                attempts + 1,
+                MAX_ATTEMPTS
+            );
+
             // Обрабатываем все ожидающие события
-            self.event_queue.dispatch_pending(&mut state)
-                .with_context(|| format!("Failed to dispatch Wayland events on attempt {}", attempts + 1))?;
-            
+            self.event_queue
+                .dispatch_pending(&mut state)
+                .with_context(|| {
+                    format!(
+                        "Failed to dispatch Wayland events on attempt {}",
+                        attempts + 1
+                    )
+                })?;
+
             // Если мы нашли менеджер и получили хотя бы одно окно, выходим
             if state.foreign_toplevel_manager.is_some() && !state.windows.is_empty() {
                 info!("Successfully found wlr-foreign-toplevel-manager and received window data");
                 break;
             }
-            
+
             attempts += 1;
-            
+
             // Ждём немного и пробуем снова
             std::thread::sleep(std::time::Duration::from_millis(10));
-            self.connection.flush()
+            self.connection
+                .flush()
                 .with_context(|| "Failed to flush Wayland connection")?;
         }
 
         // Проверяем, нашли ли мы менеджер
         if state.foreign_toplevel_manager.is_none() {
-            error!("Failed to find wlr-foreign-toplevel-manager after {} attempts", MAX_ATTEMPTS);
+            error!(
+                "Failed to find wlr-foreign-toplevel-manager after {} attempts",
+                MAX_ATTEMPTS
+            );
             anyhow::bail!(
                 "Failed to find wlr-foreign-toplevel-manager after {} attempts. This may indicate that the Wayland compositor does not support the wlr-foreign-toplevel-management protocol or the protocol is not available.",
                 MAX_ATTEMPTS
@@ -640,7 +668,10 @@ impl WaylandIntrospector {
 
         // Обновляем список окон
         self.windows = state.windows;
-        info!("Wayland event processing completed, found {} windows", self.windows.len());
+        info!(
+            "Wayland event processing completed, found {} windows",
+            self.windows.len()
+        );
 
         Ok(())
     }
@@ -648,46 +679,38 @@ impl WaylandIntrospector {
     /// Создаёт тестовое окно, специфичное для обнаруженного композитора
     fn create_test_window_for_compositor(&self) -> WindowInfo {
         match self.compositor_type.as_ref() {
-            Some(WaylandCompositorType::Mutter) => {
-                WindowInfo::new(
-                    Some("org.gnome.Nautilus".to_string()),
-                    Some("Files".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(1234),
-                    0.8,
-                )
-            }
-            Some(WaylandCompositorType::KWin) => {
-                WindowInfo::new(
-                    Some("org.kde.dolphin".to_string()),
-                    Some("Dolphin".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(5678),
-                    0.8,
-                )
-            }
-            Some(WaylandCompositorType::Sway) => {
-                WindowInfo::new(
-                    Some("alacritty".to_string()),
-                    Some("Alacritty".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(9012),
-                    0.7,
-                )
-            }
-            Some(WaylandCompositorType::Hyprland) => {
-                WindowInfo::new(
-                    Some("firefox".to_string()),
-                    Some("Firefox".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(3456),
-                    0.75,
-                )
-            }
+            Some(WaylandCompositorType::Mutter) => WindowInfo::new(
+                Some("org.gnome.Nautilus".to_string()),
+                Some("Files".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(1234),
+                0.8,
+            ),
+            Some(WaylandCompositorType::KWin) => WindowInfo::new(
+                Some("org.kde.dolphin".to_string()),
+                Some("Dolphin".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(5678),
+                0.8,
+            ),
+            Some(WaylandCompositorType::Sway) => WindowInfo::new(
+                Some("alacritty".to_string()),
+                Some("Alacritty".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(9012),
+                0.7,
+            ),
+            Some(WaylandCompositorType::Hyprland) => WindowInfo::new(
+                Some("firefox".to_string()),
+                Some("Firefox".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(3456),
+                0.75,
+            ),
             Some(WaylandCompositorType::Wlroots) | Some(WaylandCompositorType::Unknown) | None => {
                 WindowInfo::new(
                     Some("test_app".to_string()),
@@ -706,15 +729,16 @@ impl WindowIntrospector for WaylandIntrospector {
     #[instrument(skip(self))]
     fn windows(&self) -> Result<Vec<WindowInfo>> {
         info!("Getting window list via Wayland introspector");
-        
+
         // Создаём новый интроспектор для обработки событий
         // Это временное решение, в будущем нужно будет использовать более эффективный подход
         // с кэшированием или асинхронной обработкой
-        let mut introspector = WaylandIntrospector::new()
-            .with_context(|| "Failed to create Wayland introspector")?;
+        let mut introspector =
+            WaylandIntrospector::new().with_context(|| "Failed to create Wayland introspector")?;
 
         // Обрабатываем события и собираем информацию об окнах
-        introspector.process_events()
+        introspector
+            .process_events()
             .with_context(|| "Failed to process Wayland events")?;
 
         // Возвращаем список окон
@@ -726,7 +750,7 @@ impl WindowIntrospector for WaylandIntrospector {
         } else {
             info!("Found {} windows via Wayland introspector", window_count);
         }
-        
+
         Ok(introspector.windows)
     }
 }
@@ -1130,19 +1154,17 @@ mod tests {
         // Тест проверяет создание тестового окна для разных композиторов
         // Используем простую структуру вместо полного WaylandIntrospector
         let compositor_type = Some(WaylandCompositorType::Mutter);
-        
+
         // Создаём тестовое окно напрямую
         let window = match compositor_type.as_ref() {
-            Some(WaylandCompositorType::Mutter) => {
-                WindowInfo::new(
-                    Some("org.gnome.Nautilus".to_string()),
-                    Some("Files".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(1234),
-                    0.8,
-                )
-            }
+            Some(WaylandCompositorType::Mutter) => WindowInfo::new(
+                Some("org.gnome.Nautilus".to_string()),
+                Some("Files".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(1234),
+                0.8,
+            ),
             _ => WindowInfo::new(
                 Some("test_app".to_string()),
                 Some("Test Window".to_string()),
@@ -1150,9 +1172,9 @@ mod tests {
                 WindowState::Focused,
                 Some(1234),
                 0.5,
-            )
+            ),
         };
-        
+
         assert_eq!(window.app_id, Some("org.gnome.Nautilus".to_string()));
         assert_eq!(window.title, Some("Files".to_string()));
     }
@@ -1160,18 +1182,16 @@ mod tests {
     #[test]
     fn test_wayland_compositor_type_kwin() {
         let compositor_type = Some(WaylandCompositorType::KWin);
-        
+
         let window = match compositor_type.as_ref() {
-            Some(WaylandCompositorType::KWin) => {
-                WindowInfo::new(
-                    Some("org.kde.dolphin".to_string()),
-                    Some("Dolphin".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(5678),
-                    0.8,
-                )
-            }
+            Some(WaylandCompositorType::KWin) => WindowInfo::new(
+                Some("org.kde.dolphin".to_string()),
+                Some("Dolphin".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(5678),
+                0.8,
+            ),
             _ => WindowInfo::new(
                 Some("test_app".to_string()),
                 Some("Test Window".to_string()),
@@ -1179,9 +1199,9 @@ mod tests {
                 WindowState::Focused,
                 Some(1234),
                 0.5,
-            )
+            ),
         };
-        
+
         assert_eq!(window.app_id, Some("org.kde.dolphin".to_string()));
         assert_eq!(window.title, Some("Dolphin".to_string()));
     }
@@ -1189,18 +1209,16 @@ mod tests {
     #[test]
     fn test_wayland_compositor_type_sway() {
         let compositor_type = Some(WaylandCompositorType::Sway);
-        
+
         let window = match compositor_type.as_ref() {
-            Some(WaylandCompositorType::Sway) => {
-                WindowInfo::new(
-                    Some("alacritty".to_string()),
-                    Some("Alacritty".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(9012),
-                    0.7,
-                )
-            }
+            Some(WaylandCompositorType::Sway) => WindowInfo::new(
+                Some("alacritty".to_string()),
+                Some("Alacritty".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(9012),
+                0.7,
+            ),
             _ => WindowInfo::new(
                 Some("test_app".to_string()),
                 Some("Test Window".to_string()),
@@ -1208,9 +1226,9 @@ mod tests {
                 WindowState::Focused,
                 Some(1234),
                 0.5,
-            )
+            ),
         };
-        
+
         assert_eq!(window.app_id, Some("alacritty".to_string()));
         assert_eq!(window.title, Some("Alacritty".to_string()));
     }
@@ -1218,18 +1236,16 @@ mod tests {
     #[test]
     fn test_wayland_compositor_type_hyprland() {
         let compositor_type = Some(WaylandCompositorType::Hyprland);
-        
+
         let window = match compositor_type.as_ref() {
-            Some(WaylandCompositorType::Hyprland) => {
-                WindowInfo::new(
-                    Some("firefox".to_string()),
-                    Some("Firefox".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(3456),
-                    0.75,
-                )
-            }
+            Some(WaylandCompositorType::Hyprland) => WindowInfo::new(
+                Some("firefox".to_string()),
+                Some("Firefox".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(3456),
+                0.75,
+            ),
             _ => WindowInfo::new(
                 Some("test_app".to_string()),
                 Some("Test Window".to_string()),
@@ -1237,9 +1253,9 @@ mod tests {
                 WindowState::Focused,
                 Some(1234),
                 0.5,
-            )
+            ),
         };
-        
+
         assert_eq!(window.app_id, Some("firefox".to_string()));
         assert_eq!(window.title, Some("Firefox".to_string()));
     }
@@ -1247,18 +1263,16 @@ mod tests {
     #[test]
     fn test_wayland_compositor_type_unknown() {
         let compositor_type: Option<WaylandCompositorType> = None;
-        
+
         let window = match compositor_type.as_ref() {
-            Some(WaylandCompositorType::Mutter) => {
-                WindowInfo::new(
-                    Some("org.gnome.Nautilus".to_string()),
-                    Some("Files".to_string()),
-                    Some(1),
-                    WindowState::Focused,
-                    Some(1234),
-                    0.8,
-                )
-            }
+            Some(WaylandCompositorType::Mutter) => WindowInfo::new(
+                Some("org.gnome.Nautilus".to_string()),
+                Some("Files".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(1234),
+                0.8,
+            ),
             _ => WindowInfo::new(
                 Some("test_app".to_string()),
                 Some("Test Window".to_string()),
@@ -1266,9 +1280,9 @@ mod tests {
                 WindowState::Focused,
                 Some(1234),
                 0.5,
-            )
+            ),
         };
-        
+
         assert_eq!(window.app_id, Some("test_app".to_string()));
         assert_eq!(window.title, Some("Test Window".to_string()));
     }
@@ -1388,23 +1402,10 @@ mod tests {
     #[test]
     fn test_window_info_is_focused() {
         // Тест проверяет метод is_focused для WindowInfo
-        let focused_window = WindowInfo::new(
-            None,
-            None,
-            None,
-            WindowState::Focused,
-            None,
-            0.0,
-        );
+        let focused_window = WindowInfo::new(None, None, None, WindowState::Focused, None, 0.0);
 
-        let background_window = WindowInfo::new(
-            None,
-            None,
-            None,
-            WindowState::Background,
-            None,
-            0.0,
-        );
+        let background_window =
+            WindowInfo::new(None, None, None, WindowState::Background, None, 0.0);
 
         assert!(focused_window.is_focused());
         assert!(!background_window.is_focused());
@@ -1466,7 +1467,8 @@ mod tests {
                         let msg = e.to_string();
                         // Проверяем, что сообщение об ошибке информативно
                         assert!(
-                            msg.contains("Failed to find") || msg.contains("wlr-foreign-toplevel-manager"),
+                            msg.contains("Failed to find")
+                                || msg.contains("wlr-foreign-toplevel-manager"),
                             "Error message should be informative about missing manager, got: {}",
                             msg
                         );
@@ -1562,7 +1564,9 @@ mod tests {
                 let msg = e.to_string();
                 // Проверяем, что сообщение содержит контекстную информацию
                 assert!(
-                    msg.contains("Check that") || msg.contains("WAYLAND_DISPLAY") || msg.contains("XDG_SESSION_TYPE"),
+                    msg.contains("Check that")
+                        || msg.contains("WAYLAND_DISPLAY")
+                        || msg.contains("XDG_SESSION_TYPE"),
                     "Error message should contain troubleshooting context, got: {}",
                     msg
                 );
@@ -1599,7 +1603,9 @@ mod tests {
                         let msg = e.to_string();
                         // Проверяем, что сообщение об ошибке информативно
                         assert!(
-                            msg.contains("Wayland") || msg.contains("introspector") || msg.contains("events"),
+                            msg.contains("Wayland")
+                                || msg.contains("introspector")
+                                || msg.contains("events"),
                             "Error message should be informative, got: {}",
                             msg
                         );

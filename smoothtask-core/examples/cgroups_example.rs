@@ -41,11 +41,11 @@ fn main() -> anyhow::Result<()> {
 
     // 5. Чтение и запись параметров cgroup
     println!("\n5. Reading and writing cgroup parameters...");
-    
+
     // Запись cpu.weight
     write_cgroup_param(&app_cgroup_path, "cpu.weight", "200")?;
     println!("   ✓ Set cpu.weight to 200");
-    
+
     // Чтение cpu.weight
     if let Some(weight) = read_cgroup_param(&app_cgroup_path, "cpu.weight")? {
         println!("   ✓ Read cpu.weight: {}", weight);
@@ -53,15 +53,15 @@ fn main() -> anyhow::Result<()> {
 
     // 6. Управление процессами в cgroup
     println!("\n6. Managing processes in cgroup...");
-    
+
     // Получение текущего PID
     let current_pid = std::process::id() as i32;
     println!("   Current PID: {}", current_pid);
-    
+
     // Проверка, находится ли процесс в cgroup
     let in_cgroup = is_process_in_cgroup(current_pid, &app_cgroup_path)?;
     println!("   Process {} in cgroup: {}", current_pid, in_cgroup);
-    
+
     // Получение списка процессов в cgroup
     let processes = get_processes_in_cgroup(&app_cgroup_path)?;
     println!("   Processes in cgroup: {:?}", processes);

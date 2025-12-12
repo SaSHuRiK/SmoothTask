@@ -7,7 +7,9 @@
 //! - работа с snapshot logger
 //! - один полный цикл сбора снапшота (с моками)
 
-use smoothtask_core::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config_struct::{
+    CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds,
+};
 use smoothtask_core::run_daemon;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -61,7 +63,8 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
         ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
-        pattern_auto_update: smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
+        pattern_auto_update:
+            smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
         ebpf: smoothtask_core::metrics::ebpf::EbpfConfig::default(),
     }
 }
@@ -95,7 +98,15 @@ async fn test_daemon_initializes_with_minimal_config() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
+    let result = run_daemon(
+        config,
+        "/tmp/test_config.yml".to_string(),
+        true,
+        shutdown_rx,
+        None,
+        None,
+    )
+    .await;
 
     match result {
         Ok(()) => {
@@ -134,7 +145,15 @@ async fn test_daemon_dry_run_mode() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
+    let result = run_daemon(
+        config,
+        "/tmp/test_config.yml".to_string(),
+        true,
+        shutdown_rx,
+        None,
+        None,
+    )
+    .await;
 
     match result {
         Ok(()) => {
@@ -164,7 +183,14 @@ async fn test_daemon_handles_nonexistent_patterns_dir() {
     // Демон должен упасть с ошибкой при загрузке паттернов
     let result = timeout(
         Duration::from_secs(1),
-        run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None),
+        run_daemon(
+            config,
+            "/tmp/test_config.yml".to_string(),
+            true,
+            shutdown_rx,
+            None,
+            None,
+        ),
     )
     .await;
 
@@ -211,7 +237,15 @@ async fn test_daemon_with_snapshot_logger() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
+    let result = run_daemon(
+        config,
+        "/tmp/test_config.yml".to_string(),
+        true,
+        shutdown_rx,
+        None,
+        None,
+    )
+    .await;
 
     match result {
         Ok(()) => {
@@ -268,7 +302,15 @@ async fn test_daemon_without_snapshot_logging() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
+    let result = run_daemon(
+        config,
+        "/tmp/test_config.yml".to_string(),
+        true,
+        shutdown_rx,
+        None,
+        None,
+    )
+    .await;
 
     match result {
         Ok(()) => {
@@ -336,7 +378,15 @@ async fn test_daemon_full_snapshot_cycle() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
+    let result = run_daemon(
+        config,
+        "/tmp/test_config.yml".to_string(),
+        true,
+        shutdown_rx,
+        None,
+        None,
+    )
+    .await;
 
     // Демон должен успешно выполнить хотя бы один полный цикл
     match result {
@@ -367,12 +417,13 @@ async fn test_daemon_with_api_server() {
     // Создаём временный конфигурационный файл для ConfigWatcher
     let config_file = tempfile::NamedTempFile::new().expect("Failed to create temp config file");
     let config_path = config_file.path().to_str().unwrap().to_string();
-    
+
     // Записываем тестовую конфигурацию в файл
     let test_config_content = create_test_config(patterns_dir, db_path.clone());
-    let config_yaml = serde_yaml::to_string(&test_config_content).expect("Failed to serialize config");
+    let config_yaml =
+        serde_yaml::to_string(&test_config_content).expect("Failed to serialize config");
     std::fs::write(&config_path, &config_yaml).expect("Failed to write config file");
-    
+
     // Создаём конфиг с включённым API сервером
     let mut config = test_config_content;
     // Используем высокий тестовый порт, который с меньшей вероятностью будет занят

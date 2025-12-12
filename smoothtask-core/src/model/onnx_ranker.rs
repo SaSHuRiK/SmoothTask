@@ -12,10 +12,7 @@ use crate::model::ranker::{Ranker, RankingResult};
 #[cfg(feature = "onnx")]
 use anyhow::{Context, Result};
 #[cfg(feature = "onnx")]
-use ort::{
-    session::Session, 
-    value::Tensor, 
-};
+use ort::{session::Session, value::Tensor};
 #[cfg(feature = "onnx")]
 use std::collections::HashMap;
 #[cfg(feature = "onnx")]
@@ -96,7 +93,7 @@ impl ONNXRanker {
     /// ```
     pub fn load(model_path: impl AsRef<Path>) -> Result<Self> {
         let model_path = model_path.as_ref();
-        
+
         // Проверяем существование файла
         if !model_path.exists() {
             return Err(anyhow::anyhow!(
@@ -104,11 +101,10 @@ impl ONNXRanker {
                 model_path.display()
             ));
         }
-        
+
         // Загружаем модель с использованием простого API
-        let session = Session::builder()?
-            .commit_from_file(model_path)?;
-        
+        let session = Session::builder()?.commit_from_file(model_path)?;
+
         // Получаем информацию о модели
         let input_info = session
             .inputs
@@ -118,20 +114,22 @@ impl ONNXRanker {
             .outputs
             .first()
             .context("Модель не имеет выходных тензоров")?;
-        
+
         let input_name = input_info.name.clone();
         let output_name = output_info.name.clone();
-        
+
         // Получаем размер входного тензора из input_type
         // Ожидаем форму [batch_size, feature_size], где batch_size может быть переменным
         let input_shape = match &input_info.input_type {
             ort::value::ValueType::Tensor { shape, .. } => shape,
-            _ => return Err(anyhow::anyhow!(
-                "Входной тензор имеет неожиданный тип: {:?}",
-                input_info.input_type
-            )),
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Входной тензор имеет неожиданный тип: {:?}",
+                    input_info.input_type
+                ))
+            }
         };
-        
+
         let expected_input_size = if input_shape.len() == 2 {
             // Форма [batch_size, feature_size] - берём feature_size
             // Игнорируем динамические размеры (-1)
@@ -159,7 +157,7 @@ impl ONNXRanker {
                 input_shape
             ));
         };
-        
+
         Ok(Self {
             session: Arc::new(Mutex::new(session)),
             expected_input_size,
@@ -167,7 +165,7 @@ impl ONNXRanker {
             output_name,
         })
     }
-    
+
     /// Преобразовать FeatureVector в тензор для ONNX модели.
     ///
     /// Преобразует числовые, булевые и категориальные фичи в тензор,
@@ -189,24 +187,24 @@ impl ONNXRanker {
     ///
     fn features_to_tensor(&self, features: &FeatureVector) -> Result<Tensor<f32>> {
         let mut tensor_data = Vec::with_capacity(self.expected_input_size);
-        
+
         // Добавляем числовые фичи
         for &value in &features.numeric {
             tensor_data.push(value as f32);
         }
-        
+
         // Добавляем булевые фичи (преобразуем в f32)
         for &value in &features.bool {
             tensor_data.push(value as f32);
         }
-        
+
         // Добавляем категориальные фичи (преобразуем в числовые индексы)
         // Для простоты используем хэш от строки, модуль 1000 для ограничения диапазона
         for value in &features.categorical {
             let hash = self.string_to_index(value);
             tensor_data.push(hash as f32);
         }
-        
+
         // Проверяем, что размер совпадает с ожидаемым
         if tensor_data.len() != self.expected_input_size {
             return Err(anyhow::anyhow!(
@@ -215,13 +213,13 @@ impl ONNXRanker {
                 self.expected_input_size
             ));
         }
-        
+
         // Создаём тензор с формой [1, feature_size] (batch_size=1)
         let shape = [1usize, self.expected_input_size];
         Tensor::from_array((shape, tensor_data.into_boxed_slice()))
             .map_err(|e| anyhow::anyhow!("Не удалось создать тензор из вектора фич: {}", e))
     }
-    
+
     /// Преобразовать строку в числовой индекс для категориальных фич.
     ///
     /// Использует простой хэш для преобразования строк в числовые значения.
@@ -254,11 +252,11 @@ impl Ranker for ONNXRanker {
     ) -> HashMap<String, RankingResult> {
         // Строим фичи для каждой группы
         let mut scores: Vec<(String, f64)> = Vec::new();
-        
+
         for app_group in app_groups {
             // Строим фичи для группы
             let features = build_features(snapshot, app_group);
-            
+
             // Преобразуем фичи в тензор
             let input_tensor = match self.features_to_tensor(&features) {
                 Ok(tensor) => tensor,
@@ -273,7 +271,7 @@ impl Ranker for ONNXRanker {
                     continue;
                 }
             };
-            
+
             // Выполняем инференс модели
             let score = match self.run_inference(&input_tensor) {
                 Ok(score) => score,
@@ -287,17 +285,17 @@ impl Ranker for ONNXRanker {
                     0.5
                 }
             };
-            
+
             scores.push((app_group.app_group_id.clone(), score));
         }
-        
+
         // Сортируем по score (убывание)
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-        
+
         // Вычисляем rank и percentile
         let total = scores.len();
         let mut results = HashMap::new();
-        
+
         for (rank_idx, (app_group_id, score)) in scores.iter().enumerate() {
             let rank = rank_idx + 1;
             // Percentile: 1.0 для самого важного, 0.0 для наименее важного
@@ -306,7 +304,7 @@ impl Ranker for ONNXRanker {
             } else {
                 1.0
             };
-            
+
             results.insert(
                 app_group_id.clone(),
                 RankingResult {
@@ -316,7 +314,7 @@ impl Ranker for ONNXRanker {
                 },
             );
         }
-        
+
         results
     }
 }
@@ -338,25 +336,24 @@ impl ONNXRanker {
         let inputs = ort::inputs! {
             self.input_name.clone() => input_tensor.view(),
         };
-        
+
         // Выполняем инференс с использованием Mutex
         let mut session_guard = self.session.lock().unwrap();
-        let outputs = session_guard
-            .run(inputs)?;
-        
+        let outputs = session_guard.run(inputs)?;
+
         // Извлекаем выходной тензор
         let output_tensor = outputs
             .get(&self.output_name)
             .context("Не удалось получить выходной тензор")?;
-        
+
         // Преобразуем выход в score
         let (_, output_array) = output_tensor
             .try_extract_tensor::<f32>()
             .map_err(|e| anyhow::anyhow!("Не удалось извлечь тензор из выхода: {}", e))?;
-        
+
         // Берём первое значение как score
         let score = output_array[0] as f64;
-        
+
         // Ограничиваем score в диапазоне [0.0, 1.0]
         Ok(score.clamp(0.0, 1.0))
     }
@@ -378,9 +375,7 @@ mod tests {
 
     impl MockRanker {
         fn new(_expected_input_size: usize) -> Box<dyn Ranker> {
-            Box::new(Self {
-                fixed_score: 0.75,
-            })
+            Box::new(Self { fixed_score: 0.75 })
         }
     }
 
@@ -391,7 +386,7 @@ mod tests {
             _snapshot: &Snapshot,
         ) -> HashMap<String, RankingResult> {
             let mut results = HashMap::new();
-            
+
             for (rank_idx, app_group) in app_groups.iter().enumerate() {
                 let rank = rank_idx + 1;
                 let total = app_groups.len();
@@ -400,7 +395,7 @@ mod tests {
                 } else {
                     1.0
                 };
-                
+
                 results.insert(
                     app_group.app_group_id.clone(),
                     RankingResult {
@@ -410,7 +405,7 @@ mod tests {
                     },
                 );
             }
-            
+
             results
         }
     }
@@ -422,7 +417,7 @@ mod tests {
         fn new() -> Self {
             Self
         }
-        
+
         fn string_to_index(&self, value: &str) -> i32 {
             // Используем тот же алгоритм, что и в ONNXRanker
             let mut hash = 0u64;
@@ -440,28 +435,30 @@ mod tests {
 
     impl MockRankerForFeaturesToTensor {
         fn new(expected_input_size: usize) -> Self {
-            Self { expected_input_size }
+            Self {
+                expected_input_size,
+            }
         }
-        
+
         fn features_to_tensor(&self, features: &FeatureVector) -> Result<Tensor<f32>> {
             let mut tensor_data = Vec::with_capacity(self.expected_input_size);
-            
+
             // Добавляем числовые фичи
             for &value in &features.numeric {
                 tensor_data.push(value as f32);
             }
-            
+
             // Добавляем булевые фичи (преобразуем в f32)
             for &value in &features.bool {
                 tensor_data.push(value as f32);
             }
-            
+
             // Добавляем категориальные фичи (преобразуем в числовые индексы)
             for value in &features.categorical {
                 let hash = self.string_to_index(value);
                 tensor_data.push(hash as f32);
             }
-            
+
             // Проверяем, что размер совпадает с ожидаемым
             if tensor_data.len() != self.expected_input_size {
                 return Err(anyhow::anyhow!(
@@ -470,13 +467,13 @@ mod tests {
                     self.expected_input_size
                 ));
             }
-            
+
             // Создаём тензор с формой [1, feature_size] (batch_size=1)
             let shape = [1usize, self.expected_input_size];
             Tensor::from_array((shape, tensor_data.into_boxed_slice()))
                 .map_err(|e| anyhow::anyhow!("Не удалось создать тензор из вектора фич: {}", e))
         }
-        
+
         fn string_to_index(&self, value: &str) -> i32 {
             // Используем тот же алгоритм, что и в ONNXRanker
             let mut hash = 0u64;
@@ -523,7 +520,10 @@ mod tests {
         // Тест загрузки несуществующего файла
         let result = ONNXRanker::load("nonexistent.onnx");
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Файл модели не найден"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Файл модели не найден"));
     }
 
     #[test]
@@ -531,12 +531,12 @@ mod tests {
         // Тест преобразования строк в индексы
         // Создаём ранкер с заглушкой для тестирования string_to_index
         let ranker = MockRankerForStringToIndex::new();
-        
+
         // Проверяем, что одинаковые строки дают одинаковые индексы
         let index1 = ranker.string_to_index("test");
         let index2 = ranker.string_to_index("test");
         assert_eq!(index1, index2);
-        
+
         // Проверяем, что разные строки могут давать разные индексы
         let index3 = ranker.string_to_index("different");
         // Не гарантируем, что они будут разными, но проверяем диапазон
@@ -549,7 +549,7 @@ mod tests {
         // Тест обработки несоответствия размера фич
         // Создаём мок-ранкер для тестирования features_to_tensor
         let ranker = MockRankerForFeaturesToTensor::new(10); // Ожидаем 10 фич
-        
+
         // Создаём FeatureVector с другим размером
         let features = FeatureVector {
             numeric: vec![1.0, 2.0],
@@ -557,11 +557,14 @@ mod tests {
             categorical: vec!["test".to_string()],
             cat_feature_indices: vec![3],
         };
-        
+
         // Должна быть ошибка из-за несоответствия размера
         let result = ranker.features_to_tensor(&features);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("не совпадает с ожидаемым размером"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("не совпадает с ожидаемым размером"));
     }
 
     #[test]
@@ -569,10 +572,10 @@ mod tests {
         // Тест ранжирования пустого списка групп
         let snapshot = create_test_snapshot();
         let app_groups = vec![];
-        
+
         // Создаём ранкер с заглушкой (не можем загрузить реальную модель в тесте)
         let ranker = MockRanker::new(51);
-        
+
         let results = ranker.rank(&app_groups, &snapshot);
         assert_eq!(results.len(), 0);
     }
@@ -581,7 +584,7 @@ mod tests {
     fn test_onnx_ranker_single_group() {
         // Тест ранжирования одной группы
         let mut snapshot = create_test_snapshot();
-        
+
         let app_groups = vec![AppGroupRecord {
             app_group_id: "single".to_string(),
             root_pid: 3000,
@@ -596,14 +599,14 @@ mod tests {
             tags: vec![],
             priority_class: None,
         }];
-        
+
         snapshot.app_groups = app_groups.clone();
-        
+
         // Создаём ранкер с заглушкой
         let ranker = MockRanker::new(51);
-        
+
         let results = ranker.rank(&app_groups, &snapshot);
-        
+
         // Должен быть один результат с фиксированным score из MockRanker
         assert_eq!(results.len(), 1);
         let result = results.get("single").unwrap();
@@ -616,7 +619,7 @@ mod tests {
     fn test_onnx_ranker_multiple_groups() {
         // Тест ранжирования нескольких групп
         let mut snapshot = create_test_snapshot();
-        
+
         let app_groups = vec![
             AppGroupRecord {
                 app_group_id: "group1".to_string(),
@@ -647,25 +650,25 @@ mod tests {
                 priority_class: None,
             },
         ];
-        
+
         snapshot.app_groups = app_groups.clone();
-        
+
         // Создаём ранкер с заглушкой
         let ranker = MockRanker::new(51);
-        
+
         let results = ranker.rank(&app_groups, &snapshot);
-        
+
         // Должны быть результаты для всех групп
         assert_eq!(results.len(), 2);
         assert!(results.contains_key("group1"));
         assert!(results.contains_key("group2"));
-        
+
         // Обе группы должны иметь фиксированный score из MockRanker
         let result1 = results.get("group1").unwrap();
         let result2 = results.get("group2").unwrap();
         assert_eq!(result1.score, 0.75);
         assert_eq!(result2.score, 0.75);
-        
+
         // Ранги должны быть последовательными
         assert!(result1.rank >= 1 && result1.rank <= 2);
         assert!(result2.rank >= 1 && result2.rank <= 2);
@@ -677,15 +680,15 @@ mod tests {
         // Тест создания заглушки ONNX модели для тестирования
         // В реальном использовании этот тест можно расширить для работы с реальной моделью
         let mut temp_file = NamedTempFile::new().unwrap();
-        
+
         // Пишем минимальный валидный ONNX файл (заглушка)
         // В реальном проекте здесь можно использовать реальную модель
         writeln!(temp_file, "dummy_onnx_content").unwrap();
-        
+
         // Проверяем, что файл создан
         let path = temp_file.path();
         assert!(path.exists());
-        
+
         // Проверяем, что загрузка завершается с ошибкой (так как это не валидная модель)
         let result = ONNXRanker::load(path);
         assert!(result.is_err());

@@ -4,10 +4,13 @@
 //! в SmoothTask, включая сбор метрик, обработку процессов и другие операции.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
 use smoothtask_core::metrics::process::collect_process_metrics;
 use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
-use smoothtask_core::metrics::windows::{build_pid_to_window_map, get_window_info_by_pid, select_focused_window, StaticWindowIntrospector, WindowInfo, WindowState};
-use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+use smoothtask_core::metrics::windows::{
+    build_pid_to_window_map, get_window_info_by_pid, select_focused_window,
+    StaticWindowIntrospector, WindowInfo, WindowState,
+};
 use std::path::PathBuf;
 
 /// Бенчмарк для измерения времени выполнения простой операции
@@ -98,7 +101,7 @@ fn benchmark_process_data_processing(c: &mut Criterion) {
         b.iter(|| {
             // Собираем метрики процессов
             let processes = collect_process_metrics().unwrap_or_default();
-            
+
             // Фильтруем и обрабатываем данные
             let filtered: Vec<_> = processes
                 .into_iter()
@@ -110,7 +113,7 @@ fn benchmark_process_data_processing(c: &mut Criterion) {
                     (p.pid, cpu_usage, mem_usage)
                 })
                 .collect();
-            
+
             black_box(filtered)
         })
     });
@@ -378,7 +381,7 @@ criterion_group! {
         .sample_size(10)
         .warm_up_time(std::time::Duration::from_secs(1))
         .measurement_time(std::time::Duration::from_secs(5));
-    targets = 
+    targets =
         benchmark_simple_operation,
         benchmark_memory_allocation,
         benchmark_string_operations,

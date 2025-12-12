@@ -10,7 +10,7 @@
 //! - **LogLevel**: Уровни логирования (совместимые с tracing)
 
 use chrono::{DateTime, Utc};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -121,7 +121,8 @@ impl LogStorage {
 
     /// Возвращает записи логов, отфильтрованные по уровню.
     pub fn get_entries_by_level(&self, min_level: LogLevel) -> Vec<LogEntry> {
-        self.entries.iter()
+        self.entries
+            .iter()
             .filter(|entry| entry.level >= min_level)
             .cloned()
             .collect()
@@ -225,21 +226,21 @@ impl SharedLogStorage {
 }
 
 /// Интеграция с tracing для автоматического логирования.
-/// 
+///
 /// Этот макрос позволяет легко интегрировать LogStorage с tracing,
 /// автоматически добавляя все события tracing в хранилище логов.
 #[macro_export]
 macro_rules! setup_tracing_with_log_storage {
     ($log_storage:expr) => {
         use tracing_subscriber::{fmt, EnvFilter};
-        
+
         // Создаем слой для логирования в консоль
         let console_layer = fmt::layer()
             .with_target(true)
             .with_line_number(true)
             .with_thread_ids(true)
             .with_thread_names(true);
-        
+
         // Создаем слой для логирования в хранилище
         let storage_layer = tracing_subscriber::fmt::layer()
             .with_writer(move || {
@@ -248,7 +249,7 @@ macro_rules! setup_tracing_with_log_storage {
             })
             .with_ansi(false)
             .with_target(true);
-        
+
         // Устанавливаем оба слоя
         tracing_subscriber::registry()
             .with(console_layer)
@@ -274,13 +275,13 @@ impl std::io::Write for TracingLogWriter {
             // Формат: [YYYY-MM-DDTHH:MM:SSZ LEVEL TARGET] message
             if let Some((meta_part, msg_part)) = message.split_once("] ") {
                 if let Some(start_bracket) = meta_part.find('[') {
-                    let meta = &meta_part[start_bracket+1..];
+                    let meta = &meta_part[start_bracket + 1..];
                     let parts: Vec<&str> = meta.split_whitespace().collect();
-                    
+
                     if parts.len() >= 3 {
                         let level_str = parts[1];
                         let target = parts[2..].join(" ");
-                        
+
                         let level = match level_str {
                             "ERROR" => LogLevel::Error,
                             "WARN" => LogLevel::Warn,
@@ -289,9 +290,9 @@ impl std::io::Write for TracingLogWriter {
                             "TRACE" => LogLevel::Trace,
                             _ => LogLevel::Info,
                         };
-                        
+
                         let entry = LogEntry::new(level, target, msg_part.trim());
-                        
+
                         // Добавляем запись в хранилище (асинхронно)
                         let storage = self.storage.clone();
                         tokio::spawn(async move {
@@ -316,11 +317,7 @@ mod tests {
 
     #[test]
     fn test_log_entry_creation() {
-        let entry = LogEntry::new(
-            LogLevel::Info,
-            "test_module",
-            "Test message"
-        );
+        let entry = LogEntry::new(LogLevel::Info, "test_module", "Test message");
 
         assert_eq!(entry.level, LogLevel::Info);
         assert_eq!(entry.target, "test_module");
@@ -330,11 +327,7 @@ mod tests {
 
     #[test]
     fn test_log_entry_with_fields() {
-        let mut entry = LogEntry::new(
-            LogLevel::Debug,
-            "test_module",
-            "Debug message"
-        );
+        let mut entry = LogEntry::new(LogLevel::Debug, "test_module", "Debug message");
 
         let fields = serde_json::json!({
             "key1": "value1",
@@ -350,13 +343,13 @@ mod tests {
     #[test]
     fn test_log_storage_add_and_retrieve() {
         let mut storage = LogStorage::new(10);
-        
+
         let entry1 = LogEntry::new(LogLevel::Info, "module1", "Message 1");
         let entry2 = LogEntry::new(LogLevel::Warn, "module2", "Message 2");
-        
+
         storage.add_entry(entry1.clone());
         storage.add_entry(entry2.clone());
-        
+
         let entries = storage.get_all_entries();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].message, "Message 1");
@@ -366,11 +359,11 @@ mod tests {
     #[test]
     fn test_log_storage_max_entries() {
         let mut storage = LogStorage::new(2);
-        
+
         storage.add_entry(LogEntry::new(LogLevel::Info, "m1", "Msg1"));
         storage.add_entry(LogEntry::new(LogLevel::Info, "m2", "Msg2"));
         storage.add_entry(LogEntry::new(LogLevel::Info, "m3", "Msg3"));
-        
+
         let entries = storage.get_all_entries();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].message, "Msg2");
@@ -380,13 +373,13 @@ mod tests {
     #[test]
     fn test_log_storage_filter_by_level() {
         let mut storage = LogStorage::new(10);
-        
+
         storage.add_entry(LogEntry::new(LogLevel::Trace, "m1", "Trace msg"));
         storage.add_entry(LogEntry::new(LogLevel::Debug, "m2", "Debug msg"));
         storage.add_entry(LogEntry::new(LogLevel::Info, "m3", "Info msg"));
         storage.add_entry(LogEntry::new(LogLevel::Warn, "m4", "Warn msg"));
         storage.add_entry(LogEntry::new(LogLevel::Error, "m5", "Error msg"));
-        
+
         let filtered = storage.get_entries_by_level(LogLevel::Warn);
         assert_eq!(filtered.len(), 2);
         assert_eq!(filtered[0].message, "Warn msg");
@@ -396,11 +389,11 @@ mod tests {
     #[test]
     fn test_log_storage_recent_entries() {
         let mut storage = LogStorage::new(10);
-        
+
         for i in 1..=5 {
             storage.add_entry(LogEntry::new(LogLevel::Info, "m", format!("Msg{}", i)));
         }
-        
+
         let recent = storage.get_recent_entries(3);
         assert_eq!(recent.len(), 3);
         assert_eq!(recent[0].message, "Msg3");
@@ -411,14 +404,14 @@ mod tests {
     #[test]
     fn test_log_storage_clear() {
         let mut storage = LogStorage::new(10);
-        
+
         storage.add_entry(LogEntry::new(LogLevel::Info, "m", "Msg1"));
         storage.add_entry(LogEntry::new(LogLevel::Info, "m", "Msg2"));
-        
+
         assert_eq!(storage.len(), 2);
-        
+
         storage.clear();
-        
+
         assert_eq!(storage.len(), 0);
         assert!(storage.is_empty());
     }
@@ -426,13 +419,13 @@ mod tests {
     #[tokio::test]
     async fn test_shared_log_storage() {
         let storage = SharedLogStorage::new(10);
-        
+
         let entry1 = LogEntry::new(LogLevel::Info, "module1", "Message 1");
         let entry2 = LogEntry::new(LogLevel::Warn, "module2", "Message 2");
-        
+
         storage.add_entry(entry1.clone()).await;
         storage.add_entry(entry2.clone()).await;
-        
+
         let entries = storage.get_all_entries().await;
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].message, "Message 1");
@@ -442,9 +435,9 @@ mod tests {
     #[tokio::test]
     async fn test_shared_log_storage_concurrent() {
         let storage = SharedLogStorage::new(100);
-        
+
         let mut tasks = Vec::new();
-        
+
         for i in 0..10 {
             let storage = storage.clone();
             tasks.push(tokio::spawn(async move {
@@ -452,18 +445,18 @@ mod tests {
                     let entry = LogEntry::new(
                         LogLevel::Info,
                         "test_module",
-                        format!("Message {}-{}", i, j)
+                        format!("Message {}-{}", i, j),
                     );
                     storage.add_entry(entry).await;
                 }
             }));
         }
-        
+
         // Ждем завершения всех задач
         for task in tasks {
             task.await.expect("Task should complete");
         }
-        
+
         let entries = storage.get_all_entries().await;
         assert_eq!(entries.len(), 50);
     }

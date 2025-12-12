@@ -1,11 +1,11 @@
 use anyhow::{anyhow, Context, Result};
+#[cfg(feature = "ebpf")]
+use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-#[cfg(feature = "ebpf")]
-use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
 use tracing::warn;
 
@@ -269,8 +269,7 @@ pub struct PressureMetrics {
 }
 
 /// Метрики температуры CPU/GPU
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct TemperatureMetrics {
     /// Температура CPU в градусах Цельсия
     pub cpu_temperature_c: Option<f32>,
@@ -279,8 +278,7 @@ pub struct TemperatureMetrics {
 }
 
 /// Метрики энергопотребления
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct PowerMetrics {
     /// Текущее энергопотребление системы в ваттах
     pub system_power_w: Option<f32>,
@@ -291,8 +289,7 @@ pub struct PowerMetrics {
 }
 
 /// Метрики сетевой активности
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct NetworkMetrics {
     /// Список сетевых интерфейсов
     pub interfaces: Vec<NetworkInterface>,
@@ -322,8 +319,7 @@ pub struct NetworkInterface {
 }
 
 /// Метрики дисковых операций
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct DiskMetrics {
     /// Список дисковых устройств
     pub devices: Vec<DiskDevice>,
@@ -353,8 +349,7 @@ pub struct DiskDevice {
 /// Полный набор системных метрик, собранных из `/proc`.
 ///
 /// Содержит информацию о CPU, памяти, нагрузке системы и давлении ресурсов.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct SystemMetrics {
     /// Счётчики CPU из `/proc/stat`
     pub cpu_times: CpuTimes,
@@ -522,7 +517,7 @@ impl Default for ProcPaths {
 /// use std::time::Duration;
 ///
 /// let paths = ProcPaths::default();
-/// 
+///
 /// // Основной цикл сбора метрик
 /// loop {
 ///     match collect_system_metrics(&paths) {
@@ -638,10 +633,10 @@ impl Default for ProcPaths {
 ///
 /// // Получаем метрики (будут собраны новые данные с использованием параллельной обработки)
 /// let metrics1 = collect_system_metrics_cached_parallel(&cache, &paths, false).expect("Не удалось собрать системные метрики");
-/// 
+///
 /// // Получаем метрики снова (будут использованы кэшированные данные)
 /// let metrics2 = collect_system_metrics_cached_parallel(&cache, &paths, false).expect("Не удалось собрать системные метрики");
-/// 
+///
 /// assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
 /// ```
 #[cfg(test)]
@@ -654,7 +649,7 @@ pub fn collect_system_metrics_cached_parallel(
         // Принудительное обновление кэша
         cache.clear();
     }
-    
+
     cache.get_or_update(|| collect_system_metrics_parallel(paths))
 }
 
@@ -696,10 +691,10 @@ pub fn collect_system_metrics_cached_parallel(
 ///
 /// // Получаем метрики (будут собраны новые данные)
 /// let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать системные метрики");
-/// 
+///
 /// // Получаем метрики снова (будут использованы кэшированные данные)
 /// let metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать системные метрики");
-/// 
+///
 /// assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
 /// ```
 pub fn collect_system_metrics_cached(
@@ -711,7 +706,7 @@ pub fn collect_system_metrics_cached(
         // Принудительное обновление кэша
         cache.clear();
     }
-    
+
     cache.get_or_update(|| collect_system_metrics(paths))
 }
 
@@ -741,36 +736,28 @@ pub fn collect_system_metrics_cached(
 pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Используем параллельную обработку для сбора различных типов метрик
     // Используем вложенные join для обработки нескольких задач параллельно
-    
+
     // Первая группа задач
     let (cpu_times_result, memory_result) = rayon::join(
         || read_and_parse_cpu_metrics(paths),
         || read_and_parse_memory_metrics(paths),
     );
-    
+
     // Вторая группа задач
     let (load_avg_result, pressure_result) = rayon::join(
         || read_and_parse_loadavg_metrics(paths),
         || read_and_parse_psi_metrics(paths),
     );
-    
+
     // Третья группа задач
-    let (temperature, power) = rayon::join(
-        || collect_temperature_metrics(),
-        || collect_power_metrics(),
-    );
-    
+    let (temperature, power) =
+        rayon::join(|| collect_temperature_metrics(), || collect_power_metrics());
+
     // Четвертая группа задач
-    let (network, disk) = rayon::join(
-        || collect_network_metrics(),
-        || collect_disk_metrics(),
-    );
-    
+    let (network, disk) = rayon::join(|| collect_network_metrics(), || collect_disk_metrics());
+
     // Пятая группа задач
-    let (gpu, ebpf) = rayon::join(
-        || collect_gpu_metrics(),
-        || collect_ebpf_metrics(),
-    );
+    let (gpu, ebpf) = rayon::join(|| collect_gpu_metrics(), || collect_ebpf_metrics());
 
     let cpu_times = cpu_times_result??;
     let memory = memory_result??;
@@ -1019,11 +1006,11 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Собираем метрики температуры и энергопотребления
     let temperature = collect_temperature_metrics();
     let power = collect_power_metrics();
-    
+
     // Собираем метрики сетевой активности и дисковых операций
     let network = collect_network_metrics();
     let disk = collect_disk_metrics();
-    
+
     // Собираем метрики GPU (опционально, может быть недоступно на некоторых системах)
     let gpu = collect_gpu_metrics();
 
@@ -1044,77 +1031,118 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
 /// Собирает метрики температуры из sysfs/hwmon
 fn collect_temperature_metrics() -> TemperatureMetrics {
     let mut temperature = TemperatureMetrics::default();
-    
+
     // Попробуем найти температурные сенсоры в /sys/class/hwmon/
     let hwmon_dir = Path::new("/sys/class/hwmon");
-    
+
     if hwmon_dir.exists() {
         if let Ok(entries) = fs::read_dir(hwmon_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 let _path_str = path.to_string_lossy();
-                
+
                 // Ищем файлы temp*_input в каждом hwmon устройстве
                 if let Ok(temp_files) = fs::read_dir(&path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        let file_name =
+                            temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
                         let _path_str = path.to_string_lossy();
-                        
+
                         if file_name.starts_with("temp") && file_name.ends_with("_input") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                                 if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
                                     let temp_c = temp_millidegrees as f32 / 1000.0;
-                                    
+
                                     // Пробуем определить тип устройства по имени файла и пути
                                     // Это более сложная логика, чем раньше
-                                    
+
                                     // 1. Пробуем определить по имени hwmon устройства
-                                    if let Some(hwmon_name) = path.file_name().and_then(|s| s.to_str()) {
-                                        if hwmon_name.contains("coretemp") || 
-                                           hwmon_name.contains("k10temp") || 
-                                           hwmon_name.contains("amdgpu") ||
-                                           hwmon_name.contains("radeon") {
+                                    if let Some(hwmon_name) =
+                                        path.file_name().and_then(|s| s.to_str())
+                                    {
+                                        if hwmon_name.contains("coretemp")
+                                            || hwmon_name.contains("k10temp")
+                                            || hwmon_name.contains("amdgpu")
+                                            || hwmon_name.contains("radeon")
+                                        {
                                             // Это CPU температура (Intel CoreTemp, AMD K10Temp)
                                             if temperature.cpu_temperature_c.is_none() {
                                                 temperature.cpu_temperature_c = Some(temp_c);
-                                                tracing::debug!("CPU temperature (hwmon {}): {:.1}°C", hwmon_name, temp_c);
+                                                tracing::debug!(
+                                                    "CPU temperature (hwmon {}): {:.1}°C",
+                                                    hwmon_name,
+                                                    temp_c
+                                                );
                                             }
-                                        } else if hwmon_name.contains("nvme") || hwmon_name.contains("ssd") {
+                                        } else if hwmon_name.contains("nvme")
+                                            || hwmon_name.contains("ssd")
+                                        {
                                             // Это температура накопителя
                                             // Пока не сохраняем, но можно было бы добавить
-                                            tracing::debug!("Storage temperature (hwmon {}): {:.1}°C", hwmon_name, temp_c);
+                                            tracing::debug!(
+                                                "Storage temperature (hwmon {}): {:.1}°C",
+                                                hwmon_name,
+                                                temp_c
+                                            );
                                         }
                                     }
-                                    
+
                                     // 2. Пробуем определить по имени файла
-                                    if file_name.contains("temp1") || file_name.contains("temp2") || file_name.contains("Package") {
+                                    if file_name.contains("temp1")
+                                        || file_name.contains("temp2")
+                                        || file_name.contains("Package")
+                                    {
                                         // Это, скорее всего, CPU температура
                                         if temperature.cpu_temperature_c.is_none() {
                                             temperature.cpu_temperature_c = Some(temp_c);
-                                            tracing::debug!("CPU temperature (file {}): {:.1}°C", file_name, temp_c);
+                                            tracing::debug!(
+                                                "CPU temperature (file {}): {:.1}°C",
+                                                file_name,
+                                                temp_c
+                                            );
                                         }
-                                    } else if file_name.contains("temp3") || file_name.contains("edge") || file_name.contains("gpu") {
+                                    } else if file_name.contains("temp3")
+                                        || file_name.contains("edge")
+                                        || file_name.contains("gpu")
+                                    {
                                         // Это, скорее всего, GPU температура
                                         if temperature.gpu_temperature_c.is_none() {
                                             temperature.gpu_temperature_c = Some(temp_c);
-                                            tracing::debug!("GPU temperature (file {}): {:.1}°C", file_name, temp_c);
+                                            tracing::debug!(
+                                                "GPU temperature (file {}): {:.1}°C",
+                                                file_name,
+                                                temp_c
+                                            );
                                         }
                                     }
-                                    
+
                                     // 3. Пробуем определить по содержимому файла name (если есть)
                                     let name_file = path.join("name");
                                     if name_file.exists() {
                                         if let Ok(name_content) = fs::read_to_string(&name_file) {
                                             let name = name_content.trim();
-                                            if name.contains("coretemp") || name.contains("k10temp") {
+                                            if name.contains("coretemp") || name.contains("k10temp")
+                                            {
                                                 if temperature.cpu_temperature_c.is_none() {
                                                     temperature.cpu_temperature_c = Some(temp_c);
-                                                    tracing::debug!("CPU temperature (sensor {}): {:.1}°C", name, temp_c);
+                                                    tracing::debug!(
+                                                        "CPU temperature (sensor {}): {:.1}°C",
+                                                        name,
+                                                        temp_c
+                                                    );
                                                 }
-                                            } else if (name.contains("amdgpu") || name.contains("radeon") || name.contains("nouveau")) && temperature.gpu_temperature_c.is_none() {
+                                            } else if (name.contains("amdgpu")
+                                                || name.contains("radeon")
+                                                || name.contains("nouveau"))
+                                                && temperature.gpu_temperature_c.is_none()
+                                            {
                                                 temperature.gpu_temperature_c = Some(temp_c);
-                                                tracing::debug!("GPU temperature (sensor {}): {:.1}°C", name, temp_c);
+                                                tracing::debug!(
+                                                    "GPU temperature (sensor {}): {:.1}°C",
+                                                    name,
+                                                    temp_c
+                                                );
                                             }
                                         }
                                     }
@@ -1126,41 +1154,55 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
             }
         }
     }
-    
+
     // Пробуем альтернативный интерфейс /sys/class/thermal/
     // Это более универсальный интерфейс для термальных зон
     let thermal_dir = Path::new("/sys/class/thermal");
-    
+
     if thermal_dir.exists() {
         if let Ok(thermal_zones) = fs::read_dir(thermal_dir) {
             for zone_entry in thermal_zones.flatten() {
                 let zone_path = zone_entry.path();
                 let zone_name = zone_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                
+
                 if zone_name.starts_with("thermal_zone") {
                     let temp_file = zone_path.join("temp");
                     if temp_file.exists() {
                         if let Ok(temp_content) = fs::read_to_string(&temp_file) {
                             if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
                                 let temp_c = temp_millidegrees as f32 / 1000.0;
-                                
+
                                 // Пробуем определить тип зоны
                                 let type_file = zone_path.join("type");
                                 if type_file.exists() {
                                     if let Ok(type_content) = fs::read_to_string(&type_file) {
                                         let zone_type = type_content.trim();
-                                        
-                                        if zone_type.contains("x86_pkg_temp") || zone_type.contains("acpitz") || zone_type.contains("cpu_thermal") {
+
+                                        if zone_type.contains("x86_pkg_temp")
+                                            || zone_type.contains("acpitz")
+                                            || zone_type.contains("cpu_thermal")
+                                        {
                                             // Это CPU температура
                                             if temperature.cpu_temperature_c.is_none() {
                                                 temperature.cpu_temperature_c = Some(temp_c);
-                                                tracing::debug!("CPU temperature (thermal zone {}): {:.1}°C", zone_name, temp_c);
+                                                tracing::debug!(
+                                                    "CPU temperature (thermal zone {}): {:.1}°C",
+                                                    zone_name,
+                                                    temp_c
+                                                );
                                             }
-                                        } else if zone_type.contains("gpu") || zone_type.contains("dgpu") || zone_type.contains("radeon") {
+                                        } else if zone_type.contains("gpu")
+                                            || zone_type.contains("dgpu")
+                                            || zone_type.contains("radeon")
+                                        {
                                             // Это GPU температура
                                             if temperature.gpu_temperature_c.is_none() {
                                                 temperature.gpu_temperature_c = Some(temp_c);
-                                                tracing::debug!("GPU temperature (thermal zone {}): {:.1}°C", zone_name, temp_c);
+                                                tracing::debug!(
+                                                    "GPU temperature (thermal zone {}): {:.1}°C",
+                                                    zone_name,
+                                                    temp_c
+                                                );
                                             }
                                         }
                                     }
@@ -1172,7 +1214,7 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
             }
         }
     }
-    
+
     // Пробуем специфичные для GPU пути
     // AMD GPU
     let amdgpu_dir = Path::new("/sys/class/drm/card0/device/hwmon");
@@ -1195,7 +1237,7 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
             }
         }
     }
-    
+
     // NVIDIA GPU
     let nvidia_dir = Path::new("/sys/class/hwmon/nvidia_hwmon");
     if nvidia_dir.exists() {
@@ -1212,10 +1254,12 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
             }
         }
     }
-    
+
     // Логируем результаты
     if temperature.cpu_temperature_c.is_none() && temperature.gpu_temperature_c.is_none() {
-        tracing::debug!("No temperature metrics available - hwmon/thermal interfaces not found or accessible");
+        tracing::debug!(
+            "No temperature metrics available - hwmon/thermal interfaces not found or accessible"
+        );
     } else {
         tracing::info!(
             "Temperature metrics: CPU={:?}°C, GPU={:?}°C",
@@ -1223,49 +1267,53 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
             temperature.gpu_temperature_c
         );
     }
-    
+
     temperature
 }
 
 /// Собирает метрики энергопотребления через RAPL и другие интерфейсы
-/// 
+///
 /// Использует Running Average Power Limit (RAPL) интерфейс для точного мониторинга
 /// энергопотребления CPU, памяти и других компонентов.
-/// 
+///
 /// RAPL предоставляет:
 /// - energy_uj: общее потребление энергии в микроджоулях (сбрасывается при перезагрузке)
 /// - max_energy_range_uj: максимальный диапазон измерения
 /// - energy_counter_wrap: флаг переполнения счетчика
-/// 
+///
 /// Для точного измерения мощности нужно отслеживать изменения energy_uj во времени,
 /// но в текущей реализации мы возвращаем мгновенные значения.
 fn collect_power_metrics() -> PowerMetrics {
     let mut power = PowerMetrics::default();
-    
+
     // Попробуем найти энергетические сенсоры в /sys/class/powercap/
     // Это основной интерфейс для RAPL на современных системах
     let powercap_dir = Path::new("/sys/class/powercap");
-    
+
     if powercap_dir.exists() {
         if let Ok(entries) = fs::read_dir(powercap_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
                 let path_str = path.to_string_lossy();
-                
+
                 // Ищем файлы energy_uj в каждом powercap устройстве
                 if let Ok(energy_files) = fs::read_dir(&path) {
                     for energy_file in energy_files.flatten() {
                         let energy_path = energy_file.path();
-                        let file_name = energy_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        
+                        let file_name = energy_path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("");
+
                         if file_name == "energy_uj" {
                             if let Ok(energy_content) = fs::read_to_string(&energy_path) {
-                                if let Ok(energy_microjoules) = energy_content.trim().parse::<u64>() {
+                                if let Ok(energy_microjoules) = energy_content.trim().parse::<u64>()
+                                {
                                     // Конвертируем микроджоули в ватты
                                     // Примечание: это мгновенное значение, для точной мощности нужно
                                     // отслеживать изменения во времени, но для мониторинга это приемлемо
                                     let energy_w = energy_microjoules as f32 / 1_000_000.0;
-                                    
+
                                     // Определяем тип устройства по пути
                                     if path_str.contains("intel-rapl") {
                                         if path_str.contains("package") {
@@ -1288,7 +1336,9 @@ fn collect_power_metrics() -> PowerMetrics {
                                             power.system_power_w = Some(energy_w);
                                             tracing::debug!("RAPL system energy: {} W", energy_w);
                                         }
-                                    } else if path_str.contains("amdgpu") || path_str.contains("gpu") {
+                                    } else if path_str.contains("amdgpu")
+                                        || path_str.contains("gpu")
+                                    {
                                         // Это GPU (AMD или другие)
                                         power.gpu_power_w = Some(energy_w);
                                         tracing::debug!("GPU energy: {} W", energy_w);
@@ -1301,20 +1351,24 @@ fn collect_power_metrics() -> PowerMetrics {
             }
         }
     }
-    
+
     // Попробуем альтернативные интерфейсы, если powercap недоступен
     // Некоторые системы могут предоставлять энергетическую информацию через другие пути
-    
+
     // Пробуем /sys/devices/system/cpu/cpu*/power/energy_uj для отдельных ядер
     let cpu_energy_dir = Path::new("/sys/devices/system/cpu");
     if cpu_energy_dir.exists() {
         if let Ok(cpu_entries) = fs::read_dir(cpu_energy_dir) {
             let mut total_cpu_energy_uj: u64 = 0;
             let mut cpu_count = 0;
-            
+
             for cpu_entry in cpu_entries.flatten() {
                 let cpu_path = cpu_entry.path();
-                if cpu_path.file_name().and_then(|s| s.to_str()).is_some_and(|s| s.starts_with("cpu")) {
+                if cpu_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.starts_with("cpu"))
+                {
                     let energy_path = cpu_path.join("power/energy_uj");
                     if energy_path.exists() {
                         if let Ok(energy_content) = fs::read_to_string(&energy_path) {
@@ -1326,7 +1380,7 @@ fn collect_power_metrics() -> PowerMetrics {
                     }
                 }
             }
-            
+
             if cpu_count > 0 {
                 // Средняя мощность на ядро
                 let avg_cpu_energy_w = total_cpu_energy_uj as f32 / 1_000_000.0 / cpu_count as f32;
@@ -1337,14 +1391,18 @@ fn collect_power_metrics() -> PowerMetrics {
             }
         }
     }
-    
+
     // Пробуем /sys/class/drm/card*/device/power/energy_uj для GPU
     let drm_dir = Path::new("/sys/class/drm");
     if drm_dir.exists() {
         if let Ok(drm_entries) = fs::read_dir(drm_dir) {
             for drm_entry in drm_entries.flatten() {
                 let card_path = drm_entry.path();
-                if card_path.file_name().and_then(|s| s.to_str()).is_some_and(|s| s.starts_with("card")) {
+                if card_path
+                    .file_name()
+                    .and_then(|s| s.to_str())
+                    .is_some_and(|s| s.starts_with("card"))
+                {
                     let energy_path = card_path.join("device/power/energy_uj");
                     if energy_path.exists() {
                         if let Ok(energy_content) = fs::read_to_string(&energy_path) {
@@ -1361,10 +1419,13 @@ fn collect_power_metrics() -> PowerMetrics {
             }
         }
     }
-    
+
     // Логируем, если не удалось собрать никакие метрики
-    if power.cpu_power_w.is_none() && power.gpu_power_w.is_none() && power.system_power_w.is_none() {
-        tracing::debug!("No power metrics available - RAPL/powercap interfaces not found or accessible");
+    if power.cpu_power_w.is_none() && power.gpu_power_w.is_none() && power.system_power_w.is_none()
+    {
+        tracing::debug!(
+            "No power metrics available - RAPL/powercap interfaces not found or accessible"
+        );
     } else {
         tracing::info!(
             "Power metrics: CPU={:?} W, GPU={:?} W, System={:?} W",
@@ -1373,7 +1434,7 @@ fn collect_power_metrics() -> PowerMetrics {
             power.system_power_w
         );
     }
-    
+
     power
 }
 
@@ -1381,22 +1442,23 @@ fn collect_power_metrics() -> PowerMetrics {
 fn collect_network_metrics() -> NetworkMetrics {
     let mut network = NetworkMetrics::default();
     let net_dev_path = Path::new("/proc/net/dev");
-    
+
     if let Ok(contents) = fs::read_to_string(net_dev_path) {
         let mut total_rx_bytes = 0;
         let mut total_tx_bytes = 0;
-        
-        for line in contents.lines().skip(2) { // Пропускаем заголовки
+
+        for line in contents.lines().skip(2) {
+            // Пропускаем заголовки
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
-            
+
             // Разбираем строку вида: "eth0: 12345678 1234 0 0 0 0 0 0 12345678 1234 0 0 0 0 0 0"
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 17 {
                 let interface_name = parts[0].trim_end_matches(':');
-                
+
                 // Извлекаем значения (пропускаем первый элемент - имя интерфейса)
                 let rx_bytes = parts[1].parse::<u64>().unwrap_or(0);
                 let rx_packets = parts[2].parse::<u64>().unwrap_or(0);
@@ -1404,7 +1466,7 @@ fn collect_network_metrics() -> NetworkMetrics {
                 let tx_bytes = parts[9].parse::<u64>().unwrap_or(0);
                 let tx_packets = parts[10].parse::<u64>().unwrap_or(0);
                 let tx_errors = parts[11].parse::<u64>().unwrap_or(0);
-                
+
                 network.interfaces.push(NetworkInterface {
                     name: interface_name.to_string(),
                     rx_bytes,
@@ -1414,16 +1476,16 @@ fn collect_network_metrics() -> NetworkMetrics {
                     rx_errors,
                     tx_errors,
                 });
-                
+
                 total_rx_bytes += rx_bytes;
                 total_tx_bytes += tx_bytes;
             }
         }
-        
+
         network.total_rx_bytes = total_rx_bytes;
         network.total_tx_bytes = total_tx_bytes;
     }
-    
+
     network
 }
 
@@ -1431,22 +1493,22 @@ fn collect_network_metrics() -> NetworkMetrics {
 fn collect_disk_metrics() -> DiskMetrics {
     let mut disk = DiskMetrics::default();
     let diskstats_path = Path::new("/proc/diskstats");
-    
+
     if let Ok(contents) = fs::read_to_string(diskstats_path) {
         let mut total_read_bytes = 0;
         let mut total_write_bytes = 0;
-        
+
         for line in contents.lines() {
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
-            
+
             // Разбираем строку вида: "8 0 sda 1234 0 5678 123 456 0 7890 1234 0 0 0 12345"
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 14 {
                 let device_name = parts[2].to_string();
-                
+
                 // Извлекаем значения (индексы 3-13)
                 let read_ops = parts[3].parse::<u64>().unwrap_or(0);
                 let _read_merged = parts[4].parse::<u64>().unwrap_or(0);
@@ -1457,11 +1519,11 @@ fn collect_disk_metrics() -> DiskMetrics {
                 let write_sectors = parts[9].parse::<u64>().unwrap_or(0);
                 let _write_time = parts[10].parse::<u64>().unwrap_or(0);
                 let io_time = parts[14].parse::<u64>().unwrap_or(0);
-                
+
                 // Конвертируем секторы в байты (обычно 512 байт на сектор)
                 let read_bytes = read_sectors * 512;
                 let write_bytes = write_sectors * 512;
-                
+
                 disk.devices.push(DiskDevice {
                     name: device_name,
                     read_bytes,
@@ -1470,16 +1532,16 @@ fn collect_disk_metrics() -> DiskMetrics {
                     write_ops,
                     io_time,
                 });
-                
+
                 total_read_bytes += read_bytes;
                 total_write_bytes += write_bytes;
             }
         }
-        
+
         disk.total_read_bytes = total_read_bytes;
         disk.total_write_bytes = total_write_bytes;
     }
-    
+
     disk
 }
 
@@ -1492,11 +1554,9 @@ fn collect_gpu_metrics() -> crate::metrics::gpu::GpuMetricsCollection {
 /// Глобальный кэш для eBPF коллектора (оптимизация производительности)
 #[cfg(feature = "ebpf")]
 lazy_static! {
-    static ref EBPF_COLLECTOR: std::sync::Mutex<Option<crate::metrics::ebpf::EbpfMetricsCollector>> = 
+    static ref EBPF_COLLECTOR: std::sync::Mutex<Option<crate::metrics::ebpf::EbpfMetricsCollector>> =
         std::sync::Mutex::new(None);
 }
-
-
 
 fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
     // Проверяем, включена ли поддержка eBPF
@@ -1504,25 +1564,25 @@ fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
         tracing::debug!("eBPF support is disabled (compiled without 'ebpf' feature)");
         return None;
     }
-    
+
     #[cfg(feature = "ebpf")]
     {
         // Используем кэшированный коллектор для уменьшения накладных расходов
         let mut collector_guard = EBPF_COLLECTOR.lock().unwrap();
-        
+
         if collector_guard.is_none() {
             // Инициализируем коллектор при первом вызове
             let config = crate::metrics::ebpf::EbpfConfig::default();
             let mut collector = crate::metrics::ebpf::EbpfMetricsCollector::new(config);
-            
+
             if let Err(e) = collector.initialize() {
                 tracing::warn!("Failed to initialize eBPF metrics collector: {}", e);
                 return None;
             }
-            
+
             *collector_guard = Some(collector);
         }
-        
+
         // Собираем метрики с использованием кэшированного коллектора
         if let Some(collector) = collector_guard.as_mut() {
             match collector.collect_metrics() {
@@ -1537,7 +1597,7 @@ fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
             }
         }
     }
-    
+
     #[cfg(not(feature = "ebpf"))]
     {
         // Без eBPF поддержки возвращаем None
@@ -2561,13 +2621,14 @@ SwapFree:        4096000 kB
             gpu_temperature_c: Some(60.2),
             ..Default::default()
         };
-        
+
         let json = serde_json::to_string(&temp).expect("Сериализация должна работать");
         assert!(json.contains("45.5"));
         assert!(json.contains("60.2"));
-        
+
         // Тест десериализации
-        let deserialized: TemperatureMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        let deserialized: TemperatureMetrics =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
         assert_eq!(deserialized.cpu_temperature_c, Some(45.5));
         assert_eq!(deserialized.gpu_temperature_c, Some(60.2));
     }
@@ -2581,14 +2642,15 @@ SwapFree:        4096000 kB
             gpu_power_w: Some(40.1),
             ..Default::default()
         };
-        
+
         let json = serde_json::to_string(&power).expect("Сериализация должна работать");
         assert!(json.contains("120.5"));
         assert!(json.contains("80.3"));
         assert!(json.contains("40.1"));
-        
+
         // Тест десериализации
-        let deserialized: PowerMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        let deserialized: PowerMetrics =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
         assert_eq!(deserialized.system_power_w, Some(120.5));
         assert_eq!(deserialized.cpu_power_w, Some(80.3));
         assert_eq!(deserialized.gpu_power_w, Some(40.1));
@@ -2609,7 +2671,7 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: None,
         };
-        
+
         // Проверяем, что метрики содержат новые поля
         assert!(metrics.temperature.cpu_temperature_c.is_none());
         assert!(metrics.temperature.gpu_temperature_c.is_none());
@@ -2671,14 +2733,15 @@ SwapFree:        4096000 kB
         });
         network.total_rx_bytes = 1000;
         network.total_tx_bytes = 2000;
-        
+
         let json = serde_json::to_string(&network).expect("Сериализация должна работать");
         assert!(json.contains("eth0"));
         assert!(json.contains("1000"));
         assert!(json.contains("2000"));
-        
+
         // Тест десериализации
-        let deserialized: NetworkMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        let deserialized: NetworkMetrics =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
         assert_eq!(deserialized.interfaces.len(), 1);
         assert_eq!(deserialized.interfaces[0].name, "eth0");
         assert_eq!(deserialized.total_rx_bytes, 1000);
@@ -2699,14 +2762,15 @@ SwapFree:        4096000 kB
         });
         disk.total_read_bytes = 1000000;
         disk.total_write_bytes = 2000000;
-        
+
         let json = serde_json::to_string(&disk).expect("Сериализация должна работать");
         assert!(json.contains("sda"));
         assert!(json.contains("1000000"));
         assert!(json.contains("2000000"));
-        
+
         // Тест десериализации
-        let deserialized: DiskMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        let deserialized: DiskMetrics =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
         assert_eq!(deserialized.devices.len(), 1);
         assert_eq!(deserialized.devices[0].name, "sda");
         assert_eq!(deserialized.total_read_bytes, 1000000);
@@ -2720,8 +2784,22 @@ SwapFree:        4096000 kB
         let network = collect_network_metrics();
         // Проверяем, что структура корректно инициализирована
         // В реальной системе могут быть данные, в тестовой - пустые
-        assert!(network.total_rx_bytes >= network.interfaces.iter().map(|iface| iface.rx_bytes).sum::<u64>());
-        assert!(network.total_tx_bytes >= network.interfaces.iter().map(|iface| iface.tx_bytes).sum::<u64>());
+        assert!(
+            network.total_rx_bytes
+                >= network
+                    .interfaces
+                    .iter()
+                    .map(|iface| iface.rx_bytes)
+                    .sum::<u64>()
+        );
+        assert!(
+            network.total_tx_bytes
+                >= network
+                    .interfaces
+                    .iter()
+                    .map(|iface| iface.tx_bytes)
+                    .sum::<u64>()
+        );
     }
 
     #[test]
@@ -2731,8 +2809,14 @@ SwapFree:        4096000 kB
         let disk = collect_disk_metrics();
         // Проверяем, что структура корректно инициализирована
         // В реальной системе могут быть данные, в тестовой - пустые
-        assert_eq!(disk.total_read_bytes >= disk.devices.iter().map(|dev| dev.read_bytes).sum::<u64>(), true);
-        assert_eq!(disk.total_write_bytes >= disk.devices.iter().map(|dev| dev.write_bytes).sum::<u64>(), true);
+        assert_eq!(
+            disk.total_read_bytes >= disk.devices.iter().map(|dev| dev.read_bytes).sum::<u64>(),
+            true
+        );
+        assert_eq!(
+            disk.total_write_bytes >= disk.devices.iter().map(|dev| dev.write_bytes).sum::<u64>(),
+            true
+        );
     }
 
     #[test]
@@ -2740,7 +2824,7 @@ SwapFree:        4096000 kB
         // Тест проверяет, что collect_ebpf_metrics работает корректно
         // В системе без поддержки eBPF должен возвращать None
         let ebpf_metrics = collect_ebpf_metrics();
-        
+
         // В большинстве тестовых сред eBPF будет отключен или недоступен
         // Поэтому мы ожидаем либо None, либо Some с дефолтными значениями
         if let Some(metrics) = ebpf_metrics {
@@ -2758,10 +2842,10 @@ SwapFree:        4096000 kB
     fn test_system_metrics_with_ebpf_integration() {
         // Тест проверяет, что SystemMetrics корректно интегрирует eBPF метрики
         let mut metrics = SystemMetrics::default();
-        
+
         // Проверяем, что изначально eBPF метрики отсутствуют
         assert!(metrics.ebpf.is_none());
-        
+
         // Устанавливаем eBPF метрики
         let ebpf_metrics = crate::metrics::ebpf::EbpfMetrics {
             cpu_usage: 25.5,
@@ -2782,7 +2866,7 @@ SwapFree:        4096000 kB
             filesystem_details: None,
         };
         metrics.ebpf = Some(ebpf_metrics.clone());
-        
+
         // Проверяем, что eBPF метрики установлены корректно
         assert!(metrics.ebpf.is_some());
         let stored_ebpf = metrics.ebpf.as_ref().unwrap();
@@ -2790,12 +2874,13 @@ SwapFree:        4096000 kB
         assert_eq!(stored_ebpf.memory_usage, 1024 * 1024 * 512);
         assert_eq!(stored_ebpf.syscall_count, 100);
         assert_eq!(stored_ebpf.timestamp, ebpf_metrics.timestamp);
-        
+
         // Проверяем сериализацию и десериализацию
         let json = serde_json::to_string(&metrics).expect("Сериализация должна работать");
         assert!(json.contains("ebpf"));
-        
-        let deserialized: SystemMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+
+        let deserialized: SystemMetrics =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
         assert!(deserialized.ebpf.is_some());
         let deserialized_ebpf = deserialized.ebpf.unwrap();
         assert_eq!(deserialized_ebpf.cpu_usage, 25.5);
@@ -2817,7 +2902,7 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: None,
         };
-        
+
         // Проверяем, что метрики содержат новые поля
         assert!(metrics.network.interfaces.is_empty());
         assert_eq!(metrics.network.total_rx_bytes, 0);
@@ -2843,7 +2928,7 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: Some(crate::metrics::ebpf::EbpfMetrics::default()),
         };
-        
+
         // Проверяем, что метрики содержат поле eBPF
         assert!(metrics.ebpf.is_some());
         let ebpf_metrics = metrics.ebpf.unwrap();
@@ -2857,18 +2942,18 @@ SwapFree:        4096000 kB
         // Тест проверяет парсинг строки из /proc/net/dev
         let line = "eth0: 12345678 1234 0 0 0 0 0 0 12345678 1234 0 0 0 0 0 0";
         let parts: Vec<&str> = line.split_whitespace().collect();
-        
+
         assert_eq!(parts.len(), 17);
         let interface_name = parts[0].trim_end_matches(':');
         assert_eq!(interface_name, "eth0");
-        
+
         let rx_bytes = parts[1].parse::<u64>().unwrap();
         let rx_packets = parts[2].parse::<u64>().unwrap();
         let rx_errors = parts[3].parse::<u64>().unwrap();
         let tx_bytes = parts[9].parse::<u64>().unwrap();
         let tx_packets = parts[10].parse::<u64>().unwrap();
         let tx_errors = parts[11].parse::<u64>().unwrap();
-        
+
         assert_eq!(rx_bytes, 12345678);
         assert_eq!(rx_packets, 1234);
         assert_eq!(rx_errors, 0);
@@ -2882,23 +2967,23 @@ SwapFree:        4096000 kB
         // Тест проверяет парсинг строки из /proc/diskstats
         let line = "8 0 sda 1234 0 5678 123 456 0 7890 1234 0 0 0 12345";
         let parts: Vec<&str> = line.split_whitespace().collect();
-        
+
         assert_eq!(parts.len(), 15);
         let device_name = parts[2];
         assert_eq!(device_name, "sda");
-        
+
         let read_ops = parts[3].parse::<u64>().unwrap();
         let read_sectors = parts[5].parse::<u64>().unwrap();
         let write_ops = parts[7].parse::<u64>().unwrap();
         let write_sectors = parts[9].parse::<u64>().unwrap();
         let io_time = parts[14].parse::<u64>().unwrap();
-        
+
         assert_eq!(read_ops, 1234);
         assert_eq!(read_sectors, 5678);
         assert_eq!(write_ops, 456);
         assert_eq!(write_sectors, 7890);
         assert_eq!(io_time, 12345);
-        
+
         // Проверяем конвертацию секторов в байты
         let read_bytes = read_sectors * 512;
         let write_bytes = write_sectors * 512;
@@ -2929,7 +3014,7 @@ SwapFree:        4096000 kB
         // Это unit-тест для логики парсинга, а не для реального сбора метрик
         let energy_uj = 1234567890; // 1234567890 микроджоулей
         let energy_w = energy_uj as f32 / 1_000_000.0;
-        
+
         // Проверяем, что конвертация корректна
         assert!(energy_w > 0.0);
         assert!(energy_w < 2000.0); // разумный диапазон для мощности
@@ -2940,7 +3025,7 @@ SwapFree:        4096000 kB
         // Тест проверяет парсинг значений температуры
         let temp_millidegrees = 45000; // 45.0°C
         let temp_c = temp_millidegrees as f32 / 1000.0;
-        
+
         assert_eq!(temp_c, 45.0);
     }
 
@@ -2953,7 +3038,7 @@ SwapFree:        4096000 kB
             cpu_power_w: Some(50.2),
             gpu_power_w: Some(75.8),
         };
-        
+
         assert_eq!(system_metrics.power.system_power_w, Some(100.5));
         assert_eq!(system_metrics.power.cpu_power_w, Some(50.2));
         assert_eq!(system_metrics.power.gpu_power_w, Some(75.8));
@@ -2967,7 +3052,7 @@ SwapFree:        4096000 kB
             cpu_temperature_c: Some(65.5),
             gpu_temperature_c: Some(72.3),
         };
-        
+
         assert_eq!(system_metrics.temperature.cpu_temperature_c, Some(65.5));
         assert_eq!(system_metrics.temperature.gpu_temperature_c, Some(72.3));
     }
@@ -2980,10 +3065,10 @@ SwapFree:        4096000 kB
             cpu_power_w: Some(67.89),
             gpu_power_w: Some(90.12),
         };
-        
+
         let serialized = serde_json::to_string(&power).unwrap();
         let deserialized: PowerMetrics = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(power.system_power_w, deserialized.system_power_w);
         assert_eq!(power.cpu_power_w, deserialized.cpu_power_w);
         assert_eq!(power.gpu_power_w, deserialized.gpu_power_w);
@@ -2996,10 +3081,10 @@ SwapFree:        4096000 kB
             cpu_temperature_c: Some(55.5),
             gpu_temperature_c: Some(68.2),
         };
-        
+
         let serialized = serde_json::to_string(&temp).unwrap();
         let deserialized: TemperatureMetrics = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(temp.cpu_temperature_c, deserialized.cpu_temperature_c);
         assert_eq!(temp.gpu_temperature_c, deserialized.gpu_temperature_c);
     }
@@ -3008,11 +3093,11 @@ SwapFree:        4096000 kB
     fn test_power_metrics_edge_cases() {
         // Тест проверяет обработку граничных случаев для PowerMetrics
         let power = PowerMetrics {
-            system_power_w: Some(0.0), // нулевая мощность
+            system_power_w: Some(0.0),   // нулевая мощность
             cpu_power_w: Some(f32::MAX), // максимальное значение
             gpu_power_w: Some(f32::MIN), // минимальное значение
         };
-        
+
         // Проверяем, что значения сохраняются корректно
         assert_eq!(power.system_power_w, Some(0.0));
         assert_eq!(power.cpu_power_w, Some(f32::MAX));
@@ -3024,9 +3109,9 @@ SwapFree:        4096000 kB
         // Тест проверяет обработку граничных случаев для TemperatureMetrics
         let temp = TemperatureMetrics {
             cpu_temperature_c: Some(-273.15), // абсолютный ноль
-            gpu_temperature_c: Some(150.0), // высокая температура
+            gpu_temperature_c: Some(150.0),   // высокая температура
         };
-        
+
         // Проверяем, что значения сохраняются корректно
         assert_eq!(temp.cpu_temperature_c, Some(-273.15));
         assert_eq!(temp.gpu_temperature_c, Some(150.0));
@@ -3036,25 +3121,25 @@ SwapFree:        4096000 kB
     fn test_power_metrics_optional_handling() {
         // Тест проверяет корректную работу с опциональными значениями
         let mut power = PowerMetrics::default();
-        
+
         // Проверяем, что изначально все значения None
         assert!(power.system_power_w.is_none());
         assert!(power.cpu_power_w.is_none());
         assert!(power.gpu_power_w.is_none());
-        
+
         // Устанавливаем значения
         power.system_power_w = Some(100.0);
         power.cpu_power_w = Some(50.0);
-        
+
         // Проверяем, что значения установлены
         assert_eq!(power.system_power_w, Some(100.0));
         assert_eq!(power.cpu_power_w, Some(50.0));
         assert!(power.gpu_power_w.is_none());
-        
+
         // Сбрасываем значения
         power.system_power_w = None;
         power.cpu_power_w = None;
-        
+
         // Проверяем, что значения сброшены
         assert!(power.system_power_w.is_none());
         assert!(power.cpu_power_w.is_none());
@@ -3064,23 +3149,23 @@ SwapFree:        4096000 kB
     fn test_temperature_metrics_optional_handling() {
         // Тест проверяет корректную работу с опциональными значениями
         let mut temp = TemperatureMetrics::default();
-        
+
         // Проверяем, что изначально все значения None
         assert!(temp.cpu_temperature_c.is_none());
         assert!(temp.gpu_temperature_c.is_none());
-        
+
         // Устанавливаем значения
         temp.cpu_temperature_c = Some(45.0);
         temp.gpu_temperature_c = Some(55.0);
-        
+
         // Проверяем, что значения установлены
         assert_eq!(temp.cpu_temperature_c, Some(45.0));
         assert_eq!(temp.gpu_temperature_c, Some(55.0));
-        
+
         // Сбрасываем значения
         temp.cpu_temperature_c = None;
         temp.gpu_temperature_c = None;
-        
+
         // Проверяем, что значения сброшены
         assert!(temp.cpu_temperature_c.is_none());
         assert!(temp.gpu_temperature_c.is_none());
@@ -3094,14 +3179,14 @@ SwapFree:        4096000 kB
             cpu_power_w: Some(0.123456),
             gpu_power_w: Some(999.999999),
         };
-        
+
         // Проверяем, что значения сохраняются с достаточной точностью
         assert!(power.system_power_w.unwrap() > 123.45);
         assert!(power.system_power_w.unwrap() < 123.46);
-        
+
         assert!(power.cpu_power_w.unwrap() > 0.12);
         assert!(power.cpu_power_w.unwrap() < 0.13);
-        
+
         // Исправляем тест для gpu_power_w - 999.999999 может быть равно 1000.0 из-за точности f32
         assert!(power.gpu_power_w.unwrap() >= 999.99);
         assert!(power.gpu_power_w.unwrap() <= 1000.01);
@@ -3114,11 +3199,11 @@ SwapFree:        4096000 kB
             cpu_temperature_c: Some(36.666666),
             gpu_temperature_c: Some(85.999999),
         };
-        
+
         // Проверяем, что значения сохраняются с достаточной точностью
         assert!(temp.cpu_temperature_c.unwrap() > 36.66);
         assert!(temp.cpu_temperature_c.unwrap() < 36.67);
-        
+
         // Исправляем тест для gpu_temperature_c - 85.999999 может быть равно 86.0 из-за точности f32
         assert!(temp.gpu_temperature_c.unwrap() >= 85.99);
         assert!(temp.gpu_temperature_c.unwrap() <= 86.01);
@@ -3128,7 +3213,7 @@ SwapFree:        4096000 kB
     fn test_system_metrics_cache_basic() {
         // Создаем кэш с временем жизни 1 секунда
         let cache = SharedSystemMetricsCache::new(std::time::Duration::from_secs(1));
-        
+
         // Создаем тестовые пути
         let paths = ProcPaths {
             stat: PathBuf::from("/proc/stat"),
@@ -3140,11 +3225,13 @@ SwapFree:        4096000 kB
         };
 
         // Первое обращение должно собрать новые метрики
-        let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
-        
+        let metrics1 = collect_system_metrics_cached(&cache, &paths, false)
+            .expect("Не удалось собрать метрики");
+
         // Второе обращение должно вернуть кэшированные метрики
-        let metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось получить кэшированные метрики");
-        
+        let metrics2 = collect_system_metrics_cached(&cache, &paths, false)
+            .expect("Не удалось получить кэшированные метрики");
+
         // Метрики должны быть идентичны
         assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
         assert_eq!(metrics1.memory.mem_total_kb, metrics2.memory.mem_total_kb);
@@ -3154,7 +3241,7 @@ SwapFree:        4096000 kB
     fn test_system_metrics_cache_force_refresh() {
         // Создаем кэш с временем жизни 1 секунда
         let cache = SharedSystemMetricsCache::new(std::time::Duration::from_secs(1));
-        
+
         let paths = ProcPaths {
             stat: PathBuf::from("/proc/stat"),
             meminfo: PathBuf::from("/proc/meminfo"),
@@ -3165,11 +3252,13 @@ SwapFree:        4096000 kB
         };
 
         // Первое обращение
-        let _metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
-        
+        let _metrics1 = collect_system_metrics_cached(&cache, &paths, false)
+            .expect("Не удалось собрать метрики");
+
         // Второе обращение с принудительным обновлением
-        let _metrics2 = collect_system_metrics_cached(&cache, &paths, true).expect("Не удалось обновить кэш");
-        
+        let _metrics2 =
+            collect_system_metrics_cached(&cache, &paths, true).expect("Не удалось обновить кэш");
+
         // Метрики должны быть разными (так как были собраны в разное время)
         // или одинаковыми (если система не изменилась за это время)
         // В любом случае, функция не должна падать
@@ -3180,7 +3269,7 @@ SwapFree:        4096000 kB
     fn test_system_metrics_cache_expired() {
         // Создаем кэш с очень коротким временем жизни (10 мс)
         let cache = SharedSystemMetricsCache::new(std::time::Duration::from_millis(10));
-        
+
         let paths = ProcPaths {
             stat: PathBuf::from("/proc/stat"),
             meminfo: PathBuf::from("/proc/meminfo"),
@@ -3191,14 +3280,16 @@ SwapFree:        4096000 kB
         };
 
         // Первое обращение
-        let _metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
-        
+        let _metrics1 = collect_system_metrics_cached(&cache, &paths, false)
+            .expect("Не удалось собрать метрики");
+
         // Ждем, пока кэш устареет
         std::thread::sleep(std::time::Duration::from_millis(15));
-        
+
         // Второе обращение должно обновить кэш
-        let _metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось обновить кэш");
-        
+        let _metrics2 =
+            collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось обновить кэш");
+
         // Функция должна работать без ошибок
         assert!(true);
     }
@@ -3212,22 +3303,23 @@ SwapFree:        4096000 kB
     lo: 12345678 12345 0    0    0     0          0         0 12345678 12345 0    0    0     0       0          0
   eth0: 10000000 10000 1    0    0     0          0         0 20000000 20000 2    0    0     0       0          0
   wlan0: 5000000 5000 0    0    0     0          0         0 15000000 15000 0    0    0     0       0          0";
-        
+
         let mut network = NetworkMetrics::default();
         let mut total_rx_bytes = 0;
         let mut total_tx_bytes = 0;
-        
-        for line in test_data.lines().skip(2) { // Пропускаем заголовки
+
+        for line in test_data.lines().skip(2) {
+            // Пропускаем заголовки
             let line = line.trim();
             if line.is_empty() {
                 continue;
             }
-            
+
             // Разбираем строку
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 17 {
                 let interface_name = parts[0].trim_end_matches(':');
-                
+
                 // Извлекаем значения
                 let rx_bytes = parts[1].parse::<u64>().unwrap_or(0);
                 let rx_packets = parts[2].parse::<u64>().unwrap_or(0);
@@ -3235,7 +3327,7 @@ SwapFree:        4096000 kB
                 let tx_bytes = parts[9].parse::<u64>().unwrap_or(0);
                 let tx_packets = parts[10].parse::<u64>().unwrap_or(0);
                 let tx_errors = parts[11].parse::<u64>().unwrap_or(0);
-                
+
                 network.interfaces.push(NetworkInterface {
                     name: interface_name.to_string(),
                     rx_bytes,
@@ -3245,18 +3337,18 @@ SwapFree:        4096000 kB
                     rx_errors,
                     tx_errors,
                 });
-                
+
                 total_rx_bytes += rx_bytes;
                 total_tx_bytes += tx_bytes;
             }
         }
-        
+
         network.total_rx_bytes = total_rx_bytes;
         network.total_tx_bytes = total_tx_bytes;
-        
+
         // Проверяем результаты
         assert_eq!(network.interfaces.len(), 3); // lo, eth0, wlan0
-        
+
         // Проверяем интерфейс lo
         let lo_interface = &network.interfaces[0];
         assert_eq!(lo_interface.name, "lo");
@@ -3266,7 +3358,7 @@ SwapFree:        4096000 kB
         assert_eq!(lo_interface.tx_packets, 12345);
         assert_eq!(lo_interface.rx_errors, 0);
         assert_eq!(lo_interface.tx_errors, 0);
-        
+
         // Проверяем интерфейс eth0
         let eth0_interface = &network.interfaces[1];
         assert_eq!(eth0_interface.name, "eth0");
@@ -3276,7 +3368,7 @@ SwapFree:        4096000 kB
         assert_eq!(eth0_interface.tx_packets, 20000);
         assert_eq!(eth0_interface.rx_errors, 1);
         assert_eq!(eth0_interface.tx_errors, 2);
-        
+
         // Проверяем интерфейс wlan0
         let wlan0_interface = &network.interfaces[2];
         assert_eq!(wlan0_interface.name, "wlan0");
@@ -3286,7 +3378,7 @@ SwapFree:        4096000 kB
         assert_eq!(wlan0_interface.tx_packets, 15000);
         assert_eq!(wlan0_interface.rx_errors, 0);
         assert_eq!(wlan0_interface.tx_errors, 0);
-        
+
         // Проверяем общие метрики
         assert_eq!(network.total_rx_bytes, 12345678 + 10000000 + 5000000);
         assert_eq!(network.total_tx_bytes, 12345678 + 20000000 + 15000000);
@@ -3295,15 +3387,15 @@ SwapFree:        4096000 kB
     #[test]
     fn test_parallel_metrics_collection() {
         use crate::metrics::system::{collect_system_metrics_parallel, ProcPaths};
-        
+
         let paths = ProcPaths::default();
         let result = collect_system_metrics_parallel(&paths);
-        
+
         // Проверяем, что функция выполняется без ошибок
         assert!(result.is_ok());
-        
+
         let metrics = result.unwrap();
-        
+
         // Проверяем, что основные метрики собраны корректно
         assert!(metrics.cpu_times.user >= 0);
         assert!(metrics.memory.mem_total_kb > 0);
@@ -3312,23 +3404,25 @@ SwapFree:        4096000 kB
 
     #[test]
     fn test_parallel_vs_sequential_consistency() {
-        use crate::metrics::system::{collect_system_metrics_parallel, collect_system_metrics, ProcPaths};
-        
+        use crate::metrics::system::{
+            collect_system_metrics, collect_system_metrics_parallel, ProcPaths,
+        };
+
         let paths = ProcPaths::default();
-        
+
         // Собираем метрики параллельно
         let parallel_result = collect_system_metrics_parallel(&paths);
-        
+
         // Собираем метрики последовательно
         let sequential_result = collect_system_metrics(&paths);
-        
+
         // Обе функции должны выполниться успешно
         assert!(parallel_result.is_ok());
         assert!(sequential_result.is_ok());
-        
+
         let parallel_metrics = parallel_result.unwrap();
         let sequential_metrics = sequential_result.unwrap();
-        
+
         // Метрики должны быть сопоставимы (хотя и могут немного отличаться из-за времени сбора)
         // Проверяем, что основные структуры корректны
         assert!(parallel_metrics.cpu_times.user >= 0);
@@ -3339,23 +3433,25 @@ SwapFree:        4096000 kB
 
     #[test]
     fn test_cached_parallel_metrics() {
-        use crate::metrics::system::{collect_system_metrics_cached_parallel, ProcPaths, SharedSystemMetricsCache};
+        use crate::metrics::system::{
+            collect_system_metrics_cached_parallel, ProcPaths, SharedSystemMetricsCache,
+        };
         use std::time::Duration;
-        
+
         let paths = ProcPaths::default();
         let cache = SharedSystemMetricsCache::new(Duration::from_secs(10));
-        
+
         // Первый вызов должен собрать новые метрики
         let result1 = collect_system_metrics_cached_parallel(&cache, &paths, false);
         assert!(result1.is_ok());
-        
+
         // Второй вызов должен использовать кэшированные метрики
         let result2 = collect_system_metrics_cached_parallel(&cache, &paths, false);
         assert!(result2.is_ok());
-        
+
         let metrics1 = result1.unwrap();
         let metrics2 = result2.unwrap();
-        
+
         // Метрики должны быть идентичны (из кэша)
         assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
         assert_eq!(metrics1.memory, metrics2.memory);
@@ -3401,7 +3497,7 @@ impl SystemMetricsCache {
         let new_metrics = update_func()?;
         self.cached_metrics = Some(new_metrics.clone());
         self.last_update_time = Some(Instant::now());
-        
+
         Ok(new_metrics)
     }
 
@@ -3441,5 +3537,3 @@ impl SharedSystemMetricsCache {
         cache.clear();
     }
 }
-
-

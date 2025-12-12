@@ -476,7 +476,7 @@ impl PipeWireIntrospector {
     ///
     /// ```rust,no_run
     /// use smoothtask_core::metrics::audio_pipewire::PipeWireIntrospector;
-    /// 
+    ///
     /// let introspector = PipeWireIntrospector::new();
     /// ```
     pub fn new() -> Self {
@@ -502,7 +502,7 @@ impl PipeWireIntrospector {
     ///
     /// ```rust,no_run
     /// use smoothtask_core::metrics::audio_pipewire::PipeWireIntrospector;
-    /// 
+    ///
     /// let introspector = PipeWireIntrospector::new();
     /// match introspector.call_pw_dump() {
     ///     Ok(json) => println!("Успешно получен JSON: {:?}", json),
@@ -531,7 +531,7 @@ impl PipeWireIntrospector {
             } else {
                 &stderr
             };
-            
+
             return Err(anyhow!("pw-dump завершился с ошибкой: {}. Проверьте, что PipeWire работает корректно и у вас есть права на доступ к аудио-устройствам", error_msg));
         }
 
@@ -552,7 +552,7 @@ impl PipeWireIntrospector {
     ///
     /// ```rust,no_run
     /// use smoothtask_core::metrics::audio_pipewire::PipeWireIntrospector;
-    /// 
+    ///
     /// let introspector = PipeWireIntrospector::new();
     /// match introspector.check_pipewire_available() {
     ///     Ok(true) => println!("PipeWire доступен"),
@@ -567,9 +567,7 @@ impl PipeWireIntrospector {
         }
 
         // Пробуем вызвать pw-dump с минимальным выводом
-        let output = Command::new("pw-dump")
-            .arg("--help")
-            .output();
+        let output = Command::new("pw-dump").arg("--help").output();
 
         match output {
             Ok(output) if output.status.success() => Ok(true),
@@ -1079,7 +1077,7 @@ mod pipewire_introspector_tests {
         // Тест проверяет, что интроспектор корректно обрабатывает ошибки
         // при вызове pw-dump
         let introspector = PipeWireIntrospector::new();
-        
+
         // Проверяем, что check_pipewire_available работает
         let available = introspector.check_pipewire_available();
         // В тестовой среде pw-dump может быть недоступен, поэтому мы просто
@@ -1091,10 +1089,10 @@ mod pipewire_introspector_tests {
     fn test_pipewire_introspector_creation_and_state() {
         // Тест проверяет создание интроспектора и его начальное состояние
         let introspector = PipeWireIntrospector::new();
-        
+
         assert!(introspector.last_metrics_time.is_none());
         assert!(introspector.last_err_by_pid.is_empty());
-        
+
         // Проверяем, что check_pipewire_available не падает
         let result = introspector.check_pipewire_available();
         assert!(result.is_ok());
@@ -1105,9 +1103,9 @@ mod pipewire_introspector_tests {
         // Тест проверяет обработку различных сценариев ошибок
         // В реальных условиях эти тесты могут быть более сложными,
         // но для unit-тестов мы проверяем базовую функциональность
-        
+
         let introspector = PipeWireIntrospector::new();
-        
+
         // Проверяем, что интроспектор корректно обрабатывает отсутствие pw-dump
         // (в тестовой среде pw-dump может быть недоступен)
         let available = introspector.check_pipewire_available();
@@ -1115,11 +1113,11 @@ mod pipewire_introspector_tests {
             Ok(true) => {
                 // PipeWire доступен - это нормально
                 // No assertion needed, just continue
-            },
+            }
             Ok(false) => {
                 // PipeWire недоступен - это тоже нормально для тестовой среды
                 // No assertion needed, just continue
-            },
+            }
             Err(_) => {
                 // Ошибка при проверке - это тоже нормально для тестовой среды
                 // No assertion needed, just continue
@@ -1132,12 +1130,12 @@ mod pipewire_introspector_tests {
         // Тест проверяет, что интроспектор корректно обрабатывает отсутствие PipeWire
         // и может быть использован с fallback механизмом
         let introspector = PipeWireIntrospector::new();
-        
+
         // Проверяем, что интроспектор может быть создан и использован
         // даже если PipeWire недоступен
         assert!(introspector.last_metrics_time.is_none());
         assert!(introspector.last_err_by_pid.is_empty());
-        
+
         // Проверяем, что check_pipewire_available возвращает Result
         let result = introspector.check_pipewire_available();
         assert!(result.is_ok());
