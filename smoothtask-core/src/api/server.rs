@@ -1274,7 +1274,7 @@ mod tests {
     use std::net::SocketAddr;
     
     // Import notification types for test configurations
-    use crate::config::config::{NotificationBackend, NotificationConfig, NotificationLevel};
+    use crate::config::config::{ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel};
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -1766,6 +1766,10 @@ mod tests {
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
+            model: ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
@@ -1827,6 +1831,10 @@ mod tests {
                 backend: crate::config::config::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
+            },
+            model: ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         let config_arc = Arc::new(RwLock::new(config));
@@ -1926,6 +1934,10 @@ mod tests {
                 backend: crate::config::config::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
+            },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         let config_arc = Arc::new(RwLock::new(config));
@@ -2476,6 +2488,10 @@ apps:
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
         let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -2546,6 +2562,10 @@ apps:
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
         let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
@@ -2612,6 +2632,10 @@ apps:
                 backend: crate::config::config::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
+            },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         let _config_arc = Arc::new(config.clone());
@@ -2681,6 +2705,10 @@ apps:
                 backend: crate::config::config::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
+            },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         let _config_arc = Arc::new(config.clone());
@@ -2792,6 +2820,10 @@ apps:
                 backend: NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: NotificationLevel::Warning,
+            },
+            model: ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         let config_arc = Arc::new(RwLock::new(config));
@@ -2907,6 +2939,10 @@ notifications:
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
         
         let config_arc = Arc::new(RwLock::new(current_config));
@@ -3001,6 +3037,10 @@ max_candidates: 200
                 backend: crate::config::config::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
+            },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         
@@ -3137,6 +3177,10 @@ max_candidates: 200
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Info,
             },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
         
         let config_arc = Arc::new(RwLock::new(config));
@@ -3251,6 +3295,10 @@ max_candidates: 200
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
         
         let config_arc = Arc::new(RwLock::new(config));
@@ -3321,6 +3369,10 @@ max_candidates: 200
                 backend: crate::config::config::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: crate::config::config::NotificationLevel::Warning,
+            },
+            model: crate::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         };
         

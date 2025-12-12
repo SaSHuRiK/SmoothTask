@@ -102,7 +102,8 @@ pub struct PolicyEngine {
 impl PolicyEngine {
     /// Создать новый Policy Engine с заданной конфигурацией.
     ///
-    /// В режиме `hybrid` автоматически создаётся `StubRanker` (в будущем можно заменить на реальный ML-ранкер).
+    /// В режиме `hybrid` автоматически загружается ONNXRanker, если модель включена и доступна.
+    /// Если загрузка модели не удаётся или модель отключена, используется StubRanker.
     /// В режиме `rules-only` ранкер не используется.
     ///
     /// # Аргументы
@@ -123,7 +124,31 @@ impl PolicyEngine {
     /// ```
     pub fn new(config: Config) -> Self {
         let ranker: Option<Box<dyn Ranker>> = if config.policy_mode == PolicyMode::Hybrid {
-            Some(Box::new(crate::model::ranker::StubRanker::new()))
+            // В hybrid режиме пытаемся загрузить ONNXRanker, если модель включена
+            if config.model.enabled {
+                match crate::model::onnx_ranker::ONNXRanker::load(&config.model.model_path) {
+                    Ok(onnx_ranker) => {
+                        tracing::info!(
+                            "Загружена ONNX модель для ранжирования: {}",
+                            config.model.model_path
+                        );
+                        Some(Box::new(onnx_ranker))
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Не удалось загрузить ONNX модель с пути {}: {}",
+                            config.model.model_path,
+                            e
+                        );
+                        tracing::warn!("Используется заглушка StubRanker вместо ONNX модели");
+                        Some(Box::new(crate::model::ranker::StubRanker::new()))
+                    }
+                }
+            } else {
+                // Модель отключена в конфигурации, используем заглушку
+                tracing::info!("ML-модель отключена в конфигурации, используется StubRanker");
+                Some(Box::new(crate::model::ranker::StubRanker::new()))
+            }
         } else {
             None
         };
@@ -509,7 +534,7 @@ impl PolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::config::{CacheIntervals, Config, NotificationBackend, NotificationConfig, NotificationLevel, Paths, Thresholds};
+    use crate::config::config::{CacheIntervals, Config, ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel, Paths, Thresholds};
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};
     use chrono::Utc;
 
@@ -555,6 +580,10 @@ mod tests {
                 app_name: "SmoothTask".to_string(),
                 min_level: NotificationLevel::Warning,
             },
+            model: ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         }
     }
 
@@ -599,6 +628,10 @@ mod tests {
                 backend: NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
                 min_level: NotificationLevel::Warning,
+            },
+            model: ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
             },
         }
     }
@@ -1200,5 +1233,119 @@ mod tests {
         assert!(results.contains_key("high_priority"));
         assert!(results.contains_key("medium_priority"));
         assert!(results.contains_key("low_priority"));
+    }
+
+    #[test]
+    fn test_hybrid_mode_with_onnx_model_disabled() {
+        // Тест hybrid режима с отключенной моделью
+        let mut config = create_hybrid_config();
+        config.model.enabled = false;
+        
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+        
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "test-group".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: None,
+                total_cpu_share: Some(0.1),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+        
+        snapshot.app_groups = app_groups;
+        
+        let results = engine.evaluate_snapshot(&snapshot);
+        
+        // Должен быть результат для группы
+        assert_eq!(results.len(), 1);
+        let result = results.get("test-group").unwrap();
+        
+        // Должен использовать ML-ранкер (StubRanker в данном случае)
+        assert!(result.reason.contains("ml-ranker"));
+    }
+
+    #[test]
+    fn test_hybrid_mode_with_nonexistent_onnx_model() {
+        // Тест hybrid режима с несуществующим файлом модели
+        let mut config = create_hybrid_config();
+        config.model.enabled = true;
+        config.model.model_path = "/nonexistent/path/model.onnx".to_string();
+        
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+        
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "test-group".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: None,
+                total_cpu_share: Some(0.1),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+        
+        snapshot.app_groups = app_groups;
+        
+        let results = engine.evaluate_snapshot(&snapshot);
+        
+        // Должен быть результат для группы
+        assert_eq!(results.len(), 1);
+        let result = results.get("test-group").unwrap();
+        
+        // Должен использовать ML-ранкер (StubRanker в данном случае из-за ошибки загрузки)
+        assert!(result.reason.contains("ml-ranker"));
+    }
+
+    #[test]
+    fn test_rules_only_mode_no_ranker() {
+        // Тест rules-only режима (ранкер не используется)
+        let config = create_test_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+        
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "test-group".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: None,
+                total_cpu_share: Some(0.1),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+        
+        snapshot.app_groups = app_groups;
+        
+        let results = engine.evaluate_snapshot(&snapshot);
+        
+        // Должен быть результат для группы
+        assert_eq!(results.len(), 1);
+        let result = results.get("test-group").unwrap();
+        
+        // В rules-only режиме должен использовать дефолтный приоритет
+        assert_eq!(result.priority_class, PriorityClass::Normal);
+        assert!(result.reason.contains("default"));
     }
 }

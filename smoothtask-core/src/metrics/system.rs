@@ -775,7 +775,7 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
         if let Ok(entries) = fs::read_dir(hwmon_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                let path_str = path.to_string_lossy();
+                let _path_str = path.to_string_lossy();
                 
                 // Ищем файлы temp*_input в каждом hwmon устройстве
                 if let Ok(temp_files) = fs::read_dir(&path) {

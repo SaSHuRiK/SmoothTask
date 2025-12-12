@@ -400,7 +400,7 @@ mod tests {
     fn test_onnx_ranker_string_to_index() {
         // Тест преобразования строк в индексы
         let ranker = ONNXRanker {
-            session: Arc::new(Session::builder().unwrap().commit_from_file("dummy").unwrap()),
+            session: Arc::new(Mutex::new(Session::builder().unwrap().commit_from_file("dummy").unwrap())),
             expected_input_size: 51,
             input_name: "input".to_string(),
             output_name: "output".to_string(),
@@ -422,7 +422,7 @@ mod tests {
     fn test_onnx_ranker_features_to_tensor_size_mismatch() {
         // Тест обработки несоответствия размера фич
         let ranker = ONNXRanker {
-            session: Arc::new(Session::builder().unwrap().commit_from_file("dummy").unwrap()),
+            session: Arc::new(Mutex::new(Session::builder().unwrap().commit_from_file("dummy").unwrap())),
             expected_input_size: 10, // Ожидаем 10 фич
             input_name: "input".to_string(),
             output_name: "output".to_string(),
@@ -450,7 +450,7 @@ mod tests {
         
         // Создаём ранкер с заглушкой (не можем загрузить реальную модель в тесте)
         let ranker = ONNXRanker {
-            session: Arc::new(Session::builder().unwrap().commit_from_file("dummy").unwrap()),
+            session: Arc::new(Mutex::new(Session::builder().unwrap().commit_from_file("dummy").unwrap())),
             expected_input_size: 51,
             input_name: "input".to_string(),
             output_name: "output".to_string(),
@@ -484,7 +484,7 @@ mod tests {
         
         // Создаём ранкер с заглушкой
         let ranker = ONNXRanker {
-            session: Arc::new(Session::builder().unwrap().commit_from_file("dummy").unwrap()),
+            session: Arc::new(Mutex::new(Session::builder().unwrap().commit_from_file("dummy").unwrap())),
             expected_input_size: 51,
             input_name: "input".to_string(),
             output_name: "output".to_string(),
@@ -540,7 +540,7 @@ mod tests {
         
         // Создаём ранкер с заглушкой
         let ranker = ONNXRanker {
-            session: Arc::new(Session::builder().unwrap().commit_from_file("dummy").unwrap()),
+            session: Arc::new(Mutex::new(Session::builder().unwrap().commit_from_file("dummy").unwrap())),
             expected_input_size: 51,
             input_name: "input".to_string(),
             output_name: "output".to_string(),

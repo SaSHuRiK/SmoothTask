@@ -4,7 +4,7 @@
 //! Кэширование позволяет снизить нагрузку на систему за счёт повторного
 //! использования ранее собранных метрик.
 
-use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, ModelConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics, NetworkMetrics, DiskMetrics};
 use smoothtask_core::metrics::process::collect_process_metrics;
 use std::sync::{Arc, Mutex};
@@ -90,6 +90,10 @@ fn test_config_includes_cache_intervals() {
             backend: smoothtask_core::config::config::NotificationBackend::Stub,
             app_name: "SmoothTask".to_string(),
             min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+        },
+        model: ModelConfig {
+            enabled: false,
+            model_path: "models/ranker.onnx".to_string(),
         },
     };
     
@@ -433,6 +437,10 @@ fn test_cache_configuration_integration() {
             backend: smoothtask_core::config::config::NotificationBackend::Stub,
             app_name: "SmoothTask".to_string(),
             min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+        },
+        model: ModelConfig {
+            enabled: false,
+            model_path: "models/ranker.onnx".to_string(),
         },
         policy_mode: PolicyMode::Hybrid,
     };
