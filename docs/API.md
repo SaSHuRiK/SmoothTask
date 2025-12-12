@@ -15,6 +15,49 @@ paths:
 
 По умолчанию API сервер запускается на `127.0.0.1:8080`.
 
+### Конфигурация eBPF
+
+Для работы с сетевыми соединениями через eBPF, необходимо настроить соответствующие параметры в конфигурационном файле:
+
+```yaml
+metrics:
+  ebpf:
+    enable_network_connections: true  # Включить мониторинг сетевых соединений
+    enable_network_monitoring: true    # Включить общий мониторинг сети
+    enable_high_performance_mode: true # Использовать оптимизированные eBPF программы
+    
+    # Конфигурация фильтрации (опционально)
+    filter_config:
+      enable_kernel_filtering: true
+      active_connections_threshold: 10  # Минимальное количество активных соединений для уведомлений
+      network_traffic_threshold: 1024   # Минимальный трафик в байтах для отслеживания
+      
+      # Фильтрация по протоколам (опционально)
+      enable_network_protocol_filtering: false
+      filtered_network_protocols: [6, 17]  # TCP=6, UDP=17
+      
+      # Фильтрация по диапазону портов (опционально)
+      enable_port_range_filtering: false
+      min_port: 1024
+      max_port: 65535
+```
+
+**Требования для eBPF:**
+- Ядро Linux версии 5.4 или новее
+- Права CAP_BPF или запуск от root
+- Установленные заголовки ядра для компиляции eBPF программ
+- Библиотека `libbpf` и `libbpf-rs`
+
+**Ограничения:**
+- eBPF программы требуют компиляции при первом запуске
+- Максимальное количество отслеживаемых соединений: 2048 (задается в eBPF программе)
+- Данные собираются только для активных соединений
+
+**Рекомендации:**
+- Для высоконагруженных систем используйте `enable_high_performance_mode: true`
+- Настраивайте фильтрацию для уменьшения накладных расходов
+- Мониторьте использование памяти eBPF карт через `/api/stats`
+
 ## Endpoints
 
 ### GET /health
@@ -36,6 +79,98 @@ curl http://127.0.0.1:8080/health
 
 **Статус коды:**
 - `200 OK` - API сервер работает
+
+---
+
+### GET /api/network/connections
+
+Получение информации о текущих сетевых соединениях, собранных через eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/network/connections
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-01-01T12:00:00+00:00",
+  "active_connections": 42,
+  "total_connections": 150,
+  "connections": [
+    {
+      "src_ip": "192.168.1.100",
+      "dst_ip": "93.184.216.34",
+      "src_port": 54321,
+      "dst_port": 443,
+      "protocol": "TCP",
+      "state": 1,
+      "packets": 1250,
+      "bytes": 875000,
+      "start_time": 1672531200000000000,
+      "last_activity": 1672531260000000000,
+      "active": true
+    },
+    {
+      "src_ip": "192.168.1.100",
+      "dst_ip": "8.8.8.8",
+      "src_port": 45678,
+      "dst_port": 53,
+      "protocol": "UDP",
+      "state": 0,
+      "packets": 45,
+      "bytes": 3200,
+      "start_time": 1672531180000000000,
+      "last_activity": 1672531195000000000,
+      "active": false
+    }
+  ],
+  "network_stats": {
+    "packets": 15000,
+    "bytes": 10500000
+  }
+}
+```
+
+**Ошибка (если eBPF не доступен):**
+```json
+{
+  "status": "error",
+  "error": "Failed to collect network connection metrics: eBPF not available",
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status`: Статус запроса (`ok` или `error`)
+- `timestamp`: Время генерации ответа в формате RFC3339
+- `active_connections`: Количество активных соединений (активность в последние 30 секунд)
+- `total_connections`: Общее количество соединений в ответе
+- `connections`: Массив объектов с информацией о соединениях:
+  - `src_ip`: IP адрес источника
+  - `dst_ip`: IP адрес назначения
+  - `src_port`: Порт источника
+  - `dst_port`: Порт назначения
+  - `protocol`: Протокол (`TCP`, `UDP`, или `Unknown(X)`)
+  - `state`: Состояние соединения (зависит от протокола)
+  - `packets`: Количество пакетов
+  - `bytes`: Количество байт
+  - `start_time`: Время начала соединения в наносекундах
+  - `last_activity`: Время последней активности в наносекундах
+  - `active`: Флаг активности (true если активность была в последние 30 секунд)
+- `network_stats`: Общая статистика сети:
+  - `packets`: Общее количество пакетов
+  - `bytes`: Общее количество байт
+
+**Требования:**
+- eBPF должен быть доступен и настроен
+- Демон должен быть запущен с флагом `enable_network_connections: true`
+- Требуются права CAP_BPF или root для работы eBPF
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `500 Internal Server Error` - Ошибка при сборе метрик
 
 ---
 
@@ -122,6 +257,212 @@ curl http://127.0.0.1:8080/api/version
 
 **Статус коды:**
 - `200 OK` - запрос выполнен успешно
+
+---
+
+### GET /api/cache/stats
+
+Получение статистики кэша метрик процессов.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/cache/stats
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "cache_stats": {
+    "total_entries": 150,
+    "active_entries": 120,
+    "stale_entries": 30,
+    "max_capacity": 1000,
+    "cache_ttl_seconds": 300,
+    "average_age_seconds": 123.45,
+    "hit_rate": 75.0,
+    "utilization_rate": 15.0
+  },
+  "timestamp": "2023-12-12T12:34:56.789Z"
+}
+```
+
+**Поля:**
+- `status` (string) - статус ответа (всегда "ok")
+- `cache_stats` (object) - статистика кэша:
+  - `total_entries` (number) - общее количество записей в кэше
+  - `active_entries` (number) - количество актуальных записей
+  - `stale_entries` (number) - количество устаревших записей
+  - `max_capacity` (number) - максимальная емкость кэша
+  - `cache_ttl_seconds` (number) - время жизни кэша в секундах
+  - `average_age_seconds` (number) - средний возраст записей в секундах
+  - `hit_rate` (number) - процент попаданий в кэш (0-100)
+  - `utilization_rate` (number) - процент использования кэша (0-100)
+- `timestamp` (string) - временная метка ответа в формате RFC3339
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+**Использование:**
+Этот endpoint полезен для мониторинга состояния кэша процессов и диагностики проблем с производительностью. Он предоставляет детальную информацию о текущем состоянии кэша, что помогает оптимизировать настройки кэширования.
+
+---
+
+### POST /api/cache/clear
+
+Очистка кэша метрик процессов.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/cache/clear
+```
+
+**Ответ:**
+```json
+{
+  "status": "success",
+  "message": "Process cache cleared successfully",
+  "cleared_entries": 150,
+  "previous_stats": {
+    "total_entries": 150,
+    "active_entries": 120,
+    "stale_entries": 30
+  },
+  "current_stats": {
+    "total_entries": 0,
+    "active_entries": 0,
+    "stale_entries": 0
+  },
+  "timestamp": "2023-12-12T12:34:56.789Z"
+}
+```
+
+**Поля:**
+- `status` (string) - статус операции (всегда "success")
+- `message` (string) - сообщение об успешном выполнении
+- `cleared_entries` (number) - количество удаленных записей
+- `previous_stats` (object) - статистика кэша до очистки
+- `current_stats` (object) - статистика кэша после очистки
+- `timestamp` (string) - временная метка ответа в формате RFC3339
+
+**Статус коды:**
+- `200 OK` - операция выполнена успешно
+
+**Использование:**
+Этот endpoint используется для принудительной очистки кэша процессов. Это может быть полезно при отладке, тестировании или когда нужно обеспечить получение свежих данных о процессах.
+
+---
+
+### GET /api/cache/config
+
+Получение текущей конфигурации кэша метрик процессов.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/cache/config
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "cache_config": {
+    "cache_ttl_seconds": 300,
+    "max_cached_processes": 1000,
+    "enable_caching": true,
+    "enable_parallel_processing": true,
+    "max_parallel_threads": null
+  },
+  "timestamp": "2023-12-12T12:34:56.789Z"
+}
+```
+
+**Поля:**
+- `status` (string) - статус ответа (всегда "ok")
+- `cache_config` (object) - текущая конфигурация кэша:
+  - `cache_ttl_seconds` (number) - время жизни кэша в секундах
+  - `max_cached_processes` (number) - максимальное количество кэшируемых процессов
+  - `enable_caching` (boolean) - включено ли кэширование
+  - `enable_parallel_processing` (boolean) - включена ли параллельная обработка
+  - `max_parallel_threads` (number/null) - максимальное количество параллельных потоков
+- `timestamp` (string) - временная метка ответа в формате RFC3339
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+**Использование:**
+Этот endpoint позволяет получить текущие настройки кэша процессов. Это полезно для мониторинга конфигурации и отладки проблем с производительностью.
+
+---
+
+### POST /api/cache/config
+
+Обновление конфигурации кэша метрик процессов.
+
+**Запрос:**
+```bash
+curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+  -H "Content-Type: application/json" \
+  -d '{"cache_ttl_seconds": 30, "max_cached_processes": 5000}'
+```
+
+**Параметры запроса (JSON):**
+- `cache_ttl_seconds` (опционально, number) - новое время жизни кэша в секундах
+- `max_cached_processes` (опционально, number) - новое максимальное количество кэшируемых процессов
+- `enable_caching` (опционально, boolean) - включить/отключить кэширование
+- `enable_parallel_processing` (опционально, boolean) - включить/отключить параллельную обработку
+- `max_parallel_threads` (опционально, number) - максимальное количество параллельных потоков
+
+**Ответ:**
+```json
+{
+  "status": "success",
+  "message": "Process cache configuration updated successfully",
+  "cache_config": {
+    "cache_ttl_seconds": 30,
+    "max_cached_processes": 5000,
+    "enable_caching": true,
+    "enable_parallel_processing": true,
+    "max_parallel_threads": null
+  },
+  "timestamp": "2023-12-12T12:34:56.789Z"
+}
+```
+
+**Поля:**
+- `status` (string) - статус операции (всегда "success")
+- `message` (string) - сообщение об успешном выполнении
+- `cache_config` (object) - обновленная конфигурация кэша
+- `timestamp` (string) - временная метка ответа в формате RFC3339
+
+**Статус коды:**
+- `200 OK` - операция выполнена успешно
+
+**Использование:**
+Этот endpoint позволяет динамически изменять конфигурацию кэша процессов без перезапуска демона. Это полезно для оптимизации производительности в реальном времени и адаптации к изменяющимся условиям работы системы.
+
+**Примеры:**
+
+Обновление TTL кэша:
+```bash
+curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+  -H "Content-Type: application/json" \
+  -d '{"cache_ttl_seconds": 30}'
+```
+
+Обновление максимального количества процессов:
+```bash
+curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+  -H "Content-Type: application/json" \
+  -d '{"max_cached_processes": 5000}'
+```
+
+Отключение кэширования:
+```bash
+curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+  -H "Content-Type: application/json" \
+  -d '{"enable_caching": false}'
+```
 
 ---
 

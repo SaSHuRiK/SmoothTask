@@ -49,7 +49,6 @@ struct CachedProcessRecord {
     cached_at: Instant,
 }
 
-/// Глобальный кэш метрик процессов.
 lazy_static! {
     static ref PROCESS_CACHE: Arc<RwLock<ProcessCache>> = Arc::new(RwLock::new(ProcessCache::new()));
 }
@@ -69,6 +68,7 @@ impl ProcessCache {
         }
     }
 
+    #[allow(dead_code)]
     fn with_config(config: ProcessCacheConfig) -> Self {
         Self {
             records: HashMap::new(),
@@ -146,6 +146,59 @@ impl ProcessCache {
         self.config = config;
         self.cleanup_stale_entries();
     }
+
+    /// Получить статистику кэша.
+    fn get_cache_stats(&self) -> ProcessCacheStats {
+        let now = Instant::now();
+        let total_entries = self.records.len();
+        
+        // Подсчитываем количество актуальных записей
+        let active_entries = self.records.values().filter(|cached| {
+            now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds)
+        }).count();
+        
+        // Подсчитываем количество устаревших записей
+        let stale_entries = total_entries - active_entries;
+        
+        // Вычисляем средний возраст записей
+        let avg_age_seconds = if total_entries > 0 {
+            let total_age: f64 = self.records.values()
+                .map(|cached| now.duration_since(cached.cached_at).as_secs_f64())
+                .sum();
+            total_age / total_entries as f64
+        } else {
+            0.0
+        };
+        
+        ProcessCacheStats {
+            total_entries,
+            active_entries,
+            stale_entries,
+            max_capacity: self.config.max_cached_processes,
+            cache_ttl_seconds: self.config.cache_ttl_seconds,
+            average_age_seconds: avg_age_seconds,
+            hit_rate: 0.0, // Будет установлено позже
+        }
+    }
+}
+
+/// Статистика кэша метрик процессов.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProcessCacheStats {
+    /// Общее количество записей в кэше
+    pub total_entries: usize,
+    /// Количество актуальных записей
+    pub active_entries: usize,
+    /// Количество устаревших записей
+    pub stale_entries: usize,
+    /// Максимальная емкость кэша
+    pub max_capacity: usize,
+    /// Время жизни кэша в секундах
+    pub cache_ttl_seconds: u64,
+    /// Средний возраст записей в секундах
+    pub average_age_seconds: f64,
+    /// Процент попаданий в кэш
+    pub hit_rate: f64,
 }
 
 /// Собрать метрики всех процессов из /proc.
@@ -1886,6 +1939,26 @@ pub fn update_process_cache_config(config: ProcessCacheConfig) {
 pub fn get_process_cache_config() -> ProcessCacheConfig {
     let cache_read = PROCESS_CACHE.read().unwrap();
     cache_read.config.clone()
+}
+
+/// Получить статистику кэша метрик процессов.
+///
+/// # Возвращаемое значение
+///
+/// Статистика кэша метрик процессов.
+///
+/// # Примеры использования
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::get_process_cache_stats;
+///
+/// let stats = get_process_cache_stats();
+/// println!("Всего записей в кэше: {}", stats.total_entries);
+/// println!("Актуальных записей: {}", stats.active_entries);
+/// ```
+pub fn get_process_cache_stats() -> ProcessCacheStats {
+    let cache_read = PROCESS_CACHE.read().unwrap();
+    cache_read.get_cache_stats()
 }
 
 /// Собрать метрики всех процессов из /proc (устаревшая версия для совместимости).

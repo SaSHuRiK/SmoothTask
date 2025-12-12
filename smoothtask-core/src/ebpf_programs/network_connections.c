@@ -109,5 +109,54 @@ int trace_network_packet(struct trace_event_raw_net_dev_queue *ctx) {
     return 0;
 }
 
+// Точка входа для отслеживания закрытия соединений
+SEC("tracepoint/sock/sock_inet_sock_set_state")
+int trace_connection_close(struct trace_event_raw_sock_inet_sock_set_state *ctx) {
+    __u64 conn_id = 0;
+    struct connection_info *conn_info;
+    
+    // Создаем уникальный идентификатор соединения
+    conn_id = (__u64)ctx->saddr << 32 | ctx->daddr;
+    conn_id ^= (__u64)ctx->sport << 16 | ctx->dport;
+    
+    // Получаем информацию о соединении
+    conn_info = bpf_map_lookup_elem(&connection_map, &conn_id);
+    if (conn_info) {
+        // Обновляем время последней активности
+        conn_info->last_activity = bpf_ktime_get_ns();
+        conn_info->state = ctx->newstate;
+        
+        // Обновляем информацию о соединении
+        bpf_map_update_elem(&connection_map, &conn_id, conn_info, BPF_ANY);
+    }
+    
+    return 0;
+}
+
+// Точка входа для отслеживания передачи данных
+SEC("tracepoint/sock/sock_inet_sock_set_state")
+int trace_connection_data(struct trace_event_raw_sock_inet_sock_set_state *ctx) {
+    __u64 conn_id = 0;
+    struct connection_info *conn_info;
+    
+    // Создаем уникальный идентификатор соединения
+    conn_id = (__u64)ctx->saddr << 32 | ctx->daddr;
+    conn_id ^= (__u64)ctx->sport << 16 | ctx->dport;
+    
+    // Получаем информацию о соединении
+    conn_info = bpf_map_lookup_elem(&connection_map, &conn_id);
+    if (conn_info) {
+        // Увеличиваем счетчики пакетов и байт
+        conn_info->packets += 1;
+        conn_info->bytes += 1024; // Примерное значение
+        conn_info->last_activity = bpf_ktime_get_ns();
+        
+        // Обновляем информацию о соединении
+        bpf_map_update_elem(&connection_map, &conn_id, conn_info, BPF_ANY);
+    }
+    
+    return 0;
+}
+
 // Лицензия для eBPF программы
 char _license[] SEC("license") = "GPL";

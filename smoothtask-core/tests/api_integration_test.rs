@@ -777,3 +777,200 @@ async fn test_network_metrics_multiple_interfaces() {
         .await
         .expect("Сервер должен корректно остановиться");
 }
+
+#[tokio::test]
+async fn test_cache_stats_endpoint() {
+    // Тест: проверка работы endpoint /api/cache/stats
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+
+    // Создаем HTTP клиент
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/cache/stats", port);
+
+    // Отправляем GET запрос
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .expect("Запрос должен быть успешным");
+
+    // Проверяем статус код
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    // Проверяем ответ
+    let body = response
+        .text()
+        .await
+        .expect("Ответ должен быть текстом");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+    // Проверяем структуру ответа
+    assert_eq!(json["status"].as_str(), Some("ok"));
+    assert!(json["cache_stats"].is_object());
+    assert!(json["cache_stats"]["total_entries"].is_number());
+    assert!(json["cache_stats"]["active_entries"].is_number());
+    assert!(json["cache_stats"]["stale_entries"].is_number());
+    assert!(json["cache_stats"]["max_capacity"].is_number());
+    assert!(json["cache_stats"]["cache_ttl_seconds"].is_number());
+    assert!(json["cache_stats"]["average_age_seconds"].is_number());
+    assert!(json["cache_stats"]["hit_rate"].is_number());
+    assert!(json["cache_stats"]["utilization_rate"].is_number());
+    assert!(json["timestamp"].is_string());
+
+    // Останавливаем сервер
+    handle
+        .shutdown()
+        .await
+        .expect("Сервер должен корректно остановиться");
+}
+
+#[tokio::test]
+async fn test_cache_clear_endpoint() {
+    // Тест: проверка работы endpoint /api/cache/clear
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+
+    // Создаем HTTP клиент
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/cache/clear", port);
+
+    // Отправляем POST запрос
+    let response = client
+        .post(&url)
+        .send()
+        .await
+        .expect("Запрос должен быть успешным");
+
+    // Проверяем статус код
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    // Проверяем ответ
+    let body = response
+        .text()
+        .await
+        .expect("Ответ должен быть текстом");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+    // Проверяем структуру ответа
+    assert_eq!(json["status"].as_str(), Some("success"));
+    assert_eq!(
+        json["message"].as_str(),
+        Some("Process cache cleared successfully")
+    );
+    assert!(json["cleared_entries"].is_number());
+    assert!(json["previous_stats"].is_object());
+    assert!(json["current_stats"].is_object());
+    assert!(json["timestamp"].is_string());
+
+    // Останавливаем сервер
+    handle
+        .shutdown()
+        .await
+        .expect("Сервер должен корректно остановиться");
+}
+
+#[tokio::test]
+async fn test_cache_config_endpoint() {
+    // Тест: проверка работы endpoint /api/cache/config (GET)
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+
+    // Создаем HTTP клиент
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/cache/config", port);
+
+    // Отправляем GET запрос
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .expect("Запрос должен быть успешным");
+
+    // Проверяем статус код
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    // Проверяем ответ
+    let body = response
+        .text()
+        .await
+        .expect("Ответ должен быть текстом");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+    // Проверяем структуру ответа
+    assert_eq!(json["status"].as_str(), Some("ok"));
+    assert!(json["cache_config"].is_object());
+    assert!(json["cache_config"]["cache_ttl_seconds"].is_number());
+    assert!(json["cache_config"]["max_cached_processes"].is_number());
+    assert!(json["cache_config"]["enable_caching"].is_boolean());
+    assert!(json["cache_config"]["enable_parallel_processing"].is_boolean());
+    assert!(json["timestamp"].is_string());
+
+    // Останавливаем сервер
+    handle
+        .shutdown()
+        .await
+        .expect("Сервер должен корректно остановиться");
+}
+
+#[tokio::test]
+async fn test_cache_config_update_endpoint() {
+    // Тест: проверка работы endpoint /api/cache/config (POST)
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+
+    // Создаем HTTP клиент
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/cache/config", port);
+
+    // Отправляем POST запрос с новой конфигурацией
+    let new_config = serde_json::json!({
+        "cache_ttl_seconds": 30,
+        "max_cached_processes": 5000,
+        "enable_caching": true,
+        "enable_parallel_processing": true
+    });
+
+    let response = client
+        .post(&url)
+        .json(&new_config)
+        .send()
+        .await
+        .expect("Запрос должен быть успешным");
+
+    // Проверяем статус код
+    assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+    // Проверяем ответ
+    let body = response
+        .text()
+        .await
+        .expect("Ответ должен быть текстом");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+    // Проверяем структуру ответа
+    assert_eq!(json["status"].as_str(), Some("success"));
+    assert_eq!(
+        json["message"].as_str(),
+        Some("Process cache configuration updated successfully")
+    );
+    assert!(json["cache_config"].is_object());
+    assert_eq!(json["cache_config"]["cache_ttl_seconds"].as_u64(), Some(30));
+    assert_eq!(json["cache_config"]["max_cached_processes"].as_u64(), Some(5000));
+    assert_eq!(json["cache_config"]["enable_caching"].as_bool(), Some(true));
+    assert_eq!(
+        json["cache_config"]["enable_parallel_processing"].as_bool(),
+        Some(true)
+    );
+    assert!(json["timestamp"].is_string());
+
+    // Останавливаем сервер
+    handle
+        .shutdown()
+        .await
+        .expect("Сервер должен корректно остановиться");
+}

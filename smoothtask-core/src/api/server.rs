@@ -13,7 +13,7 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info, trace};
@@ -48,6 +48,8 @@ pub struct ApiState {
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     /// Метрики производительности API
     performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,
+    /// Коллектор метрик для сбора данных о сетевых соединениях (опционально)
+    metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
 }
 
 /// Кэш для часто запрашиваемых данных API.
@@ -269,6 +271,7 @@ pub struct ApiStateBuilder {
     cache: Option<Arc<RwLock<ApiCache>>>,
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
+    metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
 }
 
 impl ApiStateBuilder {
@@ -538,6 +541,31 @@ impl ApiStateBuilder {
         self
     }
 
+    /// Устанавливает коллектор метрик для сбора данных о сетевых соединениях.
+    ///
+    /// # Параметры
+    ///
+    /// - `metrics_collector`: Коллектор метрик eBPF
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::metrics::ebpf::EbpfMetricsCollector;
+    /// use std::sync::Arc;
+    ///
+    /// let metrics_collector = Arc::new(EbpfMetricsCollector::new(Default::default()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_metrics_collector(Some(metrics_collector));
+    /// ```
+    pub fn with_metrics_collector(
+        mut self,
+        metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
+    ) -> Self {
+        self.metrics_collector = metrics_collector;
+        self
+    }
+
     /// Устанавливает метрики производительности для API.
     ///
     /// # Параметры
@@ -619,6 +647,7 @@ impl ApiStateBuilder {
             performance_metrics: self
                 .performance_metrics
                 .unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
+            metrics_collector: self.metrics_collector,
         }
     }
 }
@@ -639,6 +668,7 @@ impl ApiState {
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         }
     }
 
@@ -657,6 +687,7 @@ impl ApiState {
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         }
     }
 
@@ -677,6 +708,7 @@ impl ApiState {
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         }
     }
 
@@ -700,6 +732,7 @@ impl ApiState {
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         }
     }
 
@@ -724,6 +757,7 @@ impl ApiState {
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         }
     }
 
@@ -751,6 +785,7 @@ impl ApiState {
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         }
     }
 
@@ -966,9 +1001,14 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/logs",
                 "method": "GET",
                 "description": "Получение последних логов приложения с фильтрацией по уровню и лимиту"
+            },
+            {
+                "path": "/api/network/connections",
+                "method": "GET",
+                "description": "Получение информации о текущих сетевых соединениях через eBPF"
             }
         ],
-        "count": 22
+        "count": 23
     }))
 }
 
@@ -1597,6 +1637,11 @@ fn create_router(state: ApiState) -> Router {
         )
         .route("/api/performance", get(performance_handler))
         .route("/api/logs", get(logs_handler))
+        .route("/api/cache/stats", get(cache_stats_handler))
+        .route("/api/cache/clear", post(cache_clear_handler))
+        .route("/api/cache/config", get(cache_config_handler))
+        .route("/api/cache/config", post(cache_config_update_handler))
+        .route("/api/network/connections", get(network_connections_handler))
         .with_state(state)
 }
 
@@ -2211,9 +2256,9 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
 ///
 /// Сервер предоставляет REST API для мониторинга работы демона.
 /// Сервер запускается в отдельной задаче и может быть остановлен через handle.
-
 /// Тип ошибки API для более детальной обработки ошибок.
 #[derive(Debug, thiserror::Error)]
+#[allow(clippy::enum_variant_names)]
 pub enum ApiError {
     /// Ошибка валидации входных данных
     #[error("Validation error: {0}")]
@@ -2298,6 +2343,7 @@ impl From<ApiError> for Result<Json<Value>, StatusCode> {
 }
 
 /// Хелпер для graceful degradation - возвращает ответ с информацией о недоступности данных
+#[allow(dead_code)]
 fn graceful_degradation_response(resource_name: &str, suggestion: &str) -> Json<Value> {
     Json(json!({
         "status": "degraded",
@@ -3729,10 +3775,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 22); // Обновлено с 19 до 20
+        assert_eq!(json["count"], 23); // Обновлено с 22 до 23
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 22); // Обновлено с 20 до 22
+        assert_eq!(endpoints.len(), 23); // Обновлено с 22 до 23
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -5155,10 +5201,10 @@ max_candidates: 200
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 22); // Обновлено с 21 до 22
+        assert_eq!(json["count"], 23); // Обновлено с 22 до 23
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 22);
+        assert_eq!(endpoints.len(), 23);
 
         // Проверяем наличие новых endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -5190,6 +5236,7 @@ max_candidates: 200
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         };
 
         let payload = json!({
@@ -5230,6 +5277,7 @@ max_candidates: 200
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         };
 
         let payload = json!({
@@ -5277,6 +5325,7 @@ max_candidates: 200
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            metrics_collector: None,
         };
 
         // Пустой payload - должны использоваться значения по умолчанию
@@ -5703,4 +5752,252 @@ max_candidates: 200
             .await
             .expect("Сервер должен корректно остановиться");
     }
+}
+
+/// Обработчик для endpoint `/api/cache/stats` (GET).
+///
+/// Возвращает статистику кэша метрик процессов.
+/// Включает информацию о количестве записей, актуальных записей, устаревших записей,
+/// максимальной емкости, времени жизни кэша и среднем возрасте записей.
+async fn cache_stats_handler() -> Result<Json<Value>, StatusCode> {
+    let stats = crate::metrics::process::get_process_cache_stats();
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "cache_stats": {
+            "total_entries": stats.total_entries,
+            "active_entries": stats.active_entries,
+            "stale_entries": stats.stale_entries,
+            "max_capacity": stats.max_capacity,
+            "cache_ttl_seconds": stats.cache_ttl_seconds,
+            "average_age_seconds": stats.average_age_seconds,
+            "hit_rate": stats.hit_rate,
+            "utilization_rate": if stats.max_capacity > 0 {
+                (stats.total_entries as f64 / stats.max_capacity as f64) * 100.0
+            } else {
+                0.0
+            }
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    })))
+}
+
+/// Обработчик для endpoint `/api/cache/clear` (POST).
+///
+/// Очищает кэш метрик процессов.
+/// Возвращает информацию о количестве удаленных записей и статусе операции.
+async fn cache_clear_handler() -> Result<Json<Value>, StatusCode> {
+    // Получаем текущую статистику перед очисткой
+    let stats_before = crate::metrics::process::get_process_cache_stats();
+    
+    // Очищаем кэш
+    crate::metrics::process::clear_process_cache();
+    
+    // Получаем статистику после очистки
+    let stats_after = crate::metrics::process::get_process_cache_stats();
+    
+    Ok(Json(json!({
+        "status": "success",
+        "message": "Process cache cleared successfully",
+        "cleared_entries": stats_before.total_entries - stats_after.total_entries,
+        "previous_stats": {
+            "total_entries": stats_before.total_entries,
+            "active_entries": stats_before.active_entries,
+            "stale_entries": stats_before.stale_entries
+        },
+        "current_stats": {
+            "total_entries": stats_after.total_entries,
+            "active_entries": stats_after.active_entries,
+            "stale_entries": stats_after.stale_entries
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    })))
+}
+
+/// Обработчик для endpoint `/api/cache/config` (GET).
+///
+/// Возвращает текущую конфигурацию кэша метрик процессов.
+/// Включает параметры TTL, максимального количества процессов, включения кэширования
+/// и параллельной обработки.
+async fn cache_config_handler() -> Result<Json<Value>, StatusCode> {
+    let config = crate::metrics::process::get_process_cache_config();
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "cache_config": {
+            "cache_ttl_seconds": config.cache_ttl_seconds,
+            "max_cached_processes": config.max_cached_processes,
+            "enable_caching": config.enable_caching,
+            "enable_parallel_processing": config.enable_parallel_processing,
+            "max_parallel_threads": config.max_parallel_threads
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    })))
+}
+
+/// Обработчик для endpoint `/api/cache/config` (POST).
+///
+/// Обновляет конфигурацию кэша метрик процессов.
+/// Позволяет изменять параметры TTL, максимального количества процессов,
+/// включения кэширования и параллельной обработки.
+///
+/// # Параметры запроса
+///
+/// - `cache_ttl_seconds` (опционально): Новое время жизни кэша в секундах
+/// - `max_cached_processes` (опционально): Новое максимальное количество кэшируемых процессов
+/// - `enable_caching` (опционально): Включить/отключить кэширование
+/// - `enable_parallel_processing` (опционально): Включить/отключить параллельную обработку
+/// - `max_parallel_threads` (опционально): Максимальное количество параллельных потоков
+///
+/// # Примеры
+///
+/// ```bash
+/// # Обновление TTL кэша
+/// curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+///   -H "Content-Type: application/json" \
+///   -d '{"cache_ttl_seconds": 30}'
+///
+/// # Обновление максимального количества процессов
+/// curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+///   -H "Content-Type: application/json" \
+///   -d '{"max_cached_processes": 5000}'
+///
+/// # Отключение кэширования
+/// curl -X POST "http://127.0.0.1:8080/api/cache/config" \
+///   -H "Content-Type: application/json" \
+///   -d '{"enable_caching": false}'
+/// ```
+async fn cache_config_update_handler(
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    // Получаем текущую конфигурацию
+    let mut config = crate::metrics::process::get_process_cache_config();
+    
+    // Обновляем параметры, если они предоставлены
+    if let Some(ttl) = payload.get("cache_ttl_seconds").and_then(|v| v.as_u64()) {
+        config.cache_ttl_seconds = ttl;
+    }
+    
+    if let Some(max_processes) = payload.get("max_cached_processes").and_then(|v| v.as_u64()) {
+        config.max_cached_processes = max_processes as usize;
+    }
+    
+    if let Some(enable_caching) = payload.get("enable_caching").and_then(|v| v.as_bool()) {
+        config.enable_caching = enable_caching;
+    }
+    
+    if let Some(enable_parallel) = payload.get("enable_parallel_processing").and_then(|v| v.as_bool()) {
+        config.enable_parallel_processing = enable_parallel;
+    }
+    
+    if let Some(max_threads) = payload.get("max_parallel_threads").and_then(|v| v.as_u64()) {
+        config.max_parallel_threads = Some(max_threads as usize);
+    }
+    
+    // Применяем новую конфигурацию
+    crate::metrics::process::update_process_cache_config(config.clone());
+    
+    Ok(Json(json!({
+        "status": "success",
+        "message": "Process cache configuration updated successfully",
+        "cache_config": {
+            "cache_ttl_seconds": config.cache_ttl_seconds,
+            "max_cached_processes": config.max_cached_processes,
+            "enable_caching": config.enable_caching,
+            "enable_parallel_processing": config.enable_parallel_processing,
+            "max_parallel_threads": config.max_parallel_threads
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    })))
+}
+
+/// Обработчик для endpoint `/api/network/connections`.
+///
+/// Возвращает информацию о текущих сетевых соединениях, собранных через eBPF.
+/// Включает детализированную информацию о каждом активном соединении.
+async fn network_connections_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.metrics_collector {
+        Some(collector) => {
+            // Пробуем собрать метрики сетевых соединений
+            // Клонируем Arc и получаем mutable reference
+            let mut collector_clone = Arc::clone(collector);
+            match Arc::get_mut(&mut collector_clone).unwrap().collect_metrics() {
+                Ok(metrics) => {
+                    let connection_details = metrics.connection_details.clone();
+                    let total_connections = connection_details.as_ref().map(|d| d.len()).unwrap_or(0);
+                    
+                    let connections_info = connection_details.map(|details| {
+                        details.into_iter().map(|conn| {
+                            json!({
+                                "src_ip": format_ip(conn.src_ip),
+                                "dst_ip": format_ip(conn.dst_ip),
+                                "src_port": conn.src_port,
+                                "dst_port": conn.dst_port,
+                                "protocol": protocol_to_string(conn.protocol),
+                                "state": conn.state,
+                                "packets": conn.packets,
+                                "bytes": conn.bytes,
+                                "start_time": conn.start_time,
+                                "last_activity": conn.last_activity,
+                                "active": is_connection_active(conn.last_activity)
+                            })
+                        }).collect::<Vec<Value>>()
+                    });
+                    
+                    Ok(Json(json!({
+                        "status": "ok",
+                        "timestamp": Utc::now().to_rfc3339(),
+                        "active_connections": metrics.active_connections,
+                        "total_connections": total_connections,
+                        "connections": connections_info,
+                        "network_stats": {
+                            "packets": metrics.network_packets,
+                            "bytes": metrics.network_bytes
+                        }
+                    })))
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при сборе метрик сетевых соединений: {}", e);
+                    Ok(Json(json!({
+                        "status": "error",
+                        "error": format!("Failed to collect network connection metrics: {}", e),
+                        "timestamp": Utc::now().to_rfc3339()
+                    })))
+                }
+            }
+        }
+        None => Ok(Json(json!({
+            "status": "error",
+            "error": "Metrics collector not available",
+            "timestamp": Utc::now().to_rfc3339()
+        }))),
+    }
+}
+
+/// Вспомогательная функция для форматирования IP адреса
+fn format_ip(ip: u32) -> String {
+    let bytes = ip.to_be_bytes();
+    format!("{}.{}.{}.{}", bytes[0], bytes[1], bytes[2], bytes[3])
+}
+
+/// Вспомогательная функция для преобразования протокола в строку
+fn protocol_to_string(protocol: u8) -> String {
+    match protocol {
+        6 => "TCP".to_string(),
+        17 => "UDP".to_string(),
+        _ => format!("Unknown({})", protocol)
+    }
+}
+
+/// Вспомогательная функция для проверки активности соединения
+fn is_connection_active(last_activity: u64) -> bool {
+    // Считаем соединение активным, если активность была в последние 30 секунд
+    let current_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or(Duration::from_secs(0))
+        .as_nanos() as u64;
+    
+    // 30 секунд в наносекундах
+    let timeout_ns = 30_000_000_000;
+    current_time.saturating_sub(last_activity) < timeout_ns
 }

@@ -63,8 +63,52 @@ int trace_network_packet(struct trace_event_raw_netif_receive_skb *ctx)
 SEC("tracepoint/sock/sock_inet_sock_set_state")
 int trace_tcp_connection(struct trace_event_raw_sock_inet_sock_set_state *ctx)
 {
-    // В реальной реализации здесь будет отслеживание TCP соединений
-    // Пока что это заглушка
+    __u32 ip_key = ctx->saddr;
+    struct network_stats *stats;
+    
+    // Получаем или создаем статистику для этого IP
+    stats = bpf_map_lookup_elem(&network_stats_map, &ip_key);
+    if (!stats) {
+        struct network_stats new_stats = {};
+        new_stats.last_timestamp = bpf_ktime_get_ns();
+        bpf_map_update_elem(&network_stats_map, &ip_key, &new_stats, BPF_ANY);
+        stats = bpf_map_lookup_elem(&network_stats_map, &ip_key);
+        if (!stats) {
+            return 0;
+        }
+    }
+    
+    // Обновляем статистику
+    stats->packets_sent += 1;
+    stats->bytes_sent += 1024; // Примерное значение
+    stats->last_timestamp = bpf_ktime_get_ns();
+    
+    return 0;
+}
+
+// Точка входа для отслеживания UDP соединений
+SEC("tracepoint/sock/sock_inet_sock_set_state")
+int trace_udp_connection(struct trace_event_raw_sock_inet_sock_set_state *ctx)
+{
+    __u32 ip_key = ctx->saddr;
+    struct network_stats *stats;
+    
+    // Получаем или создаем статистику для этого IP
+    stats = bpf_map_lookup_elem(&network_stats_map, &ip_key);
+    if (!stats) {
+        struct network_stats new_stats = {};
+        new_stats.last_timestamp = bpf_ktime_get_ns();
+        bpf_map_update_elem(&network_stats_map, &ip_key, &new_stats, BPF_ANY);
+        stats = bpf_map_lookup_elem(&network_stats_map, &ip_key);
+        if (!stats) {
+            return 0;
+        }
+    }
+    
+    // Обновляем статистику
+    stats->packets_sent += 1;
+    stats->bytes_sent += 512; // Примерное значение для UDP
+    stats->last_timestamp = bpf_ktime_get_ns();
     
     return 0;
 }

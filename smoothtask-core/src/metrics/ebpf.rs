@@ -2494,6 +2494,8 @@ impl EbpfMetricsCollector {
     /// 
     /// Эта функция ограничивает количество детализированных статистик для уменьшения memory footprint
     #[allow(dead_code)]
+    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::type_complexity)]
     fn optimize_detailed_stats(&self, 
         syscall_details: Option<Vec<SyscallStat>>,
         network_details: Option<Vec<NetworkStat>>,
@@ -3799,6 +3801,7 @@ impl EbpfMetricsCollector {
                 }
                 
                 // Вычисляем среднее время
+                #[allow(clippy::iter_kv_map)]
                 let mut aggregated_vec: Vec<SyscallStat> = aggregated.into_iter().map(|(_, mut stat)| {
                     if stat.count > 0 {
                         stat.avg_time_ns = stat.total_time_ns / stat.count;
@@ -3933,6 +3936,7 @@ impl EbpfMetricsCollector {
     }
 
     /// Установить пороги фильтрации
+    #[allow(clippy::too_many_arguments)]
     pub fn set_filtering_thresholds(&mut self, 
         cpu_threshold: f64,
         memory_threshold: u64,
