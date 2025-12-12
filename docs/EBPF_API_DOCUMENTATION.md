@@ -9,11 +9,14 @@ This document provides comprehensive API documentation for the eBPF (extended Be
 3. [Configuration (EbpfConfig)](#configuration-ebpfconfig)
 4. [Main Structures](#main-structures)
 5. [EbpfMetricsCollector API](#ebpfmetricscollector-api)
-6. [Utility Functions](#utility-functions)
-7. [Error Handling](#error-handling)
-8. [Performance Optimization](#performance-optimization)
-9. [Integration Examples](#integration-examples)
-10. [Best Practices](#best-practices)
+6. [Filtering and Aggregation](#filtering-and-aggregation)
+7. [Memory Optimization](#memory-optimization)
+8. [Temperature Monitoring](#temperature-monitoring)
+9. [Utility Functions](#utility-functions)
+10. [Error Handling](#error-handling)
+11. [Performance Optimization](#performance-optimization)
+12. [Integration Examples](#integration-examples)
+13. [Best Practices](#best-practices)
 
 ## Overview
 
@@ -391,6 +394,545 @@ pub struct SyscallStat {
     
     /// Average execution time in nanoseconds
     pub avg_time_ns: u64,
+}
+```
+
+## EbpfMetricsCollector API
+
+The main interface for collecting eBPF metrics.
+
+### Constructor
+
+```rust
+/// Create a new eBPF metrics collector
+pub fn new(config: EbpfConfig) -> Self
+```
+
+## Filtering and Aggregation
+
+The eBPF module provides advanced filtering and aggregation capabilities to optimize data collection and reduce overhead.
+
+### EbpfFilterConfig
+
+The `EbpfFilterConfig` structure defines all configurable parameters for filtering and aggregation.
+
+```rust
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct EbpfFilterConfig {
+    /// Enable kernel-level filtering
+    pub enable_kernel_filtering: bool,
+    
+    /// Minimum CPU usage threshold (in percentage)
+    pub cpu_usage_threshold: f64,
+    
+    /// Minimum memory usage threshold (in bytes)
+    pub memory_usage_threshold: u64,
+    
+    /// Minimum system call count threshold
+    pub syscall_count_threshold: u64,
+    
+    /// Minimum network traffic threshold (in bytes)
+    pub network_traffic_threshold: u64,
+    
+    /// Minimum active connections threshold
+    pub active_connections_threshold: u64,
+    
+    /// Minimum GPU usage threshold (in percentage)
+    pub gpu_usage_threshold: f64,
+    
+    /// Minimum GPU memory threshold (in bytes)
+    pub gpu_memory_threshold: u64,
+    
+    /// Enable kernel-level aggregation
+    pub enable_kernel_aggregation: bool,
+    
+    /// Aggregation interval (in milliseconds)
+    pub aggregation_interval_ms: u64,
+    
+    /// Maximum number of aggregated entries
+    pub max_aggregated_entries: usize,
+    
+    /// Enable PID filtering
+    pub enable_pid_filtering: bool,
+    
+    /// List of PIDs to filter
+    pub filtered_pids: Vec<u32>,
+    
+    /// Enable syscall type filtering
+    pub enable_syscall_type_filtering: bool,
+    
+    /// List of syscall types to filter
+    pub filtered_syscall_types: Vec<u32>,
+    
+    /// Enable network protocol filtering
+    pub enable_network_protocol_filtering: bool,
+    
+    /// List of network protocols to filter (TCP=6, UDP=17, etc.)
+    pub filtered_network_protocols: Vec<u8>,
+    
+    /// Enable port range filtering
+    pub enable_port_range_filtering: bool,
+    
+    /// Minimum port number for filtering
+    pub min_port: u16,
+    
+    /// Maximum port number for filtering
+    pub max_port: u16,
+    
+    /// Enable process type filtering
+    pub enable_process_type_filtering: bool,
+    
+    /// List of process types to filter
+    pub filtered_process_types: Vec<String>,
+    
+    /// Enable process category filtering
+    pub enable_process_category_filtering: bool,
+    
+    /// List of process categories to filter
+    pub filtered_process_categories: Vec<String>,
+    
+    /// Enable process priority filtering
+    pub enable_process_priority_filtering: bool,
+    
+    /// Minimum process priority for filtering
+    pub min_process_priority: i32,
+    
+    /// Maximum process priority for filtering
+    pub max_process_priority: i32,
+}
+```
+
+### Default Filter Configuration
+
+```rust
+impl Default for EbpfFilterConfig {
+    fn default() -> Self {
+        Self {
+            enable_kernel_filtering: false,
+            cpu_usage_threshold: 1.0,
+            memory_usage_threshold: 1024 * 1024, // 1 MB
+            syscall_count_threshold: 10,
+            network_traffic_threshold: 1024, // 1 KB
+            active_connections_threshold: 5,
+            gpu_usage_threshold: 1.0,
+            gpu_memory_threshold: 1024 * 1024, // 1 MB
+            enable_kernel_aggregation: false,
+            aggregation_interval_ms: 1000, // 1 second
+            max_aggregated_entries: 1000,
+            enable_pid_filtering: false,
+            filtered_pids: Vec::new(),
+            enable_syscall_type_filtering: false,
+            filtered_syscall_types: Vec::new(),
+            enable_network_protocol_filtering: false,
+            filtered_network_protocols: Vec::new(),
+            enable_port_range_filtering: false,
+            min_port: 0,
+            max_port: 65535,
+            enable_process_type_filtering: false,
+            filtered_process_types: Vec::new(),
+            enable_process_category_filtering: false,
+            filtered_process_categories: Vec::new(),
+            enable_process_priority_filtering: false,
+            min_process_priority: -20, // Minimum priority (highest)
+            max_process_priority: 19,  // Maximum priority (lowest)
+        }
+    }
+}
+```
+
+### Filtering Functions
+
+#### Set Filter Configuration
+
+```rust
+/// Set filter configuration
+pub fn set_filter_config(&mut self, filter_config: EbpfFilterConfig)
+```
+
+**Parameters:**
+- `filter_config`: `EbpfFilterConfig` - Configuration for filtering
+
+**Example:**
+```rust
+let filter_config = EbpfFilterConfig {
+    enable_kernel_filtering: true,
+    cpu_usage_threshold: 5.0,
+    memory_usage_threshold: 1024 * 1024,
+    ..Default::default()
+};
+
+collector.set_filter_config(filter_config);
+```
+
+#### Apply Filtering
+
+```rust
+/// Apply filtering to collected metrics
+pub fn apply_filtering(&self, metrics: &mut EbpfMetrics)
+```
+
+**Parameters:**
+- `metrics`: `&mut EbpfMetrics` - Metrics to filter
+
+**Behavior:**
+- Filters metrics based on configured thresholds
+- Removes entries below threshold values
+- Applies PID, syscall type, and network protocol filtering
+- Logs filtering operations
+
+**Example:**
+```rust
+let mut metrics = collector.collect_metrics()?;
+collector.apply_filtering(&mut metrics);
+```
+
+#### Set PID Filtering
+
+```rust
+/// Set PID filtering
+pub fn set_pid_filtering(&mut self, enable: bool, pids: Vec<u32>)
+```
+
+**Parameters:**
+- `enable`: `bool` - Enable/disable PID filtering
+- `pids`: `Vec<u32>` - List of PIDs to filter
+
+**Example:**
+```rust
+collector.set_pid_filtering(true, vec![100, 200, 300]);
+```
+
+#### Set Syscall Type Filtering
+
+```rust
+/// Set syscall type filtering
+pub fn set_syscall_type_filtering(&mut self, enable: bool, syscall_types: Vec<u32>)
+```
+
+**Parameters:**
+- `enable`: `bool` - Enable/disable syscall type filtering
+- `syscall_types`: `Vec<u32>` - List of syscall types to filter
+
+**Example:**
+```rust
+collector.set_syscall_type_filtering(true, vec![4, 5, 6]);
+```
+
+#### Set Network Protocol Filtering
+
+```rust
+/// Set network protocol filtering
+pub fn set_network_protocol_filtering(&mut self, enable: bool, protocols: Vec<u8>)
+```
+
+**Parameters:**
+- `enable`: `bool` - Enable/disable network protocol filtering
+- `protocols`: `Vec<u8>` - List of network protocols to filter (TCP=6, UDP=17, etc.)
+
+**Example:**
+```rust
+collector.set_network_protocol_filtering(true, vec![6, 17]); // TCP and UDP
+```
+
+#### Set Port Range Filtering
+
+```rust
+/// Set port range filtering
+pub fn set_port_range_filtering(&mut self, enable: bool, min_port: u16, max_port: u16)
+```
+
+**Parameters:**
+- `enable`: `bool` - Enable/disable port range filtering
+- `min_port`: `u16` - Minimum port number
+- `max_port`: `u16` - Maximum port number
+
+**Example:**
+```rust
+collector.set_port_range_filtering(true, 1024, 65535);
+```
+
+#### Set Aggregation Parameters
+
+```rust
+/// Set aggregation parameters
+pub fn set_aggregation_parameters(&mut self, enable: bool, interval_ms: u64, max_entries: usize)
+```
+
+**Parameters:**
+- `enable`: `bool` - Enable/disable aggregation
+- `interval_ms`: `u64` - Aggregation interval in milliseconds
+- `max_entries`: `usize` - Maximum number of aggregated entries
+
+**Example:**
+```rust
+collector.set_aggregation_parameters(true, 1000, 500);
+```
+
+#### Set Filtering Thresholds
+
+```rust
+/// Set filtering thresholds
+pub fn set_filtering_thresholds(&mut self, 
+    cpu_threshold: f64, 
+    memory_threshold: u64, 
+    syscall_threshold: u64, 
+    network_threshold: u64, 
+    connections_threshold: u64, 
+    gpu_usage_threshold: f64, 
+    gpu_memory_threshold: u64)
+```
+
+**Parameters:**
+- `cpu_threshold`: `f64` - CPU usage threshold
+- `memory_threshold`: `u64` - Memory usage threshold
+- `syscall_threshold`: `u64` - Syscall count threshold
+- `network_threshold`: `u64` - Network traffic threshold
+- `connections_threshold`: `u64` - Active connections threshold
+- `gpu_usage_threshold`: `f64` - GPU usage threshold
+- `gpu_memory_threshold`: `u64` - GPU memory threshold
+
+**Example:**
+```rust
+collector.set_filtering_thresholds(5.0, 1024 * 1024, 50, 1024, 2, 5.0, 1024 * 1024);
+```
+
+### Aggregation Functions
+
+#### Apply Aggregation
+
+```rust
+/// Apply aggregation to collected metrics
+pub fn apply_aggregation(&self, metrics: &mut EbpfMetrics)
+```
+
+**Parameters:**
+- `metrics`: `&mut EbpfMetrics` - Metrics to aggregate
+
+**Behavior:**
+- Aggregates detailed statistics by type
+- Limits number of entries to configured maximum
+- Preserves most significant entries
+- Logs aggregation operations
+
+**Example:**
+```rust
+let mut metrics = collector.collect_metrics()?;
+collector.apply_aggregation(&mut metrics);
+```
+
+#### Apply Filtering and Aggregation
+
+```rust
+/// Apply both filtering and aggregation
+pub fn apply_filtering_and_aggregation(&self, metrics: &mut EbpfMetrics)
+```
+
+**Parameters:**
+- `metrics`: `&mut EbpfMetrics` - Metrics to process
+
+**Behavior:**
+- Applies filtering first, then aggregation
+- Combines both operations for optimal performance
+
+**Example:**
+```rust
+let mut metrics = collector.collect_metrics()?;
+collector.apply_filtering_and_aggregation(&mut metrics);
+```
+
+## Memory Optimization
+
+The eBPF module provides comprehensive memory optimization features to reduce memory footprint and improve performance.
+
+### Memory Optimization Functions
+
+#### Optimize eBPF Memory Usage
+
+```rust
+/// Optimize memory usage in eBPF maps
+pub fn optimize_ebpf_memory_usage(&mut self) -> Result<()>
+```
+
+**Returns:**
+- `Result<()>` - Ok if optimization successful, Err with error details
+
+**Behavior:**
+- Optimizes memory usage in all eBPF maps
+- Cleans up unused entries
+- Reduces memory footprint
+- Logs optimization results
+
+**Example:**
+```rust
+collector.optimize_ebpf_memory_usage()?;
+```
+
+#### Set Maximum Cached Details
+
+```rust
+/// Set maximum number of cached detailed statistics
+pub fn set_max_cached_details(&mut self, max_details: usize)
+```
+
+**Parameters:**
+- `max_details`: `usize` - Maximum number of detailed statistics to cache
+
+**Example:**
+```rust
+collector.set_max_cached_details(100);
+```
+
+#### Get Maximum Cached Details
+
+```rust
+/// Get current maximum number of cached detailed statistics
+pub fn get_max_cached_details(&self) -> usize
+```
+
+**Returns:**
+- `usize` - Current maximum number of cached details
+
+**Example:**
+```rust
+let max_details = collector.get_max_cached_details();
+```
+
+#### Enable/Disable Cleanup of Unused Maps
+
+```rust
+/// Enable or disable cleanup of unused eBPF maps
+pub fn set_cleanup_unused_maps(&mut self, enabled: bool)
+```
+
+**Parameters:**
+- `enabled`: `bool` - Enable/disable cleanup
+
+**Example:**
+```rust
+collector.set_cleanup_unused_maps(true);
+```
+
+## Temperature Monitoring
+
+The eBPF module provides advanced temperature monitoring capabilities for both CPU and GPU.
+
+### Temperature Monitoring Structures
+
+#### CpuTemperatureStat
+
+```rust
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct CpuTemperatureStat {
+    /// CPU core identifier
+    pub cpu_id: u32,
+    
+    /// Current CPU temperature (in Celsius)
+    pub temperature_celsius: u32,
+    
+    /// Maximum CPU temperature (in Celsius)
+    pub max_temperature_celsius: u32,
+    
+    /// Time of last update
+    pub last_update_time: u64,
+}
+```
+
+### Temperature Monitoring Functions
+
+#### Collect GPU Temperature
+
+```rust
+/// Collect GPU temperature from eBPF maps
+fn collect_gpu_temperature_from_maps(&self) -> Result<u32>
+```
+
+**Returns:**
+- `Result<u32>` - GPU temperature in Celsius or error
+
+**Behavior:**
+- Collects temperature data from GPU eBPF maps
+- Averages temperature across all GPU devices
+- Handles errors gracefully
+
+**Example:**
+```rust
+let gpu_temp = collector.collect_gpu_temperature_from_maps()?;
+```
+
+#### Collect CPU Temperature
+
+```rust
+/// Collect CPU temperature from eBPF maps
+fn collect_cpu_temperature_from_maps(&self) -> Result<Vec<CpuTemperatureStat>>
+```
+
+**Returns:**
+- `Result<Vec<CpuTemperatureStat>>` - Vector of CPU temperature statistics or error
+
+**Behavior:**
+- Collects temperature data from CPU eBPF maps
+- Returns detailed statistics for each CPU core
+- Handles errors gracefully
+
+**Example:**
+```rust
+let cpu_temps = collector.collect_cpu_temperature_from_maps()?;
+```
+
+#### Collect CPU Temperature Data
+
+```rust
+/// Collect comprehensive CPU temperature data
+fn collect_cpu_temperature_data(&self) -> Result<(u32, u32, Option<Vec<CpuTemperatureStat>>)>
+```
+
+**Returns:**
+- `Result<(u32, u32, Option<Vec<CpuTemperatureStat>>)>` - Tuple containing average temperature, max temperature, and detailed statistics
+
+**Behavior:**
+- Collects comprehensive CPU temperature data
+- Calculates average and maximum temperatures
+- Returns detailed statistics if available
+
+**Example:**
+```rust
+let (avg_temp, max_temp, details) = collector.collect_cpu_temperature_data()?;
+```
+
+### Temperature Monitoring Configuration
+
+To enable temperature monitoring, configure the `EbpfConfig`:
+
+```rust
+let config = EbpfConfig {
+    enable_cpu_temperature_monitoring: true,
+    enable_gpu_monitoring: true,
+    ..Default::default()
+};
+```
+
+### Temperature Monitoring in Metrics
+
+Temperature data is included in the main `EbpfMetrics` structure:
+
+```rust
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EbpfMetrics {
+    // ... other fields ...
+    
+    /// GPU temperature in Celsius
+    pub gpu_temperature: u32,
+    
+    /// CPU temperature in Celsius
+    pub cpu_temperature: u32,
+    
+    /// Maximum CPU temperature in Celsius
+    pub cpu_max_temperature: u32,
+    
+    /// Detailed CPU temperature statistics (optional)
+    pub cpu_temperature_details: Option<Vec<CpuTemperatureStat>>,
+    
+    // ... other fields ...
 }
 ```
 
@@ -1090,6 +1632,168 @@ fn main() -> Result<()> {
 }
 ```
 
+### Integration with Filtering and Aggregation
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfFilterConfig};
+
+fn main() -> Result<()> {
+    // Create configuration with filtering enabled
+    let config = EbpfConfig {
+        enable_cpu_metrics: true,
+        enable_memory_metrics: true,
+        enable_syscall_monitoring: true,
+        enable_network_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    collector.initialize()?;
+
+    // Configure filtering
+    let filter_config = EbpfFilterConfig {
+        enable_kernel_filtering: true,
+        cpu_usage_threshold: 5.0,
+        memory_usage_threshold: 1024 * 1024,
+        syscall_count_threshold: 50,
+        network_traffic_threshold: 1024 * 1024,
+        ..Default::default()
+    };
+
+    collector.set_filter_config(filter_config);
+
+    // Configure PID filtering
+    collector.set_pid_filtering(true, vec![100, 200, 300]);
+
+    // Configure network protocol filtering
+    collector.set_network_protocol_filtering(true, vec![6, 17]); // TCP and UDP
+
+    // Configure aggregation
+    collector.set_aggregation_parameters(true, 1000, 500);
+
+    // Main monitoring loop with filtering and aggregation
+    loop {
+        let mut metrics = collector.collect_metrics()?;
+        
+        // Apply filtering and aggregation
+        collector.apply_filtering_and_aggregation(&mut metrics);
+        
+        println!("Filtered Metrics:");
+        println!("  CPU Usage: {}%", metrics.cpu_usage);
+        println!("  Memory Usage: {} MB", metrics.memory_usage / 1024 / 1024);
+        println!("  System Calls: {}", metrics.syscall_count);
+        
+        if let Some(details) = &metrics.syscall_details {
+            println!("  Top system calls after filtering:");
+            for stat in details.iter().take(3) {
+                println!("    Syscall {}: {} calls", stat.syscall_id, stat.count);
+            }
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+```
+
+### Integration with Memory Optimization
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig};
+
+fn main() -> Result<()> {
+    // Create configuration with memory optimization
+    let config = EbpfConfig {
+        enable_cpu_metrics: true,
+        enable_memory_metrics: true,
+        enable_syscall_monitoring: true,
+        enable_network_monitoring: true,
+        enable_gpu_monitoring: true,
+        enable_filesystem_monitoring: true,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    collector.initialize()?;
+
+    // Configure memory optimization
+    collector.set_max_cached_details(100);
+    collector.set_cleanup_unused_maps(true);
+
+    // Main monitoring loop with periodic memory optimization
+    let mut iteration = 0;
+    loop {
+        let metrics = collector.collect_metrics()?;
+        
+        println!("Iteration {}: CPU {}%, Memory {} MB",
+            iteration, metrics.cpu_usage, metrics.memory_usage / 1024 / 1024);
+        
+        // Optimize memory every 10 iterations
+        if iteration % 10 == 0 {
+            collector.optimize_ebpf_memory_usage()?;
+            let memory_usage = collector.get_memory_usage_estimate();
+            println!("Memory optimized. Current usage: {} bytes", memory_usage);
+        }
+
+        iteration += 1;
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+```
+
+### Integration with Temperature Monitoring
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig};
+
+fn main() -> Result<()> {
+    // Create configuration with temperature monitoring
+    let config = EbpfConfig {
+        enable_cpu_metrics: true,
+        enable_memory_metrics: true,
+        enable_cpu_temperature_monitoring: true,
+        enable_gpu_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    collector.initialize()?;
+
+    // Main monitoring loop with temperature monitoring
+    loop {
+        let metrics = collector.collect_metrics()?;
+        
+        println!("System Metrics:");
+        println!("  CPU Usage: {}%", metrics.cpu_usage);
+        println!("  Memory Usage: {} MB", metrics.memory_usage / 1024 / 1024);
+        
+        println!("Temperature Metrics:");
+        println!("  CPU Temperature: {}°C", metrics.cpu_temperature);
+        println!("  CPU Max Temperature: {}°C", metrics.cpu_max_temperature);
+        println!("  GPU Temperature: {}°C", metrics.gpu_temperature);
+        
+        if let Some(details) = &metrics.cpu_temperature_details {
+            println!("  CPU Core Temperatures:");
+            for stat in details {
+                println!("    Core {}: {}°C (Max: {}°C)", 
+                    stat.cpu_id, stat.temperature_celsius, stat.max_temperature_celsius);
+            }
+        }
+
+        // Check for overheating
+        if metrics.cpu_temperature > 80 {
+            println!("WARNING: CPU temperature is high!");
+        }
+        
+        if metrics.gpu_temperature > 85 {
+            println!("WARNING: GPU temperature is high!");
+        }
+
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
+}
+```
+
 ## Best Practices
 
 ### Configuration
@@ -1123,6 +1827,8 @@ fn main() -> Result<()> {
 2. **Graceful Degradation**: Handle eBPF failures gracefully
 3. **Configuration Reloading**: Support dynamic configuration changes
 4. **Monitor Initialization**: Check `is_initialized()` before collecting metrics
+5. **Use Filtering**: Apply filtering to reduce data volume and improve performance
+6. **Apply Aggregation**: Use aggregation for high-volume metrics to reduce memory usage
 
 ### Security
 
@@ -1130,6 +1836,31 @@ fn main() -> Result<()> {
 2. **Validate eBPF Programs**: Ensure programs are from trusted sources
 3. **Monitor Resource Usage**: Prevent excessive memory/CPU consumption
 4. **Limit Collection Frequency**: Avoid overwhelming the system
+5. **Monitor Temperature**: Use temperature monitoring to prevent hardware damage
+
+### Filtering and Aggregation
+
+1. **Set Appropriate Thresholds**: Configure thresholds based on your monitoring needs
+2. **Use PID Filtering**: Filter by specific processes to reduce noise
+3. **Apply Network Filtering**: Filter by protocols and ports for network-focused monitoring
+4. **Limit Aggregated Entries**: Set reasonable limits for aggregated data
+5. **Balance Accuracy vs Performance**: Adjust filtering thresholds based on system load
+
+### Memory Optimization
+
+1. **Regular Optimization**: Call `optimize_ebpf_memory_usage()` periodically
+2. **Limit Cached Details**: Set appropriate limits for detailed statistics
+3. **Enable Map Cleanup**: Use `set_cleanup_unused_maps(true)` to clean up unused resources
+4. **Monitor Memory Usage**: Use `get_memory_usage_estimate()` to track memory consumption
+5. **Adjust Based on Load**: Increase memory limits for high-load systems
+
+### Temperature Monitoring
+
+1. **Enable When Needed**: Temperature monitoring adds overhead, enable only when necessary
+2. **Set Alert Thresholds**: Monitor for overheating conditions (typically >80°C for CPU, >85°C for GPU)
+3. **Use Detailed Monitoring**: Enable detailed temperature monitoring for troubleshooting
+4. **Integrate with Alerting**: Combine temperature data with alerting systems
+5. **Monitor Trends**: Track temperature changes over time to detect cooling issues
 
 ## Troubleshooting
 
@@ -1140,6 +1871,9 @@ fn main() -> Result<()> {
 3. **Program Load Failures**: Verify eBPF program files exist and are valid
 4. **Map Access Errors**: Check if maps are properly initialized
 5. **Performance Issues**: Review caching configuration and enabled features
+6. **Filtering Not Working**: Verify filter configuration and thresholds
+7. **Memory Optimization Issues**: Check map cleanup settings and cached details limits
+8. **Temperature Monitoring Failures**: Ensure temperature monitoring is enabled in configuration
 
 ### Debugging
 
@@ -1148,6 +1882,8 @@ fn main() -> Result<()> {
 3. **Monitor Initialization**: Check `get_initialization_stats()`
 4. **Verify Maps**: Use `get_maps_info()` and `check_maps_availability()`
 5. **Monitor Memory**: Use `get_memory_usage_estimate()`
+6. **Check Filter Configuration**: Verify `EbpfFilterConfig` settings
+7. **Test Temperature Collection**: Use `collect_cpu_temperature_from_maps()` and `collect_gpu_temperature_from_maps()`
 
 ### Performance Tuning
 
@@ -1156,6 +1892,9 @@ fn main() -> Result<()> {
 3. **Optimize Memory**: Adjust `max_cached_details`
 4. **Tune Collection Interval**: Balance frequency with overhead
 5. **Monitor Overhead**: Measure collection time and resource usage
+6. **Adjust Filtering**: Fine-tune filtering thresholds for optimal performance
+7. **Optimize Aggregation**: Set appropriate aggregation intervals and entry limits
+8. **Balance Temperature Monitoring**: Adjust temperature monitoring frequency based on needs
 
 ## Conclusion
 

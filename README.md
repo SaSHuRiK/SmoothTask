@@ -940,11 +940,216 @@ fn collect_metrics_with_fallback() -> SystemMetrics {
 }
 ```
 
+## Расширенные возможности eBPF
+
+SmoothTask включает мощный eBPF модуль для высокопроизводительного сбора системных метрик с минимальными накладными расходами.
+
+### Основные возможности eBPF
+
+- **Высокопроизводительный сбор метрик**: CPU, память, системные вызовы, сеть, GPU
+- **Мониторинг температуры**: CPU и GPU температура через eBPF
+- **Расширенная фильтрация**: Фильтрация по процессам, системным вызовам, сетевым протоколам
+- **Агрегация данных**: Оптимизация объема данных для высоконагруженных систем
+- **Оптимизация памяти**: Автоматическая очистка и управление памятью eBPF карт
+
+### Примеры использования eBPF
+
+#### Базовый сбор метрик
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig};
+
+let config = EbpfConfig {
+    enable_cpu_metrics: true,
+    enable_memory_metrics: true,
+    enable_syscall_monitoring: true,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize()?;
+
+let metrics = collector.collect_metrics()?;
+println!("CPU Usage: {}%", metrics.cpu_usage);
+println!("Memory Usage: {} MB", metrics.memory_usage / 1024 / 1024);
+```
+
+#### Мониторинг температуры CPU и GPU
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig};
+
+let config = EbpfConfig {
+    enable_cpu_metrics: true,
+    enable_cpu_temperature_monitoring: true,
+    enable_gpu_monitoring: true,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize()?;
+
+let metrics = collector.collect_metrics()?;
+println!("CPU Temperature: {}°C", metrics.cpu_temperature);
+println!("GPU Temperature: {}°C", metrics.gpu_temperature);
+
+// Проверка на перегрев
+if metrics.cpu_temperature > 80 {
+    println!("WARNING: CPU temperature is high!");
+}
+```
+
+#### Расширенная фильтрация и агрегация
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfFilterConfig};
+
+let config = EbpfConfig {
+    enable_cpu_metrics: true,
+    enable_memory_metrics: true,
+    enable_syscall_monitoring: true,
+    enable_network_monitoring: true,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize()?;
+
+// Настройка фильтрации
+let filter_config = EbpfFilterConfig {
+    enable_kernel_filtering: true,
+    cpu_usage_threshold: 5.0,
+    memory_usage_threshold: 1024 * 1024,
+    syscall_count_threshold: 50,
+    network_traffic_threshold: 1024 * 1024,
+    ..Default::default()
+};
+
+collector.set_filter_config(filter_config);
+
+// Фильтрация по PID
+collector.set_pid_filtering(true, vec![100, 200, 300]);
+
+// Фильтрация по сетевым протоколам
+collector.set_network_protocol_filtering(true, vec![6, 17]); // TCP и UDP
+
+// Настройка агрегации
+collector.set_aggregation_parameters(true, 1000, 500);
+
+let mut metrics = collector.collect_metrics()?;
+collector.apply_filtering_and_aggregation(&mut metrics);
+
+println!("Filtered CPU Usage: {}%", metrics.cpu_usage);
+println!("Filtered System Calls: {}", metrics.syscall_count);
+```
+
+#### Оптимизация памяти eBPF
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig};
+
+let config = EbpfConfig {
+    enable_cpu_metrics: true,
+    enable_memory_metrics: true,
+    enable_syscall_monitoring: true,
+    enable_network_monitoring: true,
+    enable_gpu_monitoring: true,
+    enable_high_performance_mode: true,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize()?;
+
+// Настройка оптимизации памяти
+collector.set_max_cached_details(100);
+collector.set_cleanup_unused_maps(true);
+
+// Периодическая оптимизация памяти
+collector.optimize_ebpf_memory_usage()?;
+
+let memory_usage = collector.get_memory_usage_estimate();
+println!("Current memory usage: {} bytes", memory_usage);
+```
+
+#### Использование кэширования для высокой производительности
+
+```rust
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig};
+
+let config = EbpfConfig {
+    enable_cpu_metrics: true,
+    enable_memory_metrics: true,
+    enable_caching: true,
+    enable_aggressive_caching: true,
+    aggressive_cache_interval_ms: 5000,
+    batch_size: 100,
+    ..Default::default()
+};
+
+let mut collector = EbpfMetricsCollector::new(config);
+collector.initialize_optimized()?;
+
+// Сбор метрик с кэшированием
+let metrics = collector.collect_metrics()?;
+
+// Получение статистики кэша
+let (hits, misses, hit_rate) = collector.get_program_cache_stats();
+println!("Cache performance: {} hits, {} misses, {:.1}% hit rate", hits, misses, hit_rate);
+```
+
+### Конфигурация eBPF
+
+Пример конфигурации с расширенными возможностями eBPF:
+
+```yaml
+# Включение eBPF метрик
+enable_ebpf_metrics: true
+
+# Конфигурация eBPF
+ebpf_config:
+  enable_cpu_metrics: true
+  enable_memory_metrics: true
+  enable_syscall_monitoring: true
+  enable_network_monitoring: true
+  enable_gpu_monitoring: true
+  enable_cpu_temperature_monitoring: true
+  enable_high_performance_mode: true
+  enable_caching: true
+  enable_aggressive_caching: true
+  aggressive_cache_interval_ms: 5000
+  batch_size: 100
+  
+  # Конфигурация фильтрации
+  filter_config:
+    enable_kernel_filtering: true
+    cpu_usage_threshold: 5.0
+    memory_usage_threshold: 1048576  # 1 MB
+    syscall_count_threshold: 50
+    network_traffic_threshold: 1048576  # 1 MB
+    active_connections_threshold: 5
+    gpu_usage_threshold: 5.0
+    gpu_memory_threshold: 1048576  # 1 MB
+    enable_kernel_aggregation: true
+    aggregation_interval_ms: 1000
+    max_aggregated_entries: 1000
+```
+
+### Подробная документация eBPF
+
+Полная документация по eBPF API доступна в [EBPF_API_DOCUMENTATION.md](docs/EBPF_API_DOCUMENTATION.md), включая:
+
+- Полное описание всех структур и функций
+- Примеры интеграции и лучшие практики
+- Руководство по устранению неполадок
+- Оптимизация производительности
+
 ## Подробная API Документация
 
 - 📊 [Metrics API](docs/API_METRICS.md) - Подробная документация по API метрик
 - ⚙️ [Policy API](docs/API_POLICY.md) - Подробная документация по API политик
 - 🏷️ [Classify API](docs/API_CLASSIFY.md) - Подробная документация по API классификации
+- 🔧 [eBPF API](docs/EBPF_API_DOCUMENTATION.md) - Подробная документация по eBPF возможностям
 
 ## Ссылки
 
