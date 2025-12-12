@@ -2057,7 +2057,9 @@ impl ApiServer {
             .await
             .with_context(|| format!("Failed to bind API server to {}", self.addr))?;
 
-        info!("API server listening on http://{}", self.addr);
+        // Get the actual address that was bound (important for port 0 which auto-selects port)
+        let actual_addr = listener.local_addr()?;
+        info!("API server listening on http://{}", actual_addr);
 
         let router = create_router(self.state);
         let server = axum::serve(listener, router);
@@ -2066,6 +2068,7 @@ impl ApiServer {
 
         let handle = ApiServerHandle {
             shutdown_tx: Some(shutdown_tx),
+            addr: actual_addr,
         };
 
         // Запускаем сервер в отдельной задаче
@@ -2090,9 +2093,20 @@ impl ApiServer {
 /// Позволяет остановить сервер и проверить его состояние.
 pub struct ApiServerHandle {
     shutdown_tx: Option<tokio::sync::oneshot::Sender<()>>,
+    addr: std::net::SocketAddr,
 }
 
 impl ApiServerHandle {
+    /// Возвращает адрес, на котором запущен API сервер.
+    pub fn addr(&self) -> std::net::SocketAddr {
+        self.addr
+    }
+
+    /// Возвращает порт, на котором запущен API сервер.
+    pub fn port(&self) -> u16 {
+        self.addr.port()
+    }
+
     /// Останавливает API сервер.
     ///
     /// # Ошибки

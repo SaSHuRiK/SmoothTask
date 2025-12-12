@@ -4,7 +4,7 @@
 // и интеграцию с основными компонентами системы.
 
 use smoothtask_core::{
-    api::{ApiServer, ApiServerHandle, ApiState},
+    api::{ApiServer, ApiServerHandle, ApiStateBuilder},
     metrics::system::{SystemMetrics, NetworkMetrics, NetworkInterface},
     DaemonStats,
 };
@@ -14,7 +14,6 @@ use tokio::sync::RwLock;
 // Импорты для HTTP тестирования
 use reqwest;
 use serde_json;
-use tokio::sync::RwLock;
 
 #[tokio::test]
 async fn test_api_server_creation() {
@@ -239,7 +238,7 @@ async fn test_api_server_localhost_variations() {
 #[tokio::test]
 async fn test_network_metrics_in_api() {
     // Тест: проверка, что сетевые метрики корректно возвращаются через API
-    use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, PressureMetrics};
+    use smoothtask_core::metrics::system::{CpuTimes, LoadAvg, MemoryInfo, PressureMetrics};
     
     // Создаем тестовые сетевые метрики
     let mut network_metrics = NetworkMetrics::default();
@@ -269,19 +268,12 @@ async fn test_network_metrics_in_api() {
     let daemon_stats = Arc::new(RwLock::new(DaemonStats::new()));
     let system_metrics_arc = Arc::new(RwLock::new(system_metrics));
     
-    let api_state = ApiState::new(
-        Some(daemon_stats),
-        Some(system_metrics_arc),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let api_state = ApiStateBuilder::new()
+        .with_daemon_stats(Some(daemon_stats))
+        .with_system_metrics(Some(system_metrics_arc))
+        .build();
     
-    let server = ApiServer::with_api_state("127.0.0.1:0".parse().unwrap(), api_state);
+    let server = ApiServer::with_state("127.0.0.1:0".parse().unwrap(), api_state);
     let handle = server.start().await.expect("Сервер должен запуститься");
     
     // Получаем порт, на котором запустился сервер
@@ -337,7 +329,7 @@ async fn test_network_metrics_in_api() {
 #[tokio::test]
 async fn test_network_metrics_empty() {
     // Тест: проверка, что API корректно обрабатывает пустые сетевые метрики
-    use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, PressureMetrics};
+    use smoothtask_core::metrics::system::{CpuTimes, LoadAvg, MemoryInfo, PressureMetrics};
     
     // Создаем системные метрики с пустыми сетевыми метриками
     let system_metrics = SystemMetrics {
@@ -353,19 +345,12 @@ async fn test_network_metrics_empty() {
     let daemon_stats = Arc::new(RwLock::new(DaemonStats::new()));
     let system_metrics_arc = Arc::new(RwLock::new(system_metrics));
     
-    let api_state = ApiState::new(
-        Some(daemon_stats),
-        Some(system_metrics_arc),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let api_state = ApiStateBuilder::new()
+        .with_daemon_stats(Some(daemon_stats))
+        .with_system_metrics(Some(system_metrics_arc))
+        .build();
     
-    let server = ApiServer::with_api_state("127.0.0.1:0".parse().unwrap(), api_state);
+    let server = ApiServer::with_state("127.0.0.1:0".parse().unwrap(), api_state);
     let handle = server.start().await.expect("Сервер должен запуститься");
     
     // Получаем порт, на котором запустился сервер
@@ -405,7 +390,7 @@ async fn test_network_metrics_empty() {
 #[tokio::test]
 async fn test_network_metrics_multiple_interfaces() {
     // Тест: проверка, что API корректно обрабатывает несколько сетевых интерфейсов
-    use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, PressureMetrics};
+    use smoothtask_core::metrics::system::{CpuTimes, LoadAvg, MemoryInfo, PressureMetrics};
     
     // Создаем тестовые сетевые метрики с несколькими интерфейсами
     let mut network_metrics = NetworkMetrics::default();
@@ -450,19 +435,12 @@ async fn test_network_metrics_multiple_interfaces() {
     let daemon_stats = Arc::new(RwLock::new(DaemonStats::new()));
     let system_metrics_arc = Arc::new(RwLock::new(system_metrics));
     
-    let api_state = ApiState::new(
-        Some(daemon_stats),
-        Some(system_metrics_arc),
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let api_state = ApiStateBuilder::new()
+        .with_daemon_stats(Some(daemon_stats))
+        .with_system_metrics(Some(system_metrics_arc))
+        .build();
     
-    let server = ApiServer::with_api_state("127.0.0.1:0".parse().unwrap(), api_state);
+    let server = ApiServer::with_state("127.0.0.1:0".parse().unwrap(), api_state);
     let handle = server.start().await.expect("Сервер должен запуститься");
     
     // Получаем порт, на котором запустился сервер
