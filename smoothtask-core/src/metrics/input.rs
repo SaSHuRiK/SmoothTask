@@ -17,6 +17,34 @@ pub struct InputMetrics {
     pub time_since_last_input_ms: Option<u64>,
 }
 
+impl InputMetrics {
+    /// Создать пустые метрики ввода (по умолчанию).
+    ///
+    /// Используется в случае ошибок при сборе метрик ввода.
+    ///
+    /// # Возвращает
+    ///
+    /// `InputMetrics` с дефолтными значениями:
+    /// - `user_active = false`
+    /// - `time_since_last_input_ms = None`
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::input::InputMetrics;
+    ///
+    /// let empty_metrics = InputMetrics::empty();
+    /// assert!(!empty_metrics.user_active);
+    /// assert!(empty_metrics.time_since_last_input_ms.is_none());
+    /// ```
+    pub fn empty() -> Self {
+        Self {
+            user_active: false,
+            time_since_last_input_ms: None,
+        }
+    }
+}
+
 /// Трекер активности по событиям evdev.
 #[derive(Debug, Clone)]
 pub struct InputActivityTracker {

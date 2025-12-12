@@ -454,6 +454,43 @@ impl Default for ProcPaths {
 ///     }
 /// }
 /// ```
+///
+/// # Пример использования с кэшированием
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
+/// use std::time::{Instant, Duration};
+///
+/// let paths = ProcPaths::default();
+/// let mut cached_metrics: Option<SystemMetrics> = None;
+/// let mut last_update = Instant::now();
+/// let cache_duration = Duration::from_secs(1); // Кэшируем на 1 секунду
+///
+/// // Основной цикл с кэшированием
+/// loop {
+///     let now = Instant::now();
+///     if now.duration_since(last_update) > cache_duration || cached_metrics.is_none() {
+///         // Кэш устарел, обновляем метрики
+///         match collect_system_metrics(&paths) {
+///             Ok(metrics) => {
+///                 cached_metrics = Some(metrics);
+///                 last_update = now;
+///             }
+///             Err(e) => {
+///                 eprintln!("Ошибка сбора метрик: {}", e);
+///                 // Продолжаем использовать старые метрики из кэша
+///             }
+///         }
+///     }
+///     
+///     // Используем кэшированные метрики
+///     if let Some(metrics) = &cached_metrics {
+///         println!("Используем кэшированные метрики");
+///     }
+///     
+///     std::thread::sleep(Duration::from_millis(100));
+/// }
+/// ```
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Читаем основные файлы с подробными сообщениями об ошибках
     let cpu_contents = read_file(&paths.stat).with_context(|| {

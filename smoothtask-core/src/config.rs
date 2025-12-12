@@ -21,6 +21,16 @@ pub struct Config {
 
     pub thresholds: Thresholds,
     pub paths: Paths,
+    /// Интервалы кэширования для оптимизации производительности.
+    ///
+    /// Определяет, как часто обновляются кэши системных и процессных метрик.
+    /// Кэширование позволяет снизить нагрузку на систему за счёт повторного использования
+    /// ранее собранных данных в течение нескольких итераций.
+    ///
+    /// По умолчанию: обновление каждые 3 итерации для системных метрик,
+    /// обновление каждую итерацию для метрик процессов (отключено).
+    #[serde(default = "default_cache_intervals")]
+    pub cache_intervals: CacheIntervals,
 }
 
 /// Режим работы Policy Engine.
@@ -141,6 +151,91 @@ pub(crate) fn default_ui_loop_p95_threshold() -> f64 {
     16.67 // 16.67 мс по умолчанию (60 FPS)
 }
 
+/// Интервалы кэширования для оптимизации производительности.
+///
+/// Определяет, как часто обновляются кэши системных и процессных метрик.
+/// Кэширование позволяет снизить нагрузку на систему за счёт повторного использования
+/// ранее собранных данных в течение нескольких итераций.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct CacheIntervals {
+    /// Интервал кэширования системных метрик (в итерациях).
+    ///
+    /// Определяет, как часто обновляются системные метрики (CPU, память, нагрузка, PSI).
+    /// Значение 1 означает обновление на каждой итерации (кэширование отключено).
+    /// Значение N означает обновление каждые N итераций.
+    ///
+    /// По умолчанию: 3 (обновление каждые 3 итерации).
+    ///
+    /// # Примечания
+    ///
+    /// - Системные метрики меняются относительно медленно, поэтому их можно кэшировать
+    /// - Кэширование системных метрик может значительно снизить нагрузку на систему
+    /// - Значение должно быть >= 1
+    #[serde(default = "default_system_metrics_cache_interval")]
+    pub system_metrics_cache_interval: u64,
+    
+    /// Интервал кэширования метрик процессов (в итерациях).
+    ///
+    /// Определяет, как часто обновляются метрики процессов.
+    /// Значение 1 означает обновление на каждой итерации (кэширование отключено).
+    /// Значение N означает обновление каждые N итераций.
+    ///
+    /// По умолчанию: 1 (кэширование отключено, обновление на каждой итерации).
+    ///
+    /// # Примечания
+    ///
+    /// - Метрики процессов могут меняться быстро, поэтому кэширование по умолчанию отключено
+    /// - Кэширование метрик процессов может быть полезно для снижения нагрузки на систему
+    /// - Значение должно быть >= 1
+    #[serde(default = "default_process_metrics_cache_interval")]
+    pub process_metrics_cache_interval: u64,
+}
+
+/// Возвращает дефолтное значение для `system_metrics_cache_interval`.
+///
+/// По умолчанию используется значение 3, что означает обновление системных метрик
+/// каждые 3 итерации. Это позволяет снизить нагрузку на систему за счёт кэширования
+/// относительно стабильных системных метрик.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_system_metrics_cache_interval")]`
+/// - Значение должно быть >= 1
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_system_metrics_cache_interval() -> u64 {
+    3
+}
+
+/// Возвращает дефолтное значение для `process_metrics_cache_interval`.
+///
+/// По умолчанию используется значение 1, что означает отключение кэширования
+/// метрик процессов (обновление на каждой итерации). Это связано с тем, что
+/// метрики процессов могут меняться быстро и требуют частого обновления.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_process_metrics_cache_interval")]`
+/// - Значение должно быть >= 1
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_process_metrics_cache_interval() -> u64 {
+    1
+}
+
+/// Возвращает дефолтное значение для `cache_intervals`.
+///
+/// Создаёт структуру CacheIntervals с дефолтными значениями для всех интервалов кэширования.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_cache_intervals")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_cache_intervals() -> CacheIntervals {
+    CacheIntervals {
+        system_metrics_cache_interval: default_system_metrics_cache_interval(),
+        process_metrics_cache_interval: default_process_metrics_cache_interval(),
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Paths {
     pub snapshot_db_path: String,
@@ -258,6 +353,7 @@ impl Config {
 
         self.thresholds.validate()?;
         self.paths.validate()?;
+        self.cache_intervals.validate()?;
 
         Ok(())
     }
@@ -374,6 +470,33 @@ impl Thresholds {
             "thresholds.sched_latency_p99_threshold_ms ({}) must be >= thresholds.ui_loop_p95_threshold_ms ({}) because P99 is a higher percentile than P95",
             self.sched_latency_p99_threshold_ms,
             self.ui_loop_p95_threshold_ms
+        );
+
+        Ok(())
+    }
+}
+
+impl CacheIntervals {
+    fn validate(&self) -> Result<()> {
+        ensure!(
+            self.system_metrics_cache_interval >= 1,
+            "cache_intervals.system_metrics_cache_interval must be >= 1 (got {})",
+            self.system_metrics_cache_interval
+        );
+        ensure!(
+            self.system_metrics_cache_interval <= 100,
+            "cache_intervals.system_metrics_cache_interval must be <= 100 to prevent excessive caching (got {})",
+            self.system_metrics_cache_interval
+        );
+        ensure!(
+            self.process_metrics_cache_interval >= 1,
+            "cache_intervals.process_metrics_cache_interval must be >= 1 (got {})",
+            self.process_metrics_cache_interval
+        );
+        ensure!(
+            self.process_metrics_cache_interval <= 100,
+            "cache_intervals.process_metrics_cache_interval must be <= 100 to prevent excessive caching (got {})",
+            self.process_metrics_cache_interval
         );
 
         Ok(())

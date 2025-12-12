@@ -7,7 +7,7 @@
 //! - работа с snapshot logger
 //! - один полный цикл сбора снапшота (с моками)
 
-use smoothtask_core::config::{Config, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
 use smoothtask_core::run_daemon;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -38,6 +38,10 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             snapshot_db_path,
             patterns_dir: patterns_dir.to_string(),
             api_listen_addr: None, // API сервер отключен по умолчанию в тестах
+        },
+        cache_intervals: CacheIntervals {
+            system_metrics_cache_interval: 3,
+            process_metrics_cache_interval: 1,
         },
     }
 }

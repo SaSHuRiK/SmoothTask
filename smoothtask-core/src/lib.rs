@@ -20,7 +20,7 @@ use tracing::{debug, error, info, warn};
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
 use crate::api::{ApiServer, ApiServerHandle};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
-use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics, Snapshot, SnapshotLogger};
+use crate::logging::snapshots::{GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
@@ -605,6 +605,16 @@ pub async fn run_daemon(
     // Состояние для вычисления дельт CPU
     let mut prev_cpu_times: Option<SystemMetrics> = None;
 
+    // Кэш для системных метрик (обновляется каждые N итераций)
+    let mut system_metrics_cache: Option<SystemMetrics> = None;
+    let mut system_metrics_cache_iteration: u64 = 0;
+    let system_metrics_cache_interval = config.cache_intervals.system_metrics_cache_interval;
+
+    // Кэш для метрик процессов (обновляется каждые N итераций)
+    let mut process_metrics_cache: Option<Vec<ProcessRecord>> = None;
+    let mut process_metrics_cache_iteration: u64 = 0;
+    let process_metrics_cache_interval = config.cache_intervals.process_metrics_cache_interval;
+
     // Инициализация структур данных для API сервера
     let stats_arc = Arc::new(tokio::sync::RwLock::new(DaemonStats::new()));
     // Создаём дефолтные SystemMetrics для инициализации API сервера
@@ -715,8 +725,8 @@ pub async fn run_daemon(
             break;
         }
 
-        // Сбор снапшота (async, использует spawn_blocking для блокирующих операций)
-        let snapshot = match collect_snapshot(
+        // Сбор снапшота с кэшированием для оптимизации производительности
+        let snapshot = match collect_snapshot_with_caching(
             &proc_paths,
             &window_introspector,
             &audio_introspector,
@@ -724,6 +734,13 @@ pub async fn run_daemon(
             &mut prev_cpu_times,
             &config.thresholds,
             &latency_collector,
+            &mut system_metrics_cache,
+            &mut system_metrics_cache_iteration,
+            system_metrics_cache_interval,
+            &mut process_metrics_cache,
+            &mut process_metrics_cache_iteration,
+            process_metrics_cache_interval,
+            iteration,
         )
         .await
         {
@@ -1214,6 +1231,355 @@ pub async fn collect_snapshot(
         app_groups: Vec::new(),
         responsiveness,
     })
+}
+
+/// Собрать снапшот с поддержкой кэширования для оптимизации производительности.
+///
+/// Эта функция аналогична `collect_snapshot`, но поддерживает кэширование системных
+/// и процессных метрик для снижения нагрузки на систему. Кэширование позволяет
+/// повторно использовать ранее собранные данные в течение нескольких итераций,
+/// что особенно полезно для системных метрик, которые меняются относительно медленно.
+///
+/// # Параметры
+///
+/// - `proc_paths`: Пути к файлам /proc
+/// - `window_introspector`: Интроспектор окон для сбора информации о GUI
+/// - `audio_introspector`: Интроспектор аудио для сбора информации о звуковых клиентах
+/// - `input_tracker`: Трекер ввода для определения активности пользователя
+/// - `prev_cpu_times`: Предыдущие метрики CPU для вычисления дельт
+/// - `thresholds`: Пороги конфигурации
+/// - `latency_collector`: Коллектор метрик задержек
+/// - `system_metrics_cache`: Кэш системных метрик
+/// - `system_metrics_cache_iteration`: Итерация последнего обновления кэша системных метрик
+/// - `system_metrics_cache_interval`: Интервал кэширования системных метрик (в итерациях)
+/// - `process_metrics_cache`: Кэш метрик процессов
+/// - `process_metrics_cache_iteration`: Итерация последнего обновления кэша метрик процессов
+/// - `process_metrics_cache_interval`: Интервал кэширования метрик процессов (в итерациях)
+/// - `current_iteration`: Текущая итерация главного цикла
+///
+/// # Возвращаемое значение
+///
+/// - `Ok(Snapshot)`: Успешно собранный снапшот системы
+/// - `Err(anyhow::Error)`: Ошибка при сборе снапшота
+///
+/// # Алгоритм
+///
+/// 1. Проверяет, нужно ли обновлять кэш системных метрик (каждые N итераций)
+/// 2. Проверяет, нужно ли обновлять кэш метрик процессов (каждые M итераций)
+/// 3. Использует кэшированные данные, если они актуальны
+/// 4. Обновляет кэш, если он устарел
+/// 5. Собирает остальные метрики (окна, аудио, ввод) без кэширования
+/// 6. Объединяет все данные в финальный снапшот
+///
+/// # Примечания
+///
+/// - Кэширование системных метрик может значительно снизить нагрузку на систему
+/// - Кэширование метрик процессов может быть полезно для снижения нагрузки, но по умолчанию отключено
+/// - Оконные и аудио метрики не кэшируются, так как они могут меняться быстро
+/// - Функция безопасна для использования в async контексте
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtask_core::{collect_snapshot_with_caching, config::Config, metrics::system::ProcPaths};
+/// use std::sync::Arc;
+/// use tokio::sync::Mutex;
+///
+/// // Инициализация кэшей
+/// let mut system_metrics_cache: Option<SystemMetrics> = None;
+/// let mut system_metrics_cache_iteration: u64 = 0;
+/// let system_metrics_cache_interval = 3; // Обновление каждые 3 итерации
+///
+/// let mut process_metrics_cache: Option<Vec<ProcessRecord>> = None;
+/// let mut process_metrics_cache_iteration: u64 = 0;
+/// let process_metrics_cache_interval = 1; // Обновление каждую итерацию (отключено)
+///
+/// let current_iteration = 1;
+///
+/// // Сбор снапшота с кэшированием
+/// let snapshot = collect_snapshot_with_caching(
+///     &proc_paths,
+///     &window_introspector,
+///     &audio_introspector,
+///     &input_tracker,
+///     &mut prev_cpu_times,
+///     &config.thresholds,
+///     &latency_collector,
+///     &mut system_metrics_cache,
+///     &mut system_metrics_cache_iteration,
+///     system_metrics_cache_interval,
+///     &mut process_metrics_cache,
+///     &mut process_metrics_cache_iteration,
+///     process_metrics_cache_interval,
+///     current_iteration,
+/// ).await?;
+/// ```
+#[allow(clippy::too_many_arguments)]
+pub async fn collect_snapshot_with_caching(
+    proc_paths: &ProcPaths,
+    window_introspector: &Arc<dyn WindowIntrospector>,
+    audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
+    input_tracker: &Arc<Mutex<InputTracker>>,
+    prev_cpu_times: &mut Option<SystemMetrics>,
+    thresholds: &crate::config::Thresholds,
+    latency_collector: &Arc<LatencyCollector>,
+    system_metrics_cache: &mut Option<SystemMetrics>,
+    system_metrics_cache_iteration: &mut u64,
+    system_metrics_cache_interval: u64,
+    process_metrics_cache: &mut Option<Vec<ProcessRecord>>,
+    process_metrics_cache_iteration: &mut u64,
+    process_metrics_cache_interval: u64,
+    current_iteration: u64,
+) -> Result<Snapshot> {
+    let _now = Instant::now();
+    let timestamp = Utc::now();
+    let snapshot_id = timestamp.timestamp_millis() as u64;
+
+    // Проверяем, нужно ли обновлять кэш системных метрик
+    let need_update_system_metrics = 
+        system_metrics_cache.is_none() ||
+        (current_iteration - *system_metrics_cache_iteration) >= system_metrics_cache_interval;
+
+    let system_metrics = if need_update_system_metrics {
+        // Кэш устарел, обновляем системные метрики
+        let proc_paths_clone = proc_paths.clone();
+        let new_system_metrics = tokio::task::spawn_blocking(move || {
+            collect_system_metrics(&proc_paths_clone)
+        })
+        .await
+        .context("Failed to join system metrics task")?
+        .context(
+            "Failed to collect system metrics: unable to read /proc filesystem (stat, meminfo, PSI)",
+        )?;
+
+        // Обновляем кэш
+        *system_metrics_cache = Some(new_system_metrics.clone());
+        *system_metrics_cache_iteration = current_iteration;
+        
+        debug!(
+            "Updated system metrics cache (iteration {})",
+            current_iteration
+        );
+        
+        new_system_metrics
+    } else {
+        // Используем кэшированные системные метрики
+        debug!(
+            "Using cached system metrics (iteration {}, cache age: {} iterations)",
+            current_iteration,
+            current_iteration - *system_metrics_cache_iteration
+        );
+        system_metrics_cache.as_ref().unwrap().clone()
+    };
+
+    // Вычисление дельт CPU
+    let cpu_usage = if let Some(ref prev) = prev_cpu_times {
+        prev.cpu_times.delta(&system_metrics.cpu_times)
+    } else {
+        None
+    };
+    *prev_cpu_times = Some(system_metrics.clone());
+
+    // Проверяем, нужно ли обновлять кэш метрик процессов
+    let need_update_process_metrics = 
+        process_metrics_cache.is_none() ||
+        (current_iteration - *process_metrics_cache_iteration) >= process_metrics_cache_interval;
+
+    let mut processes = if need_update_process_metrics {
+        // Кэш устарел, обновляем метрики процессов
+        let new_processes = tokio::task::spawn_blocking(collect_process_metrics)
+            .await
+            .context("Failed to join process metrics task")?
+            .context(
+                "Failed to collect process metrics: unable to read process information from /proc",
+            )?;
+
+        // Обновляем кэш
+        *process_metrics_cache = Some(new_processes.clone());
+        *process_metrics_cache_iteration = current_iteration;
+        
+        debug!(
+            "Updated process metrics cache (iteration {})",
+            current_iteration
+        );
+        
+        new_processes
+    } else {
+        // Используем кэшированные метрики процессов
+        debug!(
+            "Using cached process metrics (iteration {}, cache age: {} iterations)",
+            current_iteration,
+            current_iteration - *process_metrics_cache_iteration
+        );
+        process_metrics_cache.as_ref().unwrap().clone()
+    };
+
+    // Сбор метрик окон (без кэширования, так как они могут меняться быстро)
+    let window_introspector_clone = Arc::clone(window_introspector);
+    let pid_to_window = match tokio::task::spawn_blocking(move || {
+        crate::metrics::windows::build_pid_to_window_map(window_introspector_clone.as_ref())
+    })
+    .await
+    {
+        Ok(Ok(map)) => map,
+        Ok(Err(e)) => {
+            warn!(
+                "Failed to collect window metrics: {}. Continuing without window information.",
+                e
+            );
+            HashMap::new()
+        }
+        Err(e) => {
+            warn!(
+                "Failed to join window metrics task: {}. Continuing without window information.",
+                e
+            );
+            HashMap::new()
+        }
+    };
+
+    // Обновление информации об окнах в процессах
+    for process in &mut processes {
+        if let Some(window) = pid_to_window.get(&(process.pid as u32)) {
+            process.has_gui_window = true;
+            process.is_focused_window = window.is_focused();
+            process.window_state = Some(format!("{:?}", window.state));
+        }
+    }
+
+    // Сбор метрик аудио (без кэширования, так как они могут меняться быстро)
+    let audio_introspector_clone = Arc::clone(audio_introspector);
+    let (audio_metrics, audio_clients) = match tokio::task::spawn_blocking(move || {
+        let mut introspector = match audio_introspector_clone.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "Audio introspector mutex is poisoned: {}. Using empty metrics and clients.",
+                    e
+                );
+                return (
+                    AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
+                    Vec::new(),
+                );
+            }
+        };
+        let metrics = introspector.audio_metrics().unwrap_or_else(|e| {
+            warn!(
+                "Audio introspector failed to collect metrics: {}. Using empty metrics.",
+                e
+            );
+            AudioMetrics::empty(SystemTime::now(), SystemTime::now())
+        });
+        let clients = introspector.clients().unwrap_or_else(|e| {
+            warn!(
+                "Audio introspector failed to collect clients: {}. Using empty client list.",
+                e
+            );
+            Vec::new()
+        });
+        (metrics, clients)
+    })
+    .await
+    {
+        Ok((metrics, clients)) => (metrics, clients),
+        Err(e) => {
+            warn!(
+                "Failed to join audio metrics task: {}. Using empty audio metrics.",
+                e
+            );
+            (AudioMetrics::empty(SystemTime::now(), SystemTime::now()), Vec::new())
+        }
+    };
+
+    // Обновление информации об аудио клиентах в процессах
+    for process in &mut processes {
+        if audio_clients.iter().any(|c| c.pid == process.pid as u32) {
+            process.is_audio_client = true;
+            // Note: has_active_stream is not available in AudioClientInfo, so we set it to false
+            // This could be enhanced in the future if we add active stream detection
+            process.has_active_stream = false;
+        }
+    }
+
+    // Сбор метрик ввода (без кэширования, так как они могут меняться быстро)
+    let input_tracker_clone = Arc::clone(input_tracker);
+    let now_for_input = Instant::now();
+    let input_metrics = match tokio::task::spawn_blocking(move || {
+        let tracker = match input_tracker_clone.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "Input tracker mutex is poisoned: {}. Using empty input metrics.",
+                    e
+                );
+                return InputMetrics::empty();
+            }
+        };
+        tracker.metrics(now_for_input)
+    })
+    .await
+    {
+        Ok(metrics) => metrics,
+        Err(e) => {
+            warn!(
+                "Failed to join input metrics task: {}. Using empty input metrics.",
+                e
+            );
+            InputMetrics::empty()
+        }
+    };
+
+    // Сбор глобальных метрик
+    let global_metrics = GlobalMetrics {
+        cpu_user: cpu_usage.map_or(0.0, |u| u.user),
+        cpu_system: cpu_usage.map_or(0.0, |u| u.system),
+        cpu_idle: cpu_usage.map_or(0.0, |u| u.idle),
+        cpu_iowait: cpu_usage.map_or(0.0, |u| u.iowait),
+        mem_total_kb: system_metrics.memory.mem_total_kb,
+        mem_used_kb: system_metrics.memory.mem_used_kb(),
+        mem_available_kb: system_metrics.memory.mem_available_kb,
+        swap_total_kb: system_metrics.memory.swap_total_kb,
+        swap_used_kb: system_metrics.memory.swap_used_kb(),
+        load_avg_one: system_metrics.load_avg.one,
+        load_avg_five: system_metrics.load_avg.five,
+        load_avg_fifteen: system_metrics.load_avg.fifteen,
+        psi_cpu_some_avg10: system_metrics.pressure.cpu.some.map(|p| p.avg10),
+        psi_cpu_some_avg60: system_metrics.pressure.cpu.some.map(|p| p.avg60),
+        psi_io_some_avg10: system_metrics.pressure.io.some.map(|p| p.avg10),
+        psi_mem_some_avg10: system_metrics.pressure.memory.some.map(|p| p.avg10),
+        psi_mem_full_avg10: system_metrics.pressure.memory.full.map(|p| p.avg10),
+        user_active: input_metrics.user_active,
+        time_since_last_input_ms: input_metrics.time_since_last_input_ms,
+    };
+
+    // Сбор метрик отзывчивости
+    let mut responsiveness_metrics = ResponsivenessMetrics {
+        sched_latency_p95_ms: latency_collector.p95(),
+        sched_latency_p99_ms: latency_collector.p99(),
+        audio_xruns_delta: Some(audio_metrics.xrun_count as u64),
+        ui_loop_p95_ms: latency_collector.p95(),
+        frame_jank_ratio: None, // Will be computed later
+        bad_responsiveness: input_metrics.user_active && 
+            input_metrics.time_since_last_input_ms
+                .map_or(false, |time_since_input| 
+                    time_since_input > thresholds.user_idle_timeout_sec * 1000
+                ),
+        responsiveness_score: None, // Will be computed later
+    };
+    
+    // Compute the remaining fields
+    responsiveness_metrics.compute(&global_metrics, thresholds);
+
+    let snapshot = Snapshot {
+        snapshot_id,
+        timestamp,
+        global: global_metrics,
+        processes,
+        app_groups: vec![],
+        responsiveness: responsiveness_metrics,
+    };
+
+    Ok(snapshot)
 }
 
 #[cfg(test)]

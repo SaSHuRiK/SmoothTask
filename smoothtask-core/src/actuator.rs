@@ -233,17 +233,17 @@ fn needs_change(
 
 /// Информация о последнем изменении приоритета процесса (для гистерезиса).
 #[derive(Debug, Clone)]
-struct ProcessChangeHistory {
+pub struct ProcessChangeHistory {
     /// Время последнего изменения.
-    last_change: Instant,
+    pub last_change: Instant,
     /// Последний применённый класс приоритета.
-    last_class: PriorityClass,
+    pub last_class: PriorityClass,
 }
 
 /// Трекер истории изменений для гистерезиса.
 pub struct HysteresisTracker {
     /// История изменений по PID.
-    history: HashMap<i32, ProcessChangeHistory>,
+    pub history: HashMap<i32, ProcessChangeHistory>,
     /// Минимальное время между изменениями (гистерезис).
     min_time_between_changes: Duration,
     /// Минимальная разница классов для применения изменения.
@@ -292,7 +292,7 @@ impl HysteresisTracker {
     }
 
     /// Проверить, можно ли применить изменение для процесса.
-    fn should_apply_change(&self, pid: i32, target_class: PriorityClass) -> bool {
+    pub fn should_apply_change(&self, pid: i32, target_class: PriorityClass) -> bool {
         let now = Instant::now();
 
         if let Some(history) = self.history.get(&pid) {
@@ -312,7 +312,7 @@ impl HysteresisTracker {
     }
 
     /// Зафиксировать применение изменения.
-    fn record_change(&mut self, pid: i32, target_class: PriorityClass) {
+    pub fn record_change(&mut self, pid: i32, target_class: PriorityClass) {
         self.history.insert(
             pid,
             ProcessChangeHistory {

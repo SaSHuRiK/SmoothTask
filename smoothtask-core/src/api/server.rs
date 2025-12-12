@@ -1372,7 +1372,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_handler_with_config() {
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1396,6 +1396,10 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         };
         let config_arc = Arc::new(config);
@@ -1418,7 +1422,7 @@ mod tests {
 
     #[test]
     fn test_api_state_with_all_and_config() {
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1442,6 +1446,10 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         };
         let config_arc = Arc::new(config);
@@ -1500,7 +1508,7 @@ mod tests {
 
     #[test]
     fn test_api_server_with_all_and_config() {
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -1525,6 +1533,10 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         };
         let config_arc = Arc::new(config);
@@ -2019,7 +2031,7 @@ apps:
 
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config() {
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
@@ -2045,6 +2057,10 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         };
         let config_arc = Arc::new(config);
@@ -2074,7 +2090,7 @@ apps:
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -2100,6 +2116,10 @@ apps:
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
             },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
         };
         let config_arc = Arc::new(config);
         // Создаём временную директорию для паттернов
@@ -2123,7 +2143,7 @@ apps:
 
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config() {
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let config = Config {
             polling_interval_ms: 1000,
@@ -2148,6 +2168,10 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         };
         let config_arc = Arc::new(config);
@@ -2177,7 +2201,7 @@ apps:
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::{Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -2201,6 +2225,10 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
             },
         };
         let config_arc = Arc::new(config);
