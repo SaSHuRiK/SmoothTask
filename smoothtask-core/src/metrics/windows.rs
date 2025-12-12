@@ -1,8 +1,91 @@
 //! Абстракции для получения информации об окнах и текущем фокусе.
 //!
-//! Реальные бекенды (X11/Wayland) будут подключаться позже, но каркас
-//! позволяет уже сейчас работать с нормализованными структурами и писать
-//! юнит-тесты вокруг логики выбора активного окна.
+//! Этот модуль предоставляет нормализованные структуры и интерфейсы для работы
+//! с оконными системами (X11, Wayland) в Linux. Он позволяет получать информацию
+//! об окнах, их состоянии, принадлежности к процессам и текущем фокусе пользователя.
+//!
+//! # Основные компоненты
+//! 
+//! - **WindowInfo**: Нормализованная информация об окне, независимая от конкретного композитора
+//! - **WindowState**: Перечисление состояний окна (Focused, Fullscreen, Background, Minimized)
+//! - **WindowIntrospector**: Трейт для получения списка окон из конкретного бекенда
+//! - **StaticWindowIntrospector**: Реализация для тестирования и отладки
+//!
+//! # Примеры использования
+//! 
+//! ## Базовое использование с StaticWindowIntrospector
+//! 
+//! ```rust
+//! use smoothtask_core::metrics::windows::{StaticWindowIntrospector, WindowInfo, WindowState};
+//! 
+//! // Создаём тестовый набор окон
+//! let windows = vec![
+//!     WindowInfo::new(
+//!         Some("firefox".to_string()),
+//!         Some("Mozilla Firefox".to_string()),
+//!         Some(1),
+//!         WindowState::Focused,
+//!         Some(1234),
+//!         1.0,
+//!     ),
+//!     WindowInfo::new(
+//!         Some("code".to_string()),
+//!         Some("VS Code".to_string()),
+//!         Some(1),
+//!         WindowState::Background,
+//!         Some(5678),
+//!         0.9,
+//!     ),
+//! ];
+//! 
+//! // Создаём интроспектор
+//! let introspector = StaticWindowIntrospector::new(windows);
+//! 
+//! // Получаем список окон
+//! let window_list = introspector.windows().unwrap();
+//! println!("Found {} windows", window_list.len());
+//! 
+//! // Получаем активное окно
+//! if let Some(focused) = introspector.focused_window().unwrap() {
+//!     println!("Focused window: {:?}", focused.title);
+//! }
+//! ```
+//! 
+//! ## Использование в реальном демоне
+//! 
+//! ```rust
+//! use smoothtask_core::metrics::windows::{WindowIntrospector, WindowInfo, WindowState};
+//! 
+//! /// Функция для обработки оконных метрик в главном цикле демона
+//! fn process_window_metrics(introspector: &dyn WindowIntrospector) -> anyhow::Result<()> {
+//!     // Получаем текущее активное окно
+//!     if let Some(focused_window) = introspector.focused_window()? {
+//!         println!("Active window: {:?}", focused_window.title);
+//!         
+//!         // Если окно фокусировано, можно повысить приоритет соответствующего процесса
+//!         if focused_window.is_focused() {
+//!             if let Some(pid) = focused_window.pid {
+//!                 println!("Boosting priority for PID: {}", pid);
+//!                 // Здесь можно вызвать функции для изменения приоритета процесса
+//!             }
+//!         }
+//!     }
+//!     
+//!     Ok(())
+//! }
+//! ```
+//!
+//! # Архитектура
+//! 
+//! Модуль следует принципу абстракции: конкретные реализации для X11 и Wayland
+//! предоставляют данные через общий интерфейс `WindowIntrospector`, что позволяет
+//! основному коду работать с окнами независимо от используемого композитора.
+//!
+//! # Обработка ошибок
+//! 
+//! Все функции возвращают `anyhow::Result` для удобной обработки ошибок.
+//! В случае ошибок (например, недоступность X11/Wayland) функции возвращают
+//! `Err`, что позволяет вызывающему коду обрабатывать ошибки gracefully.
 
 pub use crate::metrics::windows_wayland::{is_wayland_available, WaylandIntrospector};
 pub use crate::metrics::windows_x11::X11Introspector;
@@ -71,11 +154,144 @@ impl WindowInfo {
 }
 
 /// Общий интерфейс для получения списка окон из конкретного бекенда.
+///
+/// Этот трейт определяет стандартный интерфейс для работы с оконными системами.
+/// Реализации этого трейта могут подключаться к различным композиторам
+/// (X11, Wayland) и предоставлять нормализованную информацию об окнах.
+///
+/// # Примеры реализации
+///
+/// ## Базовая реализация для X11
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::{WindowIntrospector, WindowInfo, WindowState};
+/// use anyhow::Result;
+///
+/// struct X11WindowIntrospector {
+///     // Реальная реализация будет содержать соединение с X11 сервером
+/// }
+///
+/// impl WindowIntrospector for X11WindowIntrospector {
+///     fn windows(&self) -> Result<Vec<WindowInfo>> {
+///         // Реальная реализация будет использовать X11 API для получения списка окон
+///         // и преобразования их в нормализованный формат WindowInfo
+///         Ok(vec![
+///             WindowInfo::new(
+///                 Some("firefox".to_string()),
+///                 Some("Mozilla Firefox".to_string()),
+///                 Some(1),
+///                 WindowState::Focused,
+///                 Some(1234),
+///                 0.9,
+///             )
+///         ])
+///     }
+/// }
+/// ```
+///
+/// ## Использование в коде демона
+///
+/// ```rust
+/// use smoothtask_core::metrics::windows::WindowIntrospector;
+/// use anyhow::Result;
+///
+/// /// Функция для получения информации об активном окне
+/// fn get_active_window_info(introspector: &dyn WindowIntrospector) -> Result<Option<String>> {
+///     if let Some(focused) = introspector.focused_window()? {
+///         Ok(focused.app_id)
+///     } else {
+///         Ok(None)
+///     }
+/// }
+/// ```
+///
+/// # Методы
+///
+/// - `windows()`: Возвращает полный список окон
+/// - `focused_window()`: Удобный метод для получения активного окна
+///
+/// # Требования к реализации
+///
+/// - Реализации должны быть потокобезопасными (`Send + Sync`)
+/// - Ошибки должны возвращаться в виде `anyhow::Error`
+/// - Информация об окнах должна быть нормализована к формату `WindowInfo`
+///
+/// # Обработка ошибок
+///
+/// Реализации должны корректно обрабатывать ошибки и возвращать их через
+/// `anyhow::Result`. Типичные ошибки включают:
+/// - Недоступность оконной системы (X11/Wayland сервер не отвечает)
+/// - Отсутствие прав доступа
+/// - Неподдерживаемые операции
 pub trait WindowIntrospector: Send + Sync {
     /// Возвращает снапшот окон.
+    ///
+    /// Этот метод должен возвращать текущий список всех окон в системе,
+    /// преобразованных в нормализованный формат `WindowInfo`.
+    ///
+    /// # Возвращаемое значение
+    ///
+    /// - `Ok(Vec<WindowInfo>)`: Список окон в нормализованном формате
+    /// - `Err(anyhow::Error)`: Ошибка при получении информации об окнах
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::windows::{WindowIntrospector, StaticWindowIntrospector, WindowInfo, WindowState};
+    ///
+    /// let introspector = StaticWindowIntrospector::new(vec![
+    ///     WindowInfo::new(
+    ///         Some("app".to_string()),
+    ///         Some("title".to_string()),
+    ///         Some(1),
+    ///         WindowState::Focused,
+    ///         Some(100),
+    ///         1.0,
+    ///     )
+    /// ]);
+    ///
+    /// let windows = introspector.windows().unwrap();
+    /// assert_eq!(windows.len(), 1);
+    /// ```
     fn windows(&self) -> Result<Vec<WindowInfo>>;
 
     /// Удобный шорткат для активного окна.
+    ///
+    /// Этот метод использует `select_focused_window()` для выбора наиболее
+    /// релевантного активного окна из полного списка окон.
+    ///
+    /// # Возвращаемое значение
+    ///
+    /// - `Ok(Some(WindowInfo))`: Наиболее релевантное активное окно
+    /// - `Ok(None)`: Нет активных окон
+    /// - `Err(anyhow::Error)`: Ошибка при получении информации об окнах
+    ///
+    /// # Алгоритм
+    ///
+    /// 1. Получает полный список окон через `windows()`
+    /// 2. Использует `select_focused_window()` для выбора активного окна
+    /// 3. Возвращает результат
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::metrics::windows::{WindowIntrospector, StaticWindowIntrospector, WindowInfo, WindowState};
+    ///
+    /// let introspector = StaticWindowIntrospector::new(vec![
+    ///     WindowInfo::new(
+    ///         Some("app".to_string()),
+    ///         Some("title".to_string()),
+    ///         Some(1),
+    ///         WindowState::Focused,
+    ///         Some(100),
+    ///         1.0,
+    ///     )
+    /// ]);
+    ///
+    /// let focused = introspector.focused_window().unwrap();
+    /// assert!(focused.is_some());
+    /// assert_eq!(focused.unwrap().state, WindowState::Focused);
+    /// ```
     fn focused_window(&self) -> Result<Option<WindowInfo>> {
         let windows = self.windows()?;
         Ok(select_focused_window(&windows))

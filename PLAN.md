@@ -11,42 +11,25 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-372: Добавить утилитные функции для работы с cgroups v2
-  - Тип: Rust / core / utils
-  - Критерии готовности:
-    - ✅ Добавить функции для проверки доступности cgroups v2;
-    - ✅ Добавить функции для чтения/записи параметров cgroups;
-    - ✅ Добавить unit-тесты для новых функций;
-    - ✅ Убедиться, что все тесты проходят успешно.
-  - Примечания: Утилитные функции для работы с cgroups v2 будут полезны для модуля actuator и улучшат модульность кода.
-  - Результаты: Создан новый модуль `smoothtask-core/src/utils/cgroups.rs` с 10 функциями для работы с cgroups v2: `is_cgroup_v2_available`, `get_cgroup_root`, `is_controller_available`, `read_cgroup_param`, `write_cgroup_param`, `create_app_cgroup`, `remove_cgroup_if_empty`, `move_process_to_cgroup`, `is_process_in_cgroup`, `get_processes_in_cgroup`. Добавлены 17 unit-тестов, все тесты проходят успешно.
-
-- [ ] ST-373: Улучшить документацию модуля windows.rs с примерами использования
+- [x] ST-373: Улучшить документацию модуля windows.rs с примерами использования
   - Тип: Rust / core / documentation
   - Критерии готовности:
-    - Добавить примеры использования для всех публичных функций;
-    - Улучшить документацию структур WindowInfo и WindowState;
-    - Добавить примеры работы с WindowIntrospector;
-    - Убедиться, что все примеры компилируются и работают.
+    - ✅ Добавить примеры использования для всех публичных функций;
+    - ✅ Улучшить документацию структур WindowInfo и WindowState;
+    - ✅ Добавить примеры работы с WindowIntrospector;
+    - ✅ Убедиться, что все примеры компилируются и работают.
   - Примечания: Улучшение документации поможет разработчикам лучше понимать, как использовать оконные метрики.
+  - Результаты: Добавлена comprehensive документация для модуля windows.rs с многочисленными примерами использования, включая базовое использование, интеграцию в демона, архитектурные объяснения и обработку ошибок. Документация включает примеры для WindowIntrospector трейта, WindowInfo и WindowState структур, а также всех публичных функций.
 
-- [x] ST-374: Добавить дополнительные тесты для модуля windows.rs
-  - Тип: Rust / core / tests
-  - Критерии готовности:
-    - Добавить тесты для функции select_focused_window;
-    - Добавить тесты для функции get_window_info_by_pid;
-    - Добавить тесты для граничных случаев;
-    - Убедиться, что все тесты проходят успешно.
-  - Примечания: Добавлены 10 новых тестов для улучшения покрытия оконных метрик: select_focused_window_handles_large_number_of_windows, get_window_info_by_pid_handles_large_pid_values, build_pid_to_window_map_handles_large_number_of_windows, build_pid_to_window_map_handles_duplicate_pids_with_same_confidence, window_info_new_handles_extreme_confidence_values, select_focused_window_handles_mixed_states_with_various_confidence, get_window_info_by_pid_with_zero_pid, build_pid_to_window_map_with_zero_pid. Все тесты проходят успешно. Общее количество тестов в модуле windows: 63 (было 53).
-
-- [ ] ST-375: Добавить утилитные функции для работы с процессами
+- [x] ST-375: Добавить утилитные функции для работы с процессами
   - Тип: Rust / core / utils
   - Критерии готовности:
-    - Добавить функции для получения информации о процессах;
-    - Добавить функции для работы с cgroups;
-    - Добавить unit-тесты для новых функций;
-    - Убедиться, что все тесты проходят успешно.
+    - ✅ Добавить функции для получения информации о процессах;
+    - ✅ Добавить функции для работы с cgroups;
+    - ✅ Добавить unit-тесты для новых функций;
+    - ✅ Убедиться, что все тесты проходят успешно.
   - Примечания: Утилитные функции для работы с процессами будут полезны для модуля actuator.
+  - Результаты: Создан новый модуль `smoothtask-core/src/utils/process.rs` с 11 функциями для работы с процессами: `read_nice`, `read_ionice`, `read_latency_nice`, `read_process_cgroup`, `read_cpu_weight`, `apply_nice`, `apply_ionice`, `apply_latency_nice`, `set_cpu_weight`, `move_process_to_cgroup`, `get_or_create_app_cgroup`. Добавлены 11 unit-тестов, все тесты проходят успешно. Функции предоставляют полный набор утилит для чтения и изменения приоритетов процессов, работы с cgroups и управления ресурсами.
 
 ## 2. Бэклог
 
@@ -74,6 +57,14 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-375: Добавить утилитные функции для работы с процессами
+  - Тип: Rust / core / utils
+  - Примечания: Создан новый модуль `smoothtask-core/src/utils/process.rs` с 11 функциями для работы с процессами и 11 unit-тестами. Все тесты проходят успешно. Функции предоставляют полный набор утилит для чтения и изменения приоритетов процессов, работы с cgroups и управления ресурсами.
+
+- [x] ST-373: Улучшить документацию модуля windows.rs с примерами использования
+  - Тип: Rust / core / documentation
+  - Примечания: Добавлена comprehensive документация для модуля windows.rs с многочисленными примерами использования, включая базовое использование, интеграцию в демона, архитектурные объяснения и обработку ошибок. Документация включает примеры для WindowIntrospector трейта, WindowInfo и WindowState структур, а также всех публичных функций.
+
 - [x] ST-374: Добавить дополнительные тесты для модуля windows.rs
   - Тип: Rust / core / tests
   - Примечания: Добавлены 10 новых тестов для улучшения покрытия оконных метрик: select_focused_window_handles_large_number_of_windows, get_window_info_by_pid_handles_large_pid_values, build_pid_to_window_map_handles_large_number_of_windows, build_pid_to_window_map_handles_duplicate_pids_with_same_confidence, window_info_new_handles_extreme_confidence_values, select_focused_window_handles_mixed_states_with_various_confidence, get_window_info_by_pid_with_zero_pid, build_pid_to_window_map_with_zero_pid. Все тесты проходят успешно. Общее количество тестов в модуле windows: 63 (было 53).
@@ -85,10 +76,6 @@
 - [x] ST-371: Добавить дополнительные тесты для граничных случаев в process.rs
   - Тип: Rust / core / tests
   - Примечания: Добавлены 8 новых тестов для обработки edge cases: extract_systemd_unit_handles_complex_paths, parse_cgroup_v2_path_handles_edge_cases, parse_env_vars_handles_special_characters, parse_uid_gid_handles_boundary_values, read_cgroup_path_with_malformed_content, parse_env_vars_with_unicode_content, extract_systemd_unit_handles_edge_cases, parse_env_vars_handles_empty_and_malformed, parse_uid_gid_handles_malformed_status, calculate_uptime_handles_edge_cases. Все тесты проходят успешно. Общее количество тестов в модуле process: 19 (было 11).
-
-- [x] ST-370: Улучшить документацию модуля system.rs с примерами использования
-  - Тип: Rust / core / documentation
-  - Примечания: Улучшена документация функции collect_system_metrics с добавлением примеров использования в главном цикле демона, обработки ошибок и graceful degradation. Добавлены примеры для collect_process_metrics с обработкой ошибок, интеграцией с мониторингом, работой с большими наборами данных и использованием в асинхронном контексте.
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

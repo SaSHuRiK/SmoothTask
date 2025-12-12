@@ -5,3 +5,4 @@
 //! частях демона SmoothTask.
 
 pub mod cgroups;
+pub mod process;
