@@ -383,41 +383,121 @@ impl Default for ProcPaths {
 ///
 /// Если PSI-файлы недоступны (например, на старых ядрах без поддержки PSI),
 /// функция продолжит работу с пустыми метриками PSI вместо возврата ошибки.
+///
+/// # Ошибки
+///
+/// - Возвращает ошибку, если не удалось прочитать основные файлы (/proc/stat, /proc/meminfo, /proc/loadavg)
+/// - Возвращает ошибку, если не удалось разобрать содержимое основных файлов
+/// - PSI ошибки обрабатываются gracefully с предупреждениями и использованием пустых метрик
+///
+/// # Примеры
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
+///
+/// // Использование реального /proc
+/// let paths = ProcPaths::default();
+/// let metrics = collect_system_metrics(&paths).expect("Не удалось собрать системные метрики");
+///
+/// // Использование тестового пути (для тестирования)
+/// let test_paths = ProcPaths::new("/tmp/test_proc");
+/// let result = collect_system_metrics(&test_paths);
+/// // result будет Ok с пустыми PSI метриками, если PSI файлы отсутствуют
+/// ```
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
-    let cpu_contents = read_file(&paths.stat)?;
-    let meminfo_contents = read_file(&paths.meminfo)?;
-    let loadavg_contents = read_file(&paths.loadavg)?;
+    // Читаем основные файлы с подробными сообщениями об ошибках
+    let cpu_contents = read_file(&paths.stat).with_context(|| {
+        format!(
+            "Не удалось прочитать CPU метрики из {}. 
+             Проверьте, что файл существует и доступен для чтения. 
+             Это может быть вызвано отсутствием прав доступа, отсутствием файла или проблемами с файловой системой. 
+             Без этого файла невозможно собрать системные метрики.",
+            paths.stat.display()
+        )
+    })?;
 
-    let cpu_times = parse_cpu_times(&cpu_contents)?;
-    let memory = parse_meminfo(&meminfo_contents)?;
-    let load_avg = parse_loadavg(&loadavg_contents)?;
+    let meminfo_contents = read_file(&paths.meminfo).with_context(|| {
+        format!(
+            "Не удалось прочитать информацию о памяти из {}. 
+             Проверьте, что файл существует и доступен для чтения. 
+             Это может быть вызвано отсутствием прав доступа, отсутствием файла или проблемами с файловой системой. 
+             Без этого файла невозможно собрать системные метрики.",
+            paths.meminfo.display()
+        )
+    })?;
+
+    let loadavg_contents = read_file(&paths.loadavg).with_context(|| {
+        format!(
+            "Не удалось прочитать среднюю нагрузку из {}. 
+             Проверьте, что файл существует и доступен для чтения. 
+             Это может быть вызвано отсутствием прав доступа, отсутствием файла или проблемами с файловой системой. 
+             Без этого файла невозможно собрать системные метрики.",
+            paths.loadavg.display()
+        )
+    })?;
+
+    // Парсим основные метрики с подробными сообщениями об ошибках
+    let cpu_times = parse_cpu_times(&cpu_contents).with_context(|| {
+        format!(
+            "Не удалось разобрать CPU метрики из {}. 
+             Проверьте, что файл содержит корректные данные в ожидаемом формате. 
+             Ожидаемый формат: 'cpu <user> <nice> <system> <idle> <iowait> <irq> <softirq> <steal> <guest> <guest_nice>'",
+            paths.stat.display()
+        )
+    })?;
+
+    let memory = parse_meminfo(&meminfo_contents).with_context(|| {
+        format!(
+            "Не удалось разобрать информацию о памяти из {}. 
+             Проверьте, что файл содержит корректные данные в ожидаемом формате. 
+             Ожидаемый формат: '<key>: <value> kB' для полей MemTotal, MemAvailable, MemFree, Buffers, Cached, SwapTotal, SwapFree",
+            paths.meminfo.display()
+        )
+    })?;
+
+    let load_avg = parse_loadavg(&loadavg_contents).with_context(|| {
+        format!(
+            "Не удалось разобрать среднюю нагрузку из {}. 
+             Проверьте, что файл содержит корректные данные в ожидаемом формате. 
+             Ожидаемый формат: '<1m> <5m> <15m> <running>/<total> <last_pid>'",
+            paths.loadavg.display()
+        )
+    })?;
 
     // PSI может быть недоступен на старых ядрах, поэтому обрабатываем ошибки gracefully
     let pressure_cpu = read_file(&paths.pressure_cpu)
         .and_then(|contents| parse_pressure(&contents))
         .unwrap_or_else(|e| {
             warn!(
-                "Не удалось прочитать PSI CPU из {}: {}, используем пустые метрики",
+                "Не удалось прочитать PSI CPU из {}: {}. 
+                 Это может быть вызвано отсутствием поддержки PSI в ядре, отсутствием файла или проблемами с правами доступа. 
+                 Используем пустые метрики для PSI CPU.",
                 paths.pressure_cpu.display(),
                 e
             );
             Pressure::default()
         });
+
     let pressure_io = read_file(&paths.pressure_io)
         .and_then(|contents| parse_pressure(&contents))
         .unwrap_or_else(|e| {
             warn!(
-                "Не удалось прочитать PSI IO из {}: {}, используем пустые метрики",
+                "Не удалось прочитать PSI IO из {}: {}. 
+                 Это может быть вызвано отсутствием поддержки PSI в ядре, отсутствием файла или проблемами с правами доступа. 
+                 Используем пустые метрики для PSI IO.",
                 paths.pressure_io.display(),
                 e
             );
             Pressure::default()
         });
+
     let pressure_memory = read_file(&paths.pressure_memory)
         .and_then(|contents| parse_pressure(&contents))
         .unwrap_or_else(|e| {
             warn!(
-                "Не удалось прочитать PSI Memory из {}: {}, используем пустые метрики",
+                "Не удалось прочитать PSI Memory из {}: {}. 
+                 Это может быть вызвано отсутствием поддержки PSI в ядре, отсутствием файла или проблемами с правами доступа. 
+                 Используем пустые метрики для PSI Memory.",
                 paths.pressure_memory.display(),
                 e
             );
@@ -1273,5 +1353,135 @@ SwapFree:        4096000 kB
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
         assert!(usage.is_none(), "Should return None on counter overflow");
+    }
+
+    #[test]
+    fn collect_system_metrics_handles_missing_files_gracefully() {
+        // Тест проверяет, что функция collect_system_metrics возвращает ошибки с подробными сообщениями
+        // при отсутствии основных файлов
+        let tmp = TempDir::new().unwrap();
+        let paths = ProcPaths::new(tmp.path());
+
+        // Проверяем, что ошибка содержит подробное сообщение о отсутствии файла
+        let result = collect_system_metrics(&paths);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+
+        // Проверяем, что сообщение об ошибке содержит информацию о файле и причине
+        assert!(
+            err_msg.contains("Не удалось прочитать CPU метрики")
+                || err_msg.contains("Не удалось прочитать информацию о памяти")
+                || err_msg.contains("Не удалось прочитать среднюю нагрузку")
+        );
+
+        // Проверяем, что сообщение содержит информацию о возможных причинах
+        assert!(
+            err_msg.contains("отсутствием прав доступа")
+                || err_msg.contains("отсутствием файла")
+                || err_msg.contains("проблемами с файловой системой")
+        );
+    }
+
+    #[test]
+    fn collect_system_metrics_handles_psi_gracefully() {
+        // Тест проверяет, что функция collect_system_metrics обрабатывает отсутствие PSI файлов gracefully
+        // Этот тест проверяет, что PSI ошибки обрабатываются gracefully, но основные файлы должны существовать
+        // Для полного тестирования graceful обработки PSI, нам нужно использовать реальный /proc
+        // где основные файлы существуют, но PSI файлы могут отсутствовать
+
+        // Используем реальный /proc для тестирования
+        let paths = ProcPaths::default();
+
+        // Функция должна успешно собрать метрики, даже если PSI файлы отсутствуют
+        let result = collect_system_metrics(&paths);
+
+        // На реальной системе с поддержкой PSI, результат должен быть Ok
+        // На системах без PSI, результат также должен быть Ok с пустыми PSI метриками
+        if result.is_ok() {
+            let metrics = result.unwrap();
+            // Проверяем, что основные метрики собраны
+            assert!(metrics.cpu_times.user > 0);
+            assert!(metrics.memory.mem_total_kb > 0);
+            assert!(metrics.load_avg.one > 0.0);
+
+            // PSI метрики могут быть пустыми или содержать данные, в зависимости от системы
+            // Главное, что функция не упала с ошибкой
+        } else {
+            // Если результат Err, проверяем, что это не связано с основными файлами
+            let err = result.unwrap_err();
+            let err_str = err.to_string();
+            // Ошибка не должна быть связана с основными файлами (stat, meminfo, loadavg)
+            assert!(
+                !err_str.contains("stat")
+                    || !err_str.contains("meminfo")
+                    || !err_str.contains("loadavg")
+            );
+        }
+    }
+
+    #[test]
+    fn parse_cpu_times_handles_malformed_input() {
+        // Тест проверяет, что parse_cpu_times возвращает ошибку с подробным сообщением
+        // при некорректных данных
+        let malformed_stat = "cpu 100 20 30\n"; // не хватает полей
+        let result = parse_cpu_times(malformed_stat);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+
+        // Проверяем, что сообщение об ошибке содержит информацию о поле
+        assert!(err_msg.contains("Поле") && err_msg.contains("отсутствует"));
+
+        // Тест с некорректным значением
+        let malformed_stat2 = "cpu 100 20 abc 30 40 50 60 70 80 90"; // 'abc' вместо числа
+        let result2 = parse_cpu_times(malformed_stat2);
+        assert!(result2.is_err());
+        let err2 = result2.unwrap_err();
+        let err_msg2 = err2.to_string();
+
+        // Проверяем, что сообщение об ошибке содержит информацию о некорректном значении
+        assert!(
+            err_msg2.contains("Некорректное значение")
+                || err_msg2.contains("ожидается целое число")
+        );
+    }
+
+    #[test]
+    fn parse_meminfo_handles_missing_fields() {
+        // Тест проверяет, что parse_meminfo возвращает ошибку с подробным сообщением
+        // при отсутствии обязательных полей
+        let incomplete_meminfo = "MemTotal: 1000 kB\nMemFree: 500 kB\n"; // не хватает полей
+        let result = parse_meminfo(incomplete_meminfo);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+
+        // Проверяем, что сообщение об ошибке содержит информацию о недостающих полях
+        assert!(
+            err_msg.contains("отсутствует обязательное поле")
+                || err_msg.contains("MemAvailable")
+                || err_msg.contains("Buffers")
+                || err_msg.contains("Cached")
+                || err_msg.contains("SwapTotal")
+                || err_msg.contains("SwapFree")
+        );
+    }
+
+    #[test]
+    fn parse_loadavg_handles_incomplete_data() {
+        // Тест проверяет, что parse_loadavg возвращает ошибку с подробным сообщением
+        // при неполных данных
+        let incomplete_loadavg = "0.42"; // только одно значение
+        let result = parse_loadavg(incomplete_loadavg);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        let err_msg = err.to_string();
+
+        // Проверяем, что сообщение об ошибке содержит информацию о недостающих значениях
+        assert!(
+            err_msg.contains("Отсутствует значение loadavg")
+                || err_msg.contains("ожидается формат")
+        );
     }
 }

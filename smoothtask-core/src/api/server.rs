@@ -549,6 +549,16 @@ async fn process_by_pid_handler(
     Path(pid): Path<i32>,
     State(state): State<ApiState>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Проверяем, что PID является допустимым значением
+    if pid <= 0 {
+        error!("Invalid PID value: {}", pid);
+        return Ok(Json(json!({
+            "status": "error",
+            "error": "invalid_input",
+            "message": format!("Invalid PID value: {}. PID must be a positive integer", pid)
+        })));
+    }
+
     match &state.processes {
         Some(processes_arc) => {
             let processes = processes_arc.read().await;
@@ -557,18 +567,24 @@ async fn process_by_pid_handler(
                     "status": "ok",
                     "process": process
                 }))),
-                None => Ok(Json(json!({
-                    "status": "error",
-                    "error": "not_found",
-                    "message": format!("Process with PID {} not found", pid)
-                }))),
+                None => {
+                    error!("Process with PID {} not found", pid);
+                    Ok(Json(json!({
+                        "status": "error",
+                        "error": "not_found",
+                        "message": format!("Process with PID {} not found", pid)
+                    })))
+                }
             }
         }
-        None => Ok(Json(json!({
-            "status": "error",
-            "error": "not_available",
-            "message": "Processes not available (daemon may not be running or no processes collected yet)"
-        }))),
+        None => {
+            error!("Processes not available for PID lookup");
+            Ok(Json(json!({
+                "status": "error",
+                "error": "not_available",
+                "message": "Processes not available (daemon may not be running or no processes collected yet)"
+            })))
+        }
     }
 }
 
@@ -579,6 +595,16 @@ async fn appgroup_by_id_handler(
     Path(id): Path<String>,
     State(state): State<ApiState>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Проверяем, что ID не является пустым
+    if id.is_empty() {
+        error!("Empty app group ID provided");
+        return Ok(Json(json!({
+            "status": "error",
+            "error": "invalid_input",
+            "message": "App group ID cannot be empty"
+        })));
+    }
+
     match &state.app_groups {
         Some(app_groups_arc) => {
             let app_groups = app_groups_arc.read().await;
@@ -587,18 +613,24 @@ async fn appgroup_by_id_handler(
                     "status": "ok",
                     "app_group": app_group
                 }))),
-                None => Ok(Json(json!({
-                    "status": "error",
-                    "error": "not_found",
-                    "message": format!("App group with ID '{}' not found", id)
-                }))),
+                None => {
+                    error!("App group with ID '{}' not found", id);
+                    Ok(Json(json!({
+                        "status": "error",
+                        "error": "not_found",
+                        "message": format!("App group with ID '{}' not found", id)
+                    })))
+                }
             }
         }
-        None => Ok(Json(json!({
-            "status": "error",
-            "error": "not_available",
-            "message": "App groups not available (daemon may not be running or no groups collected yet)"
-        }))),
+        None => {
+            error!("App groups not available for ID lookup");
+            Ok(Json(json!({
+                "status": "error",
+                "error": "not_available",
+                "message": "App groups not available (daemon may not be running or no groups collected yet)"
+            })))
+        }
     }
 }
 
@@ -1502,6 +1534,21 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_process_by_pid_handler_invalid_pid() {
+        let state = ApiState::new();
+        let result = process_by_pid_handler(Path(-1), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "invalid_input");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid PID value"));
+    }
+
+    #[tokio::test]
     async fn test_process_by_pid_handler_without_processes() {
         let state = ApiState::new();
         let result = process_by_pid_handler(Path(1), State(state)).await;
@@ -1620,6 +1667,18 @@ mod tests {
         assert!(value["process"].is_object());
         let process = &value["process"];
         assert_eq!(process["pid"], 1);
+    }
+
+    #[tokio::test]
+    async fn test_appgroup_by_id_handler_empty_id() {
+        let state = ApiState::new();
+        let result = appgroup_by_id_handler(Path("".to_string()), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "invalid_input");
+        assert_eq!(value["message"], "App group ID cannot be empty");
     }
 
     #[tokio::test]
@@ -2162,6 +2221,14 @@ apps:
         assert!(state.config.is_some());
         assert!(state.pattern_database.is_some());
         assert!(state.responsiveness_metrics.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_health_handler() {
+        let result = health_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["service"], "smoothtask-api");
     }
 
     #[tokio::test]

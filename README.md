@@ -25,6 +25,46 @@ cargo build --release
 sudo ./target/release/smoothtaskd --config configs/smoothtask.example.yml
 ```
 
+### Настройка systemd (для автозапуска)
+
+Для автоматического запуска демона при загрузке системы:
+
+1. Установите бинарник в `/usr/local/bin/`:
+   ```bash
+   sudo cp target/release/smoothtaskd /usr/local/bin/
+   ```
+
+2. Создайте конфигурационную директорию:
+   ```bash
+   sudo mkdir -p /etc/smoothtask/
+   sudo cp configs/smoothtask.example.yml /etc/smoothtask/smoothtask.yml
+   ```
+
+3. Создайте директорию для данных:
+   ```bash
+   sudo mkdir -p /var/lib/smoothtask/
+   sudo chown root:root /var/lib/smoothtask
+   ```
+
+4. Установите systemd unit файл:
+   ```bash
+   sudo cp systemd/smoothtaskd.service /etc/systemd/system/
+   sudo systemctl daemon-reload
+   ```
+
+5. Включите и запустите сервис:
+   ```bash
+   sudo systemctl enable smoothtaskd.service
+   sudo systemctl start smoothtaskd.service
+   ```
+
+6. Проверьте статус:
+   ```bash
+   sudo systemctl status smoothtaskd.service
+   ```
+
+Подробная документация по systemd доступна в [systemd/README.md](systemd/README.md).
+
 ## Документация
 
 См. [docs/tz.md](docs/tz.md) для полного технического задания.
@@ -83,9 +123,66 @@ curl http://127.0.0.1:8080/api/classes
 curl http://127.0.0.1:8080/api/endpoints
 ```
 
+**Практические примеры использования:**
+
+```bash
+# Мониторинг загрузки системы с выводом в формате для Grafana
+curl -s http://127.0.0.1:8080/api/metrics | jq '.cpu_usage'
+
+# Получение информации о топ-5 процессов по использованию CPU
+curl -s http://127.0.0.1:8080/api/processes | jq '.processes | sort_by(.cpu_usage) | reverse | .[0:5]'
+
+# Проверка отзывчивости системы
+curl -s http://127.0.0.1:8080/api/responsiveness | jq '.latency_stats'
+
+# Мониторинг групп приложений с фильтрацией по приоритету
+curl -s http://127.0.0.1:8080/api/appgroups | jq '.groups | .[] | select(.priority_class == "LATENCY_CRITICAL")'
+```
+
 **Интеграция с системами мониторинга:**
 
 API можно использовать для интеграции с системами мониторинга, такими как Prometheus, Grafana, Zabbix и другими. Для этого можно создать простые скрипты, которые будут опрашивать API и предоставлять данные в нужном формате.
+
+**Пример скрипта для Prometheus:**
+
+```bash
+#!/bin/bash
+# smoothtask_exporter.sh - экспортер метрик для Prometheus
+
+# Получение метрик системы
+SMOOTHTASK_METRICS=$(curl -s http://127.0.0.1:8080/api/metrics)
+CPU_USAGE=$(echo "$SMOOTHTASK_METRICS" | jq '.cpu_usage.total')
+MEM_USAGE=$(echo "$SMOOTHTASK_METRICS" | jq '.memory.used_kb')
+
+# Вывод в формате Prometheus
+cat <<EOF
+# HELP smoothtask_cpu_usage_total Total CPU usage percentage
+# TYPE smoothtask_cpu_usage_total gauge
+smoothtask_cpu_usage_total $CPU_USAGE
+
+# HELP smoothtask_memory_used_kb Memory used in KB
+# TYPE smoothtask_memory_used_kb gauge
+smoothtask_memory_used_kb $MEM_USAGE
+EOF
+```
+
+**Пример использования в автоматизации:**
+
+```bash
+#!/bin/bash
+# Автоматическое обнаружение и мониторинг критичных процессов
+
+# Получение списка процессов с высоким приоритетом
+HIGH_PRIO_PROCESSES=$(curl -s http://127.0.0.1:8080/api/processes | \
+    jq '.processes | .[] | select(.priority_class == "LATENCY_CRITICAL") | .name')
+
+# Логирование и оповещение
+echo "High priority processes: $HIGH_PRIO_PROCESSES"
+if [[ -n "$HIGH_PRIO_PROCESSES" ]]; then
+    # Отправка оповещения в систему мониторинга
+    echo "Critical processes detected: $HIGH_PRIO_PROCESSES" | logger -t smoothtask-monitor
+fi
+```
 
 **Документация API:**
 

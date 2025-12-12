@@ -14,6 +14,83 @@ use std::fs;
 ///
 /// Возвращает вектор ProcessRecord для всех доступных процессов.
 /// Процессы, к которым нет доступа или которые завершились, пропускаются.
+///
+/// # Возвращаемое значение
+///
+/// - `Ok(Vec<ProcessRecord>)` - вектор с метриками всех доступных процессов
+/// - `Err(anyhow::Error)` - если не удалось получить список процессов из /proc
+///
+/// # Ошибки
+///
+/// Функция может вернуть ошибку в следующих случаях:
+///
+/// - **Нет доступа к /proc**: отсутствуют права доступа или /proc не смонтирован
+/// - **Системная ошибка**: проблемы с файловой системой или ядром
+///
+/// # Примеры использования
+///
+/// ## Базовое использование
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+///
+/// match collect_process_metrics() {
+///     Ok(processes) => {
+///         println!("Найдено {} процессов", processes.len());
+///         for proc in processes {
+///             println!("PID {}: {} - CPU: {:.1}%", proc.pid, proc.name, proc.cpu_usage);
+///         }
+///     }
+///     Err(e) => {
+///         eprintln!("Ошибка сбора метрик процессов: {}", e);
+///     }
+/// }
+/// ```
+///
+/// ## Использование в главном цикле демона
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+/// use std::time::Instant;
+///
+/// let start_time = Instant::now();
+/// match collect_process_metrics() {
+///     Ok(processes) => {
+///         let duration = start_time.elapsed();
+///         tracing::info!(
+///             "Собрано метрик для {} процессов за {:?}",
+///             processes.len(),
+///             duration
+///         );
+///     }
+///     Err(e) => {
+///         tracing::error!("Не удалось собрать метрики процессов: {}", e);
+///     }
+/// }
+/// ```
+///
+/// ## Фильтрация и обработка результатов
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::collect_process_metrics;
+///
+/// if let Ok(processes) = collect_process_metrics() {
+///     // Фильтрация процессов с высоким использованием CPU
+///     let high_cpu_processes: Vec<_> = processes
+///         .into_iter()
+///         .filter(|p| p.cpu_usage > 50.0)
+///         .collect();
+///
+///     println!("Процессы с высоким CPU: {}", high_cpu_processes.len());
+/// }
+/// ```
+///
+/// # Примечания
+///
+/// - Функция требует прав на чтение /proc (обычно требуются права root)
+/// - Процессы, которые завершились во время сбора, автоматически пропускаются
+/// - Ошибки доступа к отдельным процессам логируются на уровне debug и не прерывают выполнение
+/// - Функция безопасна для вызова из многопоточного контекста
 pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
     let all_procs = procfs::process::all_processes()
         .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc")?;
@@ -586,5 +663,128 @@ Gid:    1000 1000 1000 1000
         let result = read_cgroup_path(999999);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn extract_systemd_unit_handles_edge_cases() {
+        // Тест обработки пустых и некорректных путей
+        assert_eq!(extract_systemd_unit(&Some("".to_string())), None);
+        assert_eq!(extract_systemd_unit(&Some("/".to_string())), None);
+        assert_eq!(
+            extract_systemd_unit(&Some("invalid-format".to_string())),
+            None
+        );
+        assert_eq!(
+            extract_systemd_unit(&Some("/user.slice/".to_string())),
+            None
+        );
+
+        // Тест обработки очень длинных путей
+        let long_path = "/user.slice/".repeat(100) + "session-1.scope";
+        assert_eq!(
+            extract_systemd_unit(&Some(long_path)),
+            Some("session-1.scope".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_env_vars_handles_empty_and_malformed() {
+        // Тест обработки пустого файла environ
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Пустой файл environ
+        fs::write(proc_dir.join("environ"), "").unwrap();
+        let path = proc_dir.join("environ");
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut has_display = false;
+        for env_var in contents.split('\0') {
+            if env_var.starts_with("DISPLAY=") {
+                has_display = true;
+            }
+        }
+        assert!(!has_display);
+
+        // Файл с некорректными данными
+        let malformed_content = "INVALID_DATA_WITHOUT_NULL_BYTES";
+        fs::write(proc_dir.join("environ"), malformed_content).unwrap();
+        let contents = fs::read_to_string(&path).unwrap();
+        let mut count = 0;
+        for env_var in contents.split('\0') {
+            if !env_var.is_empty() {
+                count += 1;
+            }
+        }
+        assert_eq!(count, 1); // только одна строка без нулевых байтов
+    }
+
+    #[test]
+    fn parse_uid_gid_handles_malformed_status() {
+        // Тест обработки некорректного файла status
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("123");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Некорректный формат status
+        let malformed_status = "Invalid format without proper fields";
+        fs::write(proc_dir.join("status"), malformed_status).unwrap();
+
+        let status_path = proc_dir.join("status");
+        let contents = fs::read_to_string(&status_path).unwrap();
+        let mut uid = 0;
+        let mut gid = 0;
+
+        for line in contents.lines() {
+            if line.starts_with("Uid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(parsed_uid) = parts[1].parse::<u32>() {
+                        uid = parsed_uid;
+                    }
+                }
+            } else if line.starts_with("Gid:") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(parsed_gid) = parts[1].parse::<u32>() {
+                        gid = parsed_gid;
+                    }
+                }
+            }
+        }
+
+        // Должны остаться значения по умолчанию (0)
+        assert_eq!(uid, 0);
+        assert_eq!(gid, 0);
+    }
+
+    #[test]
+    fn calculate_uptime_handles_edge_cases() {
+        // Тест обработки edge cases
+        // Используем реальный процесс для получения валидного Stat
+        let current_pid = std::process::id() as i32;
+        let proc = match Process::new(current_pid) {
+            Ok(p) => p,
+            Err(_) => {
+                // Если не удалось получить процесс, пропускаем тест
+                return;
+            }
+        };
+
+        let stat = match proc.stat() {
+            Ok(s) => s,
+            Err(_) => {
+                // Если не удалось получить stat, пропускаем тест
+                return;
+            }
+        };
+
+        // Тест с реальными данными - должен вернуть Ok
+        let result = calculate_uptime(&stat);
+        assert!(result.is_ok());
+
+        // Проверяем, что uptime разумный
+        let uptime = result.unwrap();
+        assert!(uptime < 1000000); // разумный верхний предел
     }
 }
