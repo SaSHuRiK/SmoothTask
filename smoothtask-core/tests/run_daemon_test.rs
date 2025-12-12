@@ -82,10 +82,11 @@ async fn test_daemon_initializes_with_minimal_config() {
     // Создаём канал для graceful shutdown
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
-    // Запускаем демон с автоматическим shutdown через 200ms
+    // Запускаем демон с автоматическим shutdown через 500ms
+    // Увеличиваем время, чтобы дать API серверу время на инициализацию
     let shutdown_tx_clone = shutdown_tx.clone();
     tokio::spawn(async move {
-        sleep(Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(500)).await;
         let _ = shutdown_tx_clone.send(true);
     });
 
@@ -359,12 +360,20 @@ async fn test_daemon_with_api_server() {
     let db_file = tempfile::NamedTempFile::new().expect("Failed to create temp db file");
     let db_path = db_file.path().to_str().unwrap().to_string();
 
+    // Создаём временный конфигурационный файл для ConfigWatcher
+    let config_file = tempfile::NamedTempFile::new().expect("Failed to create temp config file");
+    let config_path = config_file.path().to_str().unwrap().to_string();
+    
+    // Записываем тестовую конфигурацию в файл
+    let test_config_content = create_test_config(patterns_dir, db_path.clone());
+    let config_yaml = serde_yaml::to_string(&test_config_content).expect("Failed to serialize config");
+    std::fs::write(&config_path, &config_yaml).expect("Failed to write config file");
+    
     // Создаём конфиг с включённым API сервером
-    let mut config = create_test_config(patterns_dir, db_path.clone());
-    // Используем порт 0 для автоматического выбора свободного порта (но это не работает с axum)
-    // Вместо этого используем тестовый порт, который может быть занят
-    // В реальном использовании нужно использовать свободный порт
-    config.paths.api_listen_addr = Some("127.0.0.1:0".to_string());
+    let mut config = test_config_content;
+    // Используем высокий тестовый порт, который с меньшей вероятностью будет занят
+    // Порт 0 не работает с axum, поэтому используем конкретный порт
+    config.paths.api_listen_addr = Some("127.0.0.1:18080".to_string());
 
     // Создаём канал для graceful shutdown
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -378,7 +387,7 @@ async fn test_daemon_with_api_server() {
 
     // Запускаем демон и ждём его завершения
     // API сервер должен запуститься (или выдать предупреждение, если порт занят)
-    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, config_path, true, shutdown_rx, None, None).await;
 
     // Демон должен успешно завершиться (даже если API сервер не запустился из-за занятого порта)
     match result {
