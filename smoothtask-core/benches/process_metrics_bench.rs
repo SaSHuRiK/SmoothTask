@@ -4,7 +4,9 @@
 //! сбора метрик процессов, включая кэширование и параллельную обработку.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use smoothtask_core::metrics::process::{collect_process_metrics, ProcessCacheConfig, clear_process_cache};
+use smoothtask_core::metrics::process::{
+    clear_process_cache, collect_process_metrics, ProcessCacheConfig,
+};
 
 /// Бенчмарк для измерения времени сбора метрик процессов без кэширования
 ///
@@ -136,7 +138,7 @@ fn benchmark_process_metrics_cache_warmup(c: &mut Criterion) {
     c.bench_function("process_metrics_cache_warmup", |b| {
         // Первый вызов - холодный кэш
         let _first_result = collect_process_metrics(Some(config.clone()));
-        
+
         b.iter(|| {
             // Последующие вызовы - теплый кэш
             let _result = collect_process_metrics(Some(config.clone()));

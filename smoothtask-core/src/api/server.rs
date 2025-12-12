@@ -833,9 +833,15 @@ async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<V
     let component_availability = check_component_availability(&state);
 
     // Определяем общий статус системы
-    let overall_status = if component_availability["daemon_stats_available"].as_bool().unwrap_or(false) {
+    let overall_status = if component_availability["daemon_stats_available"]
+        .as_bool()
+        .unwrap_or(false)
+    {
         "operational"
-    } else if component_availability["system_metrics_available"].as_bool().unwrap_or(false) {
+    } else if component_availability["system_metrics_available"]
+        .as_bool()
+        .unwrap_or(false)
+    {
         "partial"
     } else {
         "degraded"
@@ -1642,6 +1648,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/cache/config", get(cache_config_handler))
         .route("/api/cache/config", post(cache_config_update_handler))
         .route("/api/network/connections", get(network_connections_handler))
+        .route("/api/cpu/temperature", get(cpu_temperature_handler))
         .with_state(state)
 }
 
@@ -1684,12 +1691,15 @@ async fn metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, S
         None => {
             // Graceful degradation - возвращаем информацию о недоступности с предложениями
             let component_status = check_component_availability(&state);
-            let suggestion = if component_status["daemon_stats_available"].as_bool().unwrap_or(false) {
+            let suggestion = if component_status["daemon_stats_available"]
+                .as_bool()
+                .unwrap_or(false)
+            {
                 "Daemon is running but metrics not yet collected"
             } else {
                 "Daemon may not be running or metrics collection disabled"
             };
-            
+
             Ok(Json(json!({
                 "status": "degraded",
                 "system_metrics": null,
@@ -2263,23 +2273,23 @@ pub enum ApiError {
     /// Ошибка валидации входных данных
     #[error("Validation error: {0}")]
     ValidationError(String),
-    
+
     /// Ошибка доступа к данным
     #[error("Data access error: {0}")]
     DataAccessError(String),
-    
+
     /// Ошибка конфигурации
     #[error("Configuration error: {0}")]
     ConfigurationError(String),
-    
+
     /// Внутренняя ошибка сервера
     #[error("Internal server error: {0}")]
     InternalError(String),
-    
+
     /// Ошибка не найдено
     #[error("Not found: {0}")]
     NotFoundError(String),
-    
+
     /// Ошибка недоступности сервиса
     #[error("Service unavailable: {0}")]
     ServiceUnavailableError(String),
@@ -2296,7 +2306,7 @@ impl ApiError {
             ApiError::NotFoundError(_) => StatusCode::NOT_FOUND,
             ApiError::ServiceUnavailableError(_) => StatusCode::SERVICE_UNAVAILABLE,
         };
-        
+
         let error_response = json!({
             "status": "error",
             "error": status_code.as_str(),
@@ -2329,7 +2339,7 @@ impl ApiError {
                 }),
             }
         });
-        
+
         (status_code, Json(error_response))
     }
 }
@@ -3502,7 +3512,10 @@ mod tests {
         let value: Value = json.0;
         assert_eq!(value["status"], "error");
         assert_eq!(value["error"], "invalid_input");
-        assert!(value["message"].as_str().unwrap().contains("Invalid PID value"));
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Invalid PID value"));
         assert!(value["timestamp"].is_string());
         assert!(value["details"].is_object());
         assert_eq!(value["details"]["type"].as_str(), Some("validation"));
@@ -5666,7 +5679,10 @@ max_candidates: 200
 
         // Проверяем, что компоненты помечены как недоступные
         let component_status = &json["component_status"];
-        assert_eq!(component_status["processes_available"].as_bool(), Some(false));
+        assert_eq!(
+            component_status["processes_available"].as_bool(),
+            Some(false)
+        );
 
         // Останавливаем сервер
         handle
@@ -5706,7 +5722,10 @@ max_candidates: 200
         // Проверяем, что все компоненты помечены как недоступные (так как сервер пустой)
         let components = &json["components"];
         assert_eq!(components["daemon_stats_available"].as_bool(), Some(false));
-        assert_eq!(components["system_metrics_available"].as_bool(), Some(false));
+        assert_eq!(
+            components["system_metrics_available"].as_bool(),
+            Some(false)
+        );
         assert_eq!(components["processes_available"].as_bool(), Some(false));
 
         // Проверяем общий статус
@@ -5730,20 +5749,33 @@ max_candidates: 200
 
         // 1. Тестируем ошибку валидации (неверный PID)
         let url = format!("http://127.0.0.1:{}/api/processes/0", port);
-        let response = client.get(&url).send().await.expect("Запрос должен выполниться");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
         assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
 
         // 2. Тестируем ошибку "не найдено" (валидный но несуществующий PID)
         let url = format!("http://127.0.0.1:{}/api/processes/123456", port);
-        let response = client.get(&url).send().await.expect("Запрос должен выполниться");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
         assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
 
         // 3. Тестируем graceful degradation (данные недоступны)
         let url = format!("http://127.0.0.1:{}/api/metrics", port);
-        let response = client.get(&url).send().await.expect("Запрос должен выполниться");
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         let body = response.text().await.expect("Ответ должен содержать текст");
-        let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
         assert_eq!(json["status"].as_str(), Some("degraded"));
 
         // Останавливаем сервер
@@ -5761,7 +5793,7 @@ max_candidates: 200
 /// максимальной емкости, времени жизни кэша и среднем возрасте записей.
 async fn cache_stats_handler() -> Result<Json<Value>, StatusCode> {
     let stats = crate::metrics::process::get_process_cache_stats();
-    
+
     Ok(Json(json!({
         "status": "ok",
         "cache_stats": {
@@ -5789,13 +5821,13 @@ async fn cache_stats_handler() -> Result<Json<Value>, StatusCode> {
 async fn cache_clear_handler() -> Result<Json<Value>, StatusCode> {
     // Получаем текущую статистику перед очисткой
     let stats_before = crate::metrics::process::get_process_cache_stats();
-    
+
     // Очищаем кэш
     crate::metrics::process::clear_process_cache();
-    
+
     // Получаем статистику после очистки
     let stats_after = crate::metrics::process::get_process_cache_stats();
-    
+
     Ok(Json(json!({
         "status": "success",
         "message": "Process cache cleared successfully",
@@ -5821,7 +5853,7 @@ async fn cache_clear_handler() -> Result<Json<Value>, StatusCode> {
 /// и параллельной обработки.
 async fn cache_config_handler() -> Result<Json<Value>, StatusCode> {
     let config = crate::metrics::process::get_process_cache_config();
-    
+
     Ok(Json(json!({
         "status": "ok",
         "cache_config": {
@@ -5872,31 +5904,34 @@ async fn cache_config_update_handler(
 ) -> Result<Json<Value>, StatusCode> {
     // Получаем текущую конфигурацию
     let mut config = crate::metrics::process::get_process_cache_config();
-    
+
     // Обновляем параметры, если они предоставлены
     if let Some(ttl) = payload.get("cache_ttl_seconds").and_then(|v| v.as_u64()) {
         config.cache_ttl_seconds = ttl;
     }
-    
+
     if let Some(max_processes) = payload.get("max_cached_processes").and_then(|v| v.as_u64()) {
         config.max_cached_processes = max_processes as usize;
     }
-    
+
     if let Some(enable_caching) = payload.get("enable_caching").and_then(|v| v.as_bool()) {
         config.enable_caching = enable_caching;
     }
-    
-    if let Some(enable_parallel) = payload.get("enable_parallel_processing").and_then(|v| v.as_bool()) {
+
+    if let Some(enable_parallel) = payload
+        .get("enable_parallel_processing")
+        .and_then(|v| v.as_bool())
+    {
         config.enable_parallel_processing = enable_parallel;
     }
-    
+
     if let Some(max_threads) = payload.get("max_parallel_threads").and_then(|v| v.as_u64()) {
         config.max_parallel_threads = Some(max_threads as usize);
     }
-    
+
     // Применяем новую конфигурацию
     crate::metrics::process::update_process_cache_config(config.clone());
-    
+
     Ok(Json(json!({
         "status": "success",
         "message": "Process cache configuration updated successfully",
@@ -5915,35 +5950,44 @@ async fn cache_config_update_handler(
 ///
 /// Возвращает информацию о текущих сетевых соединениях, собранных через eBPF.
 /// Включает детализированную информацию о каждом активном соединении.
-async fn network_connections_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+async fn network_connections_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
     match &state.metrics_collector {
         Some(collector) => {
             // Пробуем собрать метрики сетевых соединений
             // Клонируем Arc и получаем mutable reference
             let mut collector_clone = Arc::clone(collector);
-            match Arc::get_mut(&mut collector_clone).unwrap().collect_metrics() {
+            match Arc::get_mut(&mut collector_clone)
+                .unwrap()
+                .collect_metrics()
+            {
                 Ok(metrics) => {
                     let connection_details = metrics.connection_details.clone();
-                    let total_connections = connection_details.as_ref().map(|d| d.len()).unwrap_or(0);
-                    
+                    let total_connections =
+                        connection_details.as_ref().map(|d| d.len()).unwrap_or(0);
+
                     let connections_info = connection_details.map(|details| {
-                        details.into_iter().map(|conn| {
-                            json!({
-                                "src_ip": format_ip(conn.src_ip),
-                                "dst_ip": format_ip(conn.dst_ip),
-                                "src_port": conn.src_port,
-                                "dst_port": conn.dst_port,
-                                "protocol": protocol_to_string(conn.protocol),
-                                "state": conn.state,
-                                "packets": conn.packets,
-                                "bytes": conn.bytes,
-                                "start_time": conn.start_time,
-                                "last_activity": conn.last_activity,
-                                "active": is_connection_active(conn.last_activity)
+                        details
+                            .into_iter()
+                            .map(|conn| {
+                                json!({
+                                    "src_ip": format_ip(conn.src_ip),
+                                    "dst_ip": format_ip(conn.dst_ip),
+                                    "src_port": conn.src_port,
+                                    "dst_port": conn.dst_port,
+                                    "protocol": protocol_to_string(conn.protocol),
+                                    "state": conn.state,
+                                    "packets": conn.packets,
+                                    "bytes": conn.bytes,
+                                    "start_time": conn.start_time,
+                                    "last_activity": conn.last_activity,
+                                    "active": is_connection_active(conn.last_activity)
+                                })
                             })
-                        }).collect::<Vec<Value>>()
+                            .collect::<Vec<Value>>()
                     });
-                    
+
                     Ok(Json(json!({
                         "status": "ok",
                         "timestamp": Utc::now().to_rfc3339(),
@@ -5974,6 +6018,99 @@ async fn network_connections_handler(State(state): State<ApiState>) -> Result<Js
     }
 }
 
+/// Обработчик для endpoint `/api/cpu/temperature`.
+///
+/// Возвращает информацию о температуре CPU, собранную через eBPF.
+async fn cpu_temperature_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+
+    match &state.metrics_collector {
+        Some(collector) => {
+            // Пробуем собрать метрики температуры CPU
+            // Клонируем Arc и получаем mutable reference
+            let mut collector_clone = Arc::clone(collector);
+            match Arc::get_mut(&mut collector_clone)
+                .unwrap()
+                .collect_metrics()
+            {
+                Ok(metrics) => {
+                    let temperature_details = metrics.cpu_temperature_details.clone();
+                    let avg_temperature = metrics.cpu_temperature;
+                    let max_temperature = metrics.cpu_max_temperature;
+
+                    let cpu_count = temperature_details.as_ref().map(|d| d.len()).unwrap_or(0);
+
+                    let temperature_info = temperature_details.map(|details| {
+                        details.into_iter().map(|temp| {
+                            json!({
+                                "cpu_id": temp.cpu_id,
+                                "temperature_celsius": temp.temperature_celsius,
+                                "max_temperature_celsius": temp.max_temperature_celsius,
+                                "critical_temperature_celsius": temp.critical_temperature_celsius,
+                                "timestamp": temp.timestamp,
+                                "update_count": temp.update_count,
+                                "error_count": temp.error_count,
+                                "status": if temp.temperature_celsius >= temp.critical_temperature_celsius {
+                                    "critical"
+                                } else if temp.temperature_celsius >= temp.max_temperature_celsius {
+                                    "warning"
+                                } else {
+                                    "normal"
+                                }
+                            })
+                        }).collect::<Vec<Value>>()
+                    });
+
+                    // Определяем общий статус системы
+                    let system_status = if max_temperature >= 95 {
+                        "critical"
+                    } else if max_temperature >= 85 {
+                        "warning"
+                    } else {
+                        "normal"
+                    };
+
+                    Ok(Json(json!({
+                        "status": "ok",
+                        "timestamp": Utc::now().to_rfc3339(),
+                        "system_status": system_status,
+                        "average_temperature_celsius": avg_temperature,
+                        "max_temperature_celsius": max_temperature,
+                        "cpu_count": cpu_count,
+                        "temperature_details": temperature_info,
+                        "recommendations": if system_status == "critical" {
+                            "System is overheating. Consider checking cooling system and reducing load."
+                        } else if system_status == "warning" {
+                            "System temperature is high. Monitor closely."
+                        } else {
+                            "System temperature is normal."
+                        }
+                    })))
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при сборе метрик температуры CPU: {}", e);
+                    Ok(Json(json!({
+                        "status": "error",
+                        "error": format!("Failed to collect CPU temperature metrics: {}", e),
+                        "timestamp": Utc::now().to_rfc3339()
+                    })))
+                }
+            }
+        }
+        None => Ok(Json(json!({
+            "status": "error",
+            "error": "Metrics collector not available",
+            "timestamp": Utc::now().to_rfc3339()
+        }))),
+    }
+}
+
 /// Вспомогательная функция для форматирования IP адреса
 fn format_ip(ip: u32) -> String {
     let bytes = ip.to_be_bytes();
@@ -5985,7 +6122,7 @@ fn protocol_to_string(protocol: u8) -> String {
     match protocol {
         6 => "TCP".to_string(),
         17 => "UDP".to_string(),
-        _ => format!("Unknown({})", protocol)
+        _ => format!("Unknown({})", protocol),
     }
 }
 
@@ -5996,7 +6133,7 @@ fn is_connection_active(last_activity: u64) -> bool {
         .duration_since(UNIX_EPOCH)
         .unwrap_or(Duration::from_secs(0))
         .as_nanos() as u64;
-    
+
     // 30 секунд в наносекундах
     let timeout_ns = 30_000_000_000;
     current_time.saturating_sub(last_activity) < timeout_ns

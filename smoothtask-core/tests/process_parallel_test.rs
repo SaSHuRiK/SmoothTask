@@ -93,25 +93,36 @@ fn test_collect_process_metrics_error_handling() {
 
     // Функция должна всегда возвращать Ok результат
     // (даже если некоторые процессы недоступны)
-    assert!(result.is_ok(), "Функция должна обрабатывать ошибки graceful");
+    assert!(
+        result.is_ok(),
+        "Функция должна обрабатывать ошибки graceful"
+    );
 
     let processes = result.unwrap();
 
     // Должен быть хотя бы один процесс (текущий процесс теста)
     // Это проверяет, что функция не возвращает пустой результат при ошибках
-    assert!(!processes.is_empty(), "Должен быть хотя бы один процесс даже при ошибках");
+    assert!(
+        !processes.is_empty(),
+        "Должен быть хотя бы один процесс даже при ошибках"
+    );
 
     // Проверяем, что все процессы имеют корректные данные
     for process in &processes {
         assert!(process.pid > 0, "PID должен быть положительным");
         // Некоторые процессы могут не иметь exe или cmdline (например, зомби-процессы)
         // Это нормально, главное что PID корректный
-        if process.exe.as_ref().map_or(false, |e| !e.is_empty()) || process.cmdline.as_ref().map_or(false, |c| !c.is_empty()) {
+        if process.exe.as_ref().map_or(false, |e| !e.is_empty())
+            || process.cmdline.as_ref().map_or(false, |c| !c.is_empty())
+        {
             // Если есть exe или cmdline, это хорошо
             tracing::debug!("Процесс PID {} имеет exe или cmdline", process.pid);
         } else {
             // Если нет, это тоже нормально для некоторых процессов
-            tracing::debug!("Процесс PID {} не имеет exe или cmdline (возможно зомби)", process.pid);
+            tracing::debug!(
+                "Процесс PID {} не имеет exe или cmdline (возможно зомби)",
+                process.pid
+            );
         }
     }
 }

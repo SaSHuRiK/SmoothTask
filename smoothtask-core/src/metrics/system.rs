@@ -433,22 +433,27 @@ impl SystemMetrics {
         if self.network.interfaces.is_empty() {
             self.network.interfaces = Vec::new();
         }
-        
+
         // Оптимизируем дисковые метрики
         if self.disk.devices.is_empty() {
             self.disk.devices = Vec::new();
         }
-        
+
         // Оптимизируем температурные метрики
-        if self.temperature.cpu_temperature_c.is_none() && self.temperature.gpu_temperature_c.is_none() {
+        if self.temperature.cpu_temperature_c.is_none()
+            && self.temperature.gpu_temperature_c.is_none()
+        {
             self.temperature = TemperatureMetrics::default();
         }
-        
+
         // Оптимизируем метрики энергопотребления
-        if self.power.system_power_w.is_none() && self.power.cpu_power_w.is_none() && self.power.gpu_power_w.is_none() {
+        if self.power.system_power_w.is_none()
+            && self.power.cpu_power_w.is_none()
+            && self.power.gpu_power_w.is_none()
+        {
             self.power = PowerMetrics::default();
         }
-        
+
         self
     }
 }
@@ -1075,7 +1080,10 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
 
     // Попробуем найти температурные сенсоры в /sys/class/hwmon/
     let hwmon_dir = Path::new("/sys/class/hwmon");
-    tracing::debug!("Attempting to read temperature sensors from hwmon interface at: {}", hwmon_dir.display());
+    tracing::debug!(
+        "Attempting to read temperature sensors from hwmon interface at: {}",
+        hwmon_dir.display()
+    );
 
     if !hwmon_dir.exists() {
         tracing::warn!("hwmon directory not found at: {}", hwmon_dir.display());
@@ -1107,17 +1115,30 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                             match temp_file {
                                                 Ok(temp_file) => {
                                                     let temp_path = temp_file.path();
-                                                    let file_name =
-                                                        temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                                                    
-                                                    if file_name.starts_with("temp") && file_name.ends_with("_input") {
-                                                        tracing::debug!("Found temperature sensor file: {}", temp_path.display());
-                                                        
+                                                    let file_name = temp_path
+                                                        .file_name()
+                                                        .and_then(|s| s.to_str())
+                                                        .unwrap_or("");
+
+                                                    if file_name.starts_with("temp")
+                                                        && file_name.ends_with("_input")
+                                                    {
+                                                        tracing::debug!(
+                                                            "Found temperature sensor file: {}",
+                                                            temp_path.display()
+                                                        );
+
                                                         match fs::read_to_string(&temp_path) {
                                                             Ok(temp_content) => {
-                                                                match temp_content.trim().parse::<u64>() {
+                                                                match temp_content
+                                                                    .trim()
+                                                                    .parse::<u64>()
+                                                                {
                                                                     Ok(temp_millidegrees) => {
-                                                                        let temp_c = temp_millidegrees as f32 / 1000.0;
+                                                                        let temp_c =
+                                                                            temp_millidegrees
+                                                                                as f32
+                                                                                / 1000.0;
                                                                         tracing::debug!("Successfully read temperature: {:.1}°C from {}", temp_c, temp_path.display());
 
                                                                         // Пробуем определить тип устройства по имени файла и пути
@@ -1125,14 +1146,25 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
 
                                                                         // 1. Пробуем определить по имени hwmon устройства
                                                                         if let Some(hwmon_name) =
-                                                                            path.file_name().and_then(|s| s.to_str())
+                                                                            path.file_name()
+                                                                                .and_then(|s| {
+                                                                                    s.to_str()
+                                                                                })
                                                                         {
                                                                             tracing::debug!("hwmon device name: {}", hwmon_name);
-                                                                            
-                                                                            if hwmon_name.contains("coretemp")
-                                                                                || hwmon_name.contains("k10temp")
-                                                                                || hwmon_name.contains("amdgpu")
-                                                                                || hwmon_name.contains("radeon")
+
+                                                                            if hwmon_name.contains(
+                                                                                "coretemp",
+                                                                            ) || hwmon_name
+                                                                                .contains("k10temp")
+                                                                                || hwmon_name
+                                                                                    .contains(
+                                                                                        "amdgpu",
+                                                                                    )
+                                                                                || hwmon_name
+                                                                                    .contains(
+                                                                                        "radeon",
+                                                                                    )
                                                                             {
                                                                                 // Это CPU температура (Intel CoreTemp, AMD K10Temp)
                                                                                 if temperature.cpu_temperature_c.is_none() {
@@ -1145,8 +1177,10 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                                 } else {
                                                                                     tracing::debug!("CPU temperature already set, skipping duplicate");
                                                                                 }
-                                                                            } else if hwmon_name.contains("nvme")
-                                                                                || hwmon_name.contains("ssd")
+                                                                            } else if hwmon_name
+                                                                                .contains("nvme")
+                                                                                || hwmon_name
+                                                                                    .contains("ssd")
                                                                             {
                                                                                 // Это температура накопителя
                                                                                 // Пока не сохраняем, но можно было бы добавить
@@ -1161,10 +1195,20 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                         }
 
                                                                         // 2. Пробуем определить по имени файла
-                                                                        if temperature.cpu_temperature_c.is_none() {
-                                                                            if file_name.contains("temp1")
-                                                                                || file_name.contains("temp2")
-                                                                                || file_name.contains("Package")
+                                                                        if temperature
+                                                                            .cpu_temperature_c
+                                                                            .is_none()
+                                                                        {
+                                                                            if file_name
+                                                                                .contains("temp1")
+                                                                                || file_name
+                                                                                    .contains(
+                                                                                        "temp2",
+                                                                                    )
+                                                                                || file_name
+                                                                                    .contains(
+                                                                                        "Package",
+                                                                                    )
                                                                             {
                                                                                 // Это, скорее всего, CPU температура
                                                                                 temperature.cpu_temperature_c = Some(temp_c);
@@ -1173,9 +1217,14 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                                     file_name,
                                                                                     temp_c
                                                                                 );
-                                                                            } else if file_name.contains("temp3")
-                                                                                || file_name.contains("edge")
-                                                                                || file_name.contains("gpu")
+                                                                            } else if file_name
+                                                                                .contains("temp3")
+                                                                                || file_name
+                                                                                    .contains(
+                                                                                        "edge",
+                                                                                    )
+                                                                                || file_name
+                                                                                    .contains("gpu")
                                                                             {
                                                                                 // Это, скорее всего, GPU температура
                                                                                 if temperature.gpu_temperature_c.is_none() {
@@ -1190,13 +1239,18 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                         }
 
                                                                         // 3. Пробуем определить по содержимому файла name (если есть)
-                                                                        let name_file = path.join("name");
+                                                                        let name_file =
+                                                                            path.join("name");
                                                                         if name_file.exists() {
-                                                                            match fs::read_to_string(&name_file) {
-                                                                                Ok(name_content) => {
+                                                                            match fs::read_to_string(
+                                                                                &name_file,
+                                                                            ) {
+                                                                                Ok(
+                                                                                    name_content,
+                                                                                ) => {
                                                                                     let name = name_content.trim();
                                                                                     tracing::debug!("hwmon device sensor name: {}", name);
-                                                                                    
+
                                                                                     if (name.contains("coretemp") || name.contains("k10temp"))
                                                                                         && temperature.cpu_temperature_c.is_none()
                                                                                     {
@@ -1239,25 +1293,40 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                     }
                                                 }
                                                 Err(e) => {
-                                                    tracing::warn!("Failed to process temperature file: {}", e);
+                                                    tracing::warn!(
+                                                        "Failed to process temperature file: {}",
+                                                        e
+                                                    );
                                                 }
                                             }
                                         }
                                     }
                                     Err(e) => {
-                                        tracing::warn!("Failed to read hwmon device directory {}: {}", path.display(), e);
+                                        tracing::warn!(
+                                            "Failed to read hwmon device directory {}: {}",
+                                            path.display(),
+                                            e
+                                        );
                                     }
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!("Failed to process hwmon device {}: {}", path_str, e);
+                                tracing::warn!(
+                                    "Failed to process hwmon device {}: {}",
+                                    path_str,
+                                    e
+                                );
                             }
                         }
                     }
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to read hwmon directory {}: {}", hwmon_dir.display(), e);
+                tracing::error!(
+                    "Failed to read hwmon directory {}: {}",
+                    hwmon_dir.display(),
+                    e
+                );
             }
         }
     }
@@ -1265,7 +1334,10 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
     // Пробуем альтернативный интерфейс /sys/class/thermal/
     // Это более универсальный интерфейс для термальных зон
     let thermal_dir = Path::new("/sys/class/thermal");
-    tracing::debug!("Attempting to read temperature sensors from thermal interface at: {}", thermal_dir.display());
+    tracing::debug!(
+        "Attempting to read temperature sensors from thermal interface at: {}",
+        thermal_dir.display()
+    );
 
     if !thermal_dir.exists() {
         tracing::warn!("thermal directory not found at: {}", thermal_dir.display());
@@ -1279,21 +1351,30 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                         match zone_entry {
                             Ok(zone_entry) => {
                                 let zone_path = zone_entry.path();
-                                let zone_name = zone_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                                let zone_name =
+                                    zone_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
                                 tracing::debug!("Processing thermal zone: {}", zone_name);
 
                                 if zone_name.starts_with("thermal_zone") {
                                     let temp_file = zone_path.join("temp");
-                                    tracing::debug!("Looking for temperature file at: {}", temp_file.display());
-                                    
+                                    tracing::debug!(
+                                        "Looking for temperature file at: {}",
+                                        temp_file.display()
+                                    );
+
                                     if !temp_file.exists() {
-                                        tracing::warn!("Temperature file not found for thermal zone {}: {}", zone_name, temp_file.display());
+                                        tracing::warn!(
+                                            "Temperature file not found for thermal zone {}: {}",
+                                            zone_name,
+                                            temp_file.display()
+                                        );
                                     } else {
                                         match fs::read_to_string(&temp_file) {
                                             Ok(temp_content) => {
                                                 match temp_content.trim().parse::<u64>() {
                                                     Ok(temp_millidegrees) => {
-                                                        let temp_c = temp_millidegrees as f32 / 1000.0;
+                                                        let temp_c =
+                                                            temp_millidegrees as f32 / 1000.0;
                                                         tracing::debug!("Successfully read temperature from thermal zone {}: {:.1}°C", zone_name, temp_c);
 
                                                         // Пробуем определить тип зоны
@@ -1303,15 +1384,26 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                         } else {
                                                             match fs::read_to_string(&type_file) {
                                                                 Ok(type_content) => {
-                                                                    let zone_type = type_content.trim();
-                                                                    tracing::debug!("Thermal zone {} type: {}", zone_name, zone_type);
+                                                                    let zone_type =
+                                                                        type_content.trim();
+                                                                    tracing::debug!(
+                                                                        "Thermal zone {} type: {}",
+                                                                        zone_name,
+                                                                        zone_type
+                                                                    );
 
-                                                                    if zone_type.contains("x86_pkg_temp")
-                                                                        || zone_type.contains("acpitz")
-                                                                        || zone_type.contains("cpu_thermal")
+                                                                    if zone_type
+                                                                        .contains("x86_pkg_temp")
+                                                                        || zone_type
+                                                                            .contains("acpitz")
+                                                                        || zone_type
+                                                                            .contains("cpu_thermal")
                                                                     {
                                                                         // Это CPU температура
-                                                                        if temperature.cpu_temperature_c.is_none() {
+                                                                        if temperature
+                                                                            .cpu_temperature_c
+                                                                            .is_none()
+                                                                        {
                                                                             temperature.cpu_temperature_c = Some(temp_c);
                                                                             tracing::info!(
                                                                                 "CPU temperature detected (thermal zone {}): {:.1}°C",
@@ -1321,12 +1413,18 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                         } else {
                                                                             tracing::debug!("CPU temperature already set, skipping duplicate thermal zone");
                                                                         }
-                                                                    } else if zone_type.contains("gpu")
-                                                                        || zone_type.contains("dgpu")
-                                                                        || zone_type.contains("radeon")
+                                                                    } else if zone_type
+                                                                        .contains("gpu")
+                                                                        || zone_type
+                                                                            .contains("dgpu")
+                                                                        || zone_type
+                                                                            .contains("radeon")
                                                                     {
                                                                         // Это GPU температура
-                                                                        if temperature.gpu_temperature_c.is_none() {
+                                                                        if temperature
+                                                                            .gpu_temperature_c
+                                                                            .is_none()
+                                                                        {
                                                                             temperature.gpu_temperature_c = Some(temp_c);
                                                                             tracing::info!(
                                                                                 "GPU temperature detected (thermal zone {}): {:.1}°C",
@@ -1366,7 +1464,11 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to read thermal directory {}: {}", thermal_dir.display(), e);
+                tracing::error!(
+                    "Failed to read thermal directory {}: {}",
+                    thermal_dir.display(),
+                    e
+                );
             }
         }
     }
@@ -1374,10 +1476,16 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
     // Пробуем специфичные для GPU пути
     // AMD GPU
     let amdgpu_dir = Path::new("/sys/class/drm/card0/device/hwmon");
-    tracing::debug!("Checking for AMD GPU temperature sensors at: {}", amdgpu_dir.display());
-    
+    tracing::debug!(
+        "Checking for AMD GPU temperature sensors at: {}",
+        amdgpu_dir.display()
+    );
+
     if !amdgpu_dir.exists() {
-        tracing::debug!("AMD GPU hwmon directory not found at: {}", amdgpu_dir.display());
+        tracing::debug!(
+            "AMD GPU hwmon directory not found at: {}",
+            amdgpu_dir.display()
+        );
     } else {
         match fs::read_dir(amdgpu_dir) {
             Ok(amdgpu_entries) => {
@@ -1386,30 +1494,44 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                         Ok(amdgpu_entry) => {
                             let amdgpu_path = amdgpu_entry.path();
                             let temp_file = amdgpu_path.join("temp1_input");
-                            tracing::debug!("Looking for AMD GPU temperature file at: {}", temp_file.display());
-                            
+                            tracing::debug!(
+                                "Looking for AMD GPU temperature file at: {}",
+                                temp_file.display()
+                            );
+
                             if !temp_file.exists() {
-                                tracing::debug!("AMD GPU temperature file not found: {}", temp_file.display());
+                                tracing::debug!(
+                                    "AMD GPU temperature file not found: {}",
+                                    temp_file.display()
+                                );
                             } else {
                                 match fs::read_to_string(&temp_file) {
-                                    Ok(temp_content) => {
-                                        match temp_content.trim().parse::<u64>() {
-                                            Ok(temp_millidegrees) => {
-                                                let temp_c = temp_millidegrees as f32 / 1000.0;
-                                                if temperature.gpu_temperature_c.is_none() {
-                                                    temperature.gpu_temperature_c = Some(temp_c);
-                                                    tracing::info!("AMD GPU temperature detected: {:.1}°C", temp_c);
-                                                } else {
-                                                    tracing::debug!("GPU temperature already set, skipping AMD GPU sensor");
-                                                }
-                                            }
-                                            Err(e) => {
-                                                tracing::warn!("Failed to parse AMD GPU temperature value: {}", e);
+                                    Ok(temp_content) => match temp_content.trim().parse::<u64>() {
+                                        Ok(temp_millidegrees) => {
+                                            let temp_c = temp_millidegrees as f32 / 1000.0;
+                                            if temperature.gpu_temperature_c.is_none() {
+                                                temperature.gpu_temperature_c = Some(temp_c);
+                                                tracing::info!(
+                                                    "AMD GPU temperature detected: {:.1}°C",
+                                                    temp_c
+                                                );
+                                            } else {
+                                                tracing::debug!("GPU temperature already set, skipping AMD GPU sensor");
                                             }
                                         }
-                                    }
+                                        Err(e) => {
+                                            tracing::warn!(
+                                                "Failed to parse AMD GPU temperature value: {}",
+                                                e
+                                            );
+                                        }
+                                    },
                                     Err(e) => {
-                                        tracing::warn!("Failed to read AMD GPU temperature from {}: {}", temp_file.display(), e);
+                                        tracing::warn!(
+                                            "Failed to read AMD GPU temperature from {}: {}",
+                                            temp_file.display(),
+                                            e
+                                        );
                                     }
                                 }
                             }
@@ -1421,43 +1543,63 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                 }
             }
             Err(e) => {
-                tracing::warn!("Failed to read AMD GPU hwmon directory {}: {}", amdgpu_dir.display(), e);
+                tracing::warn!(
+                    "Failed to read AMD GPU hwmon directory {}: {}",
+                    amdgpu_dir.display(),
+                    e
+                );
             }
         }
     }
 
     // NVIDIA GPU
     let nvidia_dir = Path::new("/sys/class/hwmon/nvidia_hwmon");
-    tracing::debug!("Checking for NVIDIA GPU temperature sensors at: {}", nvidia_dir.display());
-    
+    tracing::debug!(
+        "Checking for NVIDIA GPU temperature sensors at: {}",
+        nvidia_dir.display()
+    );
+
     if !nvidia_dir.exists() {
-        tracing::debug!("NVIDIA GPU hwmon directory not found at: {}", nvidia_dir.display());
+        tracing::debug!(
+            "NVIDIA GPU hwmon directory not found at: {}",
+            nvidia_dir.display()
+        );
     } else {
         let temp_file = nvidia_dir.join("temp1_input");
-        tracing::debug!("Looking for NVIDIA GPU temperature file at: {}", temp_file.display());
-        
+        tracing::debug!(
+            "Looking for NVIDIA GPU temperature file at: {}",
+            temp_file.display()
+        );
+
         if !temp_file.exists() {
-            tracing::debug!("NVIDIA GPU temperature file not found: {}", temp_file.display());
+            tracing::debug!(
+                "NVIDIA GPU temperature file not found: {}",
+                temp_file.display()
+            );
         } else {
             match fs::read_to_string(&temp_file) {
-                Ok(temp_content) => {
-                    match temp_content.trim().parse::<u64>() {
-                        Ok(temp_millidegrees) => {
-                            let temp_c = temp_millidegrees as f32 / 1000.0;
-                            if temperature.gpu_temperature_c.is_none() {
-                                temperature.gpu_temperature_c = Some(temp_c);
-                                tracing::info!("NVIDIA GPU temperature detected: {:.1}°C", temp_c);
-                            } else {
-                                tracing::debug!("GPU temperature already set, skipping NVIDIA GPU sensor");
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Failed to parse NVIDIA GPU temperature value: {}", e);
+                Ok(temp_content) => match temp_content.trim().parse::<u64>() {
+                    Ok(temp_millidegrees) => {
+                        let temp_c = temp_millidegrees as f32 / 1000.0;
+                        if temperature.gpu_temperature_c.is_none() {
+                            temperature.gpu_temperature_c = Some(temp_c);
+                            tracing::info!("NVIDIA GPU temperature detected: {:.1}°C", temp_c);
+                        } else {
+                            tracing::debug!(
+                                "GPU temperature already set, skipping NVIDIA GPU sensor"
+                            );
                         }
                     }
-                }
+                    Err(e) => {
+                        tracing::warn!("Failed to parse NVIDIA GPU temperature value: {}", e);
+                    }
+                },
                 Err(e) => {
-                    tracing::warn!("Failed to read NVIDIA GPU temperature from {}: {}", temp_file.display(), e);
+                    tracing::warn!(
+                        "Failed to read NVIDIA GPU temperature from {}: {}",
+                        temp_file.display(),
+                        e
+                    );
                 }
             }
         }
@@ -3050,7 +3192,7 @@ SwapFree:        4096000 kB
     fn test_system_metrics_optimize_memory_usage() {
         // Тест проверяет, что optimize_memory_usage корректно работает
         let mut metrics = SystemMetrics::default();
-        
+
         // Добавляем некоторые данные
         metrics.network.interfaces.push(NetworkInterface {
             name: "eth0".into(),
@@ -3061,7 +3203,7 @@ SwapFree:        4096000 kB
             rx_errors: 1,
             tx_errors: 2,
         });
-        
+
         metrics.disk.devices.push(DiskDevice {
             name: "sda".into(),
             read_bytes: 1000000,
@@ -3070,30 +3212,30 @@ SwapFree:        4096000 kB
             write_ops: 2000,
             io_time: 500,
         });
-        
+
         // Устанавливаем температурные метрики
         metrics.temperature.cpu_temperature_c = Some(45.5);
-        
+
         // Устанавливаем метрики энергопотребления
         metrics.power.cpu_power_w = Some(80.3);
-        
+
         // Оптимизируем память
         let optimized = metrics.optimize_memory_usage();
-        
+
         // Проверяем, что данные сохранены
         assert_eq!(optimized.network.interfaces.len(), 1);
         assert_eq!(optimized.disk.devices.len(), 1);
         assert_eq!(optimized.temperature.cpu_temperature_c, Some(45.5));
         assert_eq!(optimized.power.cpu_power_w, Some(80.3));
-        
+
         // Тест с пустыми коллекциями
         let empty_metrics = SystemMetrics::default();
         let optimized_empty = empty_metrics.optimize_memory_usage();
-        
+
         // Проверяем, что пустые коллекции остаются пустыми
         assert!(optimized_empty.network.interfaces.is_empty());
         assert!(optimized_empty.disk.devices.is_empty());
-        
+
         // Проверяем, что пустые температурные и энергетические метрики сбрасываются
         assert_eq!(optimized_empty.temperature.cpu_temperature_c, None);
         assert_eq!(optimized_empty.temperature.gpu_temperature_c, None);

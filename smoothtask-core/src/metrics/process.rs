@@ -50,7 +50,8 @@ struct CachedProcessRecord {
 }
 
 lazy_static! {
-    static ref PROCESS_CACHE: Arc<RwLock<ProcessCache>> = Arc::new(RwLock::new(ProcessCache::new()));
+    static ref PROCESS_CACHE: Arc<RwLock<ProcessCache>> =
+        Arc::new(RwLock::new(ProcessCache::new()));
 }
 
 /// Структура кэша процессов.
@@ -81,7 +82,7 @@ impl ProcessCache {
         let now = Instant::now();
         let cache_ttl = self.config.cache_ttl_seconds;
         let max_processes = self.config.max_cached_processes;
-        
+
         // Очистка устаревших записей
         self.records.retain(|_, cached| {
             now.duration_since(cached.cached_at) < Duration::from_secs(cache_ttl)
@@ -90,9 +91,13 @@ impl ProcessCache {
         // Ограничить количество записей, если превышен лимит
         if self.records.len() > max_processes {
             // Удаляем самые старые записи (FIFO)
-            let mut entries: Vec<_> = self.records.iter().map(|(pid, cached)| (*pid, cached.cached_at)).collect();
+            let mut entries: Vec<_> = self
+                .records
+                .iter()
+                .map(|(pid, cached)| (*pid, cached.cached_at))
+                .collect();
             entries.sort_by_key(|(_, cached_at)| *cached_at);
-            
+
             let to_remove = entries.len() - max_processes;
             for (pid, _) in entries.into_iter().take(to_remove) {
                 self.records.remove(&pid);
@@ -104,7 +109,9 @@ impl ProcessCache {
     fn get_cached(&self, pid: i32) -> Option<ProcessRecord> {
         self.records.get(&pid).and_then(|cached| {
             let now = Instant::now();
-            if now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds) {
+            if now.duration_since(cached.cached_at)
+                < Duration::from_secs(self.config.cache_ttl_seconds)
+            {
                 Some(cached.record.clone())
             } else {
                 None
@@ -116,17 +123,21 @@ impl ProcessCache {
     fn cache_record(&mut self, record: ProcessRecord) {
         // Очищаем устаревшие записи и удаляем лишние, учитывая что добавим новую запись
         self.cleanup_stale_entries();
-        
+
         // Если после очистки мы все еще превышаем лимит (учитывая новую запись),
         // удаляем еще одну самую старую запись
         if self.records.len() + 1 > self.config.max_cached_processes {
-            let mut entries: Vec<_> = self.records.iter().map(|(pid, cached)| (*pid, cached.cached_at)).collect();
+            let mut entries: Vec<_> = self
+                .records
+                .iter()
+                .map(|(pid, cached)| (*pid, cached.cached_at))
+                .collect();
             entries.sort_by_key(|(_, cached_at)| *cached_at);
             if let Some((oldest_pid, _)) = entries.into_iter().next() {
                 self.records.remove(&oldest_pid);
             }
         }
-        
+
         self.records.insert(
             record.pid,
             CachedProcessRecord {
@@ -151,25 +162,32 @@ impl ProcessCache {
     fn get_cache_stats(&self) -> ProcessCacheStats {
         let now = Instant::now();
         let total_entries = self.records.len();
-        
+
         // Подсчитываем количество актуальных записей
-        let active_entries = self.records.values().filter(|cached| {
-            now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds)
-        }).count();
-        
+        let active_entries = self
+            .records
+            .values()
+            .filter(|cached| {
+                now.duration_since(cached.cached_at)
+                    < Duration::from_secs(self.config.cache_ttl_seconds)
+            })
+            .count();
+
         // Подсчитываем количество устаревших записей
         let stale_entries = total_entries - active_entries;
-        
+
         // Вычисляем средний возраст записей
         let avg_age_seconds = if total_entries > 0 {
-            let total_age: f64 = self.records.values()
+            let total_age: f64 = self
+                .records
+                .values()
                 .map(|cached| now.duration_since(cached.cached_at).as_secs_f64())
                 .sum();
             total_age / total_entries as f64
         } else {
             0.0
         };
-        
+
         ProcessCacheStats {
             total_entries,
             active_entries,
@@ -387,11 +405,14 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
     }
 
     let all_procs = procfs::process::all_processes()
-        .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc. Попробуйте: ls -la /proc | sudo ls /proc")?;
+        .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc. Попробуйте: ls -la /proc | sudo ls /proc. Для устранения: 1) Проверьте права: id && groups, 2) Проверьте монтирование: mount | grep proc, 3) Попробуйте запустить с sudo")?;
 
     // Сохраняем количество процессов до обработки
     let total_process_count = all_procs.size_hint().0;
-    tracing::info!("Начало сбора метрик процессов. Найдено {} потенциальных процессов", total_process_count);
+    tracing::info!(
+        "Начало сбора метрик процессов. Найдено {} потенциальных процессов",
+        total_process_count
+    );
 
     // Оптимизация: предварительное выделение памяти для вектора процессов
     // Это уменьшает количество реаллокаций при добавлении элементов
@@ -413,7 +434,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
                     Ok(proc) => {
                         let pid = proc.pid();
                         tracing::debug!("Обработка процесса PID {}", pid);
-                        
+
                         // Проверяем кэш, если кэширование включено
                         if cache_config.enable_caching {
                             let cache_read = PROCESS_CACHE.read().unwrap();
@@ -424,27 +445,33 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
                             }
                             drop(cache_read);
                         }
-                        
+
                         match collect_single_process(&proc) {
                             Ok(Some(record)) => {
-                                let process_name = record.exe.as_ref()
+                                let process_name = record
+                                    .exe
+                                    .as_ref()
                                     .or(record.cmdline.as_ref())
                                     .map(|s| s.split('/').next_back().unwrap_or(s.as_str()))
                                     .unwrap_or("unknown");
-                                tracing::debug!("Успешно собраны метрики для процесса PID {} ({})", pid, process_name);
-                                
+                                tracing::debug!(
+                                    "Успешно собраны метрики для процесса PID {} ({})",
+                                    pid,
+                                    process_name
+                                );
+
                                 // Кэшируем результат, если кэширование включено
                                 if cache_config.enable_caching {
                                     let mut cache_write = PROCESS_CACHE.write().unwrap();
                                     cache_write.cache_record(record.clone());
                                 }
-                                
+
                                 Some(record)
-                            },
+                            }
                             Ok(None) => {
                                 tracing::debug!("Процесс PID {} завершился между итерациями", pid);
                                 None
-                            },
+                            }
                             Err(e) => {
                                 tracing::warn!(
                                     "Ошибка сбора метрик для процесса PID {}: {}. \
@@ -472,7 +499,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
                     }
                 }
             })
-        .collect()
+            .collect()
     } else {
         // Последовательная обработка (для отладки или особых случаев)
         all_procs
@@ -481,7 +508,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
                     Ok(proc) => {
                         let pid = proc.pid();
                         tracing::debug!("Обработка процесса PID {}", pid);
-                        
+
                         // Проверяем кэш, если кэширование включено
                         if cache_config.enable_caching {
                             let cache_read = PROCESS_CACHE.read().unwrap();
@@ -492,27 +519,33 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
                             }
                             drop(cache_read);
                         }
-                        
+
                         match collect_single_process(&proc) {
                             Ok(Some(record)) => {
-                                let process_name = record.exe.as_ref()
+                                let process_name = record
+                                    .exe
+                                    .as_ref()
                                     .or(record.cmdline.as_ref())
                                     .map(|s| s.split('/').next_back().unwrap_or(s.as_str()))
                                     .unwrap_or("unknown");
-                                tracing::debug!("Успешно собраны метрики для процесса PID {} ({})", pid, process_name);
-                                
+                                tracing::debug!(
+                                    "Успешно собраны метрики для процесса PID {} ({})",
+                                    pid,
+                                    process_name
+                                );
+
                                 // Кэшируем результат, если кэширование включено
                                 if cache_config.enable_caching {
                                     let mut cache_write = PROCESS_CACHE.write().unwrap();
                                     cache_write.cache_record(record.clone());
                                 }
-                                
+
                                 Some(record)
-                            },
+                            }
                             Ok(None) => {
                                 tracing::debug!("Процесс PID {} завершился между итерациями", pid);
                                 None
-                            },
+                            }
                             Err(e) => {
                                 tracing::warn!(
                                     "Ошибка сбора метрик для процесса PID {}: {}. \
@@ -547,13 +580,17 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 
     // Оптимизация: уменьшаем выделенную память до фактического размера
     processes.shrink_to_fit();
-    
-    tracing::info!("Завершен сбор метрик процессов. Успешно собрано {} из {} процессов", processes.len(), total_process_count);
-    
+
+    tracing::info!(
+        "Завершен сбор метрик процессов. Успешно собрано {} из {} процессов",
+        processes.len(),
+        total_process_count
+    );
+
     if processes.is_empty() {
-        tracing::warn!("Не удалось собрать метрики ни для одного процесса. Возможные причины: отсутствие прав доступа, /proc не смонтирован, или все процессы завершились");
+        tracing::warn!("Не удалось собрать метрики ни для одного процесса. Возможные причины: отсутствие прав доступа, /proc не смонтирован, или все процессы завершились. Для устранения: 1) Проверьте права: id && groups, 2) Проверьте монтирование: mount | grep proc, 3) Попробуйте запустить с sudo");
     }
-    
+
     Ok(processes)
 }
 
@@ -563,14 +600,17 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let pid = proc.pid();
     tracing::debug!("Сбор метрик для процесса PID {}", pid);
-    
+
     // Читаем stat для базовой информации
     let stat = match proc.stat() {
         Ok(s) => s,
         Err(ProcError::NotFound(_)) => {
-            tracing::debug!("Процесс PID {} не найден в /proc (возможно завершился)", pid);
+            tracing::debug!(
+                "Процесс PID {} не найден в /proc (возможно завершился)",
+                pid
+            );
             return Ok(None);
-        },
+        }
         Err(e) => {
             tracing::warn!("Не удалось прочитать /proc/{}/stat: {}. Проверьте права доступа: ls -la /proc/{}/stat", pid, e, pid);
             return Err(anyhow::anyhow!(
@@ -580,7 +620,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
                 pid,
                 e,
                 pid
-            ))
+            ));
         }
     };
 
@@ -588,9 +628,12 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let status = match proc.status() {
         Ok(s) => s,
         Err(ProcError::NotFound(_)) => {
-            tracing::debug!("Файл status для процесса PID {} не найден (процесс завершился)", pid);
+            tracing::debug!(
+                "Файл status для процесса PID {} не найден (процесс завершился)",
+                pid
+            );
             return Ok(None);
-        },
+        }
         Err(e) => {
             tracing::warn!("Не удалось прочитать /proc/{}/status: {}. Проверьте права доступа: ls -la /proc/{}/status", pid, e, pid);
             return Err(anyhow::anyhow!(
@@ -600,7 +643,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
                 pid,
                 e,
                 pid
-            ))
+            ));
         }
     };
 
@@ -1414,6 +1457,118 @@ Gid:    1000 1000 1000 1000
     }
 
     #[test]
+    fn test_error_handling_with_detailed_messages() {
+        // Тест проверяет, что функции возвращают детальные сообщения об ошибках
+        // с практическими рекомендациями по устранению неполадок
+        
+        // Проверяем обработку несуществующего процесса
+        let result = read_cgroup_path(999999);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+        
+        // Проверяем обработку несуществующего файла status
+        let result = read_uid_gid(999999);
+        assert!(result.is_err());
+        
+        // Проверяем, что функция возвращает ошибку с контекстом
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Не удалось прочитать /proc/999999/status"));
+        assert!(error_msg.contains("проверьте, что процесс существует и доступен для чтения"));
+    }
+
+    #[test]
+    fn test_graceful_degradation_scenarios() {
+        // Тест проверяет graceful degradation в различных сценариях ошибок
+        
+        // Сценарий 1: Несуществующий процесс - должен вернуть Ok(None)
+        let result = read_cgroup_path(999999);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+        
+        // Сценарий 2: Несуществующий файл environ - должен вернуть Ok с значениями по умолчанию
+        let result = read_env_vars(999999);
+        assert!(result.is_ok());
+        let (has_display, has_wayland, term, ssh) = result.unwrap();
+        assert!(!has_display);
+        assert!(!has_wayland);
+        assert_eq!(term, None);
+        assert!(!ssh);
+        
+        // Сценарий 3: Проверяем, что кэш обрабатывает ошибки корректно
+        let mut cache = ProcessCache::new();
+        let config = ProcessCacheConfig {
+            cache_ttl_seconds: 1,
+            max_cached_processes: 10,
+            ..Default::default()
+        };
+        cache.update_config(config);
+        
+        // Добавляем запись и проверяем, что она истекает
+        let test_record = ProcessRecord {
+            pid: 123,
+            ppid: 456,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("test_exe".to_string()),
+            cmdline: Some("test_cmdline".to_string()),
+            cgroup_path: Some("/test/cgroup".to_string()),
+            systemd_unit: Some("test.service".to_string()),
+            app_group_id: None,
+            state: "R".to_string(),
+            start_time: 1000,
+            uptime_sec: 60,
+            tty_nr: 1,
+            has_tty: true,
+            cpu_share_1s: Some(10.0),
+            cpu_share_10s: Some(15.0),
+            io_read_bytes: Some(1024),
+            io_write_bytes: Some(2048),
+            rss_mb: Some(100),
+            swap_mb: Some(50),
+            voluntary_ctx: Some(1000),
+            involuntary_ctx: Some(500),
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: vec![],
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+        
+        cache.cache_record(test_record);
+        assert!(cache.get_cached(123).is_some());
+        
+        // Ждем истечения TTL
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        assert!(cache.get_cached(123).is_none());
+    }
+
+    #[test]
+    fn test_error_messages_contain_troubleshooting_advice() {
+        // Тест проверяет, что сообщения об ошибках содержат практические рекомендации
+        
+        // Проверяем, что ошибка чтения status содержит рекомендации
+        let result = read_uid_gid(999999);
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        
+        // Проверяем, что сообщение содержит практические рекомендации
+        assert!(error_msg.contains("проверьте, что процесс существует и доступен для чтения"));
+        // Note: read_uid_gid uses a simpler error message format without the "Попробуйте:" part
+        // The main error handling improvements are in collect_single_process and collect_process_metrics
+    }
+
+    #[test]
     fn read_cgroup_path_with_malformed_content() {
         // Тест обработки некорректного содержимого cgroup
         let tmp = TempDir::new().unwrap();
@@ -1913,7 +2068,7 @@ pub fn clear_process_cache() {
 ///     max_cached_processes: 5000,
 ///     ..Default::default()
 /// };
-/// 
+///
 /// update_process_cache_config(config);
 /// ```
 pub fn update_process_cache_config(config: ProcessCacheConfig) {
@@ -1973,7 +2128,9 @@ pub fn get_process_cache_stats() -> ProcessCacheStats {
 /// # Примечания
 ///
 /// Эта функция устарела. Используйте `collect_process_metrics(Some(config))` или `collect_process_metrics(None)` вместо этого.
-#[deprecated(note = "Use collect_process_metrics(Some(config)) or collect_process_metrics(None) instead")]
+#[deprecated(
+    note = "Use collect_process_metrics(Some(config)) or collect_process_metrics(None) instead"
+)]
 pub fn collect_process_metrics_legacy() -> Result<Vec<ProcessRecord>> {
     collect_process_metrics(None)
 }

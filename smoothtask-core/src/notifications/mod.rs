@@ -906,37 +906,55 @@ mod tests {
     #[tokio::test]
     async fn test_new_notification_types() {
         // Тестируем новые типы уведомлений
-        let priority_notification = Notification::priority_change(
-            "test_process",
-            "low",
-            "high",
-            "user request"
+        let priority_notification =
+            Notification::priority_change("test_process", "low", "high", "user request");
+        assert_eq!(
+            priority_notification.notification_type,
+            NotificationType::PriorityChange
         );
-        assert_eq!(priority_notification.notification_type, NotificationType::PriorityChange);
-        assert!(priority_notification.title.contains("Priority Changed: test_process"));
-        assert!(priority_notification.message.contains("Priority changed from low to high - user request"));
+        assert!(priority_notification
+            .title
+            .contains("Priority Changed: test_process"));
+        assert!(priority_notification
+            .message
+            .contains("Priority changed from low to high - user request"));
 
-        let config_notification = Notification::config_change(
-            "/etc/smoothtask/config.yml",
-            "updated qos settings"
+        let config_notification =
+            Notification::config_change("/etc/smoothtask/config.yml", "updated qos settings");
+        assert_eq!(
+            config_notification.notification_type,
+            NotificationType::ConfigChange
         );
-        assert_eq!(config_notification.notification_type, NotificationType::ConfigChange);
-        assert!(config_notification.title.contains("Configuration Reloaded: /etc/smoothtask/config.yml"));
-        assert!(config_notification.message.contains("Configuration changes applied: updated qos settings"));
+        assert!(config_notification
+            .title
+            .contains("Configuration Reloaded: /etc/smoothtask/config.yml"));
+        assert!(config_notification
+            .message
+            .contains("Configuration changes applied: updated qos settings"));
 
-        let system_notification = Notification::system_event(
-            "startup",
+        let system_notification =
+            Notification::system_event("startup", "SmoothTask daemon started successfully");
+        assert_eq!(
+            system_notification.notification_type,
+            NotificationType::SystemEvent
+        );
+        assert!(system_notification.title.contains("System Event: startup"));
+        assert_eq!(
+            system_notification.message,
             "SmoothTask daemon started successfully"
         );
-        assert_eq!(system_notification.notification_type, NotificationType::SystemEvent);
-        assert!(system_notification.title.contains("System Event: startup"));
-        assert_eq!(system_notification.message, "SmoothTask daemon started successfully");
     }
 
     #[tokio::test]
     async fn test_notification_type_display_new_types() {
-        assert_eq!(format!("{}", NotificationType::PriorityChange), "PRIORITY_CHANGE");
-        assert_eq!(format!("{}", NotificationType::ConfigChange), "CONFIG_CHANGE");
+        assert_eq!(
+            format!("{}", NotificationType::PriorityChange),
+            "PRIORITY_CHANGE"
+        );
+        assert_eq!(
+            format!("{}", NotificationType::ConfigChange),
+            "CONFIG_CHANGE"
+        );
         assert_eq!(format!("{}", NotificationType::SystemEvent), "SYSTEM_EVENT");
     }
 
@@ -958,22 +976,17 @@ mod tests {
     #[tokio::test]
     async fn test_stub_notifier_new_types() {
         let notifier = StubNotifier;
-        
-        let priority_notification = Notification::priority_change(
-            "test_app", "normal", "high", "policy change"
-        );
+
+        let priority_notification =
+            Notification::priority_change("test_app", "normal", "high", "policy change");
         let result = notifier.send_notification(&priority_notification).await;
         assert!(result.is_ok());
 
-        let config_notification = Notification::config_change(
-            "config.yml", "updated settings"
-        );
+        let config_notification = Notification::config_change("config.yml", "updated settings");
         let result = notifier.send_notification(&config_notification).await;
         assert!(result.is_ok());
 
-        let system_notification = Notification::system_event(
-            "shutdown", "System shutting down"
-        );
+        let system_notification = Notification::system_event("shutdown", "System shutting down");
         let result = notifier.send_notification(&system_notification).await;
         assert!(result.is_ok());
     }
@@ -987,9 +1000,8 @@ mod tests {
         let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
 
         // Создаём уведомление и логируем его без отправки
-        let notification = Notification::priority_change(
-            "test_process", "low", "high", "test reason"
-        );
+        let notification =
+            Notification::priority_change("test_process", "low", "high", "test reason");
 
         let result = manager.log_only(&notification).await;
         assert!(result.is_ok());
@@ -1002,7 +1014,9 @@ mod tests {
 
         let entry = &entries[0];
         assert_eq!(entry.target, "notifications");
-        assert!(entry.message.contains("Priority Changed: test_process - Priority changed from low to high - test reason"));
+        assert!(entry.message.contains(
+            "Priority Changed: test_process - Priority changed from low to high - test reason"
+        ));
     }
 
     #[tokio::test]
@@ -1042,17 +1056,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_notification_serialization_with_new_types() {
-        let notification = Notification::priority_change(
-            "firefox", "normal", "high", "interactive application"
-        ).with_details("Process ID: 1234, User: testuser");
+        let notification =
+            Notification::priority_change("firefox", "normal", "high", "interactive application")
+                .with_details("Process ID: 1234, User: testuser");
 
         let serialized = serde_json::to_string(&notification).unwrap();
         let deserialized: Notification = serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(deserialized.notification_type, NotificationType::PriorityChange);
+        assert_eq!(
+            deserialized.notification_type,
+            NotificationType::PriorityChange
+        );
         assert_eq!(deserialized.title, "Priority Changed: firefox");
-        assert!(deserialized.message.contains("Priority changed from normal to high - interactive application"));
-        assert_eq!(deserialized.details, Some("Process ID: 1234, User: testuser".to_string()));
+        assert!(deserialized
+            .message
+            .contains("Priority changed from normal to high - interactive application"));
+        assert_eq!(
+            deserialized.details,
+            Some("Process ID: 1234, User: testuser".to_string())
+        );
     }
 
     #[tokio::test]
@@ -1065,7 +1087,11 @@ mod tests {
 
         // Тестируем все типы уведомлений
         let notifications = vec![
-            Notification::new(NotificationType::Critical, "Critical Test", "Critical message"),
+            Notification::new(
+                NotificationType::Critical,
+                "Critical Test",
+                "Critical message",
+            ),
             Notification::new(NotificationType::Warning, "Warning Test", "Warning message"),
             Notification::new(NotificationType::Info, "Info Test", "Info message"),
             Notification::priority_change("app1", "low", "high", "reason1"),
@@ -1076,12 +1102,21 @@ mod tests {
         // Отправляем все уведомления
         for notification in &notifications {
             let result = manager.send(notification).await;
-            assert!(result.is_ok(), "Failed to send notification: {:?}", notification);
+            assert!(
+                result.is_ok(),
+                "Failed to send notification: {:?}",
+                notification
+            );
         }
 
         // Проверяем, что все уведомления были залоггированы
         let all_entries = log_storage.get_all_entries().await;
-        assert_eq!(all_entries.len(), 6, "Expected 6 log entries, got {}", all_entries.len());
+        assert_eq!(
+            all_entries.len(),
+            6,
+            "Expected 6 log entries, got {}",
+            all_entries.len()
+        );
 
         // Проверяем, что разные типы уведомлений имеют правильные уровни логирования
         let info_entries: Vec<_> = all_entries

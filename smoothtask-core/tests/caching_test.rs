@@ -391,7 +391,7 @@ fn test_real_system_metrics_collection() {
 #[test]
 fn test_real_process_metrics_collection() {
     // Проверяем, что мы можем собрать реальные метрики процессов
-    let result = collect_process_metrics();
+    let result = collect_process_metrics(None);
 
     // В большинстве Linux систем этот вызов должен завершиться успешно
     if result.is_ok() {

@@ -69,12 +69,12 @@ fn test_ebpf_performance_optimizations() {
     // Тестируем кэширование
     let metrics1 = collector.collect_metrics().unwrap();
     let metrics2 = collector.collect_metrics().unwrap();
-    
+
     // При включенном кэшировании метрики должны быть одинаковыми
     // (если не достигнут batch_size)
     assert_eq!(metrics1.cpu_usage, metrics2.cpu_usage);
     assert_eq!(metrics1.memory_usage, metrics2.memory_usage);
-    
+
     // Тестируем селективный сбор данных
     let selective_config = EbpfConfig {
         enable_cpu_metrics: true,
@@ -90,7 +90,7 @@ fn test_ebpf_performance_optimizations() {
     assert!(selective_collector.initialize().is_ok());
 
     let selective_metrics = selective_collector.collect_metrics().unwrap();
-    
+
     // Должны быть только CPU метрики, остальные должны быть 0 или None
     assert!(selective_metrics.cpu_usage >= 0.0);
     assert_eq!(selective_metrics.memory_usage, 0);
@@ -122,20 +122,20 @@ fn test_gpu_monitoring_functionality() {
     };
 
     let mut collector = EbpfMetricsCollector::new(config);
-    
+
     // Инициализация должна пройти успешно даже если GPU программы не найдены
     assert!(collector.initialize().is_ok());
-    
+
     // Сбор метрик должен работать
     let metrics = collector.collect_metrics();
     assert!(metrics.is_ok());
-    
+
     let metrics = metrics.unwrap();
-    
+
     // Проверяем, что GPU метрики имеют разумные значения по умолчанию
     assert_eq!(metrics.gpu_usage, 0.0); // Должно быть 0.0, так как GPU мониторинг включен но программы могут не загрузиться
     assert_eq!(metrics.gpu_memory_usage, 0); // Должно быть 0, так как GPU мониторинг включен но программы могут не загрузиться
-    
+
     // Проверяем, что детализированная статистика GPU отсутствует или пустая
     if let Some(gpu_details) = metrics.gpu_details {
         assert!(gpu_details.is_empty()); // Должно быть пустым, так как нет реальных данных
@@ -159,23 +159,23 @@ fn test_gpu_monitoring_with_detailed_stats() {
     };
 
     let mut collector = EbpfMetricsCollector::new(config);
-    
+
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
-    
+
     // Сбор метрик должен работать
     let metrics = collector.collect_metrics();
     assert!(metrics.is_ok());
-    
+
     let metrics = metrics.unwrap();
-    
+
     // Проверяем, что GPU метрики имеют разумные значения
     assert!(metrics.gpu_usage >= 0.0); // Должно быть >= 0.0
     assert!(metrics.gpu_memory_usage >= 0); // Должно быть >= 0
     assert!(metrics.gpu_compute_units >= 0); // Должно быть >= 0
     assert!(metrics.gpu_power_usage >= 0); // Должно быть >= 0
     assert!(metrics.gpu_temperature >= 0); // Должно быть >= 0
-    
+
     // Проверяем, что детализированная статистика GPU отсутствует или пустая
     // В тестовой среде без реальных GPU данных она должна быть None или пустой
     match metrics.gpu_details {
@@ -189,7 +189,7 @@ fn test_gpu_monitoring_with_detailed_stats() {
                 assert!(gpu_stat.temperature_celsius >= 0);
                 assert!(gpu_stat.max_temperature_celsius >= 0);
             }
-        },
+        }
         None => {
             // Это ожидаемое поведение в тестовой среде без реальных GPU данных
             assert!(true);
@@ -214,25 +214,43 @@ fn test_gpu_temperature_and_power_monitoring() {
     };
 
     let mut collector = EbpfMetricsCollector::new(config);
-    
+
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
-    
+
     // Сбор метрик должен работать
     let metrics = collector.collect_metrics();
     assert!(metrics.is_ok());
-    
+
     let metrics = metrics.unwrap();
-    
+
     // Проверяем, что новые метрики температуры и энергопотребления присутствуют
-    assert!(metrics.gpu_temperature >= 0, "Температура GPU должна быть >= 0");
-    assert!(metrics.gpu_power_usage >= 0, "Энергопотребление GPU должно быть >= 0");
-    assert!(metrics.gpu_compute_units >= 0, "Количество вычислительных единиц GPU должно быть >= 0");
-    
+    assert!(
+        metrics.gpu_temperature >= 0,
+        "Температура GPU должна быть >= 0"
+    );
+    assert!(
+        metrics.gpu_power_usage >= 0,
+        "Энергопотребление GPU должно быть >= 0"
+    );
+    assert!(
+        metrics.gpu_compute_units >= 0,
+        "Количество вычислительных единиц GPU должно быть >= 0"
+    );
+
     // Проверяем, что значения находятся в разумных пределах
-    assert!(metrics.gpu_temperature <= 200, "Температура GPU должна быть <= 200°C");
-    assert!(metrics.gpu_power_usage <= 1000000, "Энергопотребление GPU должно быть <= 1000000 мкВт");
-    assert!(metrics.gpu_compute_units <= 1000, "Количество вычислительных единиц GPU должно быть <= 1000");
+    assert!(
+        metrics.gpu_temperature <= 200,
+        "Температура GPU должна быть <= 200°C"
+    );
+    assert!(
+        metrics.gpu_power_usage <= 1000000,
+        "Энергопотребление GPU должно быть <= 1000000 мкВт"
+    );
+    assert!(
+        metrics.gpu_compute_units <= 1000,
+        "Количество вычислительных единиц GPU должно быть <= 1000"
+    );
 }
 
 #[test]
@@ -252,30 +270,52 @@ fn test_gpu_comprehensive_monitoring() {
     };
 
     let mut collector = EbpfMetricsCollector::new(config);
-    
+
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
-    
+
     // Сбор метрик должен работать
     let metrics = collector.collect_metrics();
     assert!(metrics.is_ok());
-    
+
     let metrics = metrics.unwrap();
-    
+
     // Проверяем все GPU метрики
-    assert!(metrics.gpu_usage >= 0.0, "Использование GPU должно быть >= 0%");
-    assert!(metrics.gpu_usage <= 100.0, "Использование GPU должно быть <= 100%");
-    
-    assert!(metrics.gpu_memory_usage >= 0, "Использование памяти GPU должно быть >= 0");
-    assert!(metrics.gpu_compute_units >= 0, "Количество вычислительных единиц GPU должно быть >= 0");
-    assert!(metrics.gpu_power_usage >= 0, "Энергопотребление GPU должно быть >= 0");
-    assert!(metrics.gpu_temperature >= 0, "Температура GPU должна быть >= 0");
-    
+    assert!(
+        metrics.gpu_usage >= 0.0,
+        "Использование GPU должно быть >= 0%"
+    );
+    assert!(
+        metrics.gpu_usage <= 100.0,
+        "Использование GPU должно быть <= 100%"
+    );
+
+    assert!(
+        metrics.gpu_memory_usage >= 0,
+        "Использование памяти GPU должно быть >= 0"
+    );
+    assert!(
+        metrics.gpu_compute_units >= 0,
+        "Количество вычислительных единиц GPU должно быть >= 0"
+    );
+    assert!(
+        metrics.gpu_power_usage >= 0,
+        "Энергопотребление GPU должно быть >= 0"
+    );
+    assert!(
+        metrics.gpu_temperature >= 0,
+        "Температура GPU должна быть >= 0"
+    );
+
     // Проверяем, что метрики согласованы
     if metrics.gpu_usage > 0.0 {
         // Если GPU используется, то должны быть и другие метрики
-        assert!(metrics.gpu_compute_units > 0 || metrics.gpu_power_usage > 0 || metrics.gpu_temperature > 0,
-                "Если GPU используется, должны быть и другие метрики");
+        assert!(
+            metrics.gpu_compute_units > 0
+                || metrics.gpu_power_usage > 0
+                || metrics.gpu_temperature > 0,
+            "Если GPU используется, должны быть и другие метрики"
+        );
     }
 }
 
@@ -346,24 +386,45 @@ fn test_cpu_temperature_monitoring() {
     assert!(metrics.is_ok());
 
     let metrics = metrics.unwrap();
-    
+
     // Проверяем, что температура CPU имеет разумные значения
-    assert!(metrics.cpu_temperature >= 0, "Температура CPU должна быть >= 0");
-    assert!(metrics.cpu_max_temperature >= 0, "Максимальная температура CPU должна быть >= 0");
-    
+    assert!(
+        metrics.cpu_temperature >= 0,
+        "Температура CPU должна быть >= 0"
+    );
+    assert!(
+        metrics.cpu_max_temperature >= 0,
+        "Максимальная температура CPU должна быть >= 0"
+    );
+
     // В тестовой среде температура может быть 0, но не должна быть нереалистично высокой
-    assert!(metrics.cpu_temperature <= 200, "Температура CPU должна быть <= 200°C");
-    assert!(metrics.cpu_max_temperature <= 200, "Максимальная температура CPU должна быть <= 200°C");
-    
+    assert!(
+        metrics.cpu_temperature <= 200,
+        "Температура CPU должна быть <= 200°C"
+    );
+    assert!(
+        metrics.cpu_max_temperature <= 200,
+        "Максимальная температура CPU должна быть <= 200°C"
+    );
+
     // Проверяем детализированную статистику температуры CPU
     if let Some(temperature_details) = metrics.cpu_temperature_details {
-        assert!(!temperature_details.is_empty() || !config.enable_cpu_temperature_monitoring, 
+        assert!(!temperature_details.is_empty() || !config.enable_cpu_temperature_monitoring,
                "Детализированная статистика температуры CPU должна быть доступна при включенном мониторинге");
-        
+
         for temp_stat in temperature_details {
-            assert!(temp_stat.temperature_celsius >= 0, "Температура CPU в деталях должна быть >= 0");
-            assert!(temp_stat.max_temperature_celsius >= 0, "Максимальная температура CPU в деталях должна быть >= 0");
-            assert!(temp_stat.timestamp > 0, "Временная метка температуры CPU должна быть > 0");
+            assert!(
+                temp_stat.temperature_celsius >= 0,
+                "Температура CPU в деталях должна быть >= 0"
+            );
+            assert!(
+                temp_stat.max_temperature_celsius >= 0,
+                "Максимальная температура CPU в деталях должна быть >= 0"
+            );
+            assert!(
+                temp_stat.timestamp > 0,
+                "Временная метка температуры CPU должна быть > 0"
+            );
         }
     }
 }
@@ -389,14 +450,17 @@ fn test_process_type_filtering() {
     assert!(metrics.is_ok());
 
     let metrics = metrics.unwrap();
-    
+
     // Проверяем, что фильтрация применена
     if let Some(process_details) = metrics.process_details {
         // В тестовой среде может не быть процессов, но фильтрация должна работать
         for process in process_details {
             // Процессы должны соответствовать фильтру
-            assert!(process.name == "nginx" || process.name == "apache2", 
-                   "Процесс {} не соответствует фильтру по типам процессов", process.name);
+            assert!(
+                process.name == "nginx" || process.name == "apache2",
+                "Процесс {} не соответствует фильтру по типам процессов",
+                process.name
+            );
         }
     }
 
@@ -433,9 +497,18 @@ fn test_real_time_event_processing_optimization() {
 
     // Проверяем, что оптимизации применены (через публичные методы)
     let config = collector.get_config();
-    assert_eq!(config.batch_size, 50, "Размер batches должен быть уменьшен до 50");
-    assert!(!config.enable_aggressive_caching, "Агрессивное кэширование должно быть отключено");
-    assert_eq!(config.aggressive_cache_interval_ms, 1000, "Интервал агрессивного кэширования должен быть уменьшен до 1000ms");
+    assert_eq!(
+        config.batch_size, 50,
+        "Размер batches должен быть уменьшен до 50"
+    );
+    assert!(
+        !config.enable_aggressive_caching,
+        "Агрессивное кэширование должно быть отключено"
+    );
+    assert_eq!(
+        config.aggressive_cache_interval_ms, 1000,
+        "Интервал агрессивного кэширования должен быть уменьшен до 1000ms"
+    );
 
     // Проверяем, что сбор метрик все еще работает после оптимизации
     let metrics = collector.collect_metrics();
@@ -609,7 +682,7 @@ fn test_ebpf_memory_optimization() {
 
     // Тестируем оптимизацию кэша программ
     // Note: optimize_program_cache is not available as a public method
-    
+
     // Тестируем оптимизацию детализированных статистик
     // Note: optimize_detailed_stats is private, so we can't test it directly
 }
@@ -816,4 +889,117 @@ fn test_ebpf_performance_benchmark() {
 
     // С кэшированием должно быть еще быстрее
     assert!(cached_duration.as_secs() < 1); // Должно выполняться менее чем за 1 секунду
+}
+
+#[test]
+fn test_cpu_temperature_with_different_configs() {
+    // Тестируем мониторинг температуры CPU с разными конфигурациями
+
+    // Конфигурация с отключенным мониторингом температуры
+    let config_disabled = EbpfConfig {
+        enable_cpu_temperature_monitoring: false,
+        ..Default::default()
+    };
+
+    let mut collector_disabled = EbpfMetricsCollector::new(config_disabled);
+    assert!(collector_disabled.initialize().is_ok());
+
+    let metrics_disabled = collector_disabled.collect_metrics().unwrap();
+    assert_eq!(
+        metrics_disabled.cpu_temperature, 0,
+        "Температура CPU должна быть 0 при отключенном мониторинге"
+    );
+    assert_eq!(
+        metrics_disabled.cpu_max_temperature, 0,
+        "Максимальная температура CPU должна быть 0 при отключенном мониторинге"
+    );
+    assert!(
+        metrics_disabled.cpu_temperature_details.is_none(),
+        "Детализированная статистика должна быть None при отключенном мониторинге"
+    );
+
+    // Конфигурация с включенным мониторингом температуры
+    let config_enabled = EbpfConfig {
+        enable_cpu_temperature_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector_enabled = EbpfMetricsCollector::new(config_enabled);
+    assert!(collector_enabled.initialize().is_ok());
+
+    let metrics_enabled = collector_enabled.collect_metrics().unwrap();
+    assert!(
+        metrics_enabled.cpu_temperature >= 0,
+        "Температура CPU должна быть >= 0 при включенном мониторинге"
+    );
+    assert!(
+        metrics_enabled.cpu_max_temperature >= 0,
+        "Максимальная температура CPU должна быть >= 0 при включенном мониторинге"
+    );
+}
+
+#[test]
+fn test_cpu_temperature_error_handling() {
+    // Тестируем обработку ошибок при мониторинге температуры CPU
+
+    let config = EbpfConfig {
+        enable_cpu_temperature_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Даже если eBPF программы не загружены, сбор метрик не должен паниковать
+    // В тестовой среде без реальной eBPF поддержки это нормальное поведение
+    let result = collector.collect_metrics();
+    assert!(
+        result.is_ok(),
+        "Сбор метрик должен завершаться успешно даже без реальной eBPF поддержки"
+    );
+
+    let metrics = result.unwrap();
+
+    // В тестовой среде значения могут быть по умолчанию
+    assert!(
+        metrics.cpu_temperature >= 0,
+        "Температура CPU должна быть >= 0"
+    );
+    assert!(
+        metrics.cpu_max_temperature >= 0,
+        "Максимальная температура CPU должна быть >= 0"
+    );
+}
+
+#[test]
+fn test_cpu_temperature_performance() {
+    // Тестируем производительность сбора метрик температуры CPU
+
+    let config = EbpfConfig {
+        enable_cpu_temperature_monitoring: true,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+
+    // Тестируем производительность
+    let start_time = std::time::Instant::now();
+
+    // Выполняем несколько сборов метрик
+    for _ in 0..10 {
+        let _ = collector.collect_metrics();
+    }
+
+    let duration = start_time.elapsed();
+    println!(
+        "Время выполнения 10 сборов метрик температуры CPU: {:?}",
+        duration
+    );
+
+    // Должно выполняться достаточно быстро
+    assert!(
+        duration.as_secs() < 5,
+        "Сбор метрик температуры CPU должен выполняться менее чем за 5 секунд"
+    );
 }

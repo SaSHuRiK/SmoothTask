@@ -174,6 +174,94 @@ curl http://127.0.0.1:8080/api/network/connections
 
 ---
 
+### GET /api/cpu/temperature
+
+Получение информации о температуре CPU, собранной через eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/cpu/temperature
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "timestamp": "2025-01-01T12:00:00+00:00",
+  "system_status": "normal",
+  "average_temperature_celsius": 45,
+  "max_temperature_celsius": 55,
+  "cpu_count": 8,
+  "temperature_details": [
+    {
+      "cpu_id": 0,
+      "temperature_celsius": 45,
+      "max_temperature_celsius": 85,
+      "critical_temperature_celsius": 95,
+      "timestamp": 1672531200000000000,
+      "update_count": 1250,
+      "error_count": 0,
+      "status": "normal"
+    },
+    {
+      "cpu_id": 1,
+      "temperature_celsius": 48,
+      "max_temperature_celsius": 85,
+      "critical_temperature_celsius": 95,
+      "timestamp": 1672531200000000000,
+      "update_count": 1250,
+      "error_count": 0,
+      "status": "normal"
+    }
+  ],
+  "recommendations": "System temperature is normal."
+}
+```
+
+**Ответ при отсутствии метрик:**
+```json
+{
+  "status": "error",
+  "error": "Metrics collector not available",
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - Статус ответа ("ok" или "error")
+- `timestamp` (string) - Временная метка ответа в формате RFC3339
+- `system_status` (string) - Общий статус системы ("normal", "warning", "critical")
+- `average_temperature_celsius` (integer) - Средняя температура CPU по всем ядрам
+- `max_temperature_celsius` (integer) - Максимальная температура CPU среди всех ядер
+- `cpu_count` (integer) - Количество CPU ядер с доступными метриками
+- `temperature_details` (array) - Детализированная информация по каждому CPU ядру
+- `recommendations` (string) - Рекомендации по текущему состоянию температуры
+
+**Поля `temperature_details`:**
+- `cpu_id` (integer) - Идентификатор CPU ядра
+- `temperature_celsius` (integer) - Текущая температура CPU в градусах Цельсия
+- `max_temperature_celsius` (integer) - Максимальная температура CPU в градусах Цельсия
+- `critical_temperature_celsius` (integer) - Критическая температура CPU в градусах Цельсия
+- `timestamp` (integer) - Временная метка последнего обновления в наносекундах
+- `update_count` (integer) - Количество обновлений температуры
+- `error_count` (integer) - Количество ошибок при сборе температуры
+- `status` (string) - Статус температуры ("normal", "warning", "critical")
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+**Ошибки:**
+- `error` (string) - Сообщение об ошибке, если метрики недоступны
+- `timestamp` (string) - Временная метка ответа
+
+**Примечания:**
+- Требуется включенный мониторинг температуры CPU в конфигурации eBPF (`enable_cpu_temperature_monitoring: true`)
+- В тестовой среде без реальной eBPF поддержки значения температуры могут быть по умолчанию
+- Статус "warning" устанавливается при температуре >= 85°C, "critical" при температуре >= 95°C
+- Детализированная информация доступна только при успешном сборе метрик с каждого CPU ядра
+
+---
+
 ### GET /api/health
 
 Получение расширенной информации о состоянии демона, включая время работы, статус компонентов и метрики производительности.
@@ -506,6 +594,16 @@ curl http://127.0.0.1:8080/api/endpoints
       "description": "Получение последних системных метрик"
     },
     {
+      "path": "/api/network/connections",
+      "method": "GET",
+      "description": "Получение информации о текущих сетевых соединениях"
+    },
+    {
+      "path": "/api/cpu/temperature",
+      "method": "GET",
+      "description": "Получение информации о температуре CPU"
+    },
+    {
       "path": "/api/responsiveness",
       "method": "GET",
       "description": "Получение последних метрик отзывчивости системы"
@@ -536,7 +634,7 @@ curl http://127.0.0.1:8080/api/endpoints
       "description": "Получение текущей конфигурации демона (без секретов)"
     }
   ],
-  "count": 12
+  "count": 14
 }
 ```
 

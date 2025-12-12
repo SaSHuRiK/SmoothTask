@@ -47,7 +47,7 @@ fn test_process_metrics_collection_performance() {
     use smoothtask_core::metrics::process::collect_process_metrics;
 
     let start = Instant::now();
-    let result = collect_process_metrics();
+    let result = collect_process_metrics(None);
     let duration = start.elapsed();
 
     println!("Process metrics collection took: {:?}", duration);

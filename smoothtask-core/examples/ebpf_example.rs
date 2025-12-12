@@ -3,7 +3,10 @@
 //! Этот пример демонстрирует, как использовать eBPF модуль из smoothtask-core
 //! для сбора высокопроизводительных системных метрик.
 
-use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds, EbpfFilterConfig, SyscallStat, NetworkStat, ConnectionStat};
+use smoothtask_core::metrics::ebpf::{
+    ConnectionStat, EbpfConfig, EbpfFilterConfig, EbpfMetrics, EbpfMetricsCollector,
+    EbpfNotificationThresholds, NetworkStat, SyscallStat,
+};
 use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
@@ -55,9 +58,18 @@ fn main() -> anyhow::Result<()> {
     println!("   Configuration created with:");
     println!("   - CPU metrics: {}", config.enable_cpu_metrics);
     println!("   - Memory metrics: {}", config.enable_memory_metrics);
-    println!("   - System call monitoring: {}", config.enable_syscall_monitoring);
-    println!("   - Network monitoring: {}", config.enable_network_monitoring);
-    println!("   - Network connections: {}", config.enable_network_connections);
+    println!(
+        "   - System call monitoring: {}",
+        config.enable_syscall_monitoring
+    );
+    println!(
+        "   - Network monitoring: {}",
+        config.enable_network_monitoring
+    );
+    println!(
+        "   - Network connections: {}",
+        config.enable_network_connections
+    );
 
     // 3. Создание коллектора
     println!("\n3. Creating eBPF metrics collector...");
@@ -69,24 +81,26 @@ fn main() -> anyhow::Result<()> {
     match collector.initialize() {
         Ok(_) => {
             println!("   ✓ eBPF programs initialized successfully");
-            
+
             // Получение статистики инициализации
             let (success_count, error_count) = collector.get_initialization_stats();
-            println!("   Initialization stats: {} programs loaded, {} errors", 
-                success_count, error_count);
-            
+            println!(
+                "   Initialization stats: {} programs loaded, {} errors",
+                success_count, error_count
+            );
+
             // Получение информации о картах
             let maps_info = collector.get_maps_info();
             println!("   Maps info: {}", maps_info);
         }
         Err(e) => {
             println!("   ✗ Failed to initialize eBPF programs: {}", e);
-            
+
             // Получение детальной информации об ошибке
             if let Some(error_info) = collector.get_detailed_error_info() {
                 println!("   Error details: {}", error_info);
             }
-            
+
             // В реальном приложении здесь можно продолжить с альтернативными методами
             return Ok(());
         }
@@ -94,31 +108,31 @@ fn main() -> anyhow::Result<()> {
 
     // 5. Сбор и отображение метрик
     println!("\n5. Collecting eBPF metrics...");
-    
+
     // Основной цикл сбора метрик
     for iteration in 1..=5 {
         println!("\n   --- Iteration {} ---", iteration);
-        
+
         match collector.collect_metrics() {
             Ok(metrics) => {
                 display_metrics(&metrics);
-                
+
                 // Отображение детализированной статистики (если доступно)
                 if let Some(syscall_details) = &metrics.syscall_details {
                     display_top_syscalls(syscall_details, 3);
                 }
-                
+
                 if let Some(network_details) = &metrics.network_details {
                     display_top_network_stats(network_details, 2);
                 }
-                
+
                 if let Some(connection_details) = &metrics.connection_details {
                     display_active_connections(connection_details, 2);
                 }
             }
             Err(e) => {
                 println!("   ✗ Error collecting metrics: {}", e);
-                
+
                 // Попытка восстановления
                 println!("   Attempting recovery...");
                 match collector.attempt_recovery() {
@@ -127,26 +141,26 @@ fn main() -> anyhow::Result<()> {
                 }
             }
         }
-        
+
         // Пауза между итерациями
         std::thread::sleep(Duration::from_secs(1));
     }
 
     // 6. Демонстрация управления конфигурацией
     println!("\n6. Demonstrating configuration management...");
-    
+
     // Установка ограничения на кэшируемые детали
     collector.set_max_cached_details(100);
     println!("   ✓ Set max cached details to 100");
-    
+
     // Включение очистки неиспользуемых карт
     collector.set_cleanup_unused_maps(true);
     println!("   ✓ Enabled cleanup of unused maps");
-    
+
     // Оптимизация использования памяти
     collector.optimize_memory_usage();
     println!("   ✓ Memory usage optimized");
-    
+
     // Получение оценки использования памяти
     let memory_usage = collector.get_memory_usage_estimate();
     println!("   Memory usage estimate: {} bytes", memory_usage);
@@ -165,7 +179,10 @@ fn main() -> anyhow::Result<()> {
 fn display_metrics(metrics: &EbpfMetrics) {
     println!("   Basic Metrics:");
     println!("     CPU Usage: {:.2}%", metrics.cpu_usage);
-    println!("     Memory Usage: {} MB", metrics.memory_usage / 1024 / 1024);
+    println!(
+        "     Memory Usage: {} MB",
+        metrics.memory_usage / 1024 / 1024
+    );
     println!("     System Calls: {}", metrics.syscall_count);
     println!("     Network Packets: {}", metrics.network_packets);
     println!("     Network Bytes: {} KB", metrics.network_bytes / 1024);
@@ -177,12 +194,13 @@ fn display_metrics(metrics: &EbpfMetrics) {
 /// Отображение топ системных вызовов
 fn display_top_syscalls(details: &[SyscallStat], top_n: usize) {
     println!("   Top {} System Calls:", top_n);
-    
+
     let mut sorted_details = details.to_vec();
     sorted_details.sort_by(|a, b| b.count.cmp(&a.count));
-    
+
     for (i, stat) in sorted_details.iter().take(top_n).enumerate() {
-        println!("     {}. Syscall {}: {} calls, avg {:.2} µs",
+        println!(
+            "     {}. Syscall {}: {} calls, avg {:.2} µs",
             i + 1,
             stat.syscall_id,
             stat.count,
@@ -194,19 +212,20 @@ fn display_top_syscalls(details: &[SyscallStat], top_n: usize) {
 /// Отображение топ сетевой статистики
 fn display_top_network_stats(details: &[NetworkStat], top_n: usize) {
     println!("   Top {} Network Stats:", top_n);
-    
+
     let mut sorted_details = details.to_vec();
     sorted_details.sort_by(|a, b| {
         let a_total = a.packets_sent + a.packets_received;
         let b_total = b.packets_sent + b.packets_received;
         b_total.cmp(&a_total)
     });
-    
+
     for (i, stat) in sorted_details.iter().take(top_n).enumerate() {
         let total_packets = stat.packets_sent + stat.packets_received;
         let total_bytes = stat.bytes_sent + stat.bytes_received;
-        
-        println!("     {}. IP {}: {} packets, {} KB",
+
+        println!(
+            "     {}. IP {}: {} packets, {} KB",
             i + 1,
             format_ip(stat.ip_address),
             total_packets,
@@ -218,12 +237,13 @@ fn display_top_network_stats(details: &[NetworkStat], top_n: usize) {
 /// Отображение активных соединений
 fn display_active_connections(details: &[ConnectionStat], top_n: usize) {
     println!("   Top {} Active Connections:", top_n);
-    
+
     let mut sorted_details = details.to_vec();
     sorted_details.sort_by(|a, b| b.packets.cmp(&a.packets));
-    
+
     for (i, stat) in sorted_details.iter().take(top_n).enumerate() {
-        println!("     {}. {}:{} -> {}:{} ({} packets, {} KB)",
+        println!(
+            "     {}. {}:{} -> {}:{} ({} packets, {} KB)",
             i + 1,
             format_ip(stat.src_ip),
             stat.src_port,
