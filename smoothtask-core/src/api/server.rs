@@ -2234,7 +2234,7 @@ impl ApiServer {
     /// - `system_metrics`: Системные метрики (опционально)
     /// - `processes`: Список процессов (опционально)
     /// - `app_groups`: Список групп приложений (опционально)
-
+    ///
     /// Запускает API сервер в фоновой задаче.
     ///
     /// Возвращает handle для управления сервером (остановка, проверка состояния).
@@ -2318,7 +2318,7 @@ mod tests {
     use std::net::SocketAddr;
     
     // Import notification types for test configurations
-    use crate::config::config_struct::{NotificationBackend, NotificationConfig, NotificationLevel, ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
+    use crate::config::config_struct::{ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
     use crate::metrics::ebpf::EbpfConfig;
 
     #[tokio::test]

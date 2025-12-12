@@ -835,7 +835,7 @@ mod tests {
         };
 
         assert_eq!(device.name, "card0");
-        assert!(device.device_path.exists() || true); // May not exist in test environment
+        // device_path may not exist in test environment, so we don't assert its existence
         assert_eq!(device.vendor_id, Some("0x8086".to_string()));
         assert_eq!(device.device_id, Some("0x1234".to_string()));
         assert_eq!(device.driver, Some("i915".to_string()));
@@ -1067,10 +1067,10 @@ mod tests {
 
     #[test]
     fn test_gpu_utilization_values() {
-        let mut utilization = GpuUtilization::default();
-        
-        // Test that values can be set (no automatic clamping in this implementation)
-        utilization.gpu_util = 1.5; // Can be > 1.0
+        let mut utilization = GpuUtilization {
+            gpu_util: 1.5, // Can be > 1.0
+            ..Default::default()
+        };
         assert!(utilization.gpu_util > 0.0);
         
         utilization.gpu_util = -0.1; // Can be negative (though not realistic)
@@ -1087,12 +1087,12 @@ mod tests {
 
     #[test]
     fn test_gpu_temperature_values() {
-        let mut temperature = GpuTemperature::default();
-        
-        // Test setting temperature values
-        temperature.temperature_c = Some(65.5);
-        temperature.hotspot_c = Some(70.0);
-        temperature.memory_c = Some(60.0);
+        let temperature = GpuTemperature {
+            temperature_c: Some(65.5),
+            hotspot_c: Some(70.0),
+            memory_c: Some(60.0),
+            ..Default::default()
+        };
         
         assert_eq!(temperature.temperature_c, Some(65.5));
         assert_eq!(temperature.hotspot_c, Some(70.0));
@@ -1107,12 +1107,12 @@ mod tests {
 
     #[test]
     fn test_gpu_power_values() {
-        let mut power = GpuPower::default();
-        
-        // Test setting power values
-        power.power_w = Some(120.0);
-        power.power_limit_w = Some(200.0);
-        power.power_cap_w = Some(180.0);
+        let power = GpuPower {
+            power_w: Some(120.0),
+            power_limit_w: Some(200.0),
+            power_cap_w: Some(180.0),
+            ..Default::default()
+        };
         
         assert_eq!(power.power_w, Some(120.0));
         assert_eq!(power.power_limit_w, Some(200.0));
@@ -1127,12 +1127,12 @@ mod tests {
 
     #[test]
     fn test_gpu_clocks_values() {
-        let mut clocks = GpuClocks::default();
-        
-        // Test setting clock values
-        clocks.core_clock_mhz = Some(1500);
-        clocks.memory_clock_mhz = Some(1750);
-        clocks.shader_clock_mhz = Some(1600);
+        let clocks = GpuClocks {
+            core_clock_mhz: Some(1500),
+            memory_clock_mhz: Some(1750),
+            shader_clock_mhz: Some(1600),
+            ..Default::default()
+        };
         
         assert_eq!(clocks.core_clock_mhz, Some(1500));
         assert_eq!(clocks.memory_clock_mhz, Some(1750));

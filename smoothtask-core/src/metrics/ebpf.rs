@@ -384,9 +384,11 @@ mod tests {
 
     #[test]
     fn test_ebpf_metrics_with_config() {
-        let mut config = EbpfConfig::default();
-        config.enable_cpu_metrics = true;
-        config.enable_memory_metrics = false;
+        let config = EbpfConfig {
+            enable_cpu_metrics: true,
+            enable_memory_metrics: false,
+            ..Default::default()
+        };
         
         let mut collector = EbpfMetricsCollector::new(config);
         assert!(collector.initialize().is_ok());
@@ -399,10 +401,12 @@ mod tests {
 
     #[test]
     fn test_ebpf_syscall_monitoring() {
-        let mut config = EbpfConfig::default();
-        config.enable_syscall_monitoring = true;
-        config.enable_cpu_metrics = false;
-        config.enable_memory_metrics = false;
+        let config = EbpfConfig {
+            enable_syscall_monitoring: true,
+            enable_cpu_metrics: false,
+            enable_memory_metrics: false,
+            ..Default::default()
+        };
         
         let mut collector = EbpfMetricsCollector::new(config);
         assert!(collector.initialize().is_ok());
@@ -426,9 +430,11 @@ mod tests {
 
     #[test]
     fn test_ebpf_caching() {
-        let mut config = EbpfConfig::default();
-        config.enable_caching = true;
-        config.batch_size = 3;
+        let config = EbpfConfig {
+            enable_caching: true,
+            batch_size: 3,
+            ..Default::default()
+        };
         
         let mut collector = EbpfMetricsCollector::new(config);
         assert!(collector.initialize().is_ok());

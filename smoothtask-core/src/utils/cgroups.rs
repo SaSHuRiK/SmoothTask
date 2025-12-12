@@ -678,7 +678,7 @@ mod tests {
         
         let result = remove_cgroup_if_empty(cgroup_path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -757,6 +757,6 @@ mod tests {
         // Проверяем доступность контроллера cpu
         let cpu_available = is_controller_available("cpu");
         // Результат может быть true или false в зависимости от системы
-        assert!(cpu_available == true || cpu_available == false);
+        assert!(cpu_available); // Просто проверяем, что функция возвращает значение
     }
 }

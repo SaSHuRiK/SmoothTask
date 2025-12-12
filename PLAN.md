@@ -11,7 +11,7 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-524: Разрешить проблемы с зависимостями glib-2.0
+- [x] ST-528: Исправить clippy warnings и errors
   - Тип: Rust / core / build
   - Критерии готовности:
     - ✅ Проанализировать источник проблемы с glib-2.0
@@ -58,6 +58,31 @@
   - Время выполнения: ~30 минут
 
 - [x] ST-527: Исправить ошибки компиляции в smoothtaskd и API сервере
+
+- [x] ST-528: Исправить clippy warnings и errors
+  - Тип: Rust / core / quality
+  - Критерии готовности:
+    - ✅ Исправить все clippy warnings и errors
+    - ✅ Убедиться, что код компилируется без ошибок
+    - ✅ Исправить проблемы с unused imports, redundant field names, и другими clippy lint ошибками
+    - ✅ Обновить тесты для соответствия clippy требованиям
+  - Примечания: Успешно исправлены все clippy warnings и errors. Код теперь компилируется без ошибок и соответствует лучшим практикам Rust.
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/utils/cgroups.rs: Исправлены bool_assert_comparison и unused_assignments
+    - smoothtask-core/src/classify/rules.rs: Исправлены unused_assignments и unnecessary_closure
+    - smoothtask-core/src/classify/ml_classifier.rs: Исправлены identity_op и loop variable issues
+    - smoothtask-core/src/metrics/system.rs: Исправлены unused_comparisons и bool_assert_comparison
+    - smoothtask-core/src/metrics/ebpf.rs: Исправлены field_reassign_with_default
+    - smoothtask-core/src/metrics/gpu.rs: Исправлены field_reassign_with_default и overly_complex_bool_expr
+    - smoothtask-core/src/metrics/audio_pipewire.rs: Исправлены assertions_on_constants
+    - smoothtask-core/src/logging/rotation.rs: Исправлены map_or simplifications
+    - smoothtask-core/src/logging/snapshots.rs: Исправлены map_or simplifications
+    - smoothtask-core/src/policy/engine.rs: Добавлены missing imports
+    - smoothtask-core/src/api/server.rs: Исправлены empty_line_after_doc_comment и unused_imports
+    - smoothtask-core/src/metrics/windows_wayland.rs: Исправлены redundant_field_names
   - Тип: Rust / core / build
   - Критерии готовности:
     - ✅ Исправить missing import Config в smoothtaskd/src/main.rs
@@ -203,6 +228,17 @@
 
 ## 2. Бэклог
 
+- [ ] ST-529: Улучшить документацию и тестирование eBPF функциональности
+  - Тип: Rust / core / metrics / eBPF / documentation
+  - Критерии готовности:
+    - ✅ Обновить EBPF_SETUP.md с последними изменениями
+    - ✅ Добавить примеры использования eBPF в основной документации
+    - ✅ Улучшить тестовое покрытие eBPF функциональности
+    - ✅ Документировать ограничения и требования к системе
+    - ✅ Добавить примеры интеграции с основной системой метрик
+  - Примечания: Улучшение документации и тестирования для eBPF функциональности
+  - Приоритет: Средний
+
 - [ ] ST-513: Добавить поддержку мониторинга системных вызовов через eBPF
   - Тип: Rust / core / metrics / eBPF
   - Критерии готовности:
@@ -267,7 +303,24 @@
     - smoothtask-core/tests/ebpf_mock_test.rs: Исправлена синтаксическая ошибка
     - smoothtask-core/tests/api_integration_test.rs: Исправлена синтаксическая ошибка
 
-- [x] ST-524: Разрешить проблемы с зависимостями glib-2.0
+- [x] ST-528: Исправить clippy warnings и errors
+  - Тип: Rust / core / quality
+  - Примечания: Успешно исправлены все clippy warnings и errors. Код теперь компилируется без ошибок и соответствует лучшим практикам Rust.
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/utils/cgroups.rs: Исправлены bool_assert_comparison и unused_assignments
+    - smoothtask-core/src/classify/rules.rs: Исправлены unused_assignments и unnecessary_closure
+    - smoothtask-core/src/classify/ml_classifier.rs: Исправлены identity_op и loop variable issues
+    - smoothtask-core/src/metrics/system.rs: Исправлены unused_comparisons и bool_assert_comparison
+    - smoothtask-core/src/metrics/ebpf.rs: Исправлены field_reassign_with_default
+    - smoothtask-core/src/metrics/gpu.rs: Исправлены field_reassign_with_default и overly_complex_bool_expr
+    - smoothtask-core/src/metrics/audio_pipewire.rs: Исправлены assertions_on_constants
+    - smoothtask-core/src/logging/rotation.rs: Исправлены map_or simplifications
+    - smoothtask-core/src/logging/snapshots.rs: Исправлены map_or simplifications
+    - smoothtask-core/src/policy/engine.rs: Добавлены missing imports
+    - smoothtask-core/src/api/server.rs: Исправлены empty_line_after_doc_comment и unused_imports
+    - smoothtask-core/src/metrics/windows_wayland.rs: Исправлены redundant_field_names
   - Тип: Rust / core / build
   - Примечания: Успешно проанализирована и документирована проблема с glib-2.0 зависимостью через libnotify. Предложены обходные пути и документированы требования к системе. Обновлены SETUP_GUIDE.md и README.md с инструкциями по установке зависимостей и альтернативными вариантами сборки.
   - Статус: COMPLETED

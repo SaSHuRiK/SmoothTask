@@ -1114,15 +1114,15 @@ mod pipewire_introspector_tests {
         match available {
             Ok(true) => {
                 // PipeWire доступен - это нормально
-                assert!(true);
+                // No assertion needed, just continue
             },
             Ok(false) => {
                 // PipeWire недоступен - это тоже нормально для тестовой среды
-                assert!(true);
+                // No assertion needed, just continue
             },
             Err(_) => {
                 // Ошибка при проверке - это тоже нормально для тестовой среды
-                assert!(true);
+                // No assertion needed, just continue
             }
         }
     }

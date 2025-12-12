@@ -2311,9 +2311,11 @@ SwapFree:        4096000 kB
     #[test]
     fn test_temperature_metrics_serialization() {
         // Тест проверяет, что TemperatureMetrics корректно сериализуется
-        let mut temp = TemperatureMetrics::default();
-        temp.cpu_temperature_c = Some(45.5);
-        temp.gpu_temperature_c = Some(60.2);
+        let temp = TemperatureMetrics {
+            cpu_temperature_c: Some(45.5),
+            gpu_temperature_c: Some(60.2),
+            ..Default::default()
+        };
         
         let json = serde_json::to_string(&temp).expect("Сериализация должна работать");
         assert!(json.contains("45.5"));
@@ -2328,10 +2330,12 @@ SwapFree:        4096000 kB
     #[test]
     fn test_power_metrics_serialization() {
         // Тест проверяет, что PowerMetrics корректно сериализуется
-        let mut power = PowerMetrics::default();
-        power.system_power_w = Some(120.5);
-        power.cpu_power_w = Some(80.3);
-        power.gpu_power_w = Some(40.1);
+        let power = PowerMetrics {
+            system_power_w: Some(120.5),
+            cpu_power_w: Some(80.3),
+            gpu_power_w: Some(40.1),
+            ..Default::default()
+        };
         
         let json = serde_json::to_string(&power).expect("Сериализация должна работать");
         assert!(json.contains("120.5"));
@@ -2471,8 +2475,8 @@ SwapFree:        4096000 kB
         let network = collect_network_metrics();
         // Проверяем, что структура корректно инициализирована
         // В реальной системе могут быть данные, в тестовой - пустые
-        assert_eq!(network.total_rx_bytes >= network.interfaces.iter().map(|iface| iface.rx_bytes).sum::<u64>(), true);
-        assert_eq!(network.total_tx_bytes >= network.interfaces.iter().map(|iface| iface.tx_bytes).sum::<u64>(), true);
+        assert!(network.total_rx_bytes >= network.interfaces.iter().map(|iface| iface.rx_bytes).sum::<u64>());
+        assert!(network.total_tx_bytes >= network.interfaces.iter().map(|iface| iface.tx_bytes).sum::<u64>());
     }
 
     #[test]
@@ -2497,12 +2501,11 @@ SwapFree:        4096000 kB
         if let Some(metrics) = ebpf_metrics {
             // Если eBPF доступен, проверяем, что структура корректно инициализирована
             assert!(metrics.cpu_usage >= 0.0);
-            assert!(metrics.memory_usage >= 0);
-            assert!(metrics.syscall_count >= 0);
+            // memory_usage и syscall_count всегда >= 0 (u64)
             assert!(metrics.timestamp > 0);
         } else {
             // Если eBPF недоступен, это нормальное поведение в тестовой среде
-            assert!(true); // Просто проверяем, что функция не паникует
+            // Просто проверяем, что функция не паникует
         }
     }
 

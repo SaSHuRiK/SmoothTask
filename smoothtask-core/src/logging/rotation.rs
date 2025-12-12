@@ -490,7 +490,7 @@ mod tests {
             .expect("read dir")
             .filter_map(|entry| entry.ok())
             .filter(|entry| {
-                entry.path().extension().map_or(false, |ext| ext == "log")
+                entry.path().extension().is_some_and(|ext| ext == "log")
             })
             .collect();
         
@@ -535,7 +535,7 @@ mod tests {
             .expect("read dir")
             .filter_map(|entry| entry.ok())
             .filter(|entry| {
-                entry.path().extension().map_or(false, |ext| ext == "gz")
+                entry.path().extension().is_some_and(|ext| ext == "gz")
             })
             .collect();
         
@@ -568,7 +568,7 @@ mod tests {
             .expect("read dir")
             .filter_map(|entry| entry.ok())
             .filter(|entry| {
-                entry.path().extension().map_or(false, |ext| ext == "log")
+                entry.path().extension().is_some_and(|ext| ext == "log")
             })
             .collect();
         

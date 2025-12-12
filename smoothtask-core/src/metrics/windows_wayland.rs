@@ -567,7 +567,7 @@ impl WaylandIntrospector {
             event_queue,
             windows: Vec::new(),
             compositor_type,
-            _registry: _registry,
+            _registry,
         })
     }
 

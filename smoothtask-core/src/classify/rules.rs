@@ -892,9 +892,7 @@ pub fn classify_process(
            process.pid, process.exe, desktop_id);
 
     // Извлекаем desktop_id из systemd_unit, если не передан явно
-    let desktop_id = desktop_id.or_else(|| {
-        process.systemd_unit.as_deref()
-    });
+    let desktop_id = desktop_id.or(process.systemd_unit.as_deref());
 
     // Паттерн-базированная классификация (без ML)
     let matches = pattern_db.match_process(process.exe.as_deref(), desktop_id, process.cgroup_path.as_deref());

@@ -794,7 +794,7 @@ mod tests {
         process.cpu_share_1s = Some(0.25);
         process.cpu_share_10s = Some(0.5);
         process.io_read_bytes = Some(2 * 1024 * 1024); // 2MB
-        process.io_write_bytes = Some(1 * 1024 * 1024); // 1MB
+        process.io_write_bytes = Some(1024 * 1024); // 1MB
         process.rss_mb = Some(100);
         process.swap_mb = Some(50);
         process.voluntary_ctx = Some(1000);
@@ -824,8 +824,8 @@ mod tests {
         assert_eq!(features[7], 500.0);  // involuntary_ctx
         
         // Проверяем булевые фичи (должны быть 1.0)
-        for i in 8..16 {
-            assert_eq!(features[i], 1.0);
+        for feature in &features[8..16] {
+            assert_eq!(*feature, 1.0);
         }
     }
 
@@ -849,13 +849,13 @@ mod tests {
         assert_eq!(features.len(), 16);
         
         // Проверяем числовые фичи (должны быть 0.0)
-        for i in 0..8 {
-            assert_eq!(features[i], 0.0);
+        for feature in &features[0..8] {
+            assert_eq!(*feature, 0.0);
         }
         
         // Проверяем булевые фичи (должны быть 0.0)
-        for i in 8..16 {
-            assert_eq!(features[i], 0.0);
+        for feature in &features[8..16] {
+            assert_eq!(*feature, 0.0);
         }
     }
 

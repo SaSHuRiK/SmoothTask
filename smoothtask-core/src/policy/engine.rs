@@ -7,8 +7,9 @@
 use crate::config::config_struct::{
     Config, MLClassifierConfig, ModelType, PatternAutoUpdateConfig, PolicyMode,
 };
-use crate::metrics::ebpf::EbpfConfig;
+
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
+use crate::metrics::ebpf::EbpfConfig;
 use crate::model::ranker::{Ranker, RankingResult};
 use crate::policy::classes::PriorityClass;
 
