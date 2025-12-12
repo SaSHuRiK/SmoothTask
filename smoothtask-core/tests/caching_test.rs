@@ -139,6 +139,7 @@ fn test_system_metrics_caching_logic() {
                 power: smoothtask_core::metrics::system::PowerMetrics::default(),
                 network: NetworkMetrics::default(),
                 disk: DiskMetrics::default(),
+                gpu: None, // GPU metrics are optional
             };
             system_metrics_cache = Some(mock_metrics);
             system_metrics_cache_iteration = current_iteration;

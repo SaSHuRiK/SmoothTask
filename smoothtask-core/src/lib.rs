@@ -650,6 +650,7 @@ pub async fn run_daemon(
         power: PowerMetrics::default(),
         network: NetworkMetrics::default(),
         disk: DiskMetrics::default(),
+        gpu: None,
     }));
     let processes_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::ProcessRecord>>> =
         Arc::new(tokio::sync::RwLock::new(Vec::new()));

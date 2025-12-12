@@ -1028,6 +1028,7 @@ mod tests {
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc.clone());
@@ -1075,6 +1076,7 @@ mod tests {
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));
@@ -1194,6 +1196,7 @@ mod tests {
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc);
@@ -1248,6 +1251,7 @@ mod tests {
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let server = ApiServer::with_system_metrics(addr, metrics_arc);
@@ -2052,6 +2056,7 @@ apps:
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));

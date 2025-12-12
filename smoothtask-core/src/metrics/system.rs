@@ -402,6 +402,8 @@ pub struct SystemMetrics {
     pub network: NetworkMetrics,
     /// Метрики дисковых операций
     pub disk: DiskMetrics,
+    /// Метрики GPU (опционально, так как может быть недоступно на некоторых системах)
+    pub gpu: Option<crate::metrics::gpu::GpuMetricsCollection>,
 }
 
 impl SystemMetrics {
@@ -729,6 +731,9 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Собираем метрики сетевой активности и дисковых операций
     let network = collect_network_metrics();
     let disk = collect_disk_metrics();
+    
+    // Собираем метрики GPU (опционально, может быть недоступно на некоторых системах)
+    let gpu = collect_gpu_metrics();
 
     Ok(SystemMetrics {
         cpu_times,
@@ -739,6 +744,7 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
         power,
         network,
         disk,
+        gpu: Some(gpu),
     })
 }
 
@@ -939,6 +945,11 @@ fn collect_disk_metrics() -> DiskMetrics {
     }
     
     disk
+}
+
+/// Собирает метрики GPU из различных источников
+fn collect_gpu_metrics() -> crate::metrics::gpu::GpuMetricsCollection {
+    crate::metrics::gpu::collect_gpu_metrics().unwrap_or_default()
 }
 
 fn read_file(path: &Path) -> Result<String> {
@@ -1698,6 +1709,7 @@ SwapFree:        4096000 kB
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
 
         let cur_metrics = SystemMetrics {
@@ -1720,6 +1732,7 @@ SwapFree:        4096000 kB
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -1766,6 +1779,7 @@ SwapFree:        4096000 kB
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
 
         let cur_metrics = SystemMetrics {
@@ -1788,6 +1802,7 @@ SwapFree:        4096000 kB
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -1990,6 +2005,7 @@ SwapFree:        4096000 kB
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         
         // Проверяем, что метрики содержат новые поля
@@ -1998,6 +2014,8 @@ SwapFree:        4096000 kB
         assert!(metrics.power.system_power_w.is_none());
         assert!(metrics.power.cpu_power_w.is_none());
         assert!(metrics.power.gpu_power_w.is_none());
+        // Проверяем, что GPU метрики доступны
+        assert!(metrics.gpu.is_none());
     }
 
     #[test]
@@ -2127,6 +2145,7 @@ SwapFree:        4096000 kB
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
             disk: DiskMetrics::default(),
+            gpu: None,
         };
         
         // Проверяем, что метрики содержат новые поля

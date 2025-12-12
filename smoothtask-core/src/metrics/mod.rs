@@ -7,6 +7,7 @@
 //! - Метрики аудио (PipeWire/PulseAudio, XRUN)
 //! - Метрики ввода пользователя (evdev)
 //! - Метрики scheduling latency
+//! - Метрики GPU (использование, память, температура, энергопотребление)
 //!
 //! # Компоненты
 //!
@@ -16,9 +17,11 @@
 //! - **audio**: Метрики аудио-системы (PipeWire/PulseAudio)
 //! - **input**: Отслеживание активности пользователя
 //! - **scheduling_latency**: Измерение задержек планировщика
+//! - **gpu**: Мониторинг GPU устройств и их метрик
 
 pub mod audio;
 pub mod audio_pipewire;
+pub mod gpu;
 pub mod input;
 pub mod process;
 pub mod scheduling_latency;
