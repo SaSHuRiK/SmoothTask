@@ -323,6 +323,13 @@ def test_train_ranker_with_onnx():
 
         # Проверяем, что ONNX файл не пустой
         assert model_onnx_path.stat().st_size > 0, "ONNX файл не должен быть пустым"
+        
+        # Проверяем, что модель без категориальных фич можно загрузить
+        from catboost import CatBoostRanker
+        model = CatBoostRanker()
+        model.load_model(model_json_path.as_posix(), format="json")
+        # Убеждаемся, что категориальных фич нет
+        assert len(model.get_cat_feature_indices()) == 0, "Модель для ONNX не должна содержать категориальные фичи"
 
 
 def test_train_ranker_with_empty_db():
@@ -476,6 +483,40 @@ def test_train_ranker_validates_onnx_out_is_not_dir():
         # Ожидаем ValueError для директории вместо файла
         with pytest.raises(ValueError, match="указывает на директорию"):
             train_ranker(db_path, model_json_path, onnx_out=onnx_dir)
+
+
+def test_train_ranker_categorical_features_disabled_for_onnx():
+    """Тест, что категориальные фичи отключены при экспорте в ONNX."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        create_training_db(db_path, num_snapshots=3)
+        train_ranker(db_path, model_json_path, onnx_out=model_onnx_path)
+
+        # Проверяем, что модель без категориальных фич
+        from catboost import CatBoostRanker
+        model = CatBoostRanker()
+        model.load_model(model_json_path.as_posix(), format="json")
+        assert len(model.get_cat_feature_indices()) == 0, "Модель для ONNX не должна содержать категориальные фичи"
+
+
+def test_train_ranker_categorical_features_enabled_without_onnx():
+    """Тест, что категориальные фичи включены, когда ONNX не экспортируется."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        model_json_path = Path(tmpdir) / "model.json"
+
+        create_training_db(db_path, num_snapshots=3)
+        train_ranker(db_path, model_json_path, onnx_out=None)
+
+        # Проверяем, что модель с категориальными фичами
+        from catboost import CatBoostRanker
+        model = CatBoostRanker()
+        model.load_model(model_json_path.as_posix(), format="json")
+        cat_features = model.get_cat_feature_indices()
+        assert len(cat_features) > 0, "Модель без ONNX должна содержать категориальные фичи"
 
 
 def test_train_ranker_creates_parent_directories():

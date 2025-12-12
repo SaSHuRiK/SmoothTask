@@ -40,7 +40,9 @@ def train_ranker(db_path: Path, model_out: Path, onnx_out: Path | None = None):
             raise ValueError(f"Путь для сохранения ONNX модели указывает на директорию: {onnx_out}")
 
     df = load_snapshots_as_frame(db_path)
-    X, y, group_id, cat_features = build_feature_matrix(df)
+    # Для ONNX экспорта не используем категориальные фичи
+    use_categorical = onnx_out is None
+    X, y, group_id, cat_features = build_feature_matrix(df, use_categorical=use_categorical)
 
     train_pool = Pool(
         data=X,

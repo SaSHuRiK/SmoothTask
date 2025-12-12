@@ -189,7 +189,7 @@ def _coerce_boolean(series: pd.Series, column: str) -> pd.Series:
 
 
 def build_feature_matrix(
-    df: pd.DataFrame,
+    df: pd.DataFrame, use_categorical: bool = True
 ) -> Tuple[pd.DataFrame, pd.Series, pd.Series, List[int]]:
     """
     Строит матрицу фич X, таргеты y, group_id и список категориальных фич.
@@ -198,6 +198,11 @@ def build_feature_matrix(
     обучения CatBoostRanker. Извлекает числовые, булевые и категориальные
     фичи, выбирает таргет (teacher_score в приоритете, иначе responsiveness_score)
     и группирует данные по snapshot_id.
+
+    Args:
+        df: DataFrame со снапшотами (должен содержать столбец snapshot_id)
+        use_categorical: Использовать категориальные фичи (по умолчанию True)
+                        Если False, категориальные фичи не включаются в матрицу
 
     Args:
         df: DataFrame со снапшотами (должен содержать столбец snapshot_id)
@@ -324,11 +329,12 @@ def build_feature_matrix(
 
     # Категориальные фичи
     cat_feature_indices: list[int] = []
-    for col in _CAT_COLS:
-        series = _ensure_column(work_df, col, "unknown").astype("string")
-        features[col] = series.fillna("unknown")
-        cat_feature_indices.append(len(column_order))
-        column_order.append(col)
+    if use_categorical:
+        for col in _CAT_COLS:
+            series = _ensure_column(work_df, col, "unknown").astype("string")
+            features[col] = series.fillna("unknown")
+            cat_feature_indices.append(len(column_order))
+            column_order.append(col)
 
     X = pd.DataFrame(features, columns=column_order)
     return X, target, group_id, cat_feature_indices
