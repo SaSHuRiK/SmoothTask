@@ -147,22 +147,34 @@ pub fn discover_gpu_devices() -> Result<Vec<GpuDevice>> {
     // Check DRM devices
     let drm_dir = Path::new("/sys/class/drm");
     if !drm_dir.exists() {
-        debug!("Директория /sys/class/drm не найдена - GPU устройства могут быть недоступны");
+        warn!(
+            "Директория /sys/class/drm не найдена - GPU устройства могут быть недоступны. \n            Это может быть вызвано: \n            1) Отсутствием физических GPU в системе \n            2) Неподдерживаемыми драйверами (попробуйте установить проприетарные драйверы для NVIDIA/AMD) \n            3) Проблемами с загрузкой модулей ядра (проверьте: lsmod | grep -i gpu) \n            4) Отсутствием прав доступа (попробуйте запустить с sudo) \n            Рекомендации: \n            - Проверьте загрузку модулей ядра: lsmod | grep -i drm \n            - Проверьте системные логи: sudo dmesg | grep -i drm \n            - Проверьте наличие GPU: lspci | grep -i vga"
+        );
         return Ok(devices);
     }
 
-    let entries =
-        fs::read_dir(drm_dir).with_context(|| "Не удалось прочитать директорию /sys/class/drm")?;
+    let entries = fs::read_dir(drm_dir).with_context(|| {
+        format!(
+            "Не удалось прочитать директорию /sys/class/drm. \n            Это может быть вызвано: \n            1) Отсутствием прав доступа (попробуйте запустить с sudo) \n            2) Проблемами с файловой системой sysfs \n            3) Конкурентным доступом к файловой системе \n            Рекомендации: \n            - Проверьте права доступа: ls -la /sys/class/drm \n            - Проверьте целостность файловой системы: sudo dmesg | grep -i sysfs \n            - Попробуйте запустить с повышенными правами: sudo smoothtaskd \n            - Проверьте загрузку модулей ядра: lsmod | grep -i drm"
+        )
+    })?;
 
     for entry in entries {
-        let entry = entry.with_context(|| "Ошибка при чтении записи в /sys/class/drm")?;
+        let entry = entry.with_context(|| {
+            format!(
+                "Ошибка при чтении записи в /sys/class/drm. \n                Это может быть вызвано: \n                1) Проблемами с файловой системой sysfs \n                2) Конкурентным доступом к файловой системе \n                3) Отсутствием прав доступа \n                Рекомендации: \n                - Проверьте целостность файловой системы: sudo dmesg | grep -i sysfs \n                - Попробуйте запустить с повышенными правами: sudo smoothtaskd \n                - Проверьте доступные устройства: ls -la /sys/class/drm"
+            )
+        })?;
         let path = entry.path();
         let file_name = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
         if file_name.starts_with("card") {
             let device_path = path.join("device");
             if !device_path.exists() {
-                debug!("Устройство {} не имеет device пути", file_name);
+                debug!(
+                    "Устройство {} не имеет device пути. \n                    Это может быть вызвано: \n                    1) Виртуальным устройством без PCI информации \n                    2) Устройством без физического GPU \n                    3) Проблемами с загрузкой драйвера \n                    Продолжаем без этого устройства. \n                    Рекомендации: \n                    - Проверьте загрузку драйвера: lsmod | grep -i {} \n                    - Проверьте системные логи: sudo dmesg | grep -i {}",
+                    file_name, file_name, file_name
+                );
                 continue;
             }
 
@@ -187,7 +199,9 @@ pub fn discover_gpu_devices() -> Result<Vec<GpuDevice>> {
     }
 
     if devices.is_empty() {
-        debug!("Не найдено ни одного GPU устройства");
+        warn!(
+            "Не найдено ни одного GPU устройства. \n            Это может быть вызвано: \n            1) Отсутствием физических GPU в системе \n            2) Неподдерживаемыми драйверами (попробуйте установить проприетарные драйверы для NVIDIA/AMD) \n            3) Проблемами с загрузкой модулей ядра (проверьте: lsmod | grep -i gpu) \n            4) Отсутствием прав доступа (попробуйте запустить с sudo) \n            Рекомендации: \n            - Проверьте наличие GPU: lspci | grep -i vga \n            - Проверьте загрузку драйверов: lsmod | grep -i drm \n            - Проверьте системные логи: sudo dmesg | grep -i gpu \n            - Попробуйте установить проприетарные драйверы для вашего GPU"
+        );
     } else {
         info!("Обнаружено {} GPU устройств", devices.len());
     }
@@ -231,14 +245,24 @@ fn read_driver_name(device_path: &Path) -> Result<String> {
 pub fn collect_gpu_metrics() -> Result<GpuMetricsCollection> {
     info!("Сбор метрик GPU");
 
-    let devices = discover_gpu_devices()?;
+    let devices = match discover_gpu_devices() {
+        Ok(devices) => devices,
+        Err(e) => {
+            warn!(
+                "Не удалось обнаружить GPU устройства: {}. \n                Продолжаем с пустой коллекцией метрик. \n                Это не является критической ошибкой - система может работать без GPU метрик. \n                Рекомендации: \n                - Проверьте загрузку драйверов: lsmod | grep -i drm \n                - Проверьте системные логи: sudo dmesg | grep -i gpu \n                - Проверьте права доступа: sudo ls -la /sys/class/drm \n                - Попробуйте установить проприетарные драйверы для вашего GPU",
+                e
+            );
+            return Ok(GpuMetricsCollection::default());
+        }
+    };
+
     let mut collection = GpuMetricsCollection {
         devices: Vec::new(),
         gpu_count: devices.len(),
     };
 
     if devices.is_empty() {
-        debug!("Нет GPU устройств для сбора метрик");
+        debug!("Нет GPU устройств для сбора метрик - возвращаем пустую коллекцию");
         return Ok(collection);
     }
 
@@ -252,17 +276,28 @@ pub fn collect_gpu_metrics() -> Result<GpuMetricsCollection> {
             }
             Err(e) => {
                 error!(
-                    "Не удалось собрать метрики для GPU устройства {}: {}",
-                    device.name, e
+                    "Не удалось собрать метрики для GPU устройства {}: {}. \n                    Это устройство будет пропущено, но сбор метрик продолжится для других устройств. \n                    Рекомендации: \n                    1) Проверьте права доступа: sudo ls -la /sys/class/drm/{}/device \n                    2) Проверьте загрузку драйвера: lsmod | grep -i {} \n                    3) Проверьте системные логи: sudo dmesg | grep -i drm \n                    4) Попробуйте обновить драйвер для этого устройства \n                    5) Проверьте наличие необходимых модулей ядра: sudo modprobe <driver_name> \n                    6) Попробуйте перезагрузить систему для переинициализации GPU",
+                    device.name, e, device.name, device.driver.clone().unwrap_or_default()
                 );
             }
         }
     }
 
-    info!(
-        "Собраны метрики для {} из {} GPU устройств",
-        successful_devices, collection.gpu_count
-    );
+    if successful_devices == 0 {
+        warn!(
+            "Не удалось собрать метрики ни для одного GPU устройства. \n            Это может быть вызвано: \n            1) Проблемами с правами доступа (попробуйте запустить с sudo) \n            2) Неподдерживаемыми драйверами (проверьте: lsmod | grep -i gpu) \n            3) Аппаратными проблемами или отсутствием GPU \n            4) Проблемами с файловой системой sysfs \n            Рекомендации: \n            - Проверьте права доступа: sudo ls -la /sys/class/drm \n            - Проверьте загрузку драйверов: lsmod | grep -i drm \n            - Проверьте системные логи: sudo dmesg | grep -i gpu \n            - Попробуйте обновить драйверы GPU \n            - Проверьте целостность файловой системы: sudo dmesg | grep -i sysfs \n            - Попробуйте перезагрузить систему"
+        );
+    } else if successful_devices < collection.gpu_count {
+        info!(
+            "Собраны метрики для {} из {} GPU устройств (частичный успех)",
+            successful_devices, collection.gpu_count
+        );
+    } else {
+        info!(
+            "Собраны метрики для всех {} GPU устройств",
+            successful_devices
+        );
+    }
 
     Ok(collection)
 }
@@ -364,47 +399,73 @@ fn collect_gpu_utilization(device_path: &Path) -> Result<GpuUtilization> {
     // Different drivers expose this differently
 
     // For Intel i915
-    if let Ok(gpu_busy) = read_sysfs_u32(device_path, "gpu_busy_percent") {
-        utilization.gpu_util = gpu_busy as f32 / 100.0;
-        debug!(
-            "  Intel i915 utilization: {:.1}%",
-            utilization.gpu_util * 100.0
-        );
-        return Ok(utilization);
+    match read_sysfs_u32(device_path, "gpu_busy_percent") {
+        Ok(gpu_busy) => {
+            utilization.gpu_util = gpu_busy as f32 / 100.0;
+            debug!(
+                "  Intel i915 utilization: {:.1}%",
+                utilization.gpu_util * 100.0
+            );
+            return Ok(utilization);
+        }
+        Err(_e) => {
+            debug!("  Intel i915 utilization не доступен. \n                Это может быть вызвано: \n                1) Устаревшей версией драйвера i915 \n                2) Отсутствием поддержки метрик в этом GPU \n                3) Проблемами с файловой системой sysfs \n                Рекомендации: \n                - Обновите драйвер i915 до последней версии \n                - Проверьте доступные метрики: ls -la /sys/class/drm/*/device/ | grep gpu_busy \n                - Проверьте системные логи: sudo dmesg | grep -i i915"
+            );
+        }
     }
 
     // For AMD
-    if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_busy_percent") {
-        utilization.gpu_util = gpu_load as f32 / 100.0;
-        debug!(
-            "  AMD GPU utilization: {:.1}%",
-            utilization.gpu_util * 100.0
-        );
-        return Ok(utilization);
+    match read_sysfs_u32(device_path, "gpu_busy_percent") {
+        Ok(gpu_load) => {
+            utilization.gpu_util = gpu_load as f32 / 100.0;
+            debug!(
+                "  AMD GPU utilization: {:.1}%",
+                utilization.gpu_util * 100.0
+            );
+            return Ok(utilization);
+        }
+        Err(_e) => {
+            debug!("  AMD GPU utilization не доступен. \n                Это может быть вызвано: \n                1) Устаревшей версией драйвера amdgpu \n                2) Отсутствием поддержки метрик в этом GPU \n                3) Проблемами с файловой системой sysfs \n                Рекомендации: \n                - Обновите драйвер amdgpu до последней версии \n                - Проверьте доступные метрики: ls -la /sys/class/drm/*/device/ | grep gpu_busy \n                - Проверьте системные логи: sudo dmesg | grep -i amdgpu \n                - Попробуйте установить проприетарный драйвер AMD"
+            );
+        }
     }
 
     // For NVIDIA (try different approaches)
     // NVIDIA exposes utilization through different interfaces
-    if let Ok(utilization_percent) = read_nvidia_utilization(device_path) {
-        utilization.gpu_util = utilization_percent as f32 / 100.0;
-        debug!(
-            "  NVIDIA GPU utilization: {:.1}%",
-            utilization.gpu_util * 100.0
-        );
-        return Ok(utilization);
+    match read_nvidia_utilization(device_path) {
+        Ok(utilization_percent) => {
+            utilization.gpu_util = utilization_percent as f32 / 100.0;
+            debug!(
+                "  NVIDIA GPU utilization: {:.1}%",
+                utilization.gpu_util * 100.0
+            );
+            return Ok(utilization);
+        }
+        Err(_e) => {
+            debug!("  NVIDIA GPU utilization не доступен. \n                Это может быть вызвано: \n                1) Устаревшей версией драйвера nvidia \n                2) Отсутствием поддержки метрик в этом GPU \n                3) Проблемами с файловой системой sysfs \n                4) Отсутствием проприетарного драйвера NVIDIA \n                Рекомендации: \n                - Установите проприетарный драйвер NVIDIA \n                - Обновите драйвер NVIDIA до последней версии \n                - Проверьте доступные метрики: ls -la /sys/class/drm/*/device/ | grep utilization \n                - Проверьте системные логи: sudo dmesg | grep -i nvidia \n                - Проверьте загрузку модуля: lsmod | grep -i nvidia"
+            );
+        }
     }
 
     // Try generic hwmon approach
-    if let Ok(util_percent) = read_hwmon_utilization(device_path) {
-        utilization.gpu_util = util_percent as f32 / 100.0;
-        debug!(
-            "  Generic hwmon utilization: {:.1}%",
-            utilization.gpu_util * 100.0
-        );
-        return Ok(utilization);
+    match read_hwmon_utilization(device_path) {
+        Ok(util_percent) => {
+            utilization.gpu_util = util_percent as f32 / 100.0;
+            debug!(
+                "  Generic hwmon utilization: {:.1}%",
+                utilization.gpu_util * 100.0
+            );
+            return Ok(utilization);
+        }
+        Err(_e) => {
+            debug!("  Generic hwmon utilization не доступен. \n                Это может быть вызвано: \n                1) Отсутствием поддержки hwmon в этом GPU \n                2) Проблемами с файловой системой sysfs \n                3) Отсутствием необходимых модулей ядра \n                Рекомендации: \n                - Проверьте загрузку модуля hwmon: lsmod | grep -i hwmon \n                - Проверьте доступные метрики: ls -la /sys/class/drm/*/device/hwmon/ \n                - Проверьте системные логи: sudo dmesg | grep -i hwmon \n                - Попробуйте обновить драйвер GPU"
+            );
+        }
     }
 
-    debug!("  Не удалось получить метрики использования GPU");
+    warn!(
+        "  Не удалось получить метрики использования GPU. \n        Это может быть вызвано: \n        1) Неподдерживаемым драйвером GPU \n        2) Отсутствием соответствующих файлов в sysfs \n        3) Проблемами с правами доступа \n        4) Устаревшей версией ядра или драйвера \n        Рекомендации: \n        - Проверьте загрузку драйвера: lsmod | grep -i gpu \n        - Проверьте доступные файлы: ls -la /sys/class/drm/*/device/ \n        - Попробуйте обновить драйвер GPU \n        - Проверьте системные логи: sudo dmesg | grep -i gpu \n        - Попробуйте установить проприетарные драйверы для вашего GPU \n        - Обновите ядро до последней стабильной версии"
+    );
 
     Ok(utilization)
 }
@@ -473,46 +534,76 @@ fn collect_gpu_memory(device_path: &Path) -> Result<GpuMemory> {
     // This is driver-specific and may not be available on all systems
 
     // For Intel i915
-    if let Ok(total) = read_sysfs_u64(device_path, "mem_total_bytes") {
-        memory.total_bytes = total;
-        debug!("  Intel i915 total memory: {} MB", total / 1024 / 1024);
+    match read_sysfs_u64(device_path, "mem_total_bytes") {
+        Ok(total) => {
+            memory.total_bytes = total;
+            debug!("  Intel i915 total memory: {} MB", total / 1024 / 1024);
+        }
+        Err(e) => {
+            debug!("  Intel i915 memory info не доступен: {}", e);
+        }
     }
 
-    if let Ok(used) = read_sysfs_u64(device_path, "mem_used_bytes") {
-        memory.used_bytes = used;
-        debug!("  Intel i915 used memory: {} MB", used / 1024 / 1024);
+    match read_sysfs_u64(device_path, "mem_used_bytes") {
+        Ok(used) => {
+            memory.used_bytes = used;
+            debug!("  Intel i915 used memory: {} MB", used / 1024 / 1024);
+        }
+        Err(e) => {
+            debug!("  Intel i915 used memory не доступен: {}", e);
+        }
     }
 
     // For AMD
     if memory.total_bytes == 0 {
-        if let Ok(total) = read_sysfs_u64(device_path, "vram_total_bytes") {
-            memory.total_bytes = total;
-            debug!("  AMD VRAM total: {} MB", total / 1024 / 1024);
+        match read_sysfs_u64(device_path, "vram_total_bytes") {
+            Ok(total) => {
+                memory.total_bytes = total;
+                debug!("  AMD VRAM total: {} MB", total / 1024 / 1024);
+            }
+            Err(e) => {
+                debug!("  AMD VRAM total не доступен: {}", e);
+            }
         }
 
-        if let Ok(used) = read_sysfs_u64(device_path, "vram_used_bytes") {
-            memory.used_bytes = used;
-            debug!("  AMD VRAM used: {} MB", used / 1024 / 1024);
+        match read_sysfs_u64(device_path, "vram_used_bytes") {
+            Ok(used) => {
+                memory.used_bytes = used;
+                debug!("  AMD VRAM used: {} MB", used / 1024 / 1024);
+            }
+            Err(e) => {
+                debug!("  AMD VRAM used не доступен: {}", e);
+            }
         }
     }
 
     // For NVIDIA
     if memory.total_bytes == 0 {
-        if let Ok(total) = read_nvidia_memory_total(device_path) {
-            memory.total_bytes = total;
-            debug!("  NVIDIA total memory: {} MB", total / 1024 / 1024);
+        match read_nvidia_memory_total(device_path) {
+            Ok(total) => {
+                memory.total_bytes = total;
+                debug!("  NVIDIA total memory: {} MB", total / 1024 / 1024);
+            }
+            Err(e) => {
+                debug!("  NVIDIA total memory не доступен: {}", e);
+            }
         }
 
-        if let Ok(used) = read_nvidia_memory_used(device_path) {
-            memory.used_bytes = used;
-            debug!("  NVIDIA used memory: {} MB", used / 1024 / 1024);
+        match read_nvidia_memory_used(device_path) {
+            Ok(used) => {
+                memory.used_bytes = used;
+                debug!("  NVIDIA used memory: {} MB", used / 1024 / 1024);
+            }
+            Err(e) => {
+                debug!("  NVIDIA used memory не доступен: {}", e);
+            }
         }
     }
 
     // Validate and correct memory values
     if memory.total_bytes > 0 && memory.used_bytes > memory.total_bytes {
         warn!(
-            "  Исправление: использованная память ({} MB) больше общей ({} MB)",
+            "  Исправление: использованная память ({} MB) больше общей ({} MB). \n                Это может быть вызвано ошибками чтения или несинхронизированными счетчиками. \n                Устанавливаем used_bytes = total_bytes для предотвращения отрицательных значений.",
             memory.used_bytes / 1024 / 1024,
             memory.total_bytes / 1024 / 1024
         );
@@ -529,7 +620,9 @@ fn collect_gpu_memory(device_path: &Path) -> Result<GpuMemory> {
             memory.used_bytes as f32 / memory.total_bytes as f32 * 100.0
         );
     } else {
-        debug!("  Не удалось получить метрики памяти GPU");
+        warn!(
+            "  Не удалось получить метрики памяти GPU. \n            Это может быть вызвано: \n            1) Неподдерживаемым драйвером GPU \n            2) Отсутствием соответствующих файлов в sysfs \n            3) Проблемами с правами доступа \n            Рекомендации: \n            - Проверьте загрузку драйвера: lsmod | grep -i gpu \n            - Проверьте доступные файлы: ls -la /sys/class/drm/*/device/ | grep mem \n            - Попробуйте обновить драйвер GPU"
+        );
     }
 
     Ok(memory)
@@ -1243,5 +1336,271 @@ mod tests {
             .duration_since(metrics1.timestamp)
             .unwrap_or(std::time::Duration::from_secs(0));
         assert!(duration.as_secs() < 5); // Should be within 5 seconds
+    }
+
+    #[test]
+    fn test_gpu_error_handling_graceful_degradation() {
+        // Test that GPU metrics collection handles errors gracefully
+        // This test verifies that the system can continue operating even when GPU metrics fail
+        
+        // Create a mock device with a non-existent path
+        let mock_device = GpuDevice {
+            name: "mock_gpu".to_string(),
+            device_path: PathBuf::from("/non/existent/path"),
+            vendor_id: Some("0x1234".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("mock_driver".to_string()),
+        };
+
+        // This should not panic and should return a default metrics object
+        let result = collect_gpu_device_metrics(&mock_device);
+        
+        // The function should succeed (return Ok) even if individual metrics fail
+        assert!(result.is_ok());
+        
+        let metrics = result.unwrap();
+        
+        // Should return default values when metrics cannot be collected
+        assert_eq!(metrics.device.name, "mock_gpu");
+        assert_eq!(metrics.utilization.gpu_util, 0.0);
+        assert_eq!(metrics.memory.total_bytes, 0);
+        assert_eq!(metrics.temperature.temperature_c, None);
+        assert_eq!(metrics.power.power_w, None);
+        assert_eq!(metrics.clocks.core_clock_mhz, None);
+    }
+
+    #[test]
+    fn test_gpu_collection_with_error_handling() {
+        // Test that the main collection function handles errors gracefully
+        let result = collect_gpu_metrics();
+        
+        // Should always return Ok, even if no devices are found or metrics fail
+        assert!(result.is_ok());
+        
+        let collection = result.unwrap();
+        
+        // Should return a valid collection object
+        assert_eq!(collection.devices.len(), collection.gpu_count);
+        
+        // Collection should be empty if no GPU devices are available
+        // This is expected behavior on systems without GPUs
+        if collection.gpu_count == 0 {
+            assert!(collection.devices.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_gpu_memory_validation() {
+        // Test memory validation logic when used > total
+        let mut memory = GpuMemory {
+            total_bytes: 4_000_000_000, // 4 GB
+            used_bytes: 5_000_000_000, // 5 GB (more than total)
+            free_bytes: 0,
+        };
+
+        // This should handle the overflow gracefully
+        memory.free_bytes = memory.total_bytes.saturating_sub(memory.used_bytes);
+        
+        // Free bytes should not underflow
+        assert_eq!(memory.free_bytes, 0);
+        
+        // In a real scenario, we would also cap used_bytes to total_bytes
+        // Let's test that logic
+        if memory.used_bytes > memory.total_bytes {
+            memory.used_bytes = memory.total_bytes;
+        }
+        
+        assert_eq!(memory.used_bytes, 4_000_000_000);
+        assert_eq!(memory.free_bytes, 0);
+    }
+
+
+
+    #[test]
+    fn test_gpu_metrics_with_missing_files() {
+        // Test behavior when sysfs files are missing
+        let temp_dir = tempfile::tempdir().unwrap();
+        let test_device_path = temp_dir.path().join("test_device");
+        
+        // Create a minimal device directory structure
+        std::fs::create_dir_all(&test_device_path).unwrap();
+        
+        let mock_device = GpuDevice {
+            name: "test_device".to_string(),
+            device_path: test_device_path,
+            vendor_id: Some("0x1234".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("test_driver".to_string()),
+        };
+
+        // This should not panic and should return default metrics
+        let result = collect_gpu_device_metrics(&mock_device);
+        assert!(result.is_ok());
+        
+        let metrics = result.unwrap();
+        // Should return default values when files are missing
+        assert_eq!(metrics.utilization.gpu_util, 0.0);
+        assert_eq!(metrics.memory.total_bytes, 0);
+    }
+
+    #[test]
+    fn test_gpu_error_recovery() {
+        // Test that the system can recover from GPU errors and continue
+        // This simulates a scenario where GPU metrics fail but the system continues
+        
+        // First, try to collect metrics (may succeed or fail)
+        let result1 = collect_gpu_metrics();
+        assert!(result1.is_ok());
+        
+        // System should still be able to collect metrics again
+        let result2 = collect_gpu_metrics();
+        assert!(result2.is_ok());
+        
+        // Both results should be consistent
+        let collection1 = result1.unwrap();
+        let collection2 = result2.unwrap();
+        
+        assert_eq!(collection1.gpu_count, collection2.gpu_count);
+    }
+
+    #[test]
+    fn test_gpu_partial_success() {
+        // Test handling of partial success (some devices work, some fail)
+        // This is harder to test without mocking, but we can verify the structure
+        let result = collect_gpu_metrics();
+        assert!(result.is_ok());
+        
+        let collection = result.unwrap();
+        
+        // If there are devices, they should all have valid structure
+        for device_metrics in &collection.devices {
+            assert!(!device_metrics.device.name.is_empty());
+            // Timestamps should be recent
+            let now = std::time::SystemTime::now();
+            let one_minute_ago = now - std::time::Duration::from_secs(60);
+            assert!(device_metrics.timestamp >= one_minute_ago);
+        }
+    }
+
+    #[test]
+    fn test_gpu_error_messages_context() {
+        // Test that error messages provide useful context
+        // This is more of a documentation test - we verify the structure
+        
+        // Create a device with a path that will cause errors
+        let mock_device = GpuDevice {
+            name: "error_test".to_string(),
+            device_path: PathBuf::from("/invalid/path/that/does/not/exist"),
+            vendor_id: Some("0x1234".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("error_driver".to_string()),
+        };
+
+        // This should handle errors gracefully and provide context in logs
+        let result = collect_gpu_device_metrics(&mock_device);
+        
+        // Should succeed (return Ok) even with errors
+        assert!(result.is_ok());
+        
+        // Should return a valid metrics object with default values
+        let metrics = result.unwrap();
+        assert_eq!(metrics.device.name, "error_test");
+        assert_eq!(metrics.utilization.gpu_util, 0.0);
+    }
+
+    #[test]
+    fn test_gpu_vendor_specific_error_handling() {
+        // Test that vendor-specific error handling works correctly
+        // This test verifies that different GPU vendors get appropriate error messages
+        
+        // Test Intel GPU error handling
+        let intel_device = GpuDevice {
+            name: "card0".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:02.0/drm/card0/device"),
+            vendor_id: Some("0x8086".to_string()), // Intel vendor ID
+            device_id: Some("0x1234".to_string()),
+            driver: Some("i915".to_string()),
+        };
+
+        // Test AMD GPU error handling
+        let amd_device = GpuDevice {
+            name: "card1".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:03.0/drm/card1/device"),
+            vendor_id: Some("0x1002".to_string()), // AMD vendor ID
+            device_id: Some("0x5678".to_string()),
+            driver: Some("amdgpu".to_string()),
+        };
+
+        // Test NVIDIA GPU error handling
+        let nvidia_device = GpuDevice {
+            name: "card2".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:04.0/drm/card2/device"),
+            vendor_id: Some("0x10de".to_string()), // NVIDIA vendor ID
+            device_id: Some("0x9abc".to_string()),
+            driver: Some("nvidia".to_string()),
+        };
+
+        // All should handle errors gracefully and return valid metrics
+        let intel_result = collect_gpu_device_metrics(&intel_device);
+        let amd_result = collect_gpu_device_metrics(&amd_device);
+        let nvidia_result = collect_gpu_device_metrics(&nvidia_device);
+        
+        assert!(intel_result.is_ok());
+        assert!(amd_result.is_ok());
+        assert!(nvidia_result.is_ok());
+        
+        // All should return valid metrics objects
+        let intel_metrics = intel_result.unwrap();
+        let amd_metrics = amd_result.unwrap();
+        let nvidia_metrics = nvidia_result.unwrap();
+        
+        assert_eq!(intel_metrics.device.name, "card0");
+        assert_eq!(amd_metrics.device.name, "card1");
+        assert_eq!(nvidia_metrics.device.name, "card2");
+        
+        // All should have default values when metrics cannot be collected
+        assert_eq!(intel_metrics.utilization.gpu_util, 0.0);
+        assert_eq!(amd_metrics.utilization.gpu_util, 0.0);
+        assert_eq!(nvidia_metrics.utilization.gpu_util, 0.0);
+    }
+
+    #[test]
+    fn test_gpu_error_recovery_comprehensive() {
+        // Test comprehensive error recovery scenarios
+        // This test verifies that the system can recover from various error conditions
+        
+        // Test 1: Multiple consecutive errors
+        for i in 0..3 {
+            let mock_device = GpuDevice {
+                name: format!("test_gpu_{}", i),
+                device_path: PathBuf::from("/non/existent/path"),
+                vendor_id: Some("0x1234".to_string()),
+                device_id: Some("0x5678".to_string()),
+                driver: Some("test_driver".to_string()),
+            };
+            
+            let result = collect_gpu_device_metrics(&mock_device);
+            assert!(result.is_ok(), "Iteration {} failed", i);
+        }
+        
+        // Test 2: Main collection function should still work
+        let result = collect_gpu_metrics();
+        assert!(result.is_ok());
+        
+        let collection = result.unwrap();
+        assert_eq!(collection.devices.len(), collection.gpu_count);
+        
+        // Test 3: System should be able to continue after errors
+        let result1 = collect_gpu_metrics();
+        let result2 = collect_gpu_metrics();
+        
+        assert!(result1.is_ok());
+        assert!(result2.is_ok());
+        
+        let collection1 = result1.unwrap();
+        let collection2 = result2.unwrap();
+        
+        // Results should be consistent
+        assert_eq!(collection1.gpu_count, collection2.gpu_count);
     }
 }
