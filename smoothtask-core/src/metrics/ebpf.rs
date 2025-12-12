@@ -6432,4 +6432,6 @@ mod ebpf_memory_optimization_tests {
             panic!("Детализированная статистика GPU должна быть сохранена");
         }
     }
+
+
 }
