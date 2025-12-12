@@ -3,7 +3,7 @@
 //! Этот пример демонстрирует, как использовать eBPF модуль из smoothtask-core
 //! для сбора высокопроизводительных системных метрик.
 
-use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics};
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds, SyscallStat, NetworkStat, ConnectionStat};
 use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
@@ -38,6 +38,8 @@ fn main() -> anyhow::Result<()> {
         enable_gpu_monitoring: false, // Отключено для примера
         enable_filesystem_monitoring: false, // Отключено для примера
         enable_process_monitoring: false, // Отключено для примера
+        enable_notifications: false,
+        notification_thresholds: EbpfNotificationThresholds::default(),
         collection_interval: Duration::from_secs(1),
         enable_caching: true,
         batch_size: 50,
@@ -171,7 +173,7 @@ fn display_metrics(metrics: &EbpfMetrics) {
 }
 
 /// Отображение топ системных вызовов
-fn display_top_syscalls(details: &[crate::metrics::ebpf::SyscallStat], top_n: usize) {
+fn display_top_syscalls(details: &[SyscallStat], top_n: usize) {
     println!("   Top {} System Calls:", top_n);
     
     let mut sorted_details = details.to_vec();
@@ -188,7 +190,7 @@ fn display_top_syscalls(details: &[crate::metrics::ebpf::SyscallStat], top_n: us
 }
 
 /// Отображение топ сетевой статистики
-fn display_top_network_stats(details: &[crate::metrics::ebpf::NetworkStat], top_n: usize) {
+fn display_top_network_stats(details: &[NetworkStat], top_n: usize) {
     println!("   Top {} Network Stats:", top_n);
     
     let mut sorted_details = details.to_vec();
@@ -212,7 +214,7 @@ fn display_top_network_stats(details: &[crate::metrics::ebpf::NetworkStat], top_
 }
 
 /// Отображение активных соединений
-fn display_active_connections(details: &[crate::metrics::ebpf::ConnectionStat], top_n: usize) {
+fn display_active_connections(details: &[ConnectionStat], top_n: usize) {
     println!("   Top {} Active Connections:", top_n);
     
     let mut sorted_details = details.to_vec();

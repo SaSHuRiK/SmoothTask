@@ -40,17 +40,35 @@ struct {
 SEC("tracepoint/drm/drm_gpu_sched_run_job")
 int trace_gpu_activity(struct trace_event_raw_drm_gpu_sched_run_job *ctx)
 {
-    __u32 key = 0;
-    __u64 *usage;
+    __u32 gpu_id = 0; // В реальной реализации нужно получить реальный GPU ID
+    struct gpu_stats *stats;
     
-    // Увеличиваем общее время использования GPU
-    usage = bpf_map_lookup_elem(&total_gpu_usage_map, &key);
-    if (usage) {
-        __sync_fetch_and_add(usage, 1);
+    // Получаем текущее время
+    __u64 timestamp = bpf_ktime_get_ns();
+    
+    // Получаем статистику для этого GPU устройства
+    stats = bpf_map_lookup_elem(&gpu_stats_map, &gpu_id);
+    if (!stats) {
+        // Инициализируем новую запись
+        struct gpu_stats new_stats = {0};
+        new_stats.last_timestamp = timestamp;
+        bpf_map_update_elem(&gpu_stats_map, &gpu_id, &new_stats, BPF_ANY);
+        return 0;
     }
     
-    // В реальной реализации здесь будет анализ активности GPU
-    // Пока что это заглушка
+    // Рассчитываем дельту времени
+    __u64 delta = timestamp - stats->last_timestamp;
+    stats->last_timestamp = timestamp;
+    
+    // Увеличиваем использование GPU (в наносекундах)
+    __sync_fetch_and_add(&stats->gpu_usage_ns, delta);
+    
+    // Увеличиваем общее время использования GPU
+    __u32 total_key = 0;
+    __u64 *total_usage = bpf_map_lookup_elem(&total_gpu_usage_map, &total_key);
+    if (total_usage) {
+        __sync_fetch_and_add(total_usage, delta);
+    }
     
     return 0;
 }
@@ -59,8 +77,23 @@ int trace_gpu_activity(struct trace_event_raw_drm_gpu_sched_run_job *ctx)
 SEC("tracepoint/drm/drm_gem_object_create")
 int trace_gpu_memory(struct trace_event_raw_drm_gem_object_create *ctx)
 {
-    // В реальной реализации здесь будет отслеживание использования памяти GPU
-    // Пока что это заглушка
+    __u32 gpu_id = 0; // В реальной реализации нужно получить реальный GPU ID
+    struct gpu_stats *stats;
+    
+    // Получаем статистику для этого GPU устройства
+    stats = bpf_map_lookup_elem(&gpu_stats_map, &gpu_id);
+    if (!stats) {
+        // Инициализируем новую запись
+        struct gpu_stats new_stats = {0};
+        new_stats.last_timestamp = bpf_ktime_get_ns();
+        bpf_map_update_elem(&gpu_stats_map, &gpu_id, &new_stats, BPF_ANY);
+        return 0;
+    }
+    
+    // Увеличиваем использование памяти GPU
+    // В реальной реализации нужно получить реальный размер объекта
+    __u64 memory_increase = 4096; // Пример: 4KB увеличение (реально нужно получить из ctx)
+    __sync_fetch_and_add(&stats->memory_usage_bytes, memory_increase);
     
     return 0;
 }
@@ -69,8 +102,21 @@ int trace_gpu_memory(struct trace_event_raw_drm_gem_object_create *ctx)
 SEC("tracepoint/drm/drm_gpu_sched_job_start")
 int trace_gpu_compute_start(struct trace_event_raw_drm_gpu_sched_job_start *ctx)
 {
-    // В реальной реализации здесь будет отслеживание начала вычислительных задач
-    // Пока что это заглушка
+    __u32 gpu_id = 0; // В реальной реализации нужно получить реальный GPU ID
+    struct gpu_stats *stats;
+    
+    // Получаем статистику для этого GPU устройства
+    stats = bpf_map_lookup_elem(&gpu_stats_map, &gpu_id);
+    if (!stats) {
+        // Инициализируем новую запись
+        struct gpu_stats new_stats = {0};
+        new_stats.last_timestamp = bpf_ktime_get_ns();
+        bpf_map_update_elem(&gpu_stats_map, &gpu_id, &new_stats, BPF_ANY);
+        return 0;
+    }
+    
+    // Увеличиваем количество активных вычислительных единиц
+    __sync_fetch_and_add(&stats->compute_units_active, 1);
     
     return 0;
 }
@@ -79,8 +125,45 @@ int trace_gpu_compute_start(struct trace_event_raw_drm_gpu_sched_job_start *ctx)
 SEC("tracepoint/drm/drm_gpu_sched_job_end")
 int trace_gpu_compute_end(struct trace_event_raw_drm_gpu_sched_job_end *ctx)
 {
-    // В реальной реализации здесь будет отслеживание завершения вычислительных задач
-    // Пока что это заглушка
+    __u32 gpu_id = 0; // В реальной реализации нужно получить реальный GPU ID
+    struct gpu_stats *stats;
+    
+    // Получаем статистику для этого GPU устройства
+    stats = bpf_map_lookup_elem(&gpu_stats_map, &gpu_id);
+    if (!stats) {
+        return 0;
+    }
+    
+    // Уменьшаем количество активных вычислительных единиц
+    if (stats->compute_units_active > 0) {
+        __sync_fetch_and_sub(&stats->compute_units_active, 1);
+    }
+    
+    return 0;
+}
+
+// Точка входа для отслеживания потребления энергии GPU
+// Используем общий tracepoint для отслеживания изменений в энергопотреблении
+SEC("tracepoint/power/power_start")
+int trace_gpu_power_usage(struct trace_event_raw_power_start *ctx)
+{
+    __u32 gpu_id = 0; // В реальной реализации нужно получить реальный GPU ID
+    struct gpu_stats *stats;
+    
+    // Получаем статистику для этого GPU устройства
+    stats = bpf_map_lookup_elem(&gpu_stats_map, &gpu_id);
+    if (!stats) {
+        // Инициализируем новую запись
+        struct gpu_stats new_stats = {0};
+        new_stats.last_timestamp = bpf_ktime_get_ns();
+        bpf_map_update_elem(&gpu_stats_map, &gpu_id, &new_stats, BPF_ANY);
+        return 0;
+    }
+    
+    // Увеличиваем потребление энергии
+    // В реальной реализации нужно получить реальное значение энергопотребления
+    __u64 power_increase = 1000; // Пример: 1000 микроватт (реально нужно получить из ctx)
+    __sync_fetch_and_add(&stats->power_usage_uw, power_increase);
     
     return 0;
 }

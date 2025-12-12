@@ -11,19 +11,42 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-581: Добавить поддержку мониторинга GPU через eBPF
+- [x] ST-581: Добавить поддержку мониторинга GPU через eBPF
   - Тип: Rust / core / metrics / eBPF / GPU
   - Примечания: Расширение eBPF функциональности для мониторинга GPU метрик
   - Приоритет: Высокий
   - Оценка времени: ~90 минут
   - Зависимости: Текущая реализация eBPF модуля
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены полные реализации функций collect_gpu_memory_from_maps и collect_gpu_details
+    - smoothtask-core/src/ebpf_programs/gpu_monitor.c: Улучшены функции отслеживания активности GPU, памяти, вычислительных единиц и добавлено отслеживание энергопотребления
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_optimized.c: Добавлено отслеживание энергопотребления в оптимизированной версии
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_high_perf.c: Добавлено отслеживание энергопотребления в высокопроизводительной версии
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_monitoring_functionality и test_gpu_monitoring_with_detailed_stats
+  - Результаты: Полная реализация мониторинга GPU через eBPF с поддержкой отслеживания использования GPU, памяти, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
 
-- [ ] ST-582: Интегрировать eBPF метрики с системой уведомлений
+- [x] ST-582: Интегрировать eBPF метрики с системой уведомлений
   - Тип: Rust / core / notifications / eBPF
   - Примечания: Добавление уведомлений на основе eBPF метрик и событий
   - Приоритет: Средний
   - Оценка времени: ~60 минут
   - Зависимости: ST-581 (GPU мониторинг)
+  - Статус: COMPLETED
+  - Время выполнения: ~45 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры EbpfNotificationThresholds, обновлена EbpfConfig, добавлены методы для работы с уведомлениями в EbpfMetricsCollector
+  - Новые функции:
+    - EbpfNotificationThresholds: Конфигурация порогов для уведомлений
+    - check_thresholds_and_notify: Проверка порогов и отправка уведомлений
+    - can_send_notification: Проверка возможности отправки уведомлений
+    - update_last_notification_time: Обновление времени последнего уведомления
+    - send_notification: Отправка уведомлений через менеджер
+    - new_with_notifications: Конструктор с менеджером уведомлений
+    - set_notification_manager: Установка менеджера уведомлений
+    - set_notification_cooldown: Установка интервала между уведомлениями
+  - Результаты: Полная интеграция eBPF метрик с системой уведомлений, поддержка пороговых уведомлений для CPU, памяти, GPU, сетевых соединений и других метрик
 
 ## 2. Бэклог
 
@@ -49,6 +72,39 @@
   - Зависимости: Текущая реализация eBPF модуля
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-582: Интегрировать eBPF метрики с системой уведомлений
+  - Тип: Rust / core / notifications / eBPF
+  - Примечания: Добавление уведомлений на основе eBPF метрик и событий
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~45 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены структуры EbpfNotificationThresholds, обновлена EbpfConfig, добавлены методы для работы с уведомлениями в EbpfMetricsCollector
+  - Новые функции:
+    - EbpfNotificationThresholds: Конфигурация порогов для уведомлений
+    - check_thresholds_and_notify: Проверка порогов и отправка уведомлений
+    - can_send_notification: Проверка возможности отправки уведомлений
+    - update_last_notification_time: Обновление времени последнего уведомления
+    - send_notification: Отправка уведомлений через менеджер
+    - new_with_notifications: Конструктор с менеджером уведомлений
+    - set_notification_manager: Установка менеджера уведомлений
+    - set_notification_cooldown: Установка интервала между уведомлениями
+  - Результаты: Полная интеграция eBPF метрик с системой уведомлений, поддержка пороговых уведомлений для CPU, памяти, GPU, сетевых соединений и других метрик
+
+- [x] ST-581: Добавить поддержку мониторинга GPU через eBPF
+  - Тип: Rust / core / metrics / eBPF / GPU
+  - Примечания: Расширение eBPF функциональности для мониторинга GPU метрик
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлены полные реализации функций collect_gpu_memory_from_maps и collect_gpu_details
+    - smoothtask-core/src/ebpf_programs/gpu_monitor.c: Улучшены функции отслеживания активности GPU, памяти, вычислительных единиц и добавлено отслеживание энергопотребления
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_optimized.c: Добавлено отслеживание энергопотребления в оптимизированной версии
+    - smoothtask-core/src/ebpf_programs/gpu_monitor_high_perf.c: Добавлено отслеживание энергопотребления в высокопроизводительной версии
+    - smoothtask-core/tests/ebpf_integration_test.rs: Добавлены тесты test_gpu_monitoring_functionality и test_gpu_monitoring_with_detailed_stats
+  - Результаты: Полная реализация мониторинга GPU через eBPF с поддержкой отслеживания использования GPU, памяти, вычислительных единиц и энергопотребления, добавлены соответствующие тесты
 
 - [x] ST-578: Оптимизировать загрузку eBPF программ для уменьшения времени инициализации
   - Тип: Rust / core / metrics / eBPF

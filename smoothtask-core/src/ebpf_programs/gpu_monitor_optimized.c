@@ -14,7 +14,7 @@ struct gpu_stats_optimized {
     __u32 gpu_usage_pct;      // Использование GPU в процентах (упакованное)
     __u32 memory_usage_mb;    // Использование памяти в MB (упакованное)
     __u16 compute_units;       // Количество активных вычислительных единиц
-    __u16 reserved;            // Резерв для выравнивания
+    __u16 power_usage_uw;      // Потребление энергии в микроваттах (упакованное)
     __u64 last_timestamp;      // Последний timestamp для расчета дельты
 };
 
@@ -88,6 +88,24 @@ int trace_gpu_compute_start_optimized(struct trace_event_raw_drm_gpu_sched_job_s
     
     // Атомарное обновление вычислительных единиц
     __sync_fetch_and_add(&stats->compute_units, 1);
+    
+    return 0;
+}
+
+// Оптимизированная точка входа для отслеживания потребления энергии GPU
+SEC("tracepoint/power/power_start")
+int trace_gpu_power_usage_optimized(struct trace_event_raw_power_start *ctx)
+{
+    __u32 key = 0;
+    struct gpu_stats_optimized *stats;
+    
+    // Оптимизированный доступ к карте
+    stats = bpf_map_lookup_elem(&gpu_stats_map, &key);
+    if (!stats)
+        return 0;
+    
+    // Упакованное обновление энергопотребления
+    __sync_fetch_and_add(&stats->power_usage_uw, 1);
     
     return 0;
 }

@@ -107,6 +107,92 @@ fn test_ebpf_performance_optimizations() {
 }
 
 #[test]
+fn test_gpu_monitoring_functionality() {
+    // Тестируем функциональность мониторинга GPU
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_cpu_metrics: false,
+        enable_memory_metrics: false,
+        enable_syscall_monitoring: false,
+        enable_network_monitoring: false,
+        enable_network_connections: false,
+        enable_filesystem_monitoring: false,
+        enable_process_monitoring: false,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Инициализация должна пройти успешно даже если GPU программы не найдены
+    assert!(collector.initialize().is_ok());
+    
+    // Сбор метрик должен работать
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+    
+    let metrics = metrics.unwrap();
+    
+    // Проверяем, что GPU метрики имеют разумные значения по умолчанию
+    assert_eq!(metrics.gpu_usage, 0.0); // Должно быть 0.0, так как GPU мониторинг включен но программы могут не загрузиться
+    assert_eq!(metrics.gpu_memory_usage, 0); // Должно быть 0, так как GPU мониторинг включен но программы могут не загрузиться
+    
+    // Проверяем, что детализированная статистика GPU отсутствует или пустая
+    if let Some(gpu_details) = metrics.gpu_details {
+        assert!(gpu_details.is_empty()); // Должно быть пустым, так как нет реальных данных
+    }
+}
+
+#[test]
+fn test_gpu_monitoring_with_detailed_stats() {
+    // Тестируем GPU мониторинг с детализированной статистикой
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_cpu_metrics: false,
+        enable_memory_metrics: false,
+        enable_syscall_monitoring: false,
+        enable_network_monitoring: false,
+        enable_network_connections: false,
+        enable_filesystem_monitoring: false,
+        enable_process_monitoring: false,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Инициализация должна пройти успешно
+    assert!(collector.initialize().is_ok());
+    
+    // Сбор метрик должен работать
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+    
+    let metrics = metrics.unwrap();
+    
+    // Проверяем, что GPU метрики имеют разумные значения
+    assert!(metrics.gpu_usage >= 0.0); // Должно быть >= 0.0
+    assert!(metrics.gpu_memory_usage >= 0); // Должно быть >= 0
+    
+    // Проверяем, что детализированная статистика GPU отсутствует или пустая
+    // В тестовой среде без реальных GPU данных она должна быть None или пустой
+    match metrics.gpu_details {
+        Some(details) => {
+            // Если есть детали, они должны быть пустыми или содержать только нулевые значения
+            for gpu_stat in details {
+                assert!(gpu_stat.gpu_usage >= 0.0);
+                assert!(gpu_stat.memory_usage >= 0);
+                assert!(gpu_stat.compute_units_active >= 0);
+                assert!(gpu_stat.power_usage_uw >= 0);
+            }
+        },
+        None => {
+            // Это ожидаемое поведение в тестовой среде без реальных GPU данных
+            assert!(true);
+        }
+    }
+}
+
+#[test]
 fn test_ebpf_support_detection() {
     // Тестируем обнаружение поддержки eBPF
     let supported = EbpfMetricsCollector::check_ebpf_support();

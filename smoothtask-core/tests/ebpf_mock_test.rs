@@ -99,14 +99,18 @@ fn test_ebpf_metrics_structure() {
         syscall_count: 100,
         network_packets: 250,
         network_bytes: 1024 * 1024 * 5,
+        active_connections: 10,
         gpu_usage: 0.0,
         gpu_memory_usage: 0,
         filesystem_ops: 0,
+        active_processes: 5,
         timestamp: 1234567890,
         syscall_details: None,
         network_details: None,
+        connection_details: None,
         gpu_details: None,
         filesystem_details: None,
+        process_details: None,
     };
 
     // Проверяем, что структура корректно хранит данные
@@ -139,14 +143,18 @@ fn test_ebpf_metrics_cloning() {
         syscall_count: 50,
         network_packets: 100,
         network_bytes: 1024,
+        active_connections: 5,
         gpu_usage: 0.0,
         gpu_memory_usage: 0,
         filesystem_ops: 0,
+        active_processes: 3,
         timestamp: 1000,
         syscall_details: None,
         network_details: None,
+        connection_details: None,
         gpu_details: None,
         filesystem_details: None,
+        process_details: None,
     };
 
     let metrics2 = metrics1.clone();

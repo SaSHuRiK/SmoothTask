@@ -2497,7 +2497,7 @@ mod tests {
 
     // Import notification types for test configurations
     use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
-    use crate::metrics::ebpf::EbpfConfig;
+    use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds};
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -3033,6 +3033,8 @@ mod tests {
                 max_init_attempts: 3,
                 operation_timeout_ms: 1000,
                 enable_high_performance_mode: true,
+                enable_notifications: false,
+                notification_thresholds: EbpfNotificationThresholds::default(),
                 enable_aggressive_caching: false,
                 aggressive_cache_interval_ms: 5000,
             },
@@ -3135,6 +3137,8 @@ mod tests {
                 enable_high_performance_mode: true,
                 enable_aggressive_caching: false,
                 aggressive_cache_interval_ms: 5000,
+                enable_notifications: false,
+                notification_thresholds: EbpfNotificationThresholds::default(),
             },
         };
         let config_arc = Arc::new(RwLock::new(config));

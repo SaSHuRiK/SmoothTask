@@ -4,7 +4,7 @@
 //! Этот пример показывает, как интегрировать eBPF модуль в реальное приложение
 //! с поддержкой динамической конфигурации и обработки ошибок.
 
-use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics};
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;
@@ -349,7 +349,7 @@ fn demonstrate_integration() -> anyhow::Result<()> {
         ..Default::default()
     };
     
-    let mut collector = EbpfMetricsCollector::new(config);
+    let mut collector = EbpfMetricsCollector::new(config.clone());
     
     if collector.initialize().is_ok() {
         if let Ok(metrics) = collector.collect_metrics() {
@@ -364,7 +364,7 @@ fn demonstrate_integration() -> anyhow::Result<()> {
     // 2. Интеграция с системой логирования
     println!("\n2. Logging System Integration:");
     
-    let status = collector.get_status();
+    let status = collector.is_initialized();
     println!("   📝 Log: eBPF collector status - {}", 
         if status { "initialized" } else { "not initialized" });
     

@@ -111,6 +111,10 @@ pub struct EbpfConfig {
     pub enable_aggressive_caching: bool,
     /// Интервал агрессивного кэширования (в миллисекундах)
     pub aggressive_cache_interval_ms: u64,
+    /// Включить отправку уведомлений на основе eBPF метрик
+    pub enable_notifications: bool,
+    /// Конфигурация порогов для уведомлений
+    pub notification_thresholds: EbpfNotificationThresholds,
 }
 
 impl Default for EbpfConfig {
@@ -132,6 +136,8 @@ impl Default for EbpfConfig {
             enable_high_performance_mode: true,
             enable_aggressive_caching: false,
             aggressive_cache_interval_ms: 5000,
+            enable_notifications: true,
+            notification_thresholds: EbpfNotificationThresholds::default(),
         }
     }
 }
@@ -257,6 +263,60 @@ pub struct EbpfMetrics {
     pub filesystem_details: Option<Vec<FilesystemStat>>,
     /// Детализированная статистика по процесс-специфичным метрикам (опционально)
     pub process_details: Option<Vec<ProcessStat>>,
+}
+
+/// Конфигурация порогов для уведомлений eBPF
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
+pub struct EbpfNotificationThresholds {
+    /// Порог использования CPU для предупреждений (в процентах, 0.0 для отключения)
+    pub cpu_usage_warning_threshold: f64,
+    /// Порог использования CPU для критических уведомлений (в процентах, 0.0 для отключения)
+    pub cpu_usage_critical_threshold: f64,
+    /// Порог использования памяти для предупреждений (в байтах, 0 для отключения)
+    pub memory_usage_warning_threshold: u64,
+    /// Порог использования памяти для критических уведомлений (в байтах, 0 для отключения)
+    pub memory_usage_critical_threshold: u64,
+    /// Порог количества системных вызовов для предупреждений (в вызовах/секунду, 0 для отключения)
+    pub syscall_rate_warning_threshold: u64,
+    /// Порог количества системных вызовов для критических уведомлений (в вызовах/секунду, 0 для отключения)
+    pub syscall_rate_critical_threshold: u64,
+    /// Порог использования GPU для предупреждений (в процентах, 0.0 для отключения)
+    pub gpu_usage_warning_threshold: f64,
+    /// Порог использования GPU для критических уведомлений (в процентах, 0.0 для отключения)
+    pub gpu_usage_critical_threshold: f64,
+    /// Порог использования памяти GPU для предупреждений (в байтах, 0 для отключения)
+    pub gpu_memory_warning_threshold: u64,
+    /// Порог использования памяти GPU для критических уведомлений (в байтах, 0 для отключения)
+    pub gpu_memory_critical_threshold: u64,
+    /// Порог количества активных сетевых соединений для предупреждений (0 для отключения)
+    pub active_connections_warning_threshold: u64,
+    /// Порог количества активных сетевых соединений для критических уведомлений (0 для отключения)
+    pub active_connections_critical_threshold: u64,
+    /// Порог количества операций с файловой системой для предупреждений (в операциях/секунду, 0 для отключения)
+    pub filesystem_ops_warning_threshold: u64,
+    /// Порог количества операций с файловой системой для критических уведомлений (в операциях/секунду, 0 для отключения)
+    pub filesystem_ops_critical_threshold: u64,
+}
+
+impl Default for EbpfNotificationThresholds {
+    fn default() -> Self {
+        Self {
+            cpu_usage_warning_threshold: 80.0,
+            cpu_usage_critical_threshold: 95.0,
+            memory_usage_warning_threshold: 8 * 1024 * 1024 * 1024, // 8 GB
+            memory_usage_critical_threshold: 12 * 1024 * 1024 * 1024, // 12 GB
+            syscall_rate_warning_threshold: 10000,
+            syscall_rate_critical_threshold: 50000,
+            gpu_usage_warning_threshold: 70.0,
+            gpu_usage_critical_threshold: 90.0,
+            gpu_memory_warning_threshold: 4 * 1024 * 1024 * 1024, // 4 GB
+            gpu_memory_critical_threshold: 6 * 1024 * 1024 * 1024, // 6 GB
+            active_connections_warning_threshold: 100,
+            active_connections_critical_threshold: 500,
+            filesystem_ops_warning_threshold: 5000,
+            filesystem_ops_critical_threshold: 20000,
+        }
+    }
 }
 
 /// Статистика по сетевой активности
@@ -656,6 +716,12 @@ pub struct EbpfMetricsCollector {
     cleanup_unused_maps: bool,
     /// Оптимизация памяти: счетчик для отложенной очистки
     cleanup_counter: usize,
+    /// Менеджер уведомлений для отправки уведомлений на основе eBPF метрик
+    notification_manager: Option<std::sync::Arc<crate::notifications::NotificationManager>>,
+    /// Время последнего уведомления для предотвращения спама
+    last_notification_time: Option<std::time::SystemTime>,
+    /// Минимальный интервал между уведомлениями (в секундах)
+    notification_cooldown_seconds: u64,
 }
 
 impl EbpfMetricsCollector {
@@ -714,7 +780,247 @@ impl EbpfMetricsCollector {
             cleanup_unused_maps: true,
             // Оптимизация памяти: счетчик для отложенной очистки
             cleanup_counter: 0,
+            // Менеджер уведомлений
+            notification_manager: None,
+            // Время последнего уведомления
+            last_notification_time: None,
+            // Минимальный интервал между уведомлениями (60 секунд по умолчанию)
+            notification_cooldown_seconds: 60,
         }
+    }
+
+    /// Создать новый коллектор eBPF метрик с менеджером уведомлений
+    pub fn new_with_notifications(
+        config: EbpfConfig,
+        notification_manager: std::sync::Arc<crate::notifications::NotificationManager>,
+    ) -> Self {
+        Self {
+            notification_manager: Some(notification_manager),
+            ..Self::new(config)
+        }
+    }
+
+    /// Установить менеджер уведомлений
+    pub fn set_notification_manager(&mut self, notification_manager: std::sync::Arc<crate::notifications::NotificationManager>) {
+        self.notification_manager = Some(notification_manager);
+    }
+
+    /// Установить интервал между уведомлениями (в секундах)
+    pub fn set_notification_cooldown(&mut self, cooldown_seconds: u64) {
+        self.notification_cooldown_seconds = cooldown_seconds;
+    }
+
+    /// Проверить, можно ли отправлять уведомление (с учетом кулдауна)
+    fn can_send_notification(&self) -> bool {
+        if !self.config.enable_notifications {
+            return false;
+        }
+
+        if let Some(last_time) = self.last_notification_time {
+            if let Ok(elapsed) = last_time.elapsed() {
+                if elapsed.as_secs() < self.notification_cooldown_seconds {
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    /// Обновить время последнего уведомления
+    fn update_last_notification_time(&mut self) {
+        self.last_notification_time = Some(std::time::SystemTime::now());
+    }
+
+    /// Отправить уведомление через менеджер уведомлений
+    async fn send_notification(&self, notification: crate::notifications::Notification) -> Result<()> {
+        if let Some(manager) = &self.notification_manager {
+            manager.send(&notification).await?;
+        } else {
+            tracing::warn!("Не удалось отправить уведомление: менеджер уведомлений не установлен");
+        }
+        Ok(())
+    }
+
+    /// Проверка порогов и отправка уведомлений на основе текущих метрик
+    pub async fn check_thresholds_and_notify(&mut self, metrics: &EbpfMetrics) -> Result<()> {
+        if !self.can_send_notification() {
+            return Ok(());
+        }
+
+        let thresholds = &self.config.notification_thresholds;
+        let mut notifications_sent = false;
+
+        // Проверка использования CPU
+        if thresholds.cpu_usage_critical_threshold > 0.0 && metrics.cpu_usage >= thresholds.cpu_usage_critical_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical CPU Usage Detected",
+                format!(
+                    "CPU usage is at {}% (threshold: {}%)",
+                    metrics.cpu_usage, thresholds.cpu_usage_critical_threshold
+                ),
+            ).with_details(format!(
+                "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
+                metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.cpu_usage_warning_threshold > 0.0 && metrics.cpu_usage >= thresholds.cpu_usage_warning_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High CPU Usage Detected",
+                format!(
+                    "CPU usage is at {}% (threshold: {}%)",
+                    metrics.cpu_usage, thresholds.cpu_usage_warning_threshold
+                ),
+            ).with_details(format!(
+                "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
+                metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        // Проверка использования памяти
+        if thresholds.memory_usage_critical_threshold > 0 && metrics.memory_usage >= thresholds.memory_usage_critical_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical Memory Usage Detected",
+                format!(
+                    "Memory usage is at {} bytes (threshold: {} bytes)",
+                    metrics.memory_usage, thresholds.memory_usage_critical_threshold
+                ),
+            ).with_details(format!(
+                "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
+                metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.memory_usage_warning_threshold > 0 && metrics.memory_usage >= thresholds.memory_usage_warning_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High Memory Usage Detected",
+                format!(
+                    "Memory usage is at {} bytes (threshold: {} bytes)",
+                    metrics.memory_usage, thresholds.memory_usage_warning_threshold
+                ),
+            ).with_details(format!(
+                "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
+                metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        // Проверка использования GPU
+        if thresholds.gpu_usage_critical_threshold > 0.0 && metrics.gpu_usage >= thresholds.gpu_usage_critical_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical GPU Usage Detected",
+                format!(
+                    "GPU usage is at {}% (threshold: {}%)",
+                    metrics.gpu_usage, thresholds.gpu_usage_critical_threshold
+                ),
+            ).with_details(format!(
+                "GPU metrics: Usage: {}%, Memory: {} bytes",
+                metrics.gpu_usage, metrics.gpu_memory_usage
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.gpu_usage_warning_threshold > 0.0 && metrics.gpu_usage >= thresholds.gpu_usage_warning_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High GPU Usage Detected",
+                format!(
+                    "GPU usage is at {}% (threshold: {}%)",
+                    metrics.gpu_usage, thresholds.gpu_usage_warning_threshold
+                ),
+            ).with_details(format!(
+                "GPU metrics: Usage: {}%, Memory: {} bytes",
+                metrics.gpu_usage, metrics.gpu_memory_usage
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        // Проверка использования памяти GPU
+        if thresholds.gpu_memory_critical_threshold > 0 && metrics.gpu_memory_usage >= thresholds.gpu_memory_critical_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical GPU Memory Usage Detected",
+                format!(
+                    "GPU memory usage is at {} bytes (threshold: {} bytes)",
+                    metrics.gpu_memory_usage, thresholds.gpu_memory_critical_threshold
+                ),
+            ).with_details(format!(
+                "GPU metrics: Usage: {}%, Memory: {} bytes",
+                metrics.gpu_usage, metrics.gpu_memory_usage
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.gpu_memory_warning_threshold > 0 && metrics.gpu_memory_usage >= thresholds.gpu_memory_warning_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High GPU Memory Usage Detected",
+                format!(
+                    "GPU memory usage is at {} bytes (threshold: {} bytes)",
+                    metrics.gpu_memory_usage, thresholds.gpu_memory_warning_threshold
+                ),
+            ).with_details(format!(
+                "GPU metrics: Usage: {}%, Memory: {} bytes",
+                metrics.gpu_usage, metrics.gpu_memory_usage
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        // Проверка количества активных сетевых соединений
+        if thresholds.active_connections_critical_threshold > 0 && metrics.active_connections >= thresholds.active_connections_critical_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical Network Connections Detected",
+                format!(
+                    "Active network connections: {} (threshold: {})",
+                    metrics.active_connections, thresholds.active_connections_critical_threshold
+                ),
+            ).with_details(format!(
+                "Network metrics: Connections: {}, Packets: {}, Bytes: {}",
+                metrics.active_connections, metrics.network_packets, metrics.network_bytes
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.active_connections_warning_threshold > 0 && metrics.active_connections >= thresholds.active_connections_warning_threshold {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High Network Connections Detected",
+                format!(
+                    "Active network connections: {} (threshold: {})",
+                    metrics.active_connections, thresholds.active_connections_warning_threshold
+                ),
+            ).with_details(format!(
+                "Network metrics: Connections: {}, Packets: {}, Bytes: {}",
+                metrics.active_connections, metrics.network_packets, metrics.network_bytes
+            ));
+            
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        if notifications_sent {
+            self.update_last_notification_time();
+        }
+
+        Ok(())
     }
 
     /// Инициализировать eBPF программы
@@ -3087,6 +3393,8 @@ mod tests {
             batch_size: 200,
             max_init_attempts: 3,
             operation_timeout_ms: 1000,
+            enable_notifications: false,
+            notification_thresholds: EbpfNotificationThresholds::default(),
             enable_high_performance_mode: true,
             enable_aggressive_caching: false,
             aggressive_cache_interval_ms: 5000,
@@ -3485,6 +3793,8 @@ mod tests {
             batch_size: 200,
             max_init_attempts: 3,
             operation_timeout_ms: 1000,
+            enable_notifications: false,
+            notification_thresholds: EbpfNotificationThresholds::default(),
             enable_high_performance_mode: true,
             enable_aggressive_caching: false,
             aggressive_cache_interval_ms: 5000,
@@ -3643,6 +3953,8 @@ mod tests {
             enable_caching: true,
             batch_size: 200,
             max_init_attempts: 3,
+            enable_notifications: false,
+            notification_thresholds: EbpfNotificationThresholds::default(),
             operation_timeout_ms: 1000,
             enable_high_performance_mode: true,
             enable_aggressive_caching: false,
@@ -4371,6 +4683,8 @@ mod tests {
             enable_caching: true,
             batch_size: 100,
             max_init_attempts: 3,
+            enable_notifications: false,
+            notification_thresholds: EbpfNotificationThresholds::default(),
             operation_timeout_ms: 1000,
             enable_high_performance_mode: true,
             enable_aggressive_caching: false,
@@ -4424,6 +4738,8 @@ mod tests {
             enable_filesystem_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
+            enable_notifications: false,
+            notification_thresholds: EbpfNotificationThresholds::default(),
             batch_size: 100,
             max_init_attempts: 3,
             operation_timeout_ms: 1000,
@@ -4465,6 +4781,8 @@ mod tests {
             enable_high_performance_mode: true,
             enable_aggressive_caching: false,
             aggressive_cache_interval_ms: 5000,
+            enable_notifications: false, // Отключаем уведомления для этого теста
+            notification_thresholds: EbpfNotificationThresholds::default(),
         };
 
         let mut collector = EbpfMetricsCollector::new(config);
@@ -4478,5 +4796,196 @@ mod tests {
         // Ошибки могут быть, если новые программы не найдены
         // Это нормально для тестовой среды
         println!("Статистика инициализации: {} успешных, {} ошибок", success_count, error_count);
+    }
+}
+
+#[cfg(test)]
+mod ebpf_notification_tests {
+    use super::*;
+    use crate::notifications::{Notification, NotificationManager, NotificationType};
+    use crate::logging::log_storage::SharedLogStorage;
+    use std::sync::Arc;
+
+    #[tokio::test]
+    async fn test_ebpf_notification_thresholds_default() {
+        let thresholds = EbpfNotificationThresholds::default();
+        
+        assert_eq!(thresholds.cpu_usage_warning_threshold, 80.0);
+        assert_eq!(thresholds.cpu_usage_critical_threshold, 95.0);
+        assert_eq!(thresholds.memory_usage_warning_threshold, 8 * 1024 * 1024 * 1024);
+        assert_eq!(thresholds.memory_usage_critical_threshold, 12 * 1024 * 1024 * 1024);
+        assert_eq!(thresholds.syscall_rate_warning_threshold, 10000);
+        assert_eq!(thresholds.syscall_rate_critical_threshold, 50000);
+    }
+
+    #[tokio::test]
+    async fn test_ebpf_config_with_notifications() {
+        let config = EbpfConfig::default();
+        
+        assert!(config.enable_notifications);
+        assert_eq!(config.notification_thresholds.cpu_usage_warning_threshold, 80.0);
+    }
+
+    #[tokio::test]
+    async fn test_ebpf_collector_notification_integration() {
+        use crate::logging::log_storage::SharedLogStorage;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        let mut collector = EbpfMetricsCollector::new_with_notifications(
+            EbpfConfig::default(),
+            Arc::new(notification_manager)
+        );
+        
+        assert!(collector.notification_manager.is_some());
+        assert_eq!(collector.notification_cooldown_seconds, 60);
+    }
+
+    #[tokio::test]
+    async fn test_ebpf_notification_cooldown() {
+        use crate::logging::log_storage::SharedLogStorage;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        let mut collector = EbpfMetricsCollector::new_with_notifications(
+            EbpfConfig::default(),
+            Arc::new(notification_manager)
+        );
+        
+        // Устанавливаем короткий кулдаун для тестирования
+        collector.set_notification_cooldown(1);
+        
+        // Создаем метрики, которые должны вызвать уведомление
+        let mut metrics = EbpfMetrics::default();
+        metrics.cpu_usage = 96.0; // Выше критического порога
+        
+        // Первое уведомление должно быть отправлено
+        let result = collector.check_thresholds_and_notify(&metrics).await;
+        assert!(result.is_ok());
+        
+        // Второе уведомление не должно быть отправлено из-за кулдауна
+        let result = collector.check_thresholds_and_notify(&metrics).await;
+        assert!(result.is_ok());
+        
+        // Проверяем, что только одно уведомление было залоггировано
+        let all_entries = log_storage.get_all_entries().await;
+        let critical_entries: Vec<_> = all_entries
+            .iter()
+            .filter(|e| e.level == crate::logging::log_storage::LogLevel::Error)
+            .collect();
+        
+        assert_eq!(critical_entries.len(), 1, "Expected 1 critical notification due to cooldown");
+    }
+
+    #[tokio::test]
+    async fn test_ebpf_threshold_notifications() {
+        use crate::logging::log_storage::SharedLogStorage;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(20));
+        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        let mut collector = EbpfMetricsCollector::new_with_notifications(
+            EbpfConfig::default(),
+            Arc::new(notification_manager)
+        );
+        
+        // Устанавливаем очень короткий кулдаун для тестирования
+        collector.set_notification_cooldown(0);
+        
+        // Тестируем CPU уведомления
+        let mut cpu_metrics = EbpfMetrics::default();
+        cpu_metrics.cpu_usage = 85.0; // Между предупреждением и критическим
+        
+        collector.check_thresholds_and_notify(&cpu_metrics).await.unwrap();
+        
+        let mut critical_cpu_metrics = EbpfMetrics::default();
+        critical_cpu_metrics.cpu_usage = 96.0; // Критический уровень
+        
+        collector.check_thresholds_and_notify(&critical_cpu_metrics).await.unwrap();
+        
+        // Тестируем уведомления о памяти
+        let mut memory_metrics = EbpfMetrics::default();
+        memory_metrics.memory_usage = 9 * 1024 * 1024 * 1024; // Между предупреждением и критическим
+        
+        collector.check_thresholds_and_notify(&memory_metrics).await.unwrap();
+        
+        let mut critical_memory_metrics = EbpfMetrics::default();
+        critical_memory_metrics.memory_usage = 13 * 1024 * 1024 * 1024; // Критический уровень
+        
+        collector.check_thresholds_and_notify(&critical_memory_metrics).await.unwrap();
+        
+        // Проверяем, что уведомления были залоггированы
+        let all_entries = log_storage.get_all_entries().await;
+        assert!(all_entries.len() >= 4, "Expected at least 4 notifications, got {}", all_entries.len());
+        
+        // Проверяем типы уведомлений
+        let has_warnings = all_entries.iter().any(|e| e.level == crate::logging::log_storage::LogLevel::Warn);
+        let has_errors = all_entries.iter().any(|e| e.level == crate::logging::log_storage::LogLevel::Error);
+        
+        assert!(has_warnings, "Expected warning notifications");
+        assert!(has_errors, "Expected critical notifications");
+    }
+
+    #[tokio::test]
+    async fn test_ebpf_notification_disabled() {
+        let mut config = EbpfConfig::default();
+        config.enable_notifications = false;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        let mut collector = EbpfMetricsCollector::new_with_notifications(
+            config,
+            Arc::new(notification_manager)
+        );
+        
+        // Создаем метрики, которые должны вызвать уведомление
+        let mut metrics = EbpfMetrics::default();
+        metrics.cpu_usage = 96.0; // Выше критического порога
+        
+        // Уведомление не должно быть отправлено
+        collector.check_thresholds_and_notify(&metrics).await.unwrap();
+        
+        // Проверяем, что уведомления не было
+        let all_entries = log_storage.get_all_entries().await;
+        assert_eq!(all_entries.len(), 0, "No notifications should be sent when disabled");
+    }
+
+    #[tokio::test]
+    async fn test_ebpf_custom_thresholds() {
+        let mut config = EbpfConfig::default();
+        
+        // Настраиваем пользовательские пороги
+        config.notification_thresholds.cpu_usage_warning_threshold = 70.0;
+        config.notification_thresholds.cpu_usage_critical_threshold = 85.0;
+        config.notification_thresholds.memory_usage_warning_threshold = 4 * 1024 * 1024 * 1024;
+        config.notification_thresholds.memory_usage_critical_threshold = 6 * 1024 * 1024 * 1024;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        let mut collector = EbpfMetricsCollector::new_with_notifications(
+            config,
+            Arc::new(notification_manager)
+        );
+        
+        collector.set_notification_cooldown(0);
+        
+        // Тестируем пользовательские пороги
+        let mut metrics = EbpfMetrics::default();
+        metrics.cpu_usage = 75.0; // Между новыми порогами
+        
+        collector.check_thresholds_and_notify(&metrics).await.unwrap();
+        
+        let mut critical_metrics = EbpfMetrics::default();
+        critical_metrics.cpu_usage = 86.0; // Выше нового критического порога
+        
+        collector.check_thresholds_and_notify(&critical_metrics).await.unwrap();
+        
+        // Проверяем, что уведомления были отправлены с новыми порогами
+        let all_entries = log_storage.get_all_entries().await;
+        assert!(all_entries.len() >= 2, "Expected notifications with custom thresholds, got {}", all_entries.len());
     }
 }
