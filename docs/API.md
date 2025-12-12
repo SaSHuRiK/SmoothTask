@@ -1415,6 +1415,311 @@ while true; do
 done
 ```
 
+### Практическое использование API
+
+#### Мониторинг производительности системы
+
+```bash
+#!/bin/bash
+# Скрипт для мониторинга производительности системы
+
+while true; do
+    clear
+    echo "=== System Performance Monitor ==="
+    echo "Timestamp: $(date)"
+    echo
+    
+    # Получение системных метрик
+    echo "CPU Usage:"
+    curl -s http://127.0.0.1:8080/api/metrics | jq '.system_metrics.cpu_times'
+    
+    echo "Memory Usage:"
+    curl -s http://127.0.0.1:8080/api/metrics | jq '.system_metrics.memory | {mem_used: (.mem_total_kb - .mem_available_kb)/1024/1024, mem_total: .mem_total_kb/1024/1024}'
+    
+    echo "Load Average:"
+    curl -s http://127.0.0.1:8080/api/metrics | jq '.system_metrics.load_avg'
+    
+    echo "PSI Pressure:"
+    curl -s http://127.0.0.1:8080/api/metrics | jq '.system_metrics.pressure'
+    
+    sleep 2
+done
+```
+
+#### Мониторинг отзывчивости системы
+
+```bash
+#!/bin/bash
+# Скрипт для мониторинга отзывчивости системы
+
+while true; do
+    clear
+    echo "=== System Responsiveness Monitor ==="
+    echo "Timestamp: $(date)"
+    echo
+    
+    # Получение метрик отзывчивости
+    curl -s http://127.0.0.1:8080/api/responsiveness | jq '.responsiveness_metrics'
+    
+    # Проверка статуса отзывчивости
+    BAD_RESPONSIVENESS=$(curl -s http://127.0.0.1:8080/api/responsiveness | jq '.responsiveness_metrics.bad_responsiveness')
+    RESPONSIVENESS_SCORE=$(curl -s http://127.0.0.1:8080/api/responsiveness | jq '.responsiveness_metrics.responsiveness_score')
+    
+    echo "Status: $([ "$BAD_RESPONSIVENESS" = "true" ] && echo "BAD" || echo "GOOD")"
+    echo "Score: $RESPONSIVENESS_SCORE"
+    
+    sleep 1
+done
+```
+
+#### Мониторинг процессов и групп приложений
+
+```bash
+#!/bin/bash
+# Скрипт для мониторинга процессов и групп приложений
+
+while true; do
+    clear
+    echo "=== Process and App Group Monitor ==="
+    echo "Timestamp: $(date)"
+    echo
+    
+    # Получение списка групп приложений
+    echo "App Groups:"
+    curl -s http://127.0.0.1:8080/api/appgroups | jq '.app_groups[] | {app_group_id, app_name, priority_class, total_cpu_share}'
+    
+    echo
+    echo "Top Processes by CPU:"
+    curl -s http://127.0.0.1:8080/api/processes | jq '.processes | sort_by(.cpu_share_1s) | reverse | .[0:5] | {pid, exe, cpu_share_1s, priority_class: .teacher_priority_class}'
+    
+    sleep 2
+done
+```
+
+#### Управление конфигурацией через API
+
+```bash
+#!/bin/bash
+# Скрипт для управления конфигурацией через API
+
+# Получение текущей конфигурации
+curl http://127.0.0.1:8080/api/config | jq '.config'
+
+# Перезагрузка конфигурации из файла
+curl -X POST http://127.0.0.1:8080/api/config/reload
+
+# Проверка новой конфигурации
+curl http://127.0.0.1:8080/api/config | jq '.config.thresholds'
+```
+
+#### Интеграция с Prometheus (пример экспортера)
+
+```python
+#!/usr/bin/env python3
+# Простой экспортер метрик для Prometheus
+
+import http.server
+import socketserver
+import requests
+import json
+import time
+
+class SmoothTaskMetricsExporter(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/metrics':
+            # Получение метрик из SmoothTask API
+            try:
+                response = requests.get('http://127.0.0.1:8080/api/metrics')
+                metrics = response.json()
+                
+                # Форматирование метрик для Prometheus
+                output = ""
+                output += f"# HELP smoothtask_cpu_user CPU user time\n"
+                output += f"# TYPE smoothtask_cpu_user gauge\n"
+                output += f"smoothtask_cpu_user {metrics['system_metrics']['cpu_times']['user']}\n"
+                
+                output += f"# HELP smoothtask_cpu_system CPU system time\n"
+                output += f"# TYPE smoothtask_cpu_system gauge\n"
+                output += f"smoothtask_cpu_system {metrics['system_metrics']['cpu_times']['system']}\n"
+                
+                output += f"# HELP smoothtask_memory_used Memory used in MB\n"
+                output += f"# TYPE smoothtask_memory_used gauge\n"
+                mem_total = metrics['system_metrics']['memory']['mem_total_kb'] / 1024
+                mem_available = metrics['system_metrics']['memory']['mem_available_kb'] / 1024
+                output += f"smoothtask_memory_used {mem_total - mem_available}\n"
+                
+                output += f"# HELP smoothtask_load_avg_1 Load average 1 minute\n"
+                output += f"# TYPE smoothtask_load_avg_1 gauge\n"
+                output += f"smoothtask_load_avg_1 {metrics['system_metrics']['load_avg']['one']}\n"
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/plain; version=0.0.4; charset=utf-8')
+                self.end_headers()
+                self.wfile.write(output.encode())
+                
+            except Exception as e:
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(f"Error: {str(e)}".encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+
+if __name__ == '__main__':
+    PORT = 9090
+    with socketserver.TCPServer(("", PORT), SmoothTaskMetricsExporter) as httpd:
+        print(f"SmoothTask Prometheus Exporter running on port {PORT}")
+        httpd.serve_forever()
+```
+
+#### Интеграция с Grafana (пример дашборда)
+
+```json
+{
+  "title": "SmoothTask System Monitoring",
+  "panels": [
+    {
+      "title": "CPU Usage",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "rate(smoothtask_cpu_user[1m])",
+          "legendFormat": "User"
+        },
+        {
+          "expr": "rate(smoothtask_cpu_system[1m])",
+          "legendFormat": "System"
+        }
+      ]
+    },
+    {
+      "title": "Memory Usage",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "smoothtask_memory_used",
+          "legendFormat": "Used Memory"
+        }
+      ]
+    },
+    {
+      "title": "Load Average",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "smoothtask_load_avg_1",
+          "legendFormat": "1 Minute Load"
+        }
+      ]
+    }
+  ]
+}
+```
+
+#### Мониторинг и алертинг
+
+```bash
+#!/bin/bash
+# Скрипт для мониторинга и алертинга
+
+# Пороговые значения
+CPU_THRESHOLD=0.8
+MEM_THRESHOLD=0.9
+LOAD_THRESHOLD=2.0
+
+while true; do
+    # Получение метрик
+    METRICS=$(curl -s http://127.0.0.1:8080/api/metrics)
+    
+    # Расчет использования CPU
+    CPU_USER=$(echo $METRICS | jq '.system_metrics.cpu_times.user')
+    CPU_SYSTEM=$(echo $METRICS | jq '.system_metrics.cpu_times.system')
+    CPU_IDLE=$(echo $METRICS | jq '.system_metrics.cpu_times.idle')
+    CPU_TOTAL=$((CPU_USER + CPU_SYSTEM + CPU_IDLE))
+    CPU_USAGE=$(echo "scale=2; ($CPU_USER + $CPU_SYSTEM) / $CPU_TOTAL" | bc)
+    
+    # Расчет использования памяти
+    MEM_TOTAL=$(echo $METRICS | jq '.system_metrics.memory.mem_total_kb')
+    MEM_AVAILABLE=$(echo $METRICS | jq '.system_metrics.memory.mem_available_kb')
+    MEM_USED=$(echo "scale=2; ($MEM_TOTAL - $MEM_AVAILABLE) / $MEM_TOTAL" | bc)
+    
+    # Получение load average
+    LOAD_1=$(echo $METRICS | jq '.system_metrics.load_avg.one')
+    
+    # Проверка порогов
+    if (( $(echo "$CPU_USAGE > $CPU_THRESHOLD" | bc -l) )); then
+        echo "ALERT: High CPU usage: ${CPU_USAGE} (threshold: ${CPU_THRESHOLD})"
+        # Здесь можно добавить отправку уведомления
+    fi
+    
+    if (( $(echo "$MEM_USED > $MEM_THRESHOLD" | bc -l) )); then
+        echo "ALERT: High memory usage: ${MEM_USED} (threshold: ${MEM_THRESHOLD})"
+        # Здесь можно добавить отправку уведомления
+    fi
+    
+    if (( $(echo "$LOAD_1 > $LOAD_THRESHOLD" | bc -l) )); then
+        echo "ALERT: High load average: ${LOAD_1} (threshold: ${LOAD_THRESHOLD})"
+        # Здесь можно добавить отправку уведомления
+    fi
+    
+    sleep 10
+done
+```
+
+#### Использование API для отладки
+
+```bash
+#!/bin/bash
+# Скрипт для отладки проблем с производительностью
+
+# Получение информации о процессах с высоким CPU
+curl -s http://127.0.0.1:8080/api/processes | \
+  jq '.processes | sort_by(.cpu_share_1s) | reverse | .[0:10] | {pid, exe, cpu_share_1s, nice, ionice_class, ionice_prio}'
+
+# Получение информации о процессах с высоким I/O
+curl -s http://127.0.0.1:8080/api/processes | \
+  jq '.processes | sort_by(.io_read_bytes + .io_write_bytes) | reverse | .[0:10] | {pid, exe, io_read_bytes, io_write_bytes}'
+
+# Получение информации о процессах с высоким использованием памяти
+curl -s http://127.0.0.1:8080/api/processes | \
+  jq '.processes | sort_by(.rss_mb) | reverse | .[0:10] | {pid, exe, rss_mb, swap_mb}'
+```
+
+#### Использование API для тестирования
+
+```bash
+#!/bin/bash
+# Скрипт для тестирования API
+
+# Тестирование всех endpoints
+ENDPOINTS=(
+  "/health"
+  "/api/version"
+  "/api/endpoints"
+  "/api/stats"
+  "/api/metrics"
+  "/api/responsiveness"
+  "/api/processes"
+  "/api/appgroups"
+  "/api/config"
+  "/api/classes"
+  "/api/patterns"
+  "/api/system"
+)
+
+for endpoint in "${ENDPOINTS[@]}"; do
+  echo "Testing $endpoint..."
+  response=$(curl -s -w "%{http_code}" http://127.0.0.1:8080$endpoint)
+  status_code=${response: -3}
+  
+  if [ "$status_code" -eq "200" ]; then
+    echo "✓ $endpoint - OK (Status: $status_code)"
+  else
+    echo "✗ $endpoint - FAILED (Status: $status_code)"
+  fi
+done
+```
+
 ## Безопасность
 
 **Важно:** По умолчанию API сервер слушает только на `127.0.0.1` (localhost), что означает, что он доступен только с локальной машины. Это обеспечивает базовую безопасность.

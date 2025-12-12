@@ -298,6 +298,277 @@ async fn test_network_metrics_in_api() {
     assert!(json["system_metrics"].is_object());
     
     let system_metrics_json = &json["system_metrics"];
+    
+    // Проверяем, что сетевые метрики присутствуют
+    assert!(system_metrics_json["network"].is_object());
+    assert!(system_metrics_json["network"]["interfaces"].is_array());
+    assert!(system_metrics_json["network"]["total_rx_bytes"].is_number());
+    assert!(system_metrics_json["network"]["total_tx_bytes"].is_number());
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_error_handling() {
+    // Тест: проверка обработки ошибок API
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    
+    // Тестируем несуществующий endpoint
+    let url = format!("http://127.0.0.1:{}/api/nonexistent", port);
+    let response = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    // Должен вернуть 404
+    assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+    
+    // Тестируем неверный метод
+    let url = format!("http://127.0.0.1:{}/api/stats", port);
+    let response = client.post(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    // Должен вернуть 405 Method Not Allowed
+    assert_eq!(response.status(), reqwest::StatusCode::METHOD_NOT_ALLOWED);
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_concurrent_requests() {
+    // Тест: проверка обработки конкурентных запросов
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    
+    // Отправляем 10 конкурентных запросов
+    let mut tasks = Vec::new();
+    for _ in 0..10 {
+        let client = client.clone();
+        let url = url.clone();
+        tasks.push(tokio::spawn(async move {
+            let response = client.get(&url)
+                .send()
+                .await
+                .expect("Запрос должен выполниться");
+            assert!(response.status().is_success());
+            response.text().await.expect("Ответ должен содержать текст")
+        }));
+    }
+    
+    // Ждем завершения всех запросов
+    for task in tasks {
+        task.await.expect("Задача должна завершиться успешно");
+    }
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_json_validation() {
+    // Тест: проверка валидации JSON ответов
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    
+    let response = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    assert!(response.status().is_success());
+    
+    let body = response.text().await.expect("Ответ должен содержать текст");
+    let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+    
+    // Проверяем структуру JSON
+    assert!(json["status"].is_string());
+    assert!(json["service"].is_string());
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_content_type_headers() {
+    // Тест: проверка Content-Type заголовков
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    
+    let response = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    assert!(response.status().is_success());
+    
+    // Проверяем Content-Type заголовок
+    let content_type = response.headers().get("content-type").expect("Content-Type должен присутствовать");
+    assert!(content_type.to_str().unwrap().contains("application/json"));
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_cors_headers() {
+    // Тест: проверка CORS заголовков (если поддерживаются)
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    
+    let response = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    assert!(response.status().is_success());
+    
+    // Проверяем, что ответ успешно возвращается
+    // (CORS заголовки могут быть добавлены в будущем)
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_response_time() {
+    // Тест: проверка времени ответа API
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/health", port);
+    
+    let start_time = std::time::Instant::now();
+    let response = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    let response_time = start_time.elapsed();
+    
+    assert!(response.status().is_success());
+    
+    // Время ответа должно быть разумным (менее 1 секунды)
+    assert!(response_time.as_millis() < 1000);
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_endpoint_consistency() {
+    // Тест: проверка консистентности ответов endpoints
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/endpoints", port);
+    
+    // Делаем несколько запросов и проверяем, что ответы одинаковые
+    let response1 = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    let response2 = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    assert!(response1.status().is_success());
+    assert!(response2.status().is_success());
+    
+    let body1 = response1.text().await.expect("Ответ должен содержать текст");
+    let body2 = response2.text().await.expect("Ответ должен содержать текст");
+    
+    // Ответы должны быть идентичными
+    assert_eq!(body1, body2);
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_version_consistency() {
+    // Тест: проверка консистентности версии API
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/api/version", port);
+    
+    // Делаем несколько запросов и проверяем, что версия одинаковая
+    let response1 = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    let response2 = client.get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться");
+    
+    assert!(response1.status().is_success());
+    assert!(response2.status().is_success());
+    
+    let body1 = response1.text().await.expect("Ответ должен содержать текст");
+    let body2 = response2.text().await.expect("Ответ должен содержать текст");
+    
+    // Ответы должны быть идентичными
+    assert_eq!(body1, body2);
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_api_health_endpoint_stability() {
+    // Тест: проверка стабильности health endpoint
+    let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+    let handle = server.start().await.expect("Сервер должен запуститься");
+    let port = handle.port();
+    
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/health", port);
+    
+    // Делаем 100 запросов и проверяем, что все успешные
+    for _ in 0..100 {
+        let response = client.get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
+        assert!(response.status().is_success());
+    }
+    
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
     assert!(system_metrics_json["network"].is_object());
     
     let network_json = &system_metrics_json["network"];
