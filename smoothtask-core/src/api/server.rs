@@ -2836,9 +2836,12 @@ mod tests {
                 enable_cpu_metrics: false,
                 enable_memory_metrics: false,
                 enable_syscall_monitoring: false,
+                enable_network_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
+                max_init_attempts: 3,
+                operation_timeout_ms: 1000,
             },
 
         };
@@ -2924,9 +2927,12 @@ mod tests {
                 enable_cpu_metrics: false,
                 enable_memory_metrics: false,
                 enable_syscall_monitoring: false,
+                enable_network_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
+                max_init_attempts: 3,
+                operation_timeout_ms: 1000,
             },
         };
         let config_arc = Arc::new(RwLock::new(config));

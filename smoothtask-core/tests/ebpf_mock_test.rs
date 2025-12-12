@@ -96,14 +96,22 @@ fn test_ebpf_metrics_structure() {
         cpu_usage: 25.5,
         memory_usage: 1024 * 1024 * 512, // 512 MB
         syscall_count: 100,
+        network_packets: 250,
+        network_bytes: 1024 * 1024 * 5,
         timestamp: 1234567890,
+        syscall_details: None,
+        network_details: None,
     };
     
     // Проверяем, что структура корректно хранит данные
     assert_eq!(metrics.cpu_usage, 25.5);
     assert_eq!(metrics.memory_usage, 1024 * 1024 * 512);
     assert_eq!(metrics.syscall_count, 100);
+    assert_eq!(metrics.network_packets, 250);
+    assert_eq!(metrics.network_bytes, 1024 * 1024 * 5);
     assert_eq!(metrics.timestamp, 1234567890);
+    assert!(metrics.syscall_details.is_none());
+    assert!(metrics.network_details.is_none());
 }
 
 #[test]
@@ -123,7 +131,11 @@ fn test_ebpf_metrics_cloning() {
         cpu_usage: 10.0,
         memory_usage: 2048,
         syscall_count: 50,
+        network_packets: 100,
+        network_bytes: 1024,
         timestamp: 1000,
+        syscall_details: None,
+        network_details: None,
     };
     
     let metrics2 = metrics1.clone();
@@ -133,4 +145,5 @@ fn test_ebpf_metrics_cloning() {
     assert_eq!(metrics1.memory_usage, metrics2.memory_usage);
     assert_eq!(metrics1.syscall_count, metrics2.syscall_count);
     assert_eq!(metrics1.timestamp, metrics2.timestamp);
+    assert_eq!(metrics1.syscall_details, metrics2.syscall_details);
 }

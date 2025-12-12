@@ -8,6 +8,7 @@ use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
 use tracing::warn;
+use rayon::prelude::*;
 
 /// Сырые счётчики CPU из `/proc/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -599,6 +600,64 @@ impl Default for ProcPaths {
 ///     
 ///     std::thread::sleep(Duration::from_millis(100));
 /// }
+/// Собирает системные метрики с использованием кэша и параллельной обработки.
+///
+/// Эта функция использует кэш для уменьшения количества операций ввода-вывода
+/// при частом опросе системных метрик. Если кэш пуст или устарел, функция
+/// вызывает `collect_system_metrics_parallel` для сбора новых данных с использованием
+/// параллельной обработки.
+///
+/// # Аргументы
+///
+/// * `cache` - Кэш системных метрик
+/// * `paths` - Пути к файлам в `/proc` для чтения метрик
+/// * `force_refresh` - Принудительно обновить кэш, игнорируя время жизни кэша
+///
+/// # Возвращаемое значение
+///
+/// Структура `SystemMetrics` с собранными метриками или ошибка, если
+/// не удалось прочитать критические файлы (stat, meminfo, loadavg).
+///
+/// # Примеры
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics_cached_parallel, ProcPaths, SharedSystemMetricsCache};
+/// use std::path::PathBuf;
+/// use std::time::Duration;
+///
+/// let paths = ProcPaths {
+///     stat: PathBuf::from("/proc/stat"),
+///     meminfo: PathBuf::from("/proc/meminfo"),
+///     loadavg: PathBuf::from("/proc/loadavg"),
+///     pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+///     pressure_io: PathBuf::from("/proc/pressure/io"),
+///     pressure_memory: PathBuf::from("/proc/pressure/memory"),
+/// };
+///
+/// // Создаем кэш с временем жизни 1 секунда
+/// let cache = SharedSystemMetricsCache::new(Duration::from_secs(1));
+///
+/// // Получаем метрики (будут собраны новые данные с использованием параллельной обработки)
+/// let metrics1 = collect_system_metrics_cached_parallel(&cache, &paths, false).expect("Не удалось собрать системные метрики");
+/// 
+/// // Получаем метрики снова (будут использованы кэшированные данные)
+/// let metrics2 = collect_system_metrics_cached_parallel(&cache, &paths, false).expect("Не удалось собрать системные метрики");
+/// 
+/// assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
+/// ```
+pub fn collect_system_metrics_cached_parallel(
+    cache: &SharedSystemMetricsCache,
+    paths: &ProcPaths,
+    force_refresh: bool,
+) -> Result<SystemMetrics> {
+    if force_refresh {
+        // Принудительное обновление кэша
+        cache.clear();
+    }
+    
+    cache.get_or_update(|| collect_system_metrics_parallel(paths))
+}
+
 /// Собирает системные метрики с использованием кэша.
 ///
 /// Эта функция использует кэш для уменьшения количества операций ввода-вывода
@@ -654,6 +713,187 @@ pub fn collect_system_metrics_cached(
     }
     
     cache.get_or_update(|| collect_system_metrics(paths))
+}
+
+/// Собрать системные метрики с использованием параллельной обработки.
+///
+/// Эта функция использует rayon для параллельного сбора различных типов метрик,
+/// что значительно улучшает производительность на многоядерных системах.
+///
+/// # Аргументы
+///
+/// * `paths` - Пути к файлам в `/proc` для чтения метрик
+///
+/// # Возвращаемое значение
+///
+/// Структура `SystemMetrics` с собранными метриками или ошибка, если
+/// не удалось прочитать критические файлы (stat, meminfo, loadavg).
+///
+/// # Примеры
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics_parallel, ProcPaths};
+///
+/// let paths = ProcPaths::default();
+/// let metrics = collect_system_metrics_parallel(&paths).expect("Не удалось собрать системные метрики");
+/// ```
+pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetrics> {
+    // Используем параллельную обработку для сбора различных типов метрик
+    // Используем вложенные join для обработки нескольких задач параллельно
+    
+    // Первая группа задач
+    let (cpu_times_result, memory_result) = rayon::join(
+        || read_and_parse_cpu_metrics(paths),
+        || read_and_parse_memory_metrics(paths),
+    );
+    
+    // Вторая группа задач
+    let (load_avg_result, pressure_result) = rayon::join(
+        || read_and_parse_loadavg_metrics(paths),
+        || read_and_parse_psi_metrics(paths),
+    );
+    
+    // Третья группа задач
+    let (temperature, power) = rayon::join(
+        || collect_temperature_metrics(),
+        || collect_power_metrics(),
+    );
+    
+    // Четвертая группа задач
+    let (network, disk) = rayon::join(
+        || collect_network_metrics(),
+        || collect_disk_metrics(),
+    );
+    
+    // Пятая группа задач
+    let (gpu, ebpf) = rayon::join(
+        || collect_gpu_metrics(),
+        || collect_ebpf_metrics(),
+    );
+
+    let cpu_times = cpu_times_result??;
+    let memory = memory_result??;
+    let load_avg = load_avg_result??;
+    let pressure = pressure_result?;
+
+    Ok(SystemMetrics {
+        cpu_times,
+        memory,
+        load_avg,
+        pressure,
+        temperature,
+        power,
+        network,
+        disk,
+        gpu: Some(gpu),
+        ebpf,
+    })
+}
+
+/// Вспомогательная функция для чтения и парсинга CPU метрик
+fn read_and_parse_cpu_metrics(paths: &ProcPaths) -> Result<Result<CpuTimes>> {
+    let cpu_contents = read_file(&paths.stat).with_context(|| {
+        format!(
+            "Не удалось прочитать CPU метрики из {}. \n             Проверьте, что файл существует и доступен для чтения. \n             Это может быть вызвано отсутствием прав доступа, отсутствием файла или проблемами с файловой системой. \n             Без этого файла невозможно собрать системные метрики. \n             Попробуйте: ls -la {} | sudo cat {}",
+            paths.stat.display(),
+            paths.stat.display(),
+            paths.stat.display()
+        )
+    })?;
+
+    let cpu_times = parse_cpu_times(&cpu_contents).with_context(|| {
+        format!(
+            "Не удалось разобрать CPU метрики из {}. \n             Проверьте, что файл содержит корректные данные в ожидаемом формате. \n             Ожидаемый формат: 'cpu <user> <nice> <system> <idle> <iowait> <irq> <softirq> <steal> <guest> <guest_nice>'",
+            paths.stat.display()
+        )
+    });
+
+    Ok(cpu_times)
+}
+
+/// Вспомогательная функция для чтения и парсинга метрик памяти
+fn read_and_parse_memory_metrics(paths: &ProcPaths) -> Result<Result<MemoryInfo>> {
+    let meminfo_contents = read_file(&paths.meminfo).with_context(|| {
+        format!(
+            "Не удалось прочитать информацию о памяти из {}. \n             Проверьте, что файл существует и доступен для чтения. \n             Это может быть вызвано отсутствием прав доступа, отсутствием файла или проблемами с файловой системой. \n             Без этого файла невозможно собрать системные метрики. \n             Попробуйте: ls -la {} | sudo cat {}",
+            paths.meminfo.display(),
+            paths.meminfo.display(),
+            paths.meminfo.display()
+        )
+    })?;
+
+    let memory = parse_meminfo(&meminfo_contents).with_context(|| {
+        format!(
+            "Не удалось разобрать информацию о памяти из {}. \n             Проверьте, что файл содержит корректные данные в ожидаемом формате. \n             Ожидаемый формат: '<key>: <value> kB' для полей MemTotal, MemAvailable, MemFree, Buffers, Cached, SwapTotal, SwapFree",
+            paths.meminfo.display()
+        )
+    });
+
+    Ok(memory)
+}
+
+/// Вспомогательная функция для чтения и парсинга метрик средней нагрузки
+fn read_and_parse_loadavg_metrics(paths: &ProcPaths) -> Result<Result<LoadAvg>> {
+    let loadavg_contents = read_file(&paths.loadavg).with_context(|| {
+        format!(
+            "Не удалось прочитать среднюю нагрузку из {}. \n             Проверьте, что файл существует и доступен для чтения. \n             Это может быть вызвано отсутствием прав доступа, отсутствием файла или проблемами с файловой системой. \n             Без этого файла невозможно собрать системные метрики. \n             Попробуйте: ls -la {} | sudo cat {}",
+            paths.loadavg.display(),
+            paths.loadavg.display(),
+            paths.loadavg.display()
+        )
+    })?;
+
+    let load_avg = parse_loadavg(&loadavg_contents).with_context(|| {
+        format!(
+            "Не удалось разобрать среднюю нагрузку из {}. \n             Проверьте, что файл содержит корректные данные в ожидаемом формате. \n             Ожидаемый формат: '<1m> <5m> <15m> <running>/<total> <last_pid>'",
+            paths.loadavg.display()
+        )
+    });
+
+    Ok(load_avg)
+}
+
+/// Вспомогательная функция для чтения и парсинга PSI метрик
+fn read_and_parse_psi_metrics(paths: &ProcPaths) -> Result<PressureMetrics> {
+    // PSI может быть недоступен на старых ядрах, поэтому обрабатываем ошибки gracefully
+    let pressure_cpu = read_file(&paths.pressure_cpu)
+        .and_then(|contents| parse_pressure(&contents))
+        .unwrap_or_else(|e| {
+            warn!(
+                "Не удалось прочитать PSI CPU из {}: {}. \n                 Это может быть вызвано отсутствием поддержки PSI в ядре, отсутствием файла или проблемами с правами доступа. \n                 Используем пустые метрики для PSI CPU.",
+                paths.pressure_cpu.display(),
+                e
+            );
+            Pressure::default()
+        });
+
+    let pressure_io = read_file(&paths.pressure_io)
+        .and_then(|contents| parse_pressure(&contents))
+        .unwrap_or_else(|e| {
+            warn!(
+                "Не удалось прочитать PSI IO из {}: {}. \n                 Это может быть вызвано отсутствием поддержки PSI в ядре, отсутствием файла или проблемами с правами доступа. \n                 Используем пустые метрики для PSI IO.",
+                paths.pressure_io.display(),
+                e
+            );
+            Pressure::default()
+        });
+
+    let pressure_memory = read_file(&paths.pressure_memory)
+        .and_then(|contents| parse_pressure(&contents))
+        .unwrap_or_else(|e| {
+            warn!(
+                "Не удалось прочитать PSI Memory из {}: {}. \n                 Это может быть вызвано отсутствием поддержки PSI в ядре, отсутствием файла или проблемами с правами доступа. \n                 Используем пустые метрики для PSI Memory.",
+                paths.pressure_memory.display(),
+                e
+            );
+            Pressure::default()
+        });
+
+    Ok(PressureMetrics {
+        cpu: pressure_cpu,
+        io: pressure_io,
+        memory: pressure_memory,
+    })
 }
 
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
@@ -2522,11 +2762,14 @@ SwapFree:        4096000 kB
             cpu_usage: 25.5,
             memory_usage: 1024 * 1024 * 512, // 512 MB
             syscall_count: 100,
+            network_packets: 0,
+            network_bytes: 0,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or(std::time::Duration::from_secs(0))
                 .as_nanos() as u64,
             syscall_details: None,
+            network_details: None,
         };
         metrics.ebpf = Some(ebpf_metrics.clone());
         
@@ -3037,6 +3280,76 @@ SwapFree:        4096000 kB
         // Проверяем общие метрики
         assert_eq!(network.total_rx_bytes, 12345678 + 10000000 + 5000000);
         assert_eq!(network.total_tx_bytes, 12345678 + 20000000 + 15000000);
+    }
+
+    #[test]
+    fn test_parallel_metrics_collection() {
+        use crate::metrics::system::{collect_system_metrics_parallel, ProcPaths};
+        
+        let paths = ProcPaths::default();
+        let result = collect_system_metrics_parallel(&paths);
+        
+        // Проверяем, что функция выполняется без ошибок
+        assert!(result.is_ok());
+        
+        let metrics = result.unwrap();
+        
+        // Проверяем, что основные метрики собраны корректно
+        assert!(metrics.cpu_times.user >= 0);
+        assert!(metrics.memory.mem_total_kb > 0);
+        assert!(metrics.load_avg.one >= 0.0);
+    }
+
+    #[test]
+    fn test_parallel_vs_sequential_consistency() {
+        use crate::metrics::system::{collect_system_metrics_parallel, collect_system_metrics, ProcPaths};
+        
+        let paths = ProcPaths::default();
+        
+        // Собираем метрики параллельно
+        let parallel_result = collect_system_metrics_parallel(&paths);
+        
+        // Собираем метрики последовательно
+        let sequential_result = collect_system_metrics(&paths);
+        
+        // Обе функции должны выполниться успешно
+        assert!(parallel_result.is_ok());
+        assert!(sequential_result.is_ok());
+        
+        let parallel_metrics = parallel_result.unwrap();
+        let sequential_metrics = sequential_result.unwrap();
+        
+        // Метрики должны быть сопоставимы (хотя и могут немного отличаться из-за времени сбора)
+        // Проверяем, что основные структуры корректны
+        assert!(parallel_metrics.cpu_times.user >= 0);
+        assert!(sequential_metrics.cpu_times.user >= 0);
+        assert!(parallel_metrics.memory.mem_total_kb > 0);
+        assert!(sequential_metrics.memory.mem_total_kb > 0);
+    }
+
+    #[test]
+    fn test_cached_parallel_metrics() {
+        use crate::metrics::system::{collect_system_metrics_cached_parallel, ProcPaths, SharedSystemMetricsCache};
+        use std::time::Duration;
+        
+        let paths = ProcPaths::default();
+        let cache = SharedSystemMetricsCache::new(Duration::from_secs(10));
+        
+        // Первый вызов должен собрать новые метрики
+        let result1 = collect_system_metrics_cached_parallel(&cache, &paths, false);
+        assert!(result1.is_ok());
+        
+        // Второй вызов должен использовать кэшированные метрики
+        let result2 = collect_system_metrics_cached_parallel(&cache, &paths, false);
+        assert!(result2.is_ok());
+        
+        let metrics1 = result1.unwrap();
+        let metrics2 = result2.unwrap();
+        
+        // Метрики должны быть идентичны (из кэша)
+        assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
+        assert_eq!(metrics1.memory, metrics2.memory);
+        assert_eq!(metrics1.load_avg, metrics2.load_avg);
     }
 }
 
