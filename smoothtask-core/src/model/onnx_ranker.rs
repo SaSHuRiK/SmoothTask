@@ -360,14 +360,12 @@ mod tests {
     /// Мок-ранкер для тестирования
     /// Возвращает фиксированный score для всех групп
     struct MockRanker {
-        expected_input_size: usize,
         fixed_score: f64,
     }
 
     impl MockRanker {
-        fn new(expected_input_size: usize) -> Box<dyn Ranker> {
+        fn new(_expected_input_size: usize) -> Box<dyn Ranker> {
             Box::new(Self {
-                expected_input_size,
                 fixed_score: 0.75,
             })
         }
