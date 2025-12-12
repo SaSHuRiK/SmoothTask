@@ -11,6 +11,45 @@
 - **Rust-демон** (`smoothtaskd`) — быстрый демон для сбора метрик, применения правил и ML-ранкера
 - **Python-тренер** (`smoothtask-trainer`) — офлайн-обучение CatBoostRanker на основе собранных снапшотов
 
+## Требования к системе
+
+Для сборки и запуска SmoothTask требуются:
+
+### Базовые зависимости
+- **Linux** с ядром 5.4+ (рекомендуется 5.10+)
+- **cgroups v2** (обязательно)
+- **Rust 1.70+** для сборки
+- **Python 3.9+** для тренера (опционально)
+
+### Зависимости для сборки
+- **libglib2.0-dev** (для libnotify, desktop-уведомлений)
+- **pkg-config** (для поиска системных библиотек)
+- **libwayland-dev** (для Wayland поддержки)
+- **libpipewire-0.3-dev** (для аудио метрик, опционально)
+- **libpulse-dev** (для PulseAudio поддержки, опционально)
+
+### Установка зависимостей
+
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install -y build-essential curl git pkg-config libssl-dev \
+    libglib2.0-dev libwayland-dev libpipewire-0.3-dev libpulse-dev
+```
+
+**Fedora:**
+```bash
+sudo dnf install -y @development-tools curl git pkg-config openssl-devel \
+    glib2-devel wayland-devel pipewire-devel pulseaudio-libs-devel
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S --needed base-devel curl git pkgconf openssl \
+    glib2 wayland pipewire pulseaudio
+```
+
+Подробные инструкции по установке см. в [SETUP_GUIDE.md](docs/SETUP_GUIDE.md).
+
 ## Основные возможности
 
 ### ML-классификация процессов

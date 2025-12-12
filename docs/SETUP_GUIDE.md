@@ -651,25 +651,27 @@ curl http://127.0.0.1:8080/health
 
 ## Устранение неполадок при установке
 
-### Ошибка сборки: glib-2.0 не найден
+### Ошибка сборки: glib-2.0 не найден (важно!)
 
 **Проблема:** Ошибка сборки с сообщением "The system library `glib-2.0` required by crate `glib-2-0-sys` was not found."
+
+Эта ошибка возникает потому, что зависимость `libnotify` (используемая для desktop-уведомлений) требует glib-2.0.
 
 **Решения:**
 
 1. **Установите glib-2.0 для вашего дистрибутива:**
    ```bash
    # Ubuntu/Debian
-   sudo apt install -y libglib2.0-dev
+   sudo apt update && sudo apt install -y libglib2.0-dev pkg-config
    
    # Fedora
-   sudo dnf install -y glib2-devel
+   sudo dnf install -y glib2-devel pkgconf-pkg-config
    
    # Arch Linux
-   sudo pacman -S --needed glib2
+   sudo pacman -S --needed glib2 pkgconf
    
    # openSUSE
-   sudo zypper install -y glib2-devel
+   sudo zypper install -y glib2-devel pkg-config
    ```
 
 2. **Убедитесь, что pkg-config может найти glib-2.0:**
@@ -679,7 +681,7 @@ curl http://127.0.0.1:8080/health
 
 3. **Если pkg-config не может найти библиотеку, установите PKG_CONFIG_PATH:**
    ```bash
-   export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+   export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/pkgconfig
    ```
 
 4. **Проверьте, что файл glib-2.0.pc существует:**
@@ -691,6 +693,45 @@ curl http://127.0.0.1:8080/health
    ```bash
    cargo clean
    cargo build --release
+   ```
+
+6. **Альтернативный вариант: сборка без libnotify:**
+   Если вы не нуждаетесь в desktop-уведомлениях, вы можете собрать проект без libnotify:
+   ```bash
+   cargo build --release --no-default-features
+   ```
+
+### Проблемы с pkg-config
+
+**Проблема:** pkg-config не установлен или не может найти библиотеки.
+
+**Решения:**
+
+1. **Установите pkg-config:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install -y pkg-config
+   
+   # Fedora
+   sudo dnf install -y pkgconf-pkg-config
+   
+   # Arch Linux
+   sudo pacman -S --needed pkgconf
+   
+   # openSUSE
+   sudo zypper install -y pkg-config
+   ```
+
+2. **Проверьте, что pkg-config работает:**
+   ```bash
+   pkg-config --version
+   ```
+
+3. **Установите переменные окружения:**
+   ```bash
+   export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig:/usr/local/lib/pkgconfig
+   export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
+   export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
    ```
 
 ### Проблемы с pkg-config
