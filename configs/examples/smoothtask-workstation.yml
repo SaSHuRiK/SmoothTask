@@ -44,3 +44,19 @@ thresholds:
   interactive_percentile: 0.5
   normal_percentile: 0.25
   background_percentile: 0.05
+
+# Конфигурация системы уведомлений
+notifications:
+  # Включить отправку уведомлений
+  enabled: true
+  
+  # Тип бэкенда для отправки уведомлений
+  # Для рабочих станций рекомендуется libnotify для desktop уведомлений
+  backend: libnotify
+  
+  # Имя приложения для уведомлений
+  app_name: "SmoothTask"
+  
+  # Минимальный уровень важности
+  # Для рабочих станций рекомендуется warning для баланса информативности
+  min_level: warning

@@ -44,3 +44,20 @@ thresholds:
   interactive_percentile: 0.7
   normal_percentile: 0.4
   background_percentile: 0.2
+
+# Конфигурация системы уведомлений
+notifications:
+  # Включить отправку уведомлений
+  # Для серверов без GUI рекомендуется отключить уведомления
+  enabled: false
+  
+  # Тип бэкенда для отправки уведомлений
+  # Для серверов используется заглушка, так как нет GUI
+  backend: stub
+  
+  # Имя приложения для уведомлений
+  app_name: "SmoothTask"
+  
+  # Минимальный уровень важности
+  # Для серверов можно оставить warning или critical
+  min_level: warning

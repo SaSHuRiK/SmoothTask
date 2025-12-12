@@ -44,3 +44,20 @@ thresholds:
   interactive_percentile: 0.6
   normal_percentile: 0.3
   background_percentile: 0.1
+
+# Конфигурация системы уведомлений
+notifications:
+  # Включить отправку уведомлений
+  # Для ноутбуков рекомендуется включить уведомления для мониторинга
+  enabled: true
+  
+  # Тип бэкенда для отправки уведомлений
+  # Для ноутбуков с GUI рекомендуется libnotify
+  backend: libnotify
+  
+  # Имя приложения для уведомлений
+  app_name: "SmoothTask"
+  
+  # Минимальный уровень важности
+  # Для ноутбуков рекомендуется warning для баланса информативности
+  min_level: warning

@@ -696,6 +696,12 @@ curl http://127.0.0.1:8080/api/config
       "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
       "patterns_dir": "/etc/smoothtask/patterns",
       "api_listen_addr": "127.0.0.1:8080"
+    },
+    "notifications": {
+      "enabled": false,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "warning"
     }
   }
 }
@@ -732,6 +738,11 @@ curl http://127.0.0.1:8080/api/config
   - `snapshot_db_path` (string) - путь к базе данных снапшотов
   - `patterns_dir` (string) - директория с паттернами приложений
   - `api_listen_addr` (string?) - адрес для прослушивания API сервера
+- `notifications` (object) - конфигурация системы уведомлений
+  - `enabled` (bool) - флаг включения уведомлений
+  - `backend` (string) - тип бэкенда уведомлений ("stub" или "libnotify")
+  - `app_name` (string) - имя приложения для уведомлений
+  - `min_level` (string) - минимальный уровень важности уведомлений ("critical", "warning" или "info")
 
 **Примечания:**
 - Конфигурация возвращается как есть, так как в SmoothTask нет явных секретов (паролей, токенов и т.д.)
@@ -752,13 +763,13 @@ curl http://127.0.0.1:8080/api/config
 curl -X POST http://127.0.0.1:8080/api/config/reload
 ```
 
-**Ответ (если конфигурация доступна):**
+**Ответ (если конфигурация успешно перезагружена):**
 ```json
 {
   "status": "success",
-  "message": "Config reload requested. Current configuration returned. For full reload, restart daemon or use file watcher.",
-  "current_config": {
-    "polling_interval_ms": 1000,
+  "message": "Configuration successfully reloaded from file and applied",
+  "old_config": {
+    "polling_interval_ms": 500,
     "max_candidates": 150,
     "dry_run_default": false,
     "policy_mode": "rules-only",
@@ -788,7 +799,120 @@ curl -X POST http://127.0.0.1:8080/api/config/reload
       "min_level": "warning"
     }
   },
-  "action_required": "To fully reload configuration, either:\n1. Edit the config file (file watcher will detect changes)\n2. Restart the daemon\n3. Use the daemon's internal reload mechanism (if available)"
+  "new_config": {
+    "polling_interval_ms": 1000,
+    "max_candidates": 200,
+    "dry_run_default": true,
+    "policy_mode": "rules-only",
+    "enable_snapshot_logging": true,
+    "thresholds": {
+      "psi_cpu_some_high": 0.5,
+      "psi_io_some_high": 0.3,
+      "user_idle_timeout_sec": 60,
+      "interactive_build_grace_sec": 5,
+      "noisy_neighbour_cpu_share": 0.5,
+      "crit_interactive_percentile": 0.8,
+      "interactive_percentile": 0.5,
+      "normal_percentile": 0.2,
+      "background_percentile": 0.1,
+      "sched_latency_p99_threshold_ms": 20.0,
+      "ui_loop_p95_threshold_ms": 16.67
+    },
+    "paths": {
+      "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
+      "patterns_dir": "/etc/smoothtask/patterns",
+      "api_listen_addr": "127.0.0.1:8080"
+    },
+    "notifications": {
+      "enabled": false,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "warning"
+    }
+  },
+  "action_required": "Configuration has been updated and is now active.",
+  "config_path": "/etc/smoothtask/smoothtask.yml"
+}
+```
+
+**Ответ (если конфигурация доступна, но путь к файлу неизвестен):**
+```json
+{
+  "status": "warning",
+  "message": "Config reload requested but config file path is not available",
+  "current_config": {
+    "polling_interval_ms": 500,
+    "max_candidates": 150,
+    "dry_run_default": false,
+    "policy_mode": "rules-only",
+    "enable_snapshot_logging": true,
+    "thresholds": {
+      "psi_cpu_some_high": 0.6,
+      "psi_io_some_high": 0.4,
+      "user_idle_timeout_sec": 120,
+      "interactive_build_grace_sec": 10,
+      "noisy_neighbour_cpu_share": 0.7,
+      "crit_interactive_percentile": 0.9,
+      "interactive_percentile": 0.6,
+      "normal_percentile": 0.3,
+      "background_percentile": 0.1,
+      "sched_latency_p99_threshold_ms": 20.0,
+      "ui_loop_p95_threshold_ms": 16.67
+    },
+    "paths": {
+      "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
+      "patterns_dir": "/etc/smoothtask/patterns",
+      "api_listen_addr": "127.0.0.1:8080"
+    },
+    "notifications": {
+      "enabled": false,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "warning"
+    }
+  },
+  "action_required": "To enable full config reload, ensure the daemon is running with config path information."
+}
+```
+
+**Ответ (если произошла ошибка загрузки конфигурации):**
+```json
+{
+  "status": "error",
+  "message": "Failed to reload configuration: Config file not found at /etc/smoothtask/smoothtask.yml",
+  "current_config": {
+    "polling_interval_ms": 500,
+    "max_candidates": 150,
+    "dry_run_default": false,
+    "policy_mode": "rules-only",
+    "enable_snapshot_logging": true,
+    "thresholds": {
+      "psi_cpu_some_high": 0.6,
+      "psi_io_some_high": 0.4,
+      "user_idle_timeout_sec": 120,
+      "interactive_build_grace_sec": 10,
+      "noisy_neighbour_cpu_share": 0.7,
+      "crit_interactive_percentile": 0.9,
+      "interactive_percentile": 0.6,
+      "normal_percentile": 0.3,
+      "background_percentile": 0.1,
+      "sched_latency_p99_threshold_ms": 20.0,
+      "ui_loop_p95_threshold_ms": 16.67
+    },
+    "paths": {
+      "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
+      "patterns_dir": "/etc/smoothtask/patterns",
+      "api_listen_addr": "127.0.0.1:8080"
+    },
+    "notifications": {
+      "enabled": false,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "warning"
+    }
+  },
+  "config_path": "/etc/smoothtask/smoothtask.yml",
+  "action_required": "Check the configuration file for errors and try again."
 }
 ```
 
@@ -800,22 +924,104 @@ curl -X POST http://127.0.0.1:8080/api/config/reload
 }
 ```
 
+**Поля ответа:**
+- `status` (string) - статус операции: "success", "warning" или "error"
+- `message` (string) - описание результата операции
+- `old_config` (object, опционально) - предыдущая конфигурация (при успешной перезагрузке)
+- `new_config` (object, опционально) - новая конфигурация (при успешной перезагрузке)
+- `current_config` (object, опционально) - текущая конфигурация (при ошибках или предупреждениях)
+- `config_path` (string, опционально) - путь к конфигурационному файлу
+- `action_required` (string, опционально) - рекомендации по дальнейшим действиям
+
 **Примечания:**
 
-- В улучшенной версии, API сервер может загружать новую конфигурацию из файла и возвращать как старую, так и новую конфигурацию
-- Для полной перезагрузки конфигурации рекомендуется:
-  1. Отредактировать конфигурационный файл (ConfigWatcher автоматически обнаружит изменения)
-  2. Перезапустить демон
-  3. Использовать этот endpoint для проверки новой конфигурации перед применением
+- В текущей реализации, API сервер может напрямую загружать и применять новую конфигурацию из файла
+- Конфигурация обновляется в реальном времени через Arc<RwLock<Config>>, что позволяет всем компонентам использовать новую конфигурацию
+- Для успешной перезагрузки требуется, чтобы путь к конфигурационному файлу был известен API серверу
+- Если конфигурационный файл содержит ошибки, возвращается текущая конфигурация и сообщение об ошибке
+- Уведомления настраиваются в секции `notifications` конфигурационного файла
 
 **Статус коды:**
 - `200 OK` - Успешный запрос
 - `200 OK` с `status: "error"` - Ошибка загрузки конфигурации
 - `200 OK` с `status: "warning"` - Конфигурация доступна, но путь к файлу неизвестен
-
-**Статус коды:**
-- `200 OK` - Успешный запрос
 - `200 OK` с `status: "error"` - Конфигурация недоступна
+
+---
+
+### Динамическая перезагрузка конфигурации
+
+SmoothTask поддерживает динамическую перезагрузку конфигурации без необходимости перезапуска демона. Это позволяет изменять параметры работы демона "на лету", что особенно полезно для тонкой настройки и экспериментов.
+
+#### Механизмы перезагрузки
+
+1. **Ручная перезагрузка через API**
+   - Используйте endpoint `POST /api/config/reload` для ручной перезагрузки конфигурации
+   - Требуется, чтобы путь к конфигурационному файлу был известен API серверу
+   - Новая конфигурация загружается из файла и применяется немедленно
+
+2. **Автоматическая перезагрузка через ConfigWatcher**
+   - Демон автоматически отслеживает изменения в конфигурационном файле
+   - При обнаружении изменений, демон автоматически перезагружает конфигурацию
+   - Этот механизм работает независимо от API сервера
+
+3. **Перезапуск демона**
+   - Традиционный способ - перезапуск демона для применения новой конфигурации
+   - Гарантирует полную перезагрузку всех компонентов
+
+#### Архитектура динамической перезагрузки
+
+- **Arc<RwLock<Config>>** - Конфигурация хранится в потокобезопасном контейнере
+- **ConfigWatcher** - Компонент, отслеживающий изменения в конфигурационном файле
+- **API Integration** - API сервер имеет доступ к той же конфигурации через Arc<RwLock<Config>>
+- **Real-time Updates** - Все компоненты демона используют актуальную конфигурацию
+
+#### Примеры использования
+
+**Ручная перезагрузка через API:**
+```bash
+# Изменить конфигурационный файл
+nano /etc/smoothtask/smoothtask.yml
+
+# Перезагрузить конфигурацию через API
+curl -X POST http://127.0.0.1:8080/api/config/reload
+
+# Проверить новую конфигурацию
+curl http://127.0.0.1:8080/api/config | jq
+```
+
+**Автоматическая перезагрузка через ConfigWatcher:**
+```bash
+# Изменить конфигурационный файл
+nano /etc/smoothtask/smoothtask.yml
+
+# Демон автоматически обнаружит изменения и перезагрузит конфигурацию
+# Можно проверить новую конфигурацию через API
+curl http://127.0.0.1:8080/api/config | jq
+```
+
+**Проверка текущей конфигурации:**
+```bash
+# Получение текущей конфигурации
+curl http://127.0.0.1:8080/api/config | jq '.config'
+
+# Проверка конкретных параметров
+curl http://127.0.0.1:8080/api/config | jq '.config.thresholds.psi_cpu_some_high'
+```
+
+#### Ограничения и рекомендации
+
+- **Совместимость параметров** - Не все параметры могут быть изменены "на лету" без перезапуска
+- **Валидация** - Новая конфигурация проходит валидацию перед применением
+- **Fallback** - В случае ошибки, демон сохраняет предыдущую рабочую конфигурацию
+- **Логирование** - Все события перезагрузки логируются для отладки
+
+#### Примеры сценариев использования
+
+1. **Тонкая настройка порогов** - Изменение порогов PSI для оптимизации реакции на нагрузку
+2. **Эксперименты с политиками** - Переключение между режимами `rules-only` и `hybrid`
+3. **Настройка уведомлений** - Включение/отключение уведомлений без перезапуска
+4. **Изменение интервалов опроса** - Настройка частоты сбора метрик
 
 ---
 

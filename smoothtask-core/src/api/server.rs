@@ -279,9 +279,14 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/system",
                 "method": "GET",
                 "description": "Получение информации о системе (ядро, архитектура, дистрибутив)"
+            },
+            {
+                "path": "/api/config/reload",
+                "method": "POST",
+                "description": "Перезагрузка конфигурации демона из файла"
             }
         ],
-        "count": 14
+        "count": 15
     }))
 }
 
@@ -2259,7 +2264,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
             sched_latency_p95_ms: Some(5.0),
             sched_latency_p99_ms: Some(10.0),
@@ -2329,7 +2334,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
         let temp_dir = std::env::temp_dir().join("smoothtask_test_patterns");
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2395,7 +2400,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
             sched_latency_p95_ms: Some(5.0),
             sched_latency_p99_ms: Some(10.0),
@@ -2464,7 +2469,7 @@ apps:
                 min_level: crate::config::config::NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
         let temp_dir = std::env::temp_dir().join("smoothtask_test_patterns");
         std::fs::create_dir_all(&temp_dir).unwrap();
@@ -2574,14 +2579,14 @@ apps:
                 min_level: NotificationLevel::Warning,
             },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState {
             daemon_stats: None,
             system_metrics: None,
             processes: None,
             app_groups: None,
             responsiveness_metrics: None,
-            config: Some(Arc::new(RwLock::new(current_config))),
+            config: Some(config_arc.clone()),
             config_path: None,
             pattern_database: None,
         };
@@ -2688,7 +2693,7 @@ notifications:
             },
         };
         
-        let config_arc = Arc::new(current_config);
+        let config_arc = Arc::new(RwLock::new(current_config));
         let config_path = config_file_path.to_str().unwrap().to_string();
         
         let state = ApiState {
@@ -2697,7 +2702,7 @@ notifications:
             processes: None,
             app_groups: None,
             responsiveness_metrics: None,
-            config: Some(Arc::new(RwLock::new(config))),
+            config: Some(config_arc.clone()),
             config_path: Some(config_path.clone()),
             pattern_database: None,
         };
@@ -2782,7 +2787,7 @@ max_candidates: 200
             },
         };
         
-        let config_arc = Arc::new(current_config);
+        let config_arc = Arc::new(RwLock::new(current_config));
         let config_path = config_file_path.to_str().unwrap().to_string();
         
         let state = ApiState {
@@ -2791,7 +2796,7 @@ max_candidates: 200
             processes: None,
             app_groups: None,
             responsiveness_metrics: None,
-            config: Some(config_arc),
+            config: Some(config_arc.clone()),
             config_path: Some(config_path.clone()),
             pattern_database: None,
         };
