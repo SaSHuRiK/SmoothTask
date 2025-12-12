@@ -88,7 +88,7 @@ fn test_window_introspector_performance() {
 
 #[test]
 fn test_config_creation_performance() {
-    use smoothtask_core::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+    use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
     
     let start = Instant::now();
     
@@ -127,6 +127,12 @@ fn test_config_creation_performance() {
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 5,
                 process_metrics_cache_interval: 2,
+            },
+            notifications: smoothtask_core::config::config::NotificationConfig {
+                enabled: false,
+                backend: smoothtask_core::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: smoothtask_core::config::config::NotificationLevel::Warning,
             },
         };
     }

@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
-use crate::config::Thresholds;
+use crate::config::config::Thresholds;
 use crate::logging::rotation::{get_log_file_size, LogRotator};
 use crate::metrics::system::SystemMetrics;
 
@@ -419,7 +419,7 @@ impl SnapshotLogger {
     /// ```
     pub fn new_with_logging<P: AsRef<Path>>(
         db_path: P,
-        logging_config: &crate::config::LoggingConfig,
+        logging_config: &crate::config::config::LoggingConfig,
     ) -> Result<Self> {
         let conn = Connection::open(db_path.as_ref())
             .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
@@ -792,7 +792,7 @@ impl SnapshotLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Thresholds;
+    use crate::config::config::Thresholds;
     use tempfile::NamedTempFile;
 
     fn create_test_snapshot() -> Snapshot {
@@ -1231,7 +1231,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let db_path = temp_dir.path().join("test_snapshots.db");
 
-        let logging_config = crate::config::LoggingConfig {
+        let logging_config = crate::config::config::LoggingConfig {
             log_max_size_bytes: 10_485_760,
             log_max_rotated_files: 3,
             log_compression_enabled: false,
@@ -1262,7 +1262,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let db_path = temp_dir.path().join("test_snapshots.db");
 
-        let logging_config = crate::config::LoggingConfig {
+        let logging_config = crate::config::config::LoggingConfig {
             log_max_size_bytes: 100, // Очень маленький лимит для теста
             log_max_rotated_files: 3,
             log_compression_enabled: false,
@@ -1295,7 +1295,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().expect("temp dir");
         let db_path = temp_dir.path().join("test_snapshots.db");
 
-        let logging_config = crate::config::LoggingConfig {
+        let logging_config = crate::config::config::LoggingConfig {
             log_max_size_bytes: 0, // Ротация отключена
             log_max_rotated_files: 3,
             log_compression_enabled: false,

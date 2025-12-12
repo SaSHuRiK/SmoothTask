@@ -2,7 +2,7 @@ mod systemd;
 
 use anyhow::Result;
 use clap::Parser;
-use smoothtask_core::{config::Config, run_daemon};
+use smoothtask_core::{config::config::Config, run_daemon};
 use tokio::signal;
 use tokio::sync::watch;
 use tracing_subscriber::EnvFilter;
@@ -58,6 +58,7 @@ async fn main() -> Result<()> {
     });
     run_daemon(
         config,
+        args.config.clone(),
         args.dry_run,
         shutdown_rx,
         Some(on_ready),

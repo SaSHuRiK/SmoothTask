@@ -66,6 +66,13 @@ impl InputActivityTracker {
         self.last_event = Some(now);
     }
 
+    /// Обновить порог простоя.
+    ///
+    /// Используется для динамической перезагрузки конфигурации.
+    pub fn set_idle_threshold(&mut self, new_threshold: Duration) {
+        self.idle_threshold = new_threshold;
+    }
+
     /// Обновить состояние на основе полученных событий.
     ///
     /// Все события, кроме `EV_SYN`, считаются пользовательской активностью.
@@ -254,6 +261,16 @@ impl InputTracker {
         match self {
             Self::Evdev(tracker) => tracker.metrics(now),
             Self::Simple(tracker) => tracker.metrics(now),
+        }
+    }
+
+    /// Обновить порог простоя.
+    ///
+    /// Используется для динамической перезагрузки конфигурации.
+    pub fn set_idle_threshold(&mut self, new_threshold: Duration) {
+        match self {
+            Self::Evdev(tracker) => tracker.set_idle_threshold(new_threshold),
+            Self::Simple(tracker) => tracker.set_idle_threshold(new_threshold),
         }
     }
 }
@@ -461,6 +478,13 @@ impl EvdevInputTracker {
         }
 
         Ok(devices)
+    }
+
+    /// Обновить порог простоя.
+    ///
+    /// Используется для динамической перезагрузки конфигурации.
+    pub fn set_idle_threshold(&mut self, new_threshold: Duration) {
+        self.activity_tracker.set_idle_threshold(new_threshold);
     }
 }
 
@@ -1106,5 +1130,56 @@ mod tests {
                 code
             );
         }
+    }
+
+    #[test]
+    fn test_input_tracker_set_idle_threshold() {
+        // Тест для InputTracker::set_idle_threshold()
+        let mut tracker = InputTracker::new(Duration::from_secs(5));
+        
+        // Проверяем, что метод не паникует и обновляет порог
+        tracker.set_idle_threshold(Duration::from_secs(10));
+        
+        // Проверяем, что метрики используют новый порог
+        let now = Instant::now();
+        let metrics = tracker.metrics(now);
+        // Без активности user_active должен быть false
+        assert!(!metrics.user_active);
+        
+        // Тестируем с разными типами трекеров
+        let mut simple_tracker = InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(3)));
+        simple_tracker.set_idle_threshold(Duration::from_secs(7));
+        
+        if let Ok(mut evdev_tracker) = EvdevInputTracker::new(Duration::from_secs(2)) {
+            let mut tracker = InputTracker::Evdev(evdev_tracker);
+            tracker.set_idle_threshold(Duration::from_secs(8));
+            // Метод не должен паниковать
+        }
+    }
+
+    #[test]
+    fn test_input_activity_tracker_set_idle_threshold() {
+        // Тест для InputActivityTracker::set_idle_threshold()
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        
+        // Регистрируем активность
+        let now = Instant::now();
+        tracker.register_activity(now);
+        
+        // Проверяем, что активность зарегистрирована
+        let metrics = tracker.metrics(now);
+        assert!(metrics.user_active);
+        
+        // Обновляем порог простоя
+        tracker.set_idle_threshold(Duration::from_secs(1));
+        
+        // Проверяем, что активность всё ещё зарегистрирована
+        let metrics = tracker.metrics(now);
+        assert!(metrics.user_active);
+        
+        // Ждём дольше нового порога и проверяем, что активность сбрасывается
+        let later = now + Duration::from_secs(2);
+        let metrics = tracker.metrics(later);
+        assert!(!metrics.user_active);
     }
 }

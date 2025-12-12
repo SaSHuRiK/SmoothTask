@@ -743,6 +743,127 @@ curl http://127.0.0.1:8080/api/config
 
 ---
 
+### POST /api/config/reload
+
+Перезагрузка конфигурации демона из файла.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/config/reload
+```
+
+**Ответ (если конфигурация доступна):**
+```json
+{
+  "status": "success",
+  "message": "Config reload requested. Current configuration returned. For full reload, restart daemon or use file watcher.",
+  "current_config": {
+    "polling_interval_ms": 1000,
+    "max_candidates": 150,
+    "dry_run_default": false,
+    "policy_mode": "rules-only",
+    "enable_snapshot_logging": true,
+    "thresholds": {
+      "psi_cpu_some_high": 0.6,
+      "psi_io_some_high": 0.4,
+      "user_idle_timeout_sec": 120,
+      "interactive_build_grace_sec": 10,
+      "noisy_neighbour_cpu_share": 0.7,
+      "crit_interactive_percentile": 0.9,
+      "interactive_percentile": 0.6,
+      "normal_percentile": 0.3,
+      "background_percentile": 0.1,
+      "sched_latency_p99_threshold_ms": 20.0,
+      "ui_loop_p95_threshold_ms": 16.67
+    },
+    "paths": {
+      "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
+      "patterns_dir": "/etc/smoothtask/patterns",
+      "api_listen_addr": "127.0.0.1:8080"
+    },
+    "notifications": {
+      "enabled": false,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "warning"
+    }
+  },
+  "action_required": "To fully reload configuration, either:\n1. Edit the config file (file watcher will detect changes)\n2. Restart the daemon\n3. Use the daemon's internal reload mechanism (if available)"
+}
+```
+
+**Ответ (если конфигурация недоступна):**
+```json
+{
+  "status": "error",
+  "message": "Config reload not available (daemon may not be running or config not set)"
+}
+```
+
+**Примечания:**
+
+- В улучшенной версии, API сервер может загружать новую конфигурацию из файла и возвращать как старую, так и новую конфигурацию
+- Для полной перезагрузки конфигурации рекомендуется:
+  1. Отредактировать конфигурационный файл (ConfigWatcher автоматически обнаружит изменения)
+  2. Перезапустить демон
+  3. Использовать этот endpoint для проверки новой конфигурации перед применением
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `200 OK` с `status: "error"` - Ошибка загрузки конфигурации
+- `200 OK` с `status: "warning"` - Конфигурация доступна, но путь к файлу неизвестен
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `200 OK` с `status: "error"` - Конфигурация недоступна
+
+---
+
+### Система уведомлений
+
+SmoothTask включает систему уведомлений для информирования пользователей о важных событиях в работе демона. Система поддерживает различные уровни важности и бэкенды для отправки уведомлений.
+
+#### Типы уведомлений
+
+- **Critical** - Критические уведомления, требующие немедленного внимания (например, фатальные ошибки)
+- **Warning** - Предупреждения о потенциальных проблемах или неоптимальных состояниях
+- **Info** - Информационные уведомления о нормальной работе системы
+
+#### Бэкенды уведомлений
+
+- **Stub** - Заглушка для тестирования (только логирование через tracing)
+- **Libnotify** - Desktop уведомления через системную библиотеку libnotify (рекомендуется для production)
+
+#### Конфигурация уведомлений
+
+Уведомления настраиваются в конфигурационном файле в секции `notifications`:
+
+```yaml
+notifications:
+  # Включить отправку уведомлений
+  enabled: true
+  
+  # Тип бэкенда (stub или libnotify)
+  backend: libnotify
+  
+  # Имя приложения для уведомлений
+  app_name: "SmoothTask"
+  
+  # Минимальный уровень важности
+  # - critical: только критические уведомления
+  # - warning: предупреждения и критические уведомления
+  # - info: все уведомления
+  min_level: warning
+```
+
+**Примечания:**
+
+- Для использования libnotify требуется наличие системной библиотеки libnotify
+- В production рекомендуется использовать уровень `warning` или `critical` для избежания информационного шума
+- Уведомления могут быть полностью отключены с помощью `enabled: false`
+
+---
+
 ### GET /api/classes
 
 Получение информации о всех доступных классах QoS (Quality of Service) и их параметрах приоритета.

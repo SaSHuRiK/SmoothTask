@@ -5,7 +5,7 @@ use axum::{
     extract::{Path, State},
     http::StatusCode,
     response::Json,
-    routing::get,
+    routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
@@ -14,6 +14,9 @@ use std::sync::Arc;
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info};
+
+// Import notification types for test configurations
+use crate::config::config::{NotificationBackend, NotificationConfig, NotificationLevel};
 
 /// Состояние API сервера.
 #[derive(Clone)]
@@ -29,7 +32,10 @@ pub struct ApiState {
     /// Последние метрики отзывчивости (опционально)
     responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>,
     /// Текущая конфигурация демона (опционально)
-    config: Option<Arc<crate::config::Config>>,
+    /// Используем Arc<RwLock<Config>> для поддержки динамического обновления конфигурации
+    config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+    /// Путь к конфигурационному файлу (опционально)
+    config_path: Option<String>,
     /// База данных паттернов для классификации процессов (опционально)
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
 }
@@ -44,6 +50,7 @@ impl ApiState {
             app_groups: None,
             responsiveness_metrics: None,
             config: None,
+            config_path: None,
             pattern_database: None,
         }
     }
@@ -57,6 +64,7 @@ impl ApiState {
             app_groups: None,
             responsiveness_metrics: None,
             config: None,
+            config_path: None,
             pattern_database: None,
         }
     }
@@ -72,6 +80,7 @@ impl ApiState {
             app_groups: None,
             responsiveness_metrics: None,
             config: None,
+            config_path: None,
             pattern_database: None,
         }
     }
@@ -90,6 +99,7 @@ impl ApiState {
             app_groups,
             responsiveness_metrics: None,
             config: None,
+            config_path: None,
             pattern_database: None,
         }
     }
@@ -100,7 +110,7 @@ impl ApiState {
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
         processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
         app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        config: Option<Arc<crate::config::Config>>,
+        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
     ) -> Self {
         Self {
             daemon_stats,
@@ -109,6 +119,7 @@ impl ApiState {
             app_groups,
             responsiveness_metrics: None,
             config,
+            config_path: None,
             pattern_database: None,
         }
     }
@@ -122,7 +133,7 @@ impl ApiState {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<crate::config::Config>>,
+        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
     ) -> Self {
         Self {
             daemon_stats,
@@ -131,6 +142,7 @@ impl ApiState {
             app_groups,
             responsiveness_metrics,
             config,
+            config_path: None,
             pattern_database: None,
         }
     }
@@ -144,8 +156,9 @@ impl ApiState {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<crate::config::Config>>,
+        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
         pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+        config_path: Option<String>,
     ) -> Self {
         Self {
             daemon_stats,
@@ -154,6 +167,7 @@ impl ApiState {
             app_groups,
             responsiveness_metrics,
             config,
+            config_path,
             pattern_database,
         }
     }
@@ -452,6 +466,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
+        .route("/api/config/reload", post(config_reload_handler))
         .route("/api/classes", get(classes_handler))
         .route("/api/patterns", get(patterns_handler))
         .route("/api/system", get(system_handler))
@@ -661,15 +676,118 @@ async fn responsiveness_handler(State(state): State<ApiState>) -> Result<Json<Va
 /// (паролей, токенов и т.д.). Все поля конфигурации безопасны для просмотра.
 async fn config_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     match &state.config {
-        Some(config_arc) => Ok(Json(json!({
-            "status": "ok",
-            "config": serde_json::to_value(config_arc.as_ref()).unwrap_or(Value::Null)
-        }))),
+        Some(config_arc) => {
+            let config_guard = config_arc.read().await;
+            Ok(Json(json!({
+                "status": "ok",
+                "config": serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
+            })))
+        },
         None => Ok(Json(json!({
             "status": "ok",
             "config": null,
             "message": "Config not available (daemon may not be running or config not set)"
         }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/config/reload` (POST).
+///
+/// Перезагружает конфигурацию демона из файла.
+/// Возвращает результат перезагрузки и новую конфигурацию (если успешно).
+///
+/// # Примечания
+///
+/// В текущей архитектуре, API сервер не имеет прямого доступа к демону для перезагрузки конфигурации.
+/// Однако, мы можем реализовать базовую функциональность, которая:
+/// 1. Пытается загрузить конфигурацию из файла (если путь известен)
+/// 2. Возвращает новую конфигурацию (если загрузка успешна)
+/// 3. Логирует событие для ручной перезагрузки
+///
+/// Для полной интеграции потребуется рефакторинг архитектуры, но этот endpoint предоставляет
+/// базовую функциональность для мониторинга и отладки.
+async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match (&state.config, &state.config_path) {
+        (Some(config_arc), Some(config_path)) => {
+            // Пробуем загрузить новую конфигурацию из файла
+            match crate::config::config::Config::load(config_path) {
+                Ok(new_config) => {
+                    // Успешно загрузили новую конфигурацию
+                    // Теперь мы можем напрямую обновить конфигурацию через Arc<RwLock<Config>>
+                    
+                    // Сохраняем старую конфигурацию для ответа
+                    let old_config = {
+                        let config_guard = config_arc.read().await;
+                        serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
+                    };
+                    
+                    // Обновляем конфигурацию
+                    {
+                        let mut config_guard = config_arc.write().await;
+                        *config_guard = new_config;
+                    }
+                    
+                    tracing::info!("API config reload successful: loaded and applied new configuration from {}", config_path);
+                    
+                    // Получаем новую конфигурацию для ответа
+                    let new_config_value = {
+                        let config_guard = config_arc.read().await;
+                        serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
+                    };
+                    
+                    Ok(Json(json!({
+                        "status": "success",
+                        "message": "Configuration successfully reloaded from file and applied",
+                        "old_config": old_config,
+                        "new_config": new_config_value,
+                        "action_required": "Configuration has been updated and is now active.",
+                        "config_path": config_path
+                    })))
+                }
+                Err(e) => {
+                    // Ошибка загрузки конфигурации
+                    tracing::error!("API config reload failed: {}", e);
+                    
+                    // Получаем текущую конфигурацию для ответа
+                    let current_config = {
+                        let config_guard = config_arc.read().await;
+                        serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
+                    };
+                    
+                    Ok(Json(json!({
+                        "status": "error",
+                        "message": format!("Failed to reload configuration: {}", e),
+                        "current_config": current_config,
+                        "config_path": config_path,
+                        "action_required": "Check the configuration file for errors and try again."
+                    })))
+                }
+            }
+        }
+        (Some(config_arc), None) => {
+            // Конфигурация доступна, но путь к файлу неизвестен
+            tracing::warn!("API config reload requested but config path is not available");
+            
+            // Получаем текущую конфигурацию для ответа
+            let current_config = {
+                let config_guard = config_arc.read().await;
+                serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
+            };
+            
+            Ok(Json(json!({
+                "status": "warning",
+                "message": "Config reload requested but config file path is not available",
+                "current_config": current_config,
+                "action_required": "To enable full config reload, ensure the daemon is running with config path information."
+            })))
+        }
+        (None, _) => {
+            // Конфигурация недоступна
+            Ok(Json(json!({
+                "status": "error",
+                "message": "Config reload not available (daemon may not be running or config not set)"
+            })))
+        }
     }
 }
 
@@ -787,7 +905,7 @@ impl ApiServer {
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
         processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
         app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        config: Option<Arc<crate::config::Config>>,
+        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
     ) -> Self {
         Self {
             addr,
@@ -821,7 +939,7 @@ impl ApiServer {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<crate::config::Config>>,
+        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
     ) -> Self {
         Self {
             addr,
@@ -848,6 +966,7 @@ impl ApiServer {
     /// - `responsiveness_metrics`: Метрики отзывчивости (опционально)
     /// - `config`: Конфигурация демона (опционально)
     /// - `pattern_database`: База данных паттернов для классификации процессов (опционально)
+    /// - `config_path`: Путь к конфигурационному файлу (опционально)
     #[allow(clippy::too_many_arguments)]
     pub fn with_all_and_responsiveness_and_config_and_patterns(
         addr: std::net::SocketAddr,
@@ -858,8 +977,9 @@ impl ApiServer {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<crate::config::Config>>,
+        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
         pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+        config_path: Option<String>,
     ) -> Self {
         Self {
             addr,
@@ -871,6 +991,7 @@ impl ApiServer {
                 responsiveness_metrics,
                 config,
                 pattern_database,
+                config_path,
             ),
         }
     }
@@ -1392,7 +1513,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_handler_with_config() {
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1427,8 +1548,14 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
         let result = config_handler(State(state)).await;
         assert!(result.is_ok());
@@ -1448,7 +1575,7 @@ mod tests {
 
     #[test]
     fn test_api_state_with_all_and_config() {
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1483,8 +1610,14 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
         assert!(state.config.is_some());
         assert!(state.responsiveness_metrics.is_none());
@@ -1540,7 +1673,7 @@ mod tests {
 
     #[test]
     fn test_api_server_with_all_and_config() {
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -1576,8 +1709,14 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
-        let config_arc = Arc::new(config);
+        let config_arc = Arc::new(RwLock::new(config));
         let server = ApiServer::with_all_and_config(addr, None, None, None, None, Some(config_arc));
         // Проверяем, что сервер создан
         let _ = server;
@@ -1923,6 +2062,7 @@ mod tests {
             None,
             None,
             Some(Arc::new(pattern_db)),
+            None, // config_path not needed for this test
         );
 
         let result = patterns_handler(State(state)).await;
@@ -1985,6 +2125,7 @@ apps:
             None,
             None,
             Some(pattern_db_arc),
+            None, // config_path not needed for this test
         );
 
         let result = patterns_handler(State(state)).await;
@@ -2074,7 +2215,7 @@ apps:
 
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config() {
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
@@ -2111,6 +2252,12 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
         let config_arc = Arc::new(config);
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -2130,7 +2277,7 @@ apps:
             None,
             None,
             Some(metrics_arc),
-            Some(config_arc),
+            Some(Arc::new(RwLock::new(config))),
         );
         // Проверяем, что сервер создан
         let _ = server;
@@ -2139,7 +2286,7 @@ apps:
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -2175,6 +2322,12 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
         let config_arc = Arc::new(config);
         // Создаём временную директорию для паттернов
@@ -2189,8 +2342,9 @@ apps:
             None,
             None,
             None,
-            Some(config_arc),
+            Some(Arc::new(RwLock::new(config))),
             Some(pattern_db_arc),
+            None, // config_path not needed for this test
         );
         // Проверяем, что сервер создан
         let _ = server;
@@ -2198,7 +2352,7 @@ apps:
 
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config() {
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let config = Config {
             polling_interval_ms: 1000,
@@ -2234,6 +2388,12 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
         let config_arc = Arc::new(config);
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -2252,7 +2412,7 @@ apps:
             None,
             None,
             Some(metrics_arc),
-            Some(config_arc),
+            Some(Arc::new(RwLock::new(config))),
         );
         assert!(state.config.is_some());
         assert!(state.responsiveness_metrics.is_some());
@@ -2262,7 +2422,7 @@ apps:
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -2297,6 +2457,12 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
         };
         let config_arc = Arc::new(config);
         // Создаём временную директорию для паттернов
@@ -2310,8 +2476,9 @@ apps:
             None,
             None,
             None,
-            Some(config_arc),
+            Some(Arc::new(RwLock::new(config))),
             Some(pattern_db_arc),
+            None, // config_path not needed for this test
         );
         assert!(state.config.is_some());
         assert!(state.pattern_database.is_some());
@@ -2348,5 +2515,295 @@ apps:
 
         // architecture может быть null или строкой
         assert!(system["architecture"].is_null() || system["architecture"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_config_reload_handler_without_config() {
+        // Тест для config_reload_handler когда конфигурация не доступна
+        let state = ApiState::new();
+        let result = config_reload_handler(State(state)).await;
+        let json = result.unwrap().0;
+        
+        assert_eq!(json["status"], "error");
+        assert!(json["message"].as_str().unwrap().contains("not available"));
+    }
+
+    #[tokio::test]
+    async fn test_config_reload_handler_with_config() {
+        // Тест для config_reload_handler когда конфигурация доступна
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        
+        let config = Config {
+            polling_interval_ms: 500,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: false,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: NotificationConfig {
+                enabled: false,
+                backend: NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: NotificationLevel::Warning,
+            },
+        };
+        let config_arc = Arc::new(config);
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: Some(Arc::new(RwLock::new(current_config))),
+            config_path: None,
+            pattern_database: None,
+        };
+        
+        let result = config_reload_handler(State(state)).await;
+        let json = result.unwrap().0;
+        
+        assert_eq!(json["status"], "success");
+        assert!(json["message"].as_str().unwrap().contains("Config reload requested"));
+        assert!(json["current_config"].is_object());
+        assert_eq!(json["current_config"]["polling_interval_ms"], 500);
+        assert!(json["action_required"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_config_reload_handler_with_config_path() {
+        // Тест для config_reload_handler когда конфигурация и путь доступны
+        // Создаём временный конфигурационный файл
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config_file_path = temp_dir.path().join("test_config.yml");
+        let config_file_content = r#"
+polling_interval_ms: 1000
+max_candidates: 200
+dry_run_default: true
+
+paths:
+  snapshot_db_path: "/tmp/test.db"
+  patterns_dir: "/tmp/patterns"
+
+thresholds:
+  psi_cpu_some_high: 0.5
+  psi_io_some_high: 0.3
+  user_idle_timeout_sec: 60
+  interactive_build_grace_sec: 5
+  noisy_neighbour_cpu_share: 0.5
+  crit_interactive_percentile: 0.8
+  interactive_percentile: 0.5
+  normal_percentile: 0.2
+  background_percentile: 0.1
+  sched_latency_p99_threshold_ms: 20.0
+  ui_loop_p95_threshold_ms: 16.67
+
+logging:
+  log_max_size_bytes: 10485760
+  log_max_rotated_files: 5
+  log_compression_enabled: true
+  log_rotation_interval_sec: 0
+
+cache_intervals:
+  system_metrics_cache_interval: 3
+  process_metrics_cache_interval: 1
+
+notifications:
+  enabled: false
+  backend: stub
+  app_name: "SmoothTask"
+  min_level: warning
+"#;
+        
+        std::fs::write(&config_file_path, config_file_content).expect("write config");
+        // Создаём директорию patterns_dir, так как она требуется для валидации конфигурации
+        std::fs::create_dir_all("/tmp/patterns").expect("create patterns dir");
+        
+        // Создаём текущую конфигурацию (отличную от файла)
+        let current_config = crate::config::config::Config {
+            polling_interval_ms: 500,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: crate::config::config::PolicyMode::RulesOnly,
+            enable_snapshot_logging: false,
+            thresholds: crate::config::config::Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: crate::config::config::Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: crate::config::config::LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
+            cache_intervals: crate::config::config::CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
+        };
+        
+        let config_arc = Arc::new(current_config);
+        let config_path = config_file_path.to_str().unwrap().to_string();
+        
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: Some(Arc::new(RwLock::new(config))),
+            config_path: Some(config_path.clone()),
+            pattern_database: None,
+        };
+        
+        let result = config_reload_handler(State(state)).await;
+        assert!(result.is_ok(), "Config reload handler failed");
+        
+        let json = result.unwrap().0;
+        if json["status"] != "success" {
+            eprintln!("Config reload failed with message: {}", json["message"]);
+            if let Some(details) = json.get("error") {
+                eprintln!("Error details: {}", details);
+            }
+        }
+        assert_eq!(json["status"], "success");
+        assert_eq!(json["message"], "Configuration successfully reloaded from file");
+        assert!(json["old_config"].is_object());
+        assert!(json["new_config"].is_object());
+        assert_eq!(json["config_path"], config_path);
+        
+        // Проверяем, что старая конфигурация соответствует текущей
+        assert_eq!(json["old_config"]["polling_interval_ms"], 500);
+        assert_eq!(json["old_config"]["max_candidates"], 150);
+        
+        // Проверяем, что новая конфигурация загружена из файла
+        assert_eq!(json["new_config"]["polling_interval_ms"], 1000);
+        assert_eq!(json["new_config"]["max_candidates"], 200);
+        assert!(json["action_required"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_config_reload_handler_with_invalid_config() {
+        // Тест для config_reload_handler когда конфигурационный файл невалиден
+        let temp_dir = tempfile::tempdir().expect("tempdir");
+        let config_file_path = temp_dir.path().join("invalid_config.yml");
+        let invalid_config_content = r#"
+polling_interval_ms: 50  # Слишком маленькое значение
+max_candidates: 200
+"#;
+        
+        std::fs::write(&config_file_path, invalid_config_content).expect("write invalid config");
+        
+        let current_config = crate::config::config::Config {
+            polling_interval_ms: 500,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: crate::config::config::PolicyMode::RulesOnly,
+            enable_snapshot_logging: false,
+            thresholds: crate::config::config::Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: crate::config::config::Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: crate::config::config::LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
+            cache_intervals: crate::config::config::CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
+        };
+        
+        let config_arc = Arc::new(current_config);
+        let config_path = config_file_path.to_str().unwrap().to_string();
+        
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: Some(config_arc),
+            config_path: Some(config_path.clone()),
+            pattern_database: None,
+        };
+        
+        let result = config_reload_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap().0;
+        assert_eq!(json["status"], "error");
+        assert!(json["message"].as_str().unwrap().contains("Failed to reload configuration"));
+        assert!(json["current_config"].is_object());
+        assert_eq!(json["config_path"], config_path);
+        assert!(json["action_required"].is_string());
     }
 }

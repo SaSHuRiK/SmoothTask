@@ -162,6 +162,15 @@ pub struct Config {
     /// обновление каждую итерацию для метрик процессов (отключено).
     #[serde(default = "default_cache_intervals")]
     pub cache_intervals: CacheIntervals,
+
+    /// Конфигурация системы уведомлений.
+    ///
+    /// Определяет параметры отправки уведомлений пользователю о важных событиях
+    /// в работе демона. Поддерживает различные бэкенды (заглушки, desktop уведомления и т.д.).
+    ///
+    /// По умолчанию: уведомления отключены, используется заглушка для тестирования.
+    #[serde(default = "default_notification_config")]
+    pub notifications: NotificationConfig,
 }
 
 /// Режим работы Policy Engine.
@@ -352,6 +361,167 @@ pub(crate) fn default_process_metrics_cache_interval() -> u64 {
     1
 }
 
+/// Конфигурация системы уведомлений.
+///
+/// Определяет параметры отправки уведомлений пользователю о важных событиях
+/// в работе демона. Поддерживает различные бэкенды (заглушки, desktop уведомления и т.д.).
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct NotificationConfig {
+    /// Включить отправку уведомлений.
+    ///
+    /// Если `true`, уведомления будут отправляться через выбранный бэкенд.
+    /// Если `false`, отправка уведомлений будет отключена, даже если бэкенд настроен.
+    ///
+    /// По умолчанию: `false` (уведомления отключены).
+    ///
+    /// # Примечания
+    ///
+    /// - Это основной переключатель для всей системы уведомлений
+    /// - Даже если этот флаг установлен в `true`, уведомления не будут отправляться,
+    ///   если бэкенд не поддерживается или не настроен
+    /// - Рекомендуется включать уведомления только при необходимости мониторинга
+    #[serde(default = "default_notifications_enabled")]
+    pub enabled: bool,
+    
+    /// Тип бэкенда для отправки уведомлений.
+    ///
+    /// Определяет, какой бэкенд будет использоваться для отправки уведомлений.
+    /// Поддерживаются следующие бэкенды:
+    ///
+    /// - `stub`: Заглушка, которая только логирует уведомления (для тестирования)
+    /// - `libnotify`: Desktop уведомления через libnotify (рекомендуется для production)
+    ///
+    /// По умолчанию: `stub` (заглушка для тестирования).
+    ///
+    /// # Примечания
+    ///
+    /// - Бэкенд `libnotify` требует наличия системной библиотеки libnotify
+    /// - Если выбранный бэкенд недоступен, будет использоваться заглушка
+    /// - Для production использования рекомендуется использовать `libnotify`
+    #[serde(default = "default_notification_backend")]
+    pub backend: NotificationBackend,
+    
+    /// Имя приложения для уведомлений.
+    ///
+    /// Определяет имя приложения, которое будет отображаться в уведомлениях.
+    /// Это имя используется в desktop уведомлениях для идентификации источника.
+    ///
+    /// По умолчанию: `"SmoothTask"`.
+    ///
+    /// # Примечания
+    ///
+    /// - Это имя будет отображаться в desktop уведомлениях
+    /// - Рекомендуется использовать краткое, но информативное имя
+    /// - Имя не должно быть пустым
+    #[serde(default = "default_notification_app_name")]
+    pub app_name: String,
+    
+    /// Минимальный уровень важности для отправки уведомлений.
+    ///
+    /// Определяет минимальный уровень важности уведомлений, которые будут отправляться.
+    /// Уведомления с уровнем важности ниже указанного не будут отправляться.
+    ///
+    /// Поддерживаются следующие уровни:
+    ///
+    /// - `critical`: Только критические уведомления (самый высокий приоритет)
+    /// - `warning`: Предупреждения и критические уведомления
+    /// - `info`: Все уведомления (самый низкий приоритет)
+    ///
+    /// По умолчанию: `warning` (отправляются только предупреждения и критические уведомления).
+    ///
+    /// # Примечания
+    ///
+    /// - Это позволяет фильтровать неважные уведомления
+    /// - Для production использования рекомендуется использовать `warning` или `critical`
+    /// - Уровень `info` может быть полезен для отладки
+    #[serde(default = "default_notification_min_level")]
+    pub min_level: NotificationLevel,
+}
+
+/// Тип бэкенда для отправки уведомлений.
+///
+/// Определяет, какой бэкенд будет использоваться для отправки уведомлений.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum NotificationBackend {
+    /// Заглушка, которая только логирует уведомления (для тестирования).
+    Stub,
+    /// Desktop уведомления через libnotify.
+    Libnotify,
+}
+
+/// Минимальный уровень важности для отправки уведомлений.
+///
+/// Определяет минимальный уровень важности уведомлений, которые будут отправляться.
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum NotificationLevel {
+    /// Только критические уведомления.
+    Critical,
+    /// Предупреждения и критические уведомления.
+    Warning,
+    /// Все уведомления (включая информационные).
+    Info,
+}
+
+/// Возвращает дефолтное значение для `enabled`.
+///
+/// По умолчанию уведомления отключены (`false`). Это позволяет избежать
+/// ненужных уведомлений во время тестирования и разработки.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_notifications_enabled")]`
+/// - Для включения уведомлений необходимо явно указать `enabled: true` в конфигурации
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_notifications_enabled() -> bool {
+    false
+}
+
+/// Возвращает дефолтное значение для `backend`.
+///
+/// По умолчанию используется бэкенд `stub` (заглушка). Это позволяет избежать
+/// ошибок при отсутствии системных библиотек во время тестирования.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_notification_backend")]`
+/// - Для production использования рекомендуется явно указать `backend: libnotify`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_notification_backend() -> NotificationBackend {
+    NotificationBackend::Stub
+}
+
+/// Возвращает дефолтное значение для `app_name`.
+///
+/// По умолчанию используется имя `"SmoothTask"`. Это имя будет отображаться
+/// в desktop уведомлениях для идентификации источника.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_notification_app_name")]`
+/// - Имя не должно быть пустым
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_notification_app_name() -> String {
+    "SmoothTask".to_string()
+}
+
+/// Возвращает дефолтное значение для `min_level`.
+///
+/// По умолчанию используется уровень `warning`. Это позволяет отправлять
+/// только важные уведомления (предупреждения и критические), избегая
+/// информационного шума.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_notification_min_level")]`
+/// - Для отладки можно использовать уровень `info`
+/// - Для production рекомендуется использовать `warning` или `critical`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_notification_min_level() -> NotificationLevel {
+    NotificationLevel::Warning
+}
+
 /// Возвращает дефолтное значение для `cache_intervals`.
 ///
 /// Создаёт структуру CacheIntervals с дефолтными значениями для всех интервалов кэширования.
@@ -381,6 +551,24 @@ pub(crate) fn default_logging_config() -> LoggingConfig {
         log_max_rotated_files: default_log_max_rotated_files(),
         log_compression_enabled: default_log_compression_enabled(),
         log_rotation_interval_sec: default_log_rotation_interval_sec(),
+    }
+}
+
+/// Возвращает дефолтное значение для `notifications`.
+///
+/// Создаёт структуру NotificationConfig с дефолтными значениями для всех параметров уведомлений.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_notification_config")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+/// - По умолчанию уведомления отключены и используется заглушка для тестирования
+pub(crate) fn default_notification_config() -> NotificationConfig {
+    NotificationConfig {
+        enabled: default_notifications_enabled(),
+        backend: default_notification_backend(),
+        app_name: default_notification_app_name(),
+        min_level: default_notification_min_level(),
     }
 }
 
@@ -477,7 +665,7 @@ impl Config {
         Ok(cfg)
     }
 
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         ensure!(
             self.polling_interval_ms >= 100,
             "polling_interval_ms must be >= 100 ms to prevent excessive system polling (got {})",
@@ -509,7 +697,7 @@ impl Config {
 }
 
 impl Thresholds {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         let percentiles = [
             (
                 "crit_interactive_percentile",
@@ -626,7 +814,7 @@ impl Thresholds {
 }
 
 impl CacheIntervals {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         ensure!(
             self.system_metrics_cache_interval >= 1,
             "cache_intervals.system_metrics_cache_interval must be >= 1 (got {})",
@@ -653,7 +841,7 @@ impl CacheIntervals {
 }
 
 impl LoggingConfig {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         // Валидация log_max_size_bytes
         ensure!(
             self.log_max_size_bytes <= 1_073_741_824,
@@ -689,7 +877,7 @@ impl LoggingConfig {
 }
 
 impl Paths {
-    fn validate(&self) -> Result<()> {
+    pub(crate) fn validate(&self) -> Result<()> {
         ensure!(
             !self.snapshot_db_path.trim().is_empty(),
             "snapshot_db_path must not be empty"

@@ -7,7 +7,7 @@
 
 use anyhow::Result;
 use smoothtask_core::collect_snapshot;
-use smoothtask_core::config::Thresholds;
+use smoothtask_core::config::config::Thresholds;
 use smoothtask_core::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use smoothtask_core::metrics::input::{InputActivityTracker, InputTracker};
 use smoothtask_core::metrics::scheduling_latency::LatencyCollector;

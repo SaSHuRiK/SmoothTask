@@ -4,7 +4,7 @@
 //! Кэширование позволяет снизить нагрузку на систему за счёт повторного
 //! использования ранее собранных метрик.
 
-use smoothtask_core::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics, NetworkMetrics, DiskMetrics};
 use smoothtask_core::metrics::process::collect_process_metrics;
 use std::sync::{Arc, Mutex};
@@ -85,6 +85,12 @@ fn test_config_includes_cache_intervals() {
             process_metrics_cache_interval: 2,
         },
         enable_snapshot_logging: false,
+        notifications: smoothtask_core::config::config::NotificationConfig {
+            enabled: false,
+            backend: smoothtask_core::config::config::NotificationBackend::Stub,
+            app_name: "SmoothTask".to_string(),
+            min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+        },
     };
     
     assert_eq!(config.cache_intervals.system_metrics_cache_interval, 5);
@@ -422,6 +428,12 @@ fn test_cache_configuration_integration() {
         },
         dry_run_default: false,
         enable_snapshot_logging: true,
+        notifications: smoothtask_core::config::config::NotificationConfig {
+            enabled: false,
+            backend: smoothtask_core::config::config::NotificationBackend::Stub,
+            app_name: "SmoothTask".to_string(),
+            min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+        },
         policy_mode: PolicyMode::Hybrid,
     };
     

@@ -5,21 +5,23 @@ pub mod config;
 pub mod logging;
 pub mod metrics;
 pub mod model;
+pub mod notifications;
 pub mod policy;
 pub mod utils;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use config::Config;
+use config::config::Config;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
-use tokio::sync::watch;
+use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
 use crate::api::{ApiServer, ApiServerHandle};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
+use crate::config::watcher::ConfigWatcher;
 use crate::logging::snapshots::{GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
@@ -505,6 +507,7 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 ///   остальные продолжают работать)
 pub async fn run_daemon(
     config: Config,
+    config_path: String,
     dry_run: bool,
     mut shutdown_rx: watch::Receiver<bool>,
     on_ready: Option<ReadyCallback>,
@@ -515,33 +518,41 @@ pub async fn run_daemon(
     // Проверка доступности системных утилит и устройств
     check_system_utilities();
 
+    // Используем Arc<RwLock<Config>> для совместного доступа к конфигурации
+    // между основным циклом демона и API сервером
+    let config_arc = Arc::new(RwLock::new(config));
+
+    // Читаем конфигурацию один раз для инициализации
+    let initial_config = config_arc.read().await.clone();
+
     // Инициализация подсистем
-    let mut snapshot_logger =
-        if config.enable_snapshot_logging && !config.paths.snapshot_db_path.is_empty() {
+    let mut snapshot_logger = {
+        if initial_config.enable_snapshot_logging && !initial_config.paths.snapshot_db_path.is_empty() {
             info!(
                 "Initializing snapshot logger at: {}",
-                config.paths.snapshot_db_path
+                initial_config.paths.snapshot_db_path
             );
             Some(
-                SnapshotLogger::new(&config.paths.snapshot_db_path).with_context(|| {
+                SnapshotLogger::new(&initial_config.paths.snapshot_db_path).with_context(|| {
                     format!(
                         "Failed to initialize snapshot logger at {}. \
                     Ensure the parent directory exists and is writable.",
-                        config.paths.snapshot_db_path
+                        initial_config.paths.snapshot_db_path
                     )
                 })?,
             )
         } else {
-            if !config.enable_snapshot_logging {
+            if !initial_config.enable_snapshot_logging {
                 debug!("Snapshot logging is disabled (enable_snapshot_logging is false)");
             } else {
                 debug!("Snapshot logging is disabled (snapshot_db_path is empty)");
             }
             None
-        };
+        }
+    };
 
     info!("Initializing policy engine");
-    let policy_engine = PolicyEngine::new(config.clone());
+    let mut policy_engine = PolicyEngine::new(initial_config.clone());
     let mut hysteresis = HysteresisTracker::new();
 
     // Инициализация интроспекторов
@@ -572,7 +583,7 @@ pub async fn run_daemon(
 
     // Инициализация трекера активности пользователя
     // Используем Arc<Mutex<...>> для возможности использования в spawn_blocking
-    let idle_threshold = Duration::from_secs(config.thresholds.user_idle_timeout_sec);
+    let idle_threshold = Duration::from_secs(initial_config.thresholds.user_idle_timeout_sec);
     let input_tracker = Arc::new(Mutex::new(InputTracker::new(idle_threshold)));
 
     // Инициализация probe-thread для измерения scheduling latency
@@ -585,19 +596,28 @@ pub async fn run_daemon(
     // Загрузка базы паттернов для классификации
     info!(
         "Loading pattern database from: {}",
-        config.paths.patterns_dir
+        initial_config.paths.patterns_dir
     );
-    let pattern_db = PatternDatabase::load(&config.paths.patterns_dir).with_context(|| {
+    let pattern_db = PatternDatabase::load(&initial_config.paths.patterns_dir).with_context(|| {
         format!(
             "Failed to load pattern database from {}. \
             Ensure the directory exists and is readable, and contains valid YAML pattern files.",
-            config.paths.patterns_dir
+            initial_config.paths.patterns_dir
         )
     })?;
     info!(
         "Loaded {} patterns from database",
         pattern_db.all_patterns().len()
     );
+
+    // Инициализация ConfigWatcher для динамической перезагрузки конфигурации
+    let config_watcher = ConfigWatcher::new(&config_path)
+        .with_context(|| format!("Failed to initialize config watcher for file: {}", config_path))?;
+    let mut config_change_receiver = config_watcher.change_receiver();
+    
+    // Запускаем задачу для мониторинга изменений конфигурационного файла
+    let _config_watcher_handle = config_watcher.start_watching();
+    info!("Config watcher started for file: {}", config_path);
 
     // Инициализация путей для чтения /proc
     let proc_paths = ProcPaths::default();
@@ -608,12 +628,12 @@ pub async fn run_daemon(
     // Кэш для системных метрик (обновляется каждые N итераций)
     let mut system_metrics_cache: Option<SystemMetrics> = None;
     let mut system_metrics_cache_iteration: u64 = 0;
-    let system_metrics_cache_interval = config.cache_intervals.system_metrics_cache_interval;
+    let mut system_metrics_cache_interval = initial_config.cache_intervals.system_metrics_cache_interval;
 
     // Кэш для метрик процессов (обновляется каждые N итераций)
     let mut process_metrics_cache: Option<Vec<ProcessRecord>> = None;
     let mut process_metrics_cache_iteration: u64 = 0;
-    let process_metrics_cache_interval = config.cache_intervals.process_metrics_cache_interval;
+    let mut process_metrics_cache_interval = initial_config.cache_intervals.process_metrics_cache_interval;
 
     // Инициализация структур данных для API сервера
     let stats_arc = Arc::new(tokio::sync::RwLock::new(DaemonStats::new()));
@@ -664,9 +684,8 @@ pub async fn run_daemon(
 
     // Запуск API сервера (если указан адрес)
     let mut api_server_handle: Option<ApiServerHandle> = None;
-    let config_arc = Arc::new(config.clone());
     let pattern_db_arc = Arc::new(pattern_db.clone());
-    if let Some(ref api_addr_str) = config.paths.api_listen_addr {
+    if let Some(ref api_addr_str) = config_arc.read().await.paths.api_listen_addr {
         match api_addr_str.parse::<std::net::SocketAddr>() {
             Ok(addr) => {
                 info!("Starting API server on {}", addr);
@@ -679,6 +698,7 @@ pub async fn run_daemon(
                     Some(Arc::clone(&responsiveness_metrics_arc)),
                     Some(Arc::clone(&config_arc)),
                     Some(Arc::clone(&pattern_db_arc)),
+                    Some(config_path.clone()),
                 );
                 match api_server.start().await {
                     Ok(handle) => {
@@ -719,6 +739,57 @@ pub async fn run_daemon(
             break;
         }
 
+        // Проверяем изменения конфигурации и перезагружаем при необходимости
+        if *config_change_receiver.borrow_and_update() {
+            info!("Config file changed, reloading configuration...");
+            match Config::load(&config_path) {
+                Ok(new_config) => {
+                    // Валидируем новую конфигурацию
+                    if let Err(e) = new_config.validate() {
+                        error!("Failed to validate new configuration: {}", e);
+                        // Продолжаем работу со старой конфигурацией
+                    } else {
+                        // Обновляем конфигурацию в shared Arc
+                        {
+                            let mut config_guard = config_arc.write().await;
+                            *config_guard = new_config;
+                        }
+                        info!("Configuration reloaded successfully");
+                        
+                        // Обновляем зависимые компоненты
+                        let config_guard = config_arc.read().await;
+                        
+                        // 1. Обновляем кэш интервалов
+                        system_metrics_cache_interval = config_guard.cache_intervals.system_metrics_cache_interval;
+                        process_metrics_cache_interval = config_guard.cache_intervals.process_metrics_cache_interval;
+                        
+                        // 2. Обновляем idle threshold для input tracker
+                        let new_idle_threshold = Duration::from_secs(config_guard.thresholds.user_idle_timeout_sec);
+                        if let Ok(mut tracker) = input_tracker.lock() {
+                            tracker.set_idle_threshold(new_idle_threshold);
+                        }
+                        
+                        // 3. Обновляем policy engine с новой конфигурацией
+                        drop(config_guard); // Освобождаем lock перед созданием нового policy_engine
+                        policy_engine = PolicyEngine::new(config_arc.read().await.clone());
+                        info!("Policy engine updated with new configuration");
+                        
+                        // 4. Конфигурация в API сервере обновляется автоматически,
+                        // так как он использует тот же Arc<RwLock<Config>>
+                        
+                        // 5. Сбрасываем флаг изменения конфигурации
+                        config_change_receiver.borrow_and_update();
+                        
+                        info!("All components updated with new configuration");
+                    }
+                }
+                Err(e) => {
+                    error!("Failed to reload configuration: {}", e);
+                    // Продолжаем работу со старой конфигурацией
+                }
+            }
+        }
+
         let loop_start = Instant::now();
         iteration += 1;
 
@@ -730,6 +801,9 @@ pub async fn run_daemon(
             break;
         }
 
+        // Читаем текущую конфигурацию для этой итерации
+        let config_snapshot = config_arc.read().await.clone();
+        
         // Сбор снапшота с кэшированием для оптимизации производительности
         let snapshot = match collect_snapshot_with_caching(
             &proc_paths,
@@ -737,7 +811,7 @@ pub async fn run_daemon(
             &audio_introspector,
             &input_tracker,
             &mut prev_cpu_times,
-            &config.thresholds,
+            &config_snapshot.thresholds,
             &latency_collector,
             &mut system_metrics_cache,
             &mut system_metrics_cache_iteration,
@@ -758,7 +832,7 @@ pub async fn run_daemon(
                     info!("Shutdown signal received, exiting main loop");
                     break;
                 }
-                tokio::time::sleep(Duration::from_millis(config.polling_interval_ms)).await;
+                tokio::time::sleep(Duration::from_millis(config_snapshot.polling_interval_ms)).await;
                 // Проверяем shutdown после sleep
                 if *shutdown_rx.borrow_and_update() {
                     info!("Shutdown signal received, exiting main loop");
@@ -869,8 +943,8 @@ pub async fn run_daemon(
             }
         }
 
-        let sleep_duration = if elapsed_ms < config.polling_interval_ms as u128 {
-            Duration::from_millis(config.polling_interval_ms) - elapsed
+        let sleep_duration = if elapsed_ms < config_snapshot.polling_interval_ms as u128 {
+            Duration::from_millis(config_snapshot.polling_interval_ms) - elapsed
         } else {
             Duration::from_millis(0)
         };
@@ -902,7 +976,7 @@ pub async fn run_daemon(
                 "Iteration {} took {}ms, longer than polling interval {}ms",
                 iteration,
                 elapsed.as_millis(),
-                config.polling_interval_ms
+                config_snapshot.polling_interval_ms
             );
         }
     }
@@ -1031,7 +1105,7 @@ pub async fn collect_snapshot(
     audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
     input_tracker: &Arc<Mutex<InputTracker>>,
     prev_cpu_times: &mut Option<SystemMetrics>,
-    thresholds: &crate::config::Thresholds,
+    thresholds: &crate::config::config::Thresholds,
     latency_collector: &Arc<LatencyCollector>,
 ) -> Result<Snapshot> {
     let now = Instant::now();
@@ -1326,7 +1400,7 @@ pub async fn collect_snapshot_with_caching(
     audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
     input_tracker: &Arc<Mutex<InputTracker>>,
     prev_cpu_times: &mut Option<SystemMetrics>,
-    thresholds: &crate::config::Thresholds,
+    thresholds: &crate::config::config::Thresholds,
     latency_collector: &Arc<LatencyCollector>,
     system_metrics_cache: &mut Option<SystemMetrics>,
     system_metrics_cache_iteration: &mut u64,
@@ -1926,8 +2000,8 @@ mod tests {
             }
         }
 
-        fn create_test_thresholds() -> crate::config::Thresholds {
-            crate::config::Thresholds {
+        fn create_test_thresholds() -> crate::config::config::Thresholds {
+            crate::config::config::Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,
                 user_idle_timeout_sec: 120,

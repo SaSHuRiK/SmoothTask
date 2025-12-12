@@ -7,7 +7,7 @@
 //! - работа с snapshot logger
 //! - один полный цикл сбора снапшота (с моками)
 
-use smoothtask_core::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::run_daemon;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -49,6 +49,12 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             system_metrics_cache_interval: 3,
             process_metrics_cache_interval: 1,
         },
+        notifications: smoothtask_core::config::config::NotificationConfig {
+            enabled: false,
+            backend: smoothtask_core::config::config::NotificationBackend::Stub,
+            app_name: "SmoothTask".to_string(),
+            min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+        },
     }
 }
 
@@ -80,7 +86,7 @@ async fn test_daemon_initializes_with_minimal_config() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -119,7 +125,7 @@ async fn test_daemon_dry_run_mode() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -149,7 +155,7 @@ async fn test_daemon_handles_nonexistent_patterns_dir() {
     // Демон должен упасть с ошибкой при загрузке паттернов
     let result = timeout(
         Duration::from_secs(1),
-        run_daemon(config, true, shutdown_rx, None, None),
+        run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None),
     )
     .await;
 
@@ -196,7 +202,7 @@ async fn test_daemon_with_snapshot_logger() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -253,7 +259,7 @@ async fn test_daemon_without_snapshot_logging() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
 
     match result {
         Ok(()) => {
@@ -321,7 +327,7 @@ async fn test_daemon_full_snapshot_cycle() {
     });
 
     // Запускаем демон и ждём его завершения
-    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
 
     // Демон должен успешно выполнить хотя бы один полный цикл
     match result {
@@ -368,7 +374,7 @@ async fn test_daemon_with_api_server() {
 
     // Запускаем демон и ждём его завершения
     // API сервер должен запуститься (или выдать предупреждение, если порт занят)
-    let result = run_daemon(config, true, shutdown_rx, None, None).await;
+    let result = run_daemon(config, "/tmp/test_config.yml".to_string(), true, shutdown_rx, None, None).await;
 
     // Демон должен успешно завершиться (даже если API сервер не запустился из-за занятого порта)
     match result {
