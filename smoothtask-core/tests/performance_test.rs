@@ -134,6 +134,10 @@ fn test_config_creation_performance() {
                 app_name: "SmoothTask".to_string(),
                 min_level: smoothtask_core::config::config::NotificationLevel::Warning,
             },
+            model: smoothtask_core::config::config::ModelConfig {
+                enabled: false,
+                model_path: "models/ranker.onnx".to_string(),
+            },
         };
     }
     

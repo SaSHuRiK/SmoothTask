@@ -55,6 +55,10 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             app_name: "SmoothTask".to_string(),
             min_level: smoothtask_core::config::config::NotificationLevel::Warning,
         },
+        model: smoothtask_core::config::config::ModelConfig {
+            enabled: false,
+            model_path: "models/ranker.onnx".to_string(),
+        },
     }
 }
 
