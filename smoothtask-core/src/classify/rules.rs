@@ -3,11 +3,12 @@
 //! Паттерны загружаются из YAML файлов в директории patterns/ и используются
 //! для определения типа процесса (process_type) и тегов (tags).
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use tracing::{debug, error, info, warn};
 
 use crate::classify::ml_classifier::MLClassifier;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
@@ -156,41 +157,86 @@ impl PatternDatabase {
     /// - директория не существует или недоступна для чтения
     /// - YAML файл имеет неверный формат
     /// - структура паттерна не соответствует ожидаемой
+    /// - паттерн содержит недопустимые данные
     pub fn load(patterns_dir: impl AsRef<Path>) -> Result<Self> {
         let patterns_dir = patterns_dir.as_ref();
         let mut patterns_by_category = HashMap::new();
         let mut all_patterns = Vec::new();
 
+        info!("Загрузка паттернов из директории: {:?}", patterns_dir);
+
+        // Проверяем, существует ли директория
+        if !patterns_dir.exists() {
+            error!("Директория с паттернами не существует: {:?}", patterns_dir);
+            return Err(anyhow!("Директория с паттернами не существует: {:?}", patterns_dir));
+        }
+
+        if !patterns_dir.is_dir() {
+            error!("Путь не является директорией: {:?}", patterns_dir);
+            return Err(anyhow!("Путь не является директорией: {:?}", patterns_dir));
+        }
+
         let entries = fs::read_dir(patterns_dir)
-            .with_context(|| format!("Failed to read patterns directory: {:?}", patterns_dir))?;
+            .with_context(|| format!("Не удалось прочитать директорию с паттернами: {:?}", patterns_dir))?;
+
+        let mut total_patterns = 0;
+        let mut total_files = 0;
+        let mut invalid_files = 0;
 
         for entry in entries {
-            let entry = entry?;
+            let entry = entry.with_context(|| format!("Ошибка при чтении записи в директории {:?}", patterns_dir))?;
             let path = entry.path();
 
             // Пропускаем не-YAML файлы
             if path.extension().and_then(|s| s.to_str()) != Some("yml")
                 && path.extension().and_then(|s| s.to_str()) != Some("yaml")
             {
+                debug!("Пропущен не-YAML файл: {:?}", path);
                 continue;
             }
 
+            total_files += 1;
+            debug!("Обработка файла паттернов: {:?}", path);
+
             // Загружаем и парсим YAML файл
             let content = fs::read_to_string(&path)
-                .with_context(|| format!("Failed to read pattern file: {:?}", path))?;
+                .with_context(|| format!("Не удалось прочитать файл паттернов: {:?}", path))?;
 
             let pattern_file: PatternFile = serde_yaml::from_str(&content)
-                .with_context(|| format!("Failed to parse pattern file: {:?}", path))?;
+                .with_context(|| format!("Не удалось разобрать YAML в файле паттернов: {:?}", path))?;
+
+            // Валидация паттернов
+            if !Self::validate_pattern_file(&pattern_file) {
+                error!("Файл паттернов содержит недопустимые данные: {:?}", path);
+                invalid_files += 1;
+                continue;
+            }
 
             // Добавляем паттерны в базу
             let category = pattern_file.category.clone();
             let apps = pattern_file.apps;
 
+            if apps.is_empty() {
+                warn!("Файл паттернов не содержит приложений: {:?}", path);
+            }
+
             for app in apps.clone() {
+                if !Self::validate_app_pattern(&app) {
+                    error!("Некорректный паттерн приложения в файле {:?}: {:?}", path, app.name);
+                    continue;
+                }
                 all_patterns.push((category.clone(), app));
+                total_patterns += 1;
             }
 
             patterns_by_category.insert(category, apps);
+        }
+
+        info!("Загрузка паттернов завершена: {} файлов, {} паттернов, {} недопустимых файлов", 
+              total_files, total_patterns, invalid_files);
+
+        if total_patterns == 0 {
+            warn!("Не найдено ни одного допустимого паттерна в директории {:?}", patterns_dir);
         }
 
         Ok(Self {
@@ -210,6 +256,70 @@ impl PatternDatabase {
     /// Возвращает все паттерны из базы.
     pub fn all_patterns(&self) -> &[(PatternCategory, AppPattern)] {
         &self.all_patterns
+    }
+
+    /// Валидирует файл паттернов.
+    fn validate_pattern_file(pattern_file: &PatternFile) -> bool {
+        // Проверяем, что категория не пустая
+        if pattern_file.category.0.trim().is_empty() {
+            error!("Категория паттерна не может быть пустой");
+            return false;
+        }
+
+        // Проверяем, что категория содержит только допустимые символы
+        if !pattern_file.category.0.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            error!("Категория паттерна содержит недопустимые символы: {}", pattern_file.category.0);
+            return false;
+        }
+
+        true
+    }
+
+    /// Валидирует паттерн приложения.
+    fn validate_app_pattern(app_pattern: &AppPattern) -> bool {
+        // Проверяем, что имя не пустое
+        if app_pattern.name.trim().is_empty() {
+            error!("Имя паттерна приложения не может быть пустым");
+            return false;
+        }
+
+        // Проверяем, что имя содержит только допустимые символы
+        if !app_pattern.name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+            error!("Имя паттерна приложения содержит недопустимые символы: {}", app_pattern.name);
+            return false;
+        }
+
+        // Проверяем, что хотя бы один паттерн задан
+        if app_pattern.exe_patterns.is_empty() && 
+           app_pattern.desktop_patterns.is_empty() && 
+           app_pattern.cgroup_patterns.is_empty() {
+            error!("Паттерн приложения {} не содержит ни одного правила сопоставления", app_pattern.name);
+            return false;
+        }
+
+        // Проверяем, что паттерны не пустые
+        for pattern in &app_pattern.exe_patterns {
+            if pattern.trim().is_empty() {
+                error!("Паттерн exe не может быть пустым в приложении {}", app_pattern.name);
+                return false;
+            }
+        }
+
+        for pattern in &app_pattern.desktop_patterns {
+            if pattern.trim().is_empty() {
+                error!("Паттерн desktop не может быть пустым в приложении {}", app_pattern.name);
+                return false;
+            }
+        }
+
+        for pattern in &app_pattern.cgroup_patterns {
+            if pattern.trim().is_empty() {
+                error!("Паттерн cgroup не может быть пустым в приложении {}", app_pattern.name);
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Находит паттерны, которые соответствуют процессу.
@@ -365,12 +475,29 @@ impl PatternDatabase {
 /// * `pattern_db` - база данных паттернов
 /// * `ml_classifier` - опциональный ML-классификатор для дополнительной классификации
 /// * `desktop_id` - desktop ID процесса (опционально, из window_info или systemd_unit)
+///
+/// # Логирование
+///
+/// Функция логирует процесс классификации, включая:
+/// - Информацию о совпадающих паттернах
+/// - Результаты ML-классификации
+/// - Окончательный результат классификации
+///
+/// # Ошибки
+///
+/// Функция не возвращает ошибок, но логирует проблемы:
+/// - Отсутствие совпадающих паттернов
+/// - Ошибки ML-классификации
+/// - Конфликты классификации
 pub fn classify_process(
     process: &mut ProcessRecord,
     pattern_db: &PatternDatabase,
     ml_classifier: Option<&dyn MLClassifier>,
     desktop_id: Option<&str>,
 ) {
+    debug!("Классификация процесса PID {}: exe={:?}, desktop_id={:?}", 
+           process.pid, process.exe, desktop_id);
+
     // Извлекаем desktop_id из systemd_unit, если не передан явно
     let desktop_id = desktop_id.or_else(|| {
         process
@@ -380,12 +507,24 @@ pub fn classify_process(
             .map(|s| s as &str)
     });
 
+    debug!("Используемый desktop_id: {:?}", desktop_id);
+
     // Ищем совпадающие паттерны
     let matches = pattern_db.match_process(
         process.exe.as_deref(),
         desktop_id,
         process.cgroup_path.as_deref(),
     );
+
+    if matches.is_empty() {
+        debug!("Для процесса PID {} не найдено совпадающих паттернов", process.pid);
+    } else {
+        debug!("Найдено {} совпадающих паттернов для процесса PID {}", 
+               matches.len(), process.pid);
+        for (category, pattern) in &matches {
+            debug!("  - Категория: {}, Паттерн: {}", category.0, pattern.name);
+        }
+    }
 
     // Собираем все теги из совпадающих паттернов
     let mut all_tags = HashSet::new();
@@ -402,11 +541,23 @@ pub fn classify_process(
     if let Some(classifier) = ml_classifier {
         let ml_result = classifier.classify(process);
         
+        debug!("Результаты ML-классификации для PID {}: type={:?}, confidence={:.2}, tags={:?}",
+               process.pid, ml_result.process_type, ml_result.confidence, ml_result.tags);
+        
         // Объединяем результаты паттерн-классификации и ML-классификации
         if let Some(ml_type) = ml_result.process_type {
             // Если ML уверен в предсказании, используем его тип
             if ml_result.confidence > 0.7 {
+                if let Some(ref pattern_type) = process_type {
+                    if pattern_type != &ml_type {
+                        info!("ML-классификатор переопределил тип процесса PID {}: {} -> {}", 
+                              process.pid, pattern_type, ml_type);
+                    }
+                }
                 process_type = Some(ml_type);
+            } else {
+                debug!("ML-классификатор предложил тип {} с низкой уверенностью ({:.2})", 
+                       ml_type, ml_result.confidence);
             }
         }
         
@@ -420,6 +571,14 @@ pub fn classify_process(
     process.process_type = process_type;
     process.tags = all_tags.into_iter().collect();
     process.tags.sort();
+
+    if let Some(ref process_type) = process.process_type {
+        info!("Процесс PID {} классифицирован как '{}' с тегами: {:?}", 
+              process.pid, process_type, process.tags);
+    } else {
+        debug!("Процесс PID {} не классифицирован (теги: {:?})", 
+               process.pid, process.tags);
+    }
 }
 
 /// Классифицирует AppGroup, агрегируя теги и типы из процессов группы.
@@ -429,11 +588,21 @@ pub fn classify_process(
 /// * `app_group` - группа приложений для классификации (будет изменена in-place)
 /// * `processes` - все процессы (для поиска процессов группы)
 /// * `_pattern_db` - база данных паттернов (зарезервировано для будущего использования)
+///
+/// # Логирование
+///
+/// Функция логирует процесс классификации группы, включая:
+/// - Информацию о найденных процессах группы
+/// - Агрегированные теги и типы
+/// - Конфликты типов процессов
 pub fn classify_app_group(
     app_group: &mut AppGroupRecord,
     processes: &[ProcessRecord],
     _pattern_db: &PatternDatabase,
 ) {
+    debug!("Классификация AppGroup {} (root_pid={})", 
+           app_group.app_group_id, app_group.root_pid);
+
     // Находим процессы этой группы
     let group_processes: Vec<&ProcessRecord> = processes
         .iter()
@@ -441,14 +610,21 @@ pub fn classify_app_group(
         .collect();
 
     if group_processes.is_empty() {
+        debug!("AppGroup {} не содержит процессов", app_group.app_group_id);
         return;
     }
+
+    debug!("Найдено {} процессов в AppGroup {}", 
+           group_processes.len(), app_group.app_group_id);
 
     // Собираем все теги и типы из процессов группы
     let mut all_tags = HashSet::new();
     let mut process_types = HashSet::new();
 
     for process in group_processes {
+        debug!("  - Процесс PID {}: type={:?}, tags={:?}", 
+               process.pid, process.process_type, process.tags);
+
         // Добавляем теги процесса
         for tag in &process.tags {
             all_tags.insert(tag.clone());
@@ -464,13 +640,22 @@ pub fn classify_app_group(
     app_group.tags = all_tags.into_iter().collect();
     app_group.tags.sort();
 
+    debug!("Агрегированные теги для AppGroup {}: {:?}", 
+           app_group.app_group_id, app_group.tags);
+
     // Если все процессы имеют один тип, можно установить app_name
     // (это можно улучшить позже)
     if process_types.len() == 1 {
         // Можно использовать тип как app_name, если он не установлен
         // Но лучше оставить app_name как есть, так как он может быть более специфичным
         let _ = process_types.iter().next();
+    } else if process_types.len() > 1 {
+        debug!("AppGroup {} содержит процессы с разными типами: {:?}", 
+               app_group.app_group_id, process_types);
     }
+
+    info!("AppGroup {} классифицирована с тегами: {:?}", 
+          app_group.app_group_id, app_group.tags);
 }
 
 /// Классифицирует все процессы и группы в снапшоте.
@@ -1286,5 +1471,375 @@ apps:
         
         // Тип должен быть от ML (так как уверенность > 0.7 для audio)
         assert_eq!(process.process_type, Some("audio".to_string()));
+    }
+
+    #[test]
+    fn test_pattern_validation() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Тест с недопустимой категорией (пустая)
+        create_test_pattern_file(
+            patterns_dir,
+            "invalid_category.yml",
+            r#"
+category: ""
+apps:
+  - name: "test"
+    label: "Test App"
+    exe_patterns: ["test"]
+    tags: ["test"]
+"#,
+        );
+
+        // Это должно загрузиться, но с предупреждением в логах
+        let db = PatternDatabase::load(patterns_dir);
+        // Теперь валидация происходит во время загрузки, поэтому это должно быть OK
+        // но с предупреждениями в логах
+        assert!(db.is_ok()); // Должно загрузиться, но с предупреждениями
+
+        // Тест с недопустимым именем приложения
+        let temp_dir2 = TempDir::new().expect("temp dir");
+        let patterns_dir2 = temp_dir2.path();
+
+        create_test_pattern_file(
+            patterns_dir2,
+            "invalid_app.yml",
+            r#"
+category: test
+apps:
+  - name: ""
+    label: "Test App"
+    exe_patterns: ["test"]
+    tags: ["test"]
+"#,
+        );
+
+        let db2 = PatternDatabase::load(patterns_dir2);
+        // Должно загрузиться, но с предупреждениями
+        assert!(db2.is_ok());
+
+        // Тест с приложением без паттернов
+        let temp_dir3 = TempDir::new().expect("temp dir");
+        let patterns_dir3 = temp_dir3.path();
+
+        create_test_pattern_file(
+            patterns_dir3,
+            "no_patterns.yml",
+            r#"
+category: test
+apps:
+  - name: "test"
+    label: "Test App"
+    tags: ["test"]
+"#,
+        );
+
+        let db3 = PatternDatabase::load(patterns_dir3);
+        // Должно загрузиться, но с предупреждениями
+        assert!(db3.is_ok());
+    }
+
+    #[test]
+    fn test_nonexistent_patterns_directory() {
+        let nonexistent_dir = Path::new("/nonexistent/patterns/directory");
+        let result = PatternDatabase::load(nonexistent_dir);
+        assert!(result.is_err());
+        
+        // Проверяем, что ошибка содержит информативное сообщение
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("не существует"));
+    }
+
+    #[test]
+    fn test_empty_patterns_directory() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаем пустую директорию
+        let db = PatternDatabase::load(patterns_dir);
+        assert!(db.is_ok()); // Должно успешно загрузиться, но без паттернов
+        
+        let db = db.unwrap();
+        assert_eq!(db.all_patterns().len(), 0);
+    }
+
+    #[test]
+    fn test_patterns_with_empty_files() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаем пустой YAML файл
+        create_test_pattern_file(patterns_dir, "empty.yml", "");
+
+        let db = PatternDatabase::load(patterns_dir);
+        assert!(db.is_err()); // Должна быть ошибка при парсинге пустого YAML
+    }
+
+    #[test]
+    fn test_patterns_with_invalid_yaml() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаем файл с недопустимым YAML
+        create_test_pattern_file(patterns_dir, "invalid.yml", "this is not valid yaml: [");
+
+        let db = PatternDatabase::load(patterns_dir);
+        assert!(db.is_err()); // Должна быть ошибка при парсинге YAML
+    }
+
+    #[test]
+    fn test_patterns_with_special_characters() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаем файл с недопустимыми символами в категории
+        create_test_pattern_file(
+            patterns_dir,
+            "special_chars.yml",
+            r#"
+category: "test@category"
+apps:
+  - name: "test"
+    label: "Test App"
+    exe_patterns: ["test"]
+    tags: ["test"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir);
+        // Должно загрузиться, но с предупреждениями в логах
+        assert!(db.is_ok());
+    }
+
+    #[test]
+    fn test_classify_process_with_empty_patterns() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let _patterns_dir = temp_dir.path();
+
+        // Создаем базу с пустыми паттернами
+        let db = PatternDatabase {
+            patterns_by_category: HashMap::new(),
+            all_patterns: Vec::new(),
+        };
+
+        let mut process = ProcessRecord {
+            pid: 1000,
+            ppid: 1,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("unknown-app".to_string()),
+            cmdline: None,
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "R".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: None,
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: Vec::new(),
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        // Классификация с пустой базой паттернов
+        classify_process(&mut process, &db, None, None);
+
+        // Должен остаться неклассифицированным
+        assert_eq!(process.process_type, None);
+        assert!(process.tags.is_empty());
+    }
+
+    #[test]
+    fn test_classify_app_group_with_no_processes() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        let processes = vec![];
+
+        let mut app_group = AppGroupRecord {
+            app_group_id: "empty_group".to_string(),
+            root_pid: 1000,
+            process_ids: vec![],
+            app_name: None,
+            total_cpu_share: None,
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: None,
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: Vec::new(),
+            priority_class: None,
+        };
+
+        // Классификация группы без процессов
+        classify_app_group(&mut app_group, &processes, &db);
+
+        // Должна остаться без тегов
+        assert!(app_group.tags.is_empty());
+    }
+
+    #[test]
+    fn test_classify_app_group_with_mixed_types() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        create_test_pattern_file(
+            patterns_dir,
+            "mixed.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        create_test_pattern_file(
+            patterns_dir,
+            "ide.yml",
+            r#"
+category: ide
+apps:
+  - name: "vscode"
+    label: "Visual Studio Code"
+    exe_patterns: ["code"]
+    tags: ["ide"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        let processes = vec![
+            ProcessRecord {
+                pid: 1000,
+                ppid: 1,
+                uid: 1000,
+                gid: 1000,
+                exe: Some("firefox".to_string()),
+                cmdline: None,
+                cgroup_path: None,
+                systemd_unit: None,
+                app_group_id: Some("mixed_group".to_string()),
+                state: "R".to_string(),
+                start_time: 0,
+                uptime_sec: 100,
+                tty_nr: 0,
+                has_tty: false,
+                cpu_share_1s: None,
+                cpu_share_10s: None,
+                io_read_bytes: None,
+                io_write_bytes: None,
+                rss_mb: None,
+                swap_mb: None,
+                voluntary_ctx: None,
+                involuntary_ctx: None,
+                has_gui_window: false,
+                is_focused_window: false,
+                window_state: None,
+                env_has_display: false,
+                env_has_wayland: false,
+                env_term: None,
+                env_ssh: false,
+                is_audio_client: false,
+                has_active_stream: false,
+                process_type: Some("browser".to_string()),
+                tags: vec!["browser".to_string()],
+                nice: 0,
+                ionice_class: None,
+                ionice_prio: None,
+                teacher_priority_class: None,
+                teacher_score: None,
+            },
+            ProcessRecord {
+                pid: 1001,
+                ppid: 1,
+                uid: 1000,
+                gid: 1000,
+                exe: Some("code".to_string()),
+                cmdline: None,
+                cgroup_path: None,
+                systemd_unit: None,
+                app_group_id: Some("mixed_group".to_string()),
+                state: "R".to_string(),
+                start_time: 0,
+                uptime_sec: 100,
+                tty_nr: 0,
+                has_tty: false,
+                cpu_share_1s: None,
+                cpu_share_10s: None,
+                io_read_bytes: None,
+                io_write_bytes: None,
+                rss_mb: None,
+                swap_mb: None,
+                voluntary_ctx: None,
+                involuntary_ctx: None,
+                has_gui_window: false,
+                is_focused_window: false,
+                window_state: None,
+                env_has_display: false,
+                env_has_wayland: false,
+                env_term: None,
+                env_ssh: false,
+                is_audio_client: false,
+                has_active_stream: false,
+                process_type: Some("ide".to_string()),
+                tags: vec!["ide".to_string()],
+                nice: 0,
+                ionice_class: None,
+                ionice_prio: None,
+                teacher_priority_class: None,
+                teacher_score: None,
+            },
+        ];
+
+        let mut app_group = AppGroupRecord {
+            app_group_id: "mixed_group".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000, 1001],
+            app_name: None,
+            total_cpu_share: None,
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: None,
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: Vec::new(),
+            priority_class: None,
+        };
+
+        // Классификация группы с разными типами процессов
+        classify_app_group(&mut app_group, &processes, &db);
+
+        // Должны быть агрегированы теги из разных типов
+        assert_eq!(app_group.tags.len(), 2);
+        assert!(app_group.tags.contains(&"browser".to_string()));
+        assert!(app_group.tags.contains(&"ide".to_string()));
     }
 }
