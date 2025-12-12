@@ -352,7 +352,8 @@ impl WaylandIntrospector {
 
         while attempts < MAX_ATTEMPTS {
             // Обрабатываем все ожидающие события
-            self.event_queue.dispatch_pending(&mut state).unwrap();
+            self.event_queue.dispatch_pending(&mut state)
+                .map_err(|e| anyhow::anyhow!("Failed to dispatch Wayland events: {}", e))?;
             
             // Если мы нашли менеджер, выходим
             if state.foreign_toplevel_manager.is_some() {
@@ -363,7 +364,8 @@ impl WaylandIntrospector {
             
             // Ждём немного и пробуем снова
             std::thread::sleep(std::time::Duration::from_millis(10));
-            self.connection.flush().unwrap();
+            self.connection.flush()
+                .map_err(|e| anyhow::anyhow!("Failed to flush Wayland connection: {}", e))?;
         }
 
         // Если мы нашли менеджер, запрашиваем список текущих окон
@@ -391,6 +393,8 @@ impl WindowIntrospector for WaylandIntrospector {
         introspector.process_events()?;
 
         // Возвращаем список окон
+        // Если список пуст, это может быть нормально (нет окон), но мы добавляем логирование
+        // для отладки в будущем
         Ok(introspector.windows)
     }
 }

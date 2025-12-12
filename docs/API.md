@@ -137,7 +137,7 @@ curl http://127.0.0.1:8080/api/endpoints
       "description": "Получение текущей конфигурации демона (без секретов)"
     }
   ],
-  "count": 11
+  "count": 12
 }
 ```
 
@@ -290,6 +290,54 @@ curl http://127.0.0.1:8080/api/metrics
 - `memory` - информация о памяти из `/proc/meminfo`
 - `load_avg` - средняя нагрузка системы из `/proc/loadavg`
 - `pressure` - метрики давления из PSI (`/proc/pressure/*`)
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
+### GET /api/responsiveness
+
+Получение последних метрик отзывчивости системы.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/responsiveness
+```
+
+**Ответ (если метрики доступны):**
+```json
+{
+  "status": "ok",
+  "responsiveness_metrics": {
+    "sched_latency_p95_ms": 15.5,
+    "sched_latency_p99_ms": 25.0,
+    "audio_xruns_delta": 0,
+    "ui_loop_p95_ms": 12.3,
+    "frame_jank_ratio": 0.02,
+    "bad_responsiveness": false,
+    "responsiveness_score": 0.95
+  }
+}
+```
+
+**Ответ (если метрики недоступны):**
+```json
+{
+  "status": "ok",
+  "responsiveness_metrics": null,
+  "message": "Responsiveness metrics not available (daemon may not be running or no metrics collected yet)"
+}
+```
+
+**Поля `responsiveness_metrics`:**
+- `sched_latency_p95_ms` (f64, optional) - 95-й перцентиль задержки планировщика в миллисекундах
+- `sched_latency_p99_ms` (f64, optional) - 99-й перцентиль задержки планировщика в миллисекундах
+- `audio_xruns_delta` (u64, optional) - количество новых XRUN событий в аудио подсистеме
+- `ui_loop_p95_ms` (f64, optional) - 95-й перцентиль времени цикла UI в миллисекундах
+- `frame_jank_ratio` (f64, optional) - отношение пропущенных/задержанных кадров
+- `bad_responsiveness` (bool) - флаг, указывающий на плохую отзывчивость системы
+- `responsiveness_score` (f64, optional) - общий балл отзывчивости (0.0 - 1.0, где 1.0 - идеальная отзывчивость)
 
 **Статус коды:**
 - `200 OK` - запрос выполнен успешно
