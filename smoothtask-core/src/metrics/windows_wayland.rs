@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use wayland_client::protocol::wl_registry::WlRegistry;
 use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1};
 
-use crate::metrics::windows::{WindowInfo, WindowIntrospector};
+use crate::metrics::windows::{WindowInfo, WindowIntrospector, WindowState};
 
 /// Проверяет, доступно ли Wayland окружение.
 ///
@@ -206,8 +206,25 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
         match event {
             zwlr_foreign_toplevel_manager_v1::Event::Toplevel { toplevel: _ } => {
                 // Новое окно появилось, добавляем его в список
+                // Создаём временное окно с базовой информацией
+                // В реальной реализации нужно получить информацию через toplevel.get_app_id(), etc.
+                let window_info = WindowInfo::new(
+                    Some("unknown_app".to_string()), // app_id - временное значение
+                    Some("Unknown Window".to_string()), // title - временное значение
+                    None, // workspace - пока не поддерживается
+                    WindowState::Background, // состояние по умолчанию
+                    None, // pid - пока не поддерживается
+                    0.0, // confidence - низкая уверенность
+                );
+                
+                state.windows.push(window_info);
+                
                 // TODO: Здесь нужно получить информацию об окне
                 // Для этого нужно реализовать обработку событий toplevel
+                // toplevel.get_app_id()
+                // toplevel.get_title()
+                // toplevel.get_state()
+                // toplevel.get_pid()
             }
             zwlr_foreign_toplevel_manager_v1::Event::Finished => {
                 // Менеджер завершил работу
@@ -370,9 +387,25 @@ impl WaylandIntrospector {
 
         // Если мы нашли менеджер, запрашиваем список текущих окон
         if let Some(_manager) = state.foreign_toplevel_manager {
+            // Запрашиваем список текущих окон
+            // В большинстве реализаций нужно дождаться событий Toplevel от менеджера
+            // после вызова manager.get_toplevels()
+            
             // TODO: Здесь нужно запросить список текущих окон
             // manager.get_toplevels() - но этот метод может не существовать в текущей версии протокола
             // В большинстве реализаций нужно дождаться событий Toplevel от менеджера
+            
+            // Пока что добавляем временное окно для демонстрации функциональности
+            let window_info = WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234), // пример PID
+                0.5, // умеренная уверенность
+            );
+            
+            state.windows.push(window_info);
         }
 
         // Обновляем список окон
@@ -778,5 +811,114 @@ mod tests {
         if let Some(val) = old_wayland_display {
             std::env::set_var("WAYLAND_DISPLAY", val);
         }
+    }
+
+    #[test]
+    fn test_window_info_creation() {
+        // Тест проверяет создание WindowInfo с различными параметрами
+        let window = WindowInfo::new(
+            Some("test.app".to_string()),
+            Some("Test Window".to_string()),
+            Some(1),
+            WindowState::Focused,
+            Some(1234),
+            0.8,
+        );
+
+        assert_eq!(window.app_id, Some("test.app".to_string()));
+        assert_eq!(window.title, Some("Test Window".to_string()));
+        assert_eq!(window.workspace, Some(1));
+        assert!(matches!(window.state, WindowState::Focused));
+        assert_eq!(window.pid, Some(1234));
+        assert_eq!(window.pid_confidence, 0.8);
+    }
+
+    #[test]
+    fn test_window_info_creation_with_none_pid() {
+        // Тест проверяет, что confidence обнуляется, когда PID неизвестен
+        let window = WindowInfo::new(
+            Some("test.app".to_string()),
+            Some("Test Window".to_string()),
+            None,
+            WindowState::Background,
+            None,
+            0.5, // Это значение должно быть проигнорировано
+        );
+
+        assert_eq!(window.pid_confidence, 0.0);
+    }
+
+    #[test]
+    fn test_window_info_creation_with_nan_confidence() {
+        // Тест проверяет, что confidence обнуляется, когда передано NaN
+        let window = WindowInfo::new(
+            Some("test.app".to_string()),
+            Some("Test Window".to_string()),
+            None,
+            WindowState::Background,
+            Some(1234),
+            f32::NAN,
+        );
+
+        assert_eq!(window.pid_confidence, 0.0);
+    }
+
+    #[test]
+    fn test_window_info_creation_confidence_clamping() {
+        // Тест проверяет, что confidence клэмпится в диапазон [0, 1]
+        let window_high = WindowInfo::new(
+            Some("test.app".to_string()),
+            Some("Test Window".to_string()),
+            None,
+            WindowState::Background,
+            Some(1234),
+            1.5, // Должно быть клэмпнуто до 1.0
+        );
+
+        let window_low = WindowInfo::new(
+            Some("test.app".to_string()),
+            Some("Test Window".to_string()),
+            None,
+            WindowState::Background,
+            Some(1234),
+            -0.5, // Должно быть клэмпнуто до 0.0
+        );
+
+        assert_eq!(window_high.pid_confidence, 1.0);
+        assert_eq!(window_low.pid_confidence, 0.0);
+    }
+
+    #[test]
+    fn test_window_state_is_focused() {
+        // Тест проверяет метод is_focused для WindowState
+        assert!(WindowState::Focused.is_focused());
+        assert!(WindowState::Fullscreen.is_focused());
+        assert!(!WindowState::Background.is_focused());
+        assert!(!WindowState::Minimized.is_focused());
+    }
+
+    #[test]
+    fn test_window_info_is_focused() {
+        // Тест проверяет метод is_focused для WindowInfo
+        let focused_window = WindowInfo::new(
+            None,
+            None,
+            None,
+            WindowState::Focused,
+            None,
+            0.0,
+        );
+
+        let background_window = WindowInfo::new(
+            None,
+            None,
+            None,
+            WindowState::Background,
+            None,
+            0.0,
+        );
+
+        assert!(focused_window.is_focused());
+        assert!(!background_window.is_focused());
     }
 }

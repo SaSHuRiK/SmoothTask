@@ -355,9 +355,9 @@ fn benchmark_config_serialization(c: &mut Criterion) {
 criterion_group! {
     name = smoothtask_benchmarks;
     config = Criterion::default()
-        .sample_size(10) // Уменьшаем размер выборки для более быстрого выполнения
-        .warm_up_time(std::time::Duration::from_secs(1)) // Уменьшаем время для разогрева
-        .measurement_time(std::time::Duration::from_secs(3)); // Уменьшаем время измерения
+        .sample_size(10)
+        .warm_up_time(std::time::Duration::from_secs(1))
+        .measurement_time(std::time::Duration::from_secs(5));
     targets = 
         benchmark_simple_operation,
         benchmark_memory_allocation,
