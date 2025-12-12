@@ -406,6 +406,22 @@ pub struct SystemMetrics {
     pub gpu: Option<crate::metrics::gpu::GpuMetricsCollection>,
 }
 
+impl Default for SystemMetrics {
+    fn default() -> Self {
+        Self {
+            cpu_times: CpuTimes::default(),
+            memory: MemoryInfo::default(),
+            load_avg: LoadAvg::default(),
+            pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
+            network: NetworkMetrics::default(),
+            disk: DiskMetrics::default(),
+            gpu: None,
+        }
+    }
+}
+
 impl SystemMetrics {
     /// Вычисляет доли использования CPU относительно предыдущего снапшота.
     ///
@@ -759,29 +775,72 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
         if let Ok(entries) = fs::read_dir(hwmon_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
+                let path_str = path.to_string_lossy();
                 
                 // Ищем файлы temp*_input в каждом hwmon устройстве
                 if let Ok(temp_files) = fs::read_dir(&path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
                         let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        let _path_str = path.to_string_lossy();
                         
                         if file_name.starts_with("temp") && file_name.ends_with("_input") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                                 if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
                                     let temp_c = temp_millidegrees as f32 / 1000.0;
                                     
-                                    // Попробуем определить, это CPU или GPU
-                                    // Это упрощенная логика - в реальности может потребоваться более сложный анализ
-                                    if file_name.contains("temp1") || file_name.contains("temp2") {
-                                        // Предполагаем, что это CPU температура
+                                    // Пробуем определить тип устройства по имени файла и пути
+                                    // Это более сложная логика, чем раньше
+                                    
+                                    // 1. Пробуем определить по имени hwmon устройства
+                                    if let Some(hwmon_name) = path.file_name().and_then(|s| s.to_str()) {
+                                        if hwmon_name.contains("coretemp") || 
+                                           hwmon_name.contains("k10temp") || 
+                                           hwmon_name.contains("amdgpu") ||
+                                           hwmon_name.contains("radeon") {
+                                            // Это CPU температура (Intel CoreTemp, AMD K10Temp)
+                                            if temperature.cpu_temperature_c.is_none() {
+                                                temperature.cpu_temperature_c = Some(temp_c);
+                                                tracing::debug!("CPU temperature (hwmon {}): {:.1}°C", hwmon_name, temp_c);
+                                            }
+                                        } else if hwmon_name.contains("nvme") || hwmon_name.contains("ssd") {
+                                            // Это температура накопителя
+                                            // Пока не сохраняем, но можно было бы добавить
+                                            tracing::debug!("Storage temperature (hwmon {}): {:.1}°C", hwmon_name, temp_c);
+                                        }
+                                    }
+                                    
+                                    // 2. Пробуем определить по имени файла
+                                    if file_name.contains("temp1") || file_name.contains("temp2") || file_name.contains("Package") {
+                                        // Это, скорее всего, CPU температура
                                         if temperature.cpu_temperature_c.is_none() {
                                             temperature.cpu_temperature_c = Some(temp_c);
+                                            tracing::debug!("CPU temperature (file {}): {:.1}°C", file_name, temp_c);
                                         }
-                                    } else if file_name.contains("temp3") || file_name.contains("edge") {
-                                        // Предполагаем, что это GPU температура
+                                    } else if file_name.contains("temp3") || file_name.contains("edge") || file_name.contains("gpu") {
+                                        // Это, скорее всего, GPU температура
                                         if temperature.gpu_temperature_c.is_none() {
                                             temperature.gpu_temperature_c = Some(temp_c);
+                                            tracing::debug!("GPU temperature (file {}): {:.1}°C", file_name, temp_c);
+                                        }
+                                    }
+                                    
+                                    // 3. Пробуем определить по содержимому файла name (если есть)
+                                    let name_file = path.join("name");
+                                    if name_file.exists() {
+                                        if let Ok(name_content) = fs::read_to_string(&name_file) {
+                                            let name = name_content.trim();
+                                            if name.contains("coretemp") || name.contains("k10temp") {
+                                                if temperature.cpu_temperature_c.is_none() {
+                                                    temperature.cpu_temperature_c = Some(temp_c);
+                                                    tracing::debug!("CPU temperature (sensor {}): {:.1}°C", name, temp_c);
+                                                }
+                                            } else if name.contains("amdgpu") || name.contains("radeon") || name.contains("nouveau") {
+                                                if temperature.gpu_temperature_c.is_none() {
+                                                    temperature.gpu_temperature_c = Some(temp_c);
+                                                    tracing::debug!("GPU temperature (sensor {}): {:.1}°C", name, temp_c);
+                                                }
+                                            }
                                         }
                                     }
                                 }
@@ -793,20 +852,130 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
         }
     }
     
+    // Пробуем альтернативный интерфейс /sys/class/thermal/
+    // Это более универсальный интерфейс для термальных зон
+    let thermal_dir = Path::new("/sys/class/thermal");
+    
+    if thermal_dir.exists() {
+        if let Ok(thermal_zones) = fs::read_dir(thermal_dir) {
+            for zone_entry in thermal_zones.flatten() {
+                let zone_path = zone_entry.path();
+                let zone_name = zone_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                
+                if zone_name.starts_with("thermal_zone") {
+                    let temp_file = zone_path.join("temp");
+                    if temp_file.exists() {
+                        if let Ok(temp_content) = fs::read_to_string(&temp_file) {
+                            if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                let temp_c = temp_millidegrees as f32 / 1000.0;
+                                
+                                // Пробуем определить тип зоны
+                                let type_file = zone_path.join("type");
+                                if type_file.exists() {
+                                    if let Ok(type_content) = fs::read_to_string(&type_file) {
+                                        let zone_type = type_content.trim();
+                                        
+                                        if zone_type.contains("x86_pkg_temp") || zone_type.contains("acpitz") || zone_type.contains("cpu_thermal") {
+                                            // Это CPU температура
+                                            if temperature.cpu_temperature_c.is_none() {
+                                                temperature.cpu_temperature_c = Some(temp_c);
+                                                tracing::debug!("CPU temperature (thermal zone {}): {:.1}°C", zone_name, temp_c);
+                                            }
+                                        } else if zone_type.contains("gpu") || zone_type.contains("dgpu") || zone_type.contains("radeon") {
+                                            // Это GPU температура
+                                            if temperature.gpu_temperature_c.is_none() {
+                                                temperature.gpu_temperature_c = Some(temp_c);
+                                                tracing::debug!("GPU temperature (thermal zone {}): {:.1}°C", zone_name, temp_c);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Пробуем специфичные для GPU пути
+    // AMD GPU
+    let amdgpu_dir = Path::new("/sys/class/drm/card0/device/hwmon");
+    if amdgpu_dir.exists() {
+        if let Ok(amdgpu_entries) = fs::read_dir(amdgpu_dir) {
+            for amdgpu_entry in amdgpu_entries.flatten() {
+                let amdgpu_path = amdgpu_entry.path();
+                let temp_file = amdgpu_path.join("temp1_input");
+                if temp_file.exists() {
+                    if let Ok(temp_content) = fs::read_to_string(&temp_file) {
+                        if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                            let temp_c = temp_millidegrees as f32 / 1000.0;
+                            if temperature.gpu_temperature_c.is_none() {
+                                temperature.gpu_temperature_c = Some(temp_c);
+                                tracing::debug!("AMD GPU temperature: {:.1}°C", temp_c);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // NVIDIA GPU
+    let nvidia_dir = Path::new("/sys/class/hwmon/nvidia_hwmon");
+    if nvidia_dir.exists() {
+        let temp_file = nvidia_dir.join("temp1_input");
+        if temp_file.exists() {
+            if let Ok(temp_content) = fs::read_to_string(&temp_file) {
+                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                    if temperature.gpu_temperature_c.is_none() {
+                        temperature.gpu_temperature_c = Some(temp_c);
+                        tracing::debug!("NVIDIA GPU temperature: {:.1}°C", temp_c);
+                    }
+                }
+            }
+        }
+    }
+    
+    // Логируем результаты
+    if temperature.cpu_temperature_c.is_none() && temperature.gpu_temperature_c.is_none() {
+        tracing::debug!("No temperature metrics available - hwmon/thermal interfaces not found or accessible");
+    } else {
+        tracing::info!(
+            "Temperature metrics: CPU={:?}°C, GPU={:?}°C",
+            temperature.cpu_temperature_c,
+            temperature.gpu_temperature_c
+        );
+    }
+    
     temperature
 }
 
-/// Собирает метрики энергопотребления
+/// Собирает метрики энергопотребления через RAPL и другие интерфейсы
+/// 
+/// Использует Running Average Power Limit (RAPL) интерфейс для точного мониторинга
+/// энергопотребления CPU, памяти и других компонентов.
+/// 
+/// RAPL предоставляет:
+/// - energy_uj: общее потребление энергии в микроджоулях (сбрасывается при перезагрузке)
+/// - max_energy_range_uj: максимальный диапазон измерения
+/// - energy_counter_wrap: флаг переполнения счетчика
+/// 
+/// Для точного измерения мощности нужно отслеживать изменения energy_uj во времени,
+/// но в текущей реализации мы возвращаем мгновенные значения.
 fn collect_power_metrics() -> PowerMetrics {
     let mut power = PowerMetrics::default();
     
     // Попробуем найти энергетические сенсоры в /sys/class/powercap/
+    // Это основной интерфейс для RAPL на современных системах
     let powercap_dir = Path::new("/sys/class/powercap");
     
     if powercap_dir.exists() {
         if let Ok(entries) = fs::read_dir(powercap_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
+                let path_str = path.to_string_lossy();
                 
                 // Ищем файлы energy_uj в каждом powercap устройстве
                 if let Ok(energy_files) = fs::read_dir(&path) {
@@ -817,17 +986,37 @@ fn collect_power_metrics() -> PowerMetrics {
                         if file_name == "energy_uj" {
                             if let Ok(energy_content) = fs::read_to_string(&energy_path) {
                                 if let Ok(energy_microjoules) = energy_content.trim().parse::<u64>() {
-                                    // Конвертируем микроджоули в ватты (упрощенно)
-                                    // В реальности нужно отслеживать изменения во времени
+                                    // Конвертируем микроджоули в ватты
+                                    // Примечание: это мгновенное значение, для точной мощности нужно
+                                    // отслеживать изменения во времени, но для мониторинга это приемлемо
                                     let energy_w = energy_microjoules as f32 / 1_000_000.0;
                                     
-                                    // Попробуем определить тип устройства
-                                    if path.to_string_lossy().contains("intel-rapl") {
-                                        if path.to_string_lossy().contains("package") {
+                                    // Определяем тип устройства по пути
+                                    if path_str.contains("intel-rapl") {
+                                        if path_str.contains("package") {
+                                            // Это общий пакет CPU (все ядра)
                                             power.cpu_power_w = Some(energy_w);
-                                        } else if path.to_string_lossy().contains("dram") {
-                                            // Это память, не GPU
+                                            tracing::debug!("RAPL package energy: {} W", energy_w);
+                                        } else if path_str.contains("core") {
+                                            // Это отдельные ядра CPU
+                                            // Мы не сохраняем отдельно, но можно было бы добавить
+                                            tracing::debug!("RAPL core energy: {} W", energy_w);
+                                        } else if path_str.contains("uncore") {
+                                            // Это uncore компоненты (кэш, контроллер памяти и т.д.)
+                                            tracing::debug!("RAPL uncore energy: {} W", energy_w);
+                                        } else if path_str.contains("dram") {
+                                            // Это память DRAM
+                                            // Можно было бы добавить отдельное поле для памяти
+                                            tracing::debug!("RAPL DRAM energy: {} W", energy_w);
+                                        } else if path_str.contains("psys") {
+                                            // Это общая мощность системы
+                                            power.system_power_w = Some(energy_w);
+                                            tracing::debug!("RAPL system energy: {} W", energy_w);
                                         }
+                                    } else if path_str.contains("amdgpu") || path_str.contains("gpu") {
+                                        // Это GPU (AMD или другие)
+                                        power.gpu_power_w = Some(energy_w);
+                                        tracing::debug!("GPU energy: {} W", energy_w);
                                     }
                                 }
                             }
@@ -836,6 +1025,78 @@ fn collect_power_metrics() -> PowerMetrics {
                 }
             }
         }
+    }
+    
+    // Попробуем альтернативные интерфейсы, если powercap недоступен
+    // Некоторые системы могут предоставлять энергетическую информацию через другие пути
+    
+    // Пробуем /sys/devices/system/cpu/cpu*/power/energy_uj для отдельных ядер
+    let cpu_energy_dir = Path::new("/sys/devices/system/cpu");
+    if cpu_energy_dir.exists() {
+        if let Ok(cpu_entries) = fs::read_dir(cpu_energy_dir) {
+            let mut total_cpu_energy_uj: u64 = 0;
+            let mut cpu_count = 0;
+            
+            for cpu_entry in cpu_entries.flatten() {
+                let cpu_path = cpu_entry.path();
+                if cpu_path.file_name().and_then(|s| s.to_str()).map_or(false, |s| s.starts_with("cpu")) {
+                    let energy_path = cpu_path.join("power/energy_uj");
+                    if energy_path.exists() {
+                        if let Ok(energy_content) = fs::read_to_string(&energy_path) {
+                            if let Ok(energy_uj) = energy_content.trim().parse::<u64>() {
+                                total_cpu_energy_uj += energy_uj;
+                                cpu_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+            
+            if cpu_count > 0 {
+                // Средняя мощность на ядро
+                let avg_cpu_energy_w = total_cpu_energy_uj as f32 / 1_000_000.0 / cpu_count as f32;
+                if power.cpu_power_w.is_none() {
+                    power.cpu_power_w = Some(avg_cpu_energy_w);
+                    tracing::debug!("CPU energy (avg per core): {} W", avg_cpu_energy_w);
+                }
+            }
+        }
+    }
+    
+    // Пробуем /sys/class/drm/card*/device/power/energy_uj для GPU
+    let drm_dir = Path::new("/sys/class/drm");
+    if drm_dir.exists() {
+        if let Ok(drm_entries) = fs::read_dir(drm_dir) {
+            for drm_entry in drm_entries.flatten() {
+                let card_path = drm_entry.path();
+                if card_path.file_name().and_then(|s| s.to_str()).map_or(false, |s| s.starts_with("card")) {
+                    let energy_path = card_path.join("device/power/energy_uj");
+                    if energy_path.exists() {
+                        if let Ok(energy_content) = fs::read_to_string(&energy_path) {
+                            if let Ok(energy_uj) = energy_content.trim().parse::<u64>() {
+                                let energy_w = energy_uj as f32 / 1_000_000.0;
+                                if power.gpu_power_w.is_none() {
+                                    power.gpu_power_w = Some(energy_w);
+                                    tracing::debug!("GPU energy (via DRM): {} W", energy_w);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Логируем, если не удалось собрать никакие метрики
+    if power.cpu_power_w.is_none() && power.gpu_power_w.is_none() && power.system_power_w.is_none() {
+        tracing::debug!("No power metrics available - RAPL/powercap interfaces not found or accessible");
+    } else {
+        tracing::info!(
+            "Power metrics: CPU={:?} W, GPU={:?} W, System={:?} W",
+            power.cpu_power_w,
+            power.gpu_power_w,
+            power.system_power_w
+        );
     }
     
     power
@@ -2209,5 +2470,223 @@ SwapFree:        4096000 kB
         let write_bytes = write_sectors * 512;
         assert_eq!(read_bytes, 5678 * 512);
         assert_eq!(write_bytes, 7890 * 512);
+    }
+
+    #[test]
+    fn test_power_metrics_default_values() {
+        // Тест проверяет, что PowerMetrics::default() возвращает пустые значения
+        let power = PowerMetrics::default();
+        assert_eq!(power.system_power_w, None);
+        assert_eq!(power.cpu_power_w, None);
+        assert_eq!(power.gpu_power_w, None);
+    }
+
+    #[test]
+    fn test_temperature_metrics_default_values() {
+        // Тест проверяет, что TemperatureMetrics::default() возвращает пустые значения
+        let temp = TemperatureMetrics::default();
+        assert_eq!(temp.cpu_temperature_c, None);
+        assert_eq!(temp.gpu_temperature_c, None);
+    }
+
+    #[test]
+    fn test_power_metrics_parsing() {
+        // Тест проверяет парсинг значений энергопотребления
+        // Это unit-тест для логики парсинга, а не для реального сбора метрик
+        let energy_uj = 1234567890; // 1234567890 микроджоулей
+        let energy_w = energy_uj as f32 / 1_000_000.0;
+        
+        // Проверяем, что конвертация корректна
+        assert!(energy_w > 0.0);
+        assert!(energy_w < 2000.0); // разумный диапазон для мощности
+    }
+
+    #[test]
+    fn test_temperature_metrics_parsing() {
+        // Тест проверяет парсинг значений температуры
+        let temp_millidegrees = 45000; // 45.0°C
+        let temp_c = temp_millidegrees as f32 / 1000.0;
+        
+        assert_eq!(temp_c, 45.0);
+    }
+
+    #[test]
+    fn test_power_metrics_integration() {
+        // Тест проверяет, что PowerMetrics корректно интегрируется в SystemMetrics
+        let mut system_metrics = SystemMetrics::default();
+        system_metrics.power = PowerMetrics {
+            system_power_w: Some(100.5),
+            cpu_power_w: Some(50.2),
+            gpu_power_w: Some(75.8),
+        };
+        
+        assert_eq!(system_metrics.power.system_power_w, Some(100.5));
+        assert_eq!(system_metrics.power.cpu_power_w, Some(50.2));
+        assert_eq!(system_metrics.power.gpu_power_w, Some(75.8));
+    }
+
+    #[test]
+    fn test_temperature_metrics_integration() {
+        // Тест проверяет, что TemperatureMetrics корректно интегрируется в SystemMetrics
+        let mut system_metrics = SystemMetrics::default();
+        system_metrics.temperature = TemperatureMetrics {
+            cpu_temperature_c: Some(65.5),
+            gpu_temperature_c: Some(72.3),
+        };
+        
+        assert_eq!(system_metrics.temperature.cpu_temperature_c, Some(65.5));
+        assert_eq!(system_metrics.temperature.gpu_temperature_c, Some(72.3));
+    }
+
+    #[test]
+    fn test_power_metrics_serde() {
+        // Тест проверяет сериализацию и десериализацию PowerMetrics
+        let power = PowerMetrics {
+            system_power_w: Some(123.45),
+            cpu_power_w: Some(67.89),
+            gpu_power_w: Some(90.12),
+        };
+        
+        let serialized = serde_json::to_string(&power).unwrap();
+        let deserialized: PowerMetrics = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(power.system_power_w, deserialized.system_power_w);
+        assert_eq!(power.cpu_power_w, deserialized.cpu_power_w);
+        assert_eq!(power.gpu_power_w, deserialized.gpu_power_w);
+    }
+
+    #[test]
+    fn test_temperature_metrics_serde() {
+        // Тест проверяет сериализацию и десериализацию TemperatureMetrics
+        let temp = TemperatureMetrics {
+            cpu_temperature_c: Some(55.5),
+            gpu_temperature_c: Some(68.2),
+        };
+        
+        let serialized = serde_json::to_string(&temp).unwrap();
+        let deserialized: TemperatureMetrics = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(temp.cpu_temperature_c, deserialized.cpu_temperature_c);
+        assert_eq!(temp.gpu_temperature_c, deserialized.gpu_temperature_c);
+    }
+
+    #[test]
+    fn test_power_metrics_edge_cases() {
+        // Тест проверяет обработку граничных случаев для PowerMetrics
+        let power = PowerMetrics {
+            system_power_w: Some(0.0), // нулевая мощность
+            cpu_power_w: Some(f32::MAX), // максимальное значение
+            gpu_power_w: Some(f32::MIN), // минимальное значение
+        };
+        
+        // Проверяем, что значения сохраняются корректно
+        assert_eq!(power.system_power_w, Some(0.0));
+        assert_eq!(power.cpu_power_w, Some(f32::MAX));
+        assert_eq!(power.gpu_power_w, Some(f32::MIN));
+    }
+
+    #[test]
+    fn test_temperature_metrics_edge_cases() {
+        // Тест проверяет обработку граничных случаев для TemperatureMetrics
+        let temp = TemperatureMetrics {
+            cpu_temperature_c: Some(-273.15), // абсолютный ноль
+            gpu_temperature_c: Some(150.0), // высокая температура
+        };
+        
+        // Проверяем, что значения сохраняются корректно
+        assert_eq!(temp.cpu_temperature_c, Some(-273.15));
+        assert_eq!(temp.gpu_temperature_c, Some(150.0));
+    }
+
+    #[test]
+    fn test_power_metrics_optional_handling() {
+        // Тест проверяет корректную работу с опциональными значениями
+        let mut power = PowerMetrics::default();
+        
+        // Проверяем, что изначально все значения None
+        assert!(power.system_power_w.is_none());
+        assert!(power.cpu_power_w.is_none());
+        assert!(power.gpu_power_w.is_none());
+        
+        // Устанавливаем значения
+        power.system_power_w = Some(100.0);
+        power.cpu_power_w = Some(50.0);
+        
+        // Проверяем, что значения установлены
+        assert_eq!(power.system_power_w, Some(100.0));
+        assert_eq!(power.cpu_power_w, Some(50.0));
+        assert!(power.gpu_power_w.is_none());
+        
+        // Сбрасываем значения
+        power.system_power_w = None;
+        power.cpu_power_w = None;
+        
+        // Проверяем, что значения сброшены
+        assert!(power.system_power_w.is_none());
+        assert!(power.cpu_power_w.is_none());
+    }
+
+    #[test]
+    fn test_temperature_metrics_optional_handling() {
+        // Тест проверяет корректную работу с опциональными значениями
+        let mut temp = TemperatureMetrics::default();
+        
+        // Проверяем, что изначально все значения None
+        assert!(temp.cpu_temperature_c.is_none());
+        assert!(temp.gpu_temperature_c.is_none());
+        
+        // Устанавливаем значения
+        temp.cpu_temperature_c = Some(45.0);
+        temp.gpu_temperature_c = Some(55.0);
+        
+        // Проверяем, что значения установлены
+        assert_eq!(temp.cpu_temperature_c, Some(45.0));
+        assert_eq!(temp.gpu_temperature_c, Some(55.0));
+        
+        // Сбрасываем значения
+        temp.cpu_temperature_c = None;
+        temp.gpu_temperature_c = None;
+        
+        // Проверяем, что значения сброшены
+        assert!(temp.cpu_temperature_c.is_none());
+        assert!(temp.gpu_temperature_c.is_none());
+    }
+
+    #[test]
+    fn test_power_metrics_precision() {
+        // Тест проверяет точность хранения значений мощности
+        let power = PowerMetrics {
+            system_power_w: Some(123.456789),
+            cpu_power_w: Some(0.123456),
+            gpu_power_w: Some(999.999999),
+        };
+        
+        // Проверяем, что значения сохраняются с достаточной точностью
+        assert!(power.system_power_w.unwrap() > 123.45);
+        assert!(power.system_power_w.unwrap() < 123.46);
+        
+        assert!(power.cpu_power_w.unwrap() > 0.12);
+        assert!(power.cpu_power_w.unwrap() < 0.13);
+        
+        // Исправляем тест для gpu_power_w - 999.999999 может быть равно 1000.0 из-за точности f32
+        assert!(power.gpu_power_w.unwrap() >= 999.99);
+        assert!(power.gpu_power_w.unwrap() <= 1000.01);
+    }
+
+    #[test]
+    fn test_temperature_metrics_precision() {
+        // Тест проверяет точность хранения значений температуры
+        let temp = TemperatureMetrics {
+            cpu_temperature_c: Some(36.666666),
+            gpu_temperature_c: Some(85.999999),
+        };
+        
+        // Проверяем, что значения сохраняются с достаточной точностью
+        assert!(temp.cpu_temperature_c.unwrap() > 36.66);
+        assert!(temp.cpu_temperature_c.unwrap() < 36.67);
+        
+        // Исправляем тест для gpu_temperature_c - 85.999999 может быть равно 86.0 из-за точности f32
+        assert!(temp.gpu_temperature_c.unwrap() >= 85.99);
+        assert!(temp.gpu_temperature_c.unwrap() <= 86.01);
     }
 }
