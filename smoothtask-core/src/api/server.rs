@@ -293,9 +293,24 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/config/reload",
                 "method": "POST",
                 "description": "Перезагрузка конфигурации демона из файла"
+            },
+            {
+                "path": "/api/notifications/test",
+                "method": "POST",
+                "description": "Отправка тестового уведомления"
+            },
+            {
+                "path": "/api/notifications/status",
+                "method": "GET",
+                "description": "Получение текущего состояния системы уведомлений"
+            },
+            {
+                "path": "/api/notifications/config",
+                "method": "POST",
+                "description": "Изменение конфигурации уведомлений в runtime"
             }
         ],
-        "count": 15
+        "count": 18
     }))
 }
 
@@ -466,6 +481,181 @@ async fn patterns_handler(State(state): State<ApiState>) -> Result<Json<Value>, 
     }
 }
 
+/// Обработчик для endpoint `/api/notifications/test` (POST).
+///
+/// Отправляет тестовое уведомление через систему уведомлений.
+/// Используется для проверки работоспособности системы уведомлений.
+///
+/// # Примечания
+///
+/// - Требует наличия notification_manager в состоянии API
+/// - Возвращает информацию об отправленном уведомлении и статусе отправки
+async fn notifications_test_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    match &state.notification_manager {
+        Some(notification_manager_arc) => {
+            let notification_manager = notification_manager_arc.lock().await;
+            
+            // Создаём тестовое уведомление
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Info,
+                "Test Notification",
+                "This is a test notification from SmoothTask API",
+            ).with_details("Sent via /api/notifications/test endpoint");
+            
+            // Отправляем уведомление
+            match notification_manager.send(&notification).await {
+                Ok(_) => {
+                    tracing::info!("Test notification sent successfully");
+                    Ok(Json(json!({
+                        "status": "success",
+                        "message": "Test notification sent successfully",
+                        "notification": {
+                            "type": "info",
+                            "title": "Test Notification",
+                            "message": "This is a test notification from SmoothTask API",
+                            "details": "Sent via /api/notifications/test endpoint",
+                            "timestamp": notification.timestamp.to_rfc3339()
+                        },
+                        "backend": notification_manager.backend_name()
+                    })))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to send test notification: {}", e);
+                    Ok(Json(json!({
+                        "status": "error",
+                        "message": format!("Failed to send test notification: {}", e),
+                        "backend": notification_manager.backend_name()
+                    })))
+                }
+            }
+        }
+        None => {
+            tracing::warn!("Notification manager not available for test notification");
+            Ok(Json(json!({
+                "status": "error",
+                "message": "Notification manager not available (daemon may not be running or notifications not configured)",
+                "backend": "none"
+            })))
+        }
+    }
+}
+
+/// Обработчик для endpoint `/api/notifications/status` (GET).
+///
+/// Возвращает текущее состояние системы уведомлений.
+/// Включает информацию о том, включены ли уведомления, используемый бэкенд и текущую конфигурацию.
+async fn notifications_status_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Получаем текущую конфигурацию уведомлений
+    let notification_config = match &state.config {
+        Some(config_arc) => {
+            let config_guard = config_arc.read().await;
+            Some(config_guard.notifications.clone())
+        }
+        None => None,
+    };
+    
+    // Получаем информацию о менеджере уведомлений
+    let notification_manager_info = match &state.notification_manager {
+        Some(notification_manager_arc) => {
+            let notification_manager = notification_manager_arc.lock().await;
+            Some(json!({
+                "enabled": notification_manager.is_enabled(),
+                "backend": notification_manager.backend_name()
+            }))
+        }
+        None => None,
+    };
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "notifications": {
+            "config": notification_config,
+            "manager": notification_manager_info,
+            "available": notification_manager_info.is_some()
+        }
+    })))
+}
+
+/// Обработчик для endpoint `/api/notifications/config` (POST).
+///
+/// Изменяет конфигурацию уведомлений в runtime.
+/// Позволяет включать/отключать уведомления, изменять бэкенд и другие параметры.
+///
+/// # Примечания
+///
+/// - Требует наличия конфигурации в состоянии API
+/// - Изменения применяются немедленно
+/// - Возвращает обновлённую конфигурацию
+async fn notifications_config_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    match &state.config {
+        Some(config_arc) => {
+            // Пробуем обновить конфигурацию уведомлений
+            let mut config_guard = config_arc.write().await;
+            
+            // Обновляем параметры уведомлений, если они предоставлены
+            if let Some(enabled) = payload.get("enabled").and_then(|v| v.as_bool()) {
+                config_guard.notifications.enabled = enabled;
+            }
+            
+            if let Some(backend_str) = payload.get("backend").and_then(|v| v.as_str()) {
+                match backend_str {
+                    "stub" => config_guard.notifications.backend = crate::config::config::NotificationBackend::Stub,
+                    "libnotify" => config_guard.notifications.backend = crate::config::config::NotificationBackend::Libnotify,
+                    _ => {
+                        tracing::warn!("Unknown notification backend: {}", backend_str);
+                    }
+                }
+            }
+            
+            if let Some(app_name) = payload.get("app_name").and_then(|v| v.as_str()) {
+                config_guard.notifications.app_name = app_name.to_string();
+            }
+            
+            if let Some(min_level_str) = payload.get("min_level").and_then(|v| v.as_str()) {
+                match min_level_str {
+                    "critical" => config_guard.notifications.min_level = crate::config::config::NotificationLevel::Critical,
+                    "warning" => config_guard.notifications.min_level = crate::config::config::NotificationLevel::Warning,
+                    "info" => config_guard.notifications.min_level = crate::config::config::NotificationLevel::Info,
+                    _ => {
+                        tracing::warn!("Unknown notification level: {}", min_level_str);
+                    }
+                }
+            }
+            
+            // Также обновляем менеджер уведомлений, если он доступен
+            if let Some(notification_manager_arc) = &state.notification_manager {
+                let mut notification_manager = notification_manager_arc.lock().await;
+                
+                // Обновляем состояние включения уведомлений
+                if let Some(enabled) = payload.get("enabled").and_then(|v| v.as_bool()) {
+                    notification_manager.set_enabled(enabled);
+                }
+            }
+            
+            // Возвращаем обновлённую конфигурацию
+            let updated_config = config_guard.notifications.clone();
+            
+            tracing::info!("Notification configuration updated successfully");
+            
+            Ok(Json(json!({
+                "status": "success",
+                "message": "Notification configuration updated successfully",
+                "config": updated_config
+            })))
+        }
+        None => {
+            tracing::warn!("Config not available for notification configuration update");
+            Ok(Json(json!({
+                "status": "error",
+                "message": "Config not available (daemon may not be running or config not set)"
+            })))
+        }
+    }
+}
+
 /// Создаёт роутер для API.
 fn create_router(state: ApiState) -> Router {
     Router::new()
@@ -484,6 +674,9 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/classes", get(classes_handler))
         .route("/api/patterns", get(patterns_handler))
         .route("/api/system", get(system_handler))
+        .route("/api/notifications/test", post(notifications_test_handler))
+        .route("/api/notifications/status", get(notifications_status_handler))
+        .route("/api/notifications/config", post(notifications_config_handler))
         .with_state(state)
 }
 
@@ -1964,10 +2157,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 15);
+        assert_eq!(json["count"], 18); // Обновлено с 15 до 18
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 15);
+        assert_eq!(endpoints.len(), 18); // Обновлено с 15 до 18
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -1989,6 +2182,10 @@ mod tests {
         assert!(endpoint_paths.contains(&"/api/classes"));
         assert!(endpoint_paths.contains(&"/api/patterns"));
         assert!(endpoint_paths.contains(&"/api/system"));
+        assert!(endpoint_paths.contains(&"/api/config/reload"));
+        assert!(endpoint_paths.contains(&"/api/notifications/test"));
+        assert!(endpoint_paths.contains(&"/api/notifications/status"));
+        assert!(endpoint_paths.contains(&"/api/notifications/config"));
 
         // Проверяем структуру endpoint
         let first_endpoint = &endpoints[0];
@@ -2831,5 +3028,342 @@ max_candidates: 200
         assert!(json["current_config"].is_object());
         assert_eq!(json["config_path"], config_path);
         assert!(json["action_required"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_notifications_test_handler_without_manager() {
+        // Тест для notifications_test_handler когда менеджер уведомлений недоступен
+        let state = ApiState::new();
+        let result = notifications_test_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert!(value["message"].as_str().unwrap().contains("Notification manager not available"));
+        assert_eq!(value["backend"], "none");
+    }
+
+    #[tokio::test]
+    async fn test_notifications_test_handler_with_manager() {
+        // Тест для notifications_test_handler когда менеджер уведомлений доступен
+        use crate::notifications::NotificationManager;
+        
+        let notification_manager = NotificationManager::new_stub();
+        let notification_manager_arc = Arc::new(tokio::sync::Mutex::new(notification_manager));
+        
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: None,
+            config_path: None,
+            pattern_database: None,
+            notification_manager: Some(notification_manager_arc),
+        };
+        
+        let result = notifications_test_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "success");
+        assert_eq!(value["message"], "Test notification sent successfully");
+        assert!(value["notification"].is_object());
+        assert_eq!(value["notification"]["title"], "Test Notification");
+        assert_eq!(value["notification"]["message"], "This is a test notification from SmoothTask API");
+        assert_eq!(value["backend"], "stub");
+    }
+
+    #[tokio::test]
+    async fn test_notifications_status_handler_without_config() {
+        // Тест для notifications_status_handler когда конфигурация недоступна
+        let state = ApiState::new();
+        let result = notifications_status_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["notifications"]["config"].is_null());
+        assert!(value["notifications"]["manager"].is_null());
+        assert_eq!(value["notifications"]["available"], false);
+    }
+
+    #[tokio::test]
+    async fn test_notifications_status_handler_with_config() {
+        // Тест для notifications_status_handler когда конфигурация доступна
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: true,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Info,
+            },
+        };
+        
+        let config_arc = Arc::new(RwLock::new(config));
+        let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
+        
+        let result = notifications_status_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["notifications"]["config"].is_object());
+        assert_eq!(value["notifications"]["config"]["enabled"], true);
+        assert_eq!(value["notifications"]["config"]["backend"], "stub");
+        assert_eq!(value["notifications"]["config"]["app_name"], "SmoothTask");
+        assert_eq!(value["notifications"]["config"]["min_level"], "info");
+        assert!(value["notifications"]["manager"].is_null());
+        assert_eq!(value["notifications"]["available"], false);
+    }
+
+    #[tokio::test]
+    async fn test_notifications_status_handler_with_manager() {
+        // Тест для notifications_status_handler когда менеджер уведомлений доступен
+        use crate::notifications::NotificationManager;
+        
+        let notification_manager = NotificationManager::new_stub();
+        let notification_manager_arc = Arc::new(tokio::sync::Mutex::new(notification_manager));
+        
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: None,
+            config_path: None,
+            pattern_database: None,
+            notification_manager: Some(notification_manager_arc),
+        };
+        
+        let result = notifications_status_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["notifications"]["config"].is_null());
+        assert!(value["notifications"]["manager"].is_object());
+        assert_eq!(value["notifications"]["manager"]["enabled"], true);
+        assert_eq!(value["notifications"]["manager"]["backend"], "stub");
+        assert_eq!(value["notifications"]["available"], true);
+    }
+
+    #[tokio::test]
+    async fn test_notifications_config_handler_without_config() {
+        // Тест для notifications_config_handler когда конфигурация недоступна
+        let state = ApiState::new();
+        let payload = json!({
+            "enabled": true
+        });
+        let result = notifications_config_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert!(value["message"].as_str().unwrap().contains("Config not available"));
+    }
+
+    #[tokio::test]
+    async fn test_notifications_config_handler_with_config() {
+        // Тест для notifications_config_handler когда конфигурация доступна
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
+        };
+        
+        let config_arc = Arc::new(RwLock::new(config));
+        let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
+        
+        let payload = json!({
+            "enabled": true,
+            "backend": "libnotify",
+            "app_name": "SmoothTask Test",
+            "min_level": "info"
+        });
+        
+        let result = notifications_config_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "success");
+        assert_eq!(value["message"], "Notification configuration updated successfully");
+        assert!(value["config"].is_object());
+        assert_eq!(value["config"]["enabled"], true);
+        assert_eq!(value["config"]["backend"], "libnotify");
+        assert_eq!(value["config"]["app_name"], "SmoothTask Test");
+        assert_eq!(value["config"]["min_level"], "info");
+    }
+
+    #[tokio::test]
+    async fn test_notifications_config_handler_partial_update() {
+        // Тест для notifications_config_handler с частичным обновлением
+        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+            },
+            paths: Paths {
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: crate::config::config::NotificationConfig {
+                enabled: false,
+                backend: crate::config::config::NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: crate::config::config::NotificationLevel::Warning,
+            },
+        };
+        
+        let config_arc = Arc::new(RwLock::new(config));
+        let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
+        
+        // Обновляем только enabled
+        let payload = json!({
+            "enabled": true
+        });
+        
+        let result = notifications_config_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "success");
+        assert_eq!(value["config"]["enabled"], true);
+        // Остальные параметры должны остаться без изменений
+        assert_eq!(value["config"]["backend"], "stub");
+        assert_eq!(value["config"]["app_name"], "SmoothTask");
+        assert_eq!(value["config"]["min_level"], "warning");
+    }
+
+    #[tokio::test]
+    async fn test_endpoints_handler_updated() {
+        let result = endpoints_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["endpoints"].is_array());
+        assert_eq!(json["count"], 18); // Обновлено с 15 до 18
+        
+        let endpoints = json["endpoints"].as_array().unwrap();
+        assert_eq!(endpoints.len(), 18);
+        
+        // Проверяем наличие новых endpoints
+        let endpoint_paths: Vec<&str> = endpoints
+            .iter()
+            .map(|e| e["path"].as_str().unwrap())
+            .collect();
+        
+        assert!(endpoint_paths.contains(&"/api/notifications/test"));
+        assert!(endpoint_paths.contains(&"/api/notifications/status"));
+        assert!(endpoint_paths.contains(&"/api/notifications/config"));
     }
 }

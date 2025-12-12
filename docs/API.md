@@ -1423,3 +1423,439 @@ paths:
 2. Если необходим доступ извне, используйте reverse proxy (nginx, Caddy) с аутентификацией
 3. Не используйте API на публичных серверах без дополнительной защиты
 4. Рассмотрите возможность добавления TLS/HTTPS для защиты данных в будущем
+
+---
+
+### POST /api/notifications/test
+
+Отправка тестового уведомления через систему уведомлений.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/test
+```
+
+**Ответ (успешная отправка):**
+```json
+{
+  "status": "success",
+  "message": "Test notification sent successfully",
+  "notification": {
+    "type": "info",
+    "title": "Test Notification",
+    "message": "This is a test notification from SmoothTask API",
+    "details": "Sent via /api/notifications/test endpoint",
+    "timestamp": "2025-01-01T12:00:00+00:00"
+  },
+  "backend": "stub"
+}
+```
+
+**Ответ (ошибка отправки):**
+```json
+{
+  "status": "error",
+  "message": "Failed to send test notification: Notification backend error",
+  "backend": "libnotify"
+}
+```
+
+**Ответ (менеджер уведомлений недоступен):**
+```json
+{
+  "status": "error",
+  "message": "Notification manager not available (daemon may not be running or notifications not configured)",
+  "backend": "none"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус операции: "success" или "error"
+- `message` (string) - описание результата операции
+- `notification` (object, опционально) - информация об отправленном уведомлении
+- `backend` (string) - используемый бэкенд уведомлений ("stub", "libnotify" или "none")
+
+**Примечания:**
+- Используется для проверки работоспособности системы уведомлений
+- Отправляет тестовое уведомление с фиксированным текстом
+- Тип уведомления: Info
+- Требует наличия notification_manager в состоянии API
+- Если уведомления отключены в конфигурации, уведомление не будет отправлено
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `200 OK` с `status: "error"` - Ошибка отправки уведомления
+
+---
+
+### GET /api/notifications/status
+
+Получение текущего состояния системы уведомлений.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/notifications/status
+```
+
+**Ответ (полная информация):**
+```json
+{
+  "status": "ok",
+  "notifications": {
+    "config": {
+      "enabled": true,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "info"
+    },
+    "manager": {
+      "enabled": true,
+      "backend": "stub"
+    },
+    "available": true
+  }
+}
+```
+
+**Ответ (конфигурация недоступна):**
+```json
+{
+  "status": "ok",
+  "notifications": {
+    "config": null,
+    "manager": null,
+    "available": false
+  }
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус ответа (всегда "ok")
+- `notifications` (object) - информация о системе уведомлений
+  - `config` (object | null) - текущая конфигурация уведомлений
+    - `enabled` (bool) - флаг включения уведомлений
+    - `backend` (string) - тип бэкенда ("stub" или "libnotify")
+    - `app_name` (string) - имя приложения для уведомлений
+    - `min_level` (string) - минимальный уровень важности ("critical", "warning" или "info")
+  - `manager` (object | null) - информация о менеджере уведомлений
+    - `enabled` (bool) - флаг включения уведомлений в менеджере
+    - `backend` (string) - используемый бэкенд
+  - `available` (bool) - флаг доступности системы уведомлений
+
+**Примечания:**
+- Возвращает информацию о конфигурации и состоянии менеджера уведомлений
+- Позволяет проверить, включены ли уведомления и какой бэкенд используется
+- Полезно для отладки и мониторинга системы уведомлений
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+---
+
+### POST /api/notifications/config
+
+Изменение конфигурации уведомлений в runtime.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "backend": "libnotify",
+    "app_name": "SmoothTask Test",
+    "min_level": "info"
+  }'
+```
+
+**Ответ (успешное обновление):**
+```json
+{
+  "status": "success",
+  "message": "Notification configuration updated successfully",
+  "config": {
+    "enabled": true,
+    "backend": "libnotify",
+    "app_name": "SmoothTask Test",
+    "min_level": "info"
+  }
+}
+```
+
+**Ответ (конфигурация недоступна):**
+```json
+{
+  "status": "error",
+  "message": "Config not available (daemon may not be running or config not set)"
+}
+```
+
+**Поля запроса (JSON):**
+- `enabled` (bool, опционально) - флаг включения уведомлений
+- `backend` (string, опционально) - тип бэкенда ("stub" или "libnotify")
+- `app_name` (string, опционально) - имя приложения для уведомлений
+- `min_level` (string, опционально) - минимальный уровень важности ("critical", "warning" или "info")
+
+**Поля ответа:**
+- `status` (string) - статус операции: "success" или "error"
+- `message` (string) - описание результата операции
+- `config` (object, опционально) - обновлённая конфигурация уведомлений
+
+**Примечания:**
+- Позволяет изменять параметры уведомлений без перезапуска демона
+- Изменения применяются немедленно
+- Можно обновлять отдельные параметры (частичное обновление)
+- Требует наличия конфигурации в состоянии API
+- Если параметр не указан в запросе, он остаётся без изменений
+- При изменении параметра `enabled` обновляется как конфигурация, так и менеджер уведомлений
+
+**Примеры использования:**
+
+**Включение уведомлений:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+```
+
+**Изменение бэкенда:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "libnotify"}'
+```
+
+**Изменение минимального уровня:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{"min_level": "warning"}'
+```
+
+**Полное обновление конфигурации:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "backend": "libnotify",
+    "app_name": "SmoothTask Production",
+    "min_level": "warning"
+  }'
+```
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `200 OK` с `status: "error"` - Ошибка обновления конфигурации
+
+---
+
+## Примеры использования API уведомлений
+
+### Проверка работоспособности системы уведомлений
+
+```bash
+# Отправить тестовое уведомление
+curl -X POST http://127.0.0.1:8080/api/notifications/test
+
+# Проверить статус системы уведомлений
+curl http://127.0.0.1:8080/api/notifications/status | jq
+
+# Включить уведомления
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{"enabled": true}'
+
+# Изменить бэкенд на libnotify
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{"backend": "libnotify"}'
+
+# Отправить ещё одно тестовое уведомление для проверки
+curl -X POST http://127.0.0.1:8080/api/notifications/test
+```
+
+### Настройка уведомлений для production
+
+```bash
+# Настроить уведомления для production использования
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "enabled": true,
+    "backend": "libnotify",
+    "app_name": "SmoothTask",
+    "min_level": "warning"
+  }'
+
+# Проверить текущую конфигурацию
+curl http://127.0.0.1:8080/api/notifications/status | jq '.notifications.config'
+```
+
+### Отладка проблем с уведомлениями
+
+```bash
+# Проверить текущий статус системы уведомлений
+curl http://127.0.0.1:8080/api/notifications/status | jq
+
+# Отправить тестовое уведомление для проверки
+curl -X POST http://127.0.0.1:8080/api/notifications/test
+
+# Проверить логи демона для деталей
+journalctl -u smoothtaskd -n 50
+
+# Включить более подробное логирование (уровень info)
+curl -X POST http://127.0.0.1:8080/api/notifications/config \
+  -H "Content-Type: application/json" \
+  -d '{"min_level": "info"}'
+```
+
+---
+
+## Интеграция с внешними системами
+
+API уведомлений SmoothTask может быть интегрировано с внешними системами мониторинга и управления.
+
+### Пример интеграции с Prometheus
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'smoothtask'
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+### Пример интеграции с Grafana
+
+```json
+// Grafana dashboard JSON
+{
+  "panels": [
+    {
+      "title": "SmoothTask Notifications",
+      "type": "stat",
+      "datasource": "prometheus",
+      "targets": [
+        {
+          "expr": "smoothtask_notifications_enabled",
+          "format": "time_series"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Пример интеграции с системой мониторинга
+
+```python
+import requests
+import json
+
+def check_smoothtask_notifications():
+    try:
+        response = requests.get("http://127.0.0.1:8080/api/notifications/status")
+        data = response.json()
+        
+        if data["status"] == "ok":
+            notifications = data["notifications"]
+            if notifications["available"]:
+                config = notifications["config"]
+                manager = notifications["manager"]
+                
+                print(f"Notifications enabled: {config['enabled']}")
+                print(f"Backend: {config['backend']}")
+                print(f"Min level: {config['min_level']}")
+                print(f"Manager status: {manager['enabled']}")
+                
+                return True
+            else:
+                print("Notifications not available")
+                return False
+        else:
+            print("Error checking notifications")
+            return False
+            
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+if __name__ == "__main__":
+    check_smoothtask_notifications()
+```
+
+---
+
+## Рекомендации по использованию
+
+1. **Настройка уведомлений:**
+   - Для production использования рекомендуется использовать бэкенд `libnotify`
+   - Установите минимальный уровень `warning` для избежания информационного шума
+   - Включайте уведомления только при необходимости мониторинга
+
+2. **Тестирование:**
+   - Используйте бэкенд `stub` для тестирования и разработки
+   - Отправляйте тестовые уведомления для проверки работоспособности
+   - Проверяйте статус системы уведомлений перед использованием
+
+3. **Безопасность:**
+   - API уведомлений доступен только на localhost по умолчанию
+   - Не открывайте API на публичные интерфейсы без дополнительной защиты
+   - Используйте HTTPS и аутентификацию при необходимости внешнего доступа
+
+4. **Мониторинг:**
+   - Интегрируйте API уведомлений с вашей системой мониторинга
+   - Отслеживайте статус системы уведомлений для своевременного обнаружения проблем
+   - Используйте тестовые уведомления для проверки работоспособности
+
+5. **Отладка:**
+   - Проверяйте логи демона для деталей о работе системы уведомлений
+   - Используйте уровень `info` для более подробного логирования
+   - Проверяйте статус системы уведомлений при возникновении проблем
+
+---
+
+## Будущие улучшения
+
+В будущих версиях SmoothTask планируется:
+
+1. **Расширение системы уведомлений:**
+   - Добавление поддержки дополнительных бэкендов (email, webhook, etc.)
+   - Реализация системы шаблонов для уведомлений
+   - Добавление поддержки локализации уведомлений
+
+2. **Улучшение API:**
+   - Добавление эндпоинта для получения истории уведомлений
+   - Реализация системы фильтрации и поиска уведомлений
+   - Добавление поддержки пагинации для списка уведомлений
+
+3. **Интеграция с внешними системами:**
+   - Добавление поддержки отправки уведомлений в внешние системы (Slack, Telegram, etc.)
+   - Реализация системы вебхуков для уведомлений
+   - Добавление поддержки отправки уведомлений по email
+
+4. **Улучшение безопасности:**
+   - Добавление аутентификации и авторизации для API
+   - Реализация системы ролей и разрешений
+   - Добавление поддержки TLS/HTTPS для API
+
+5. **Улучшение документации:**
+   - Добавление примеров использования API на различных языках программирования
+   - Реализация интерактивной документации (Swagger/OpenAPI)
+   - Добавление руководств по интеграции с популярными системами мониторинга
+
+---
+
+## Заключение
+
+API уведомлений SmoothTask предоставляет мощный инструмент для мониторинга и управления системой уведомлений демона. С помощью API вы можете:
+
+- Проверять работоспособность системы уведомлений
+- Отправлять тестовые уведомления
+- Получать текущий статус и конфигурацию
+- Изменять параметры уведомлений в runtime
+- Интегрировать систему уведомлений с внешними системами
+
+API уведомлений является важной частью SmoothTask и позволяет обеспечить своевременное информирование пользователей о важных событиях в работе демона.
