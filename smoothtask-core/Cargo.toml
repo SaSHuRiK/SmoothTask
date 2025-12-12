@@ -32,6 +32,7 @@ rusqlite = { version = "0.31", features = ["bundled", "chrono"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 anyhow = "1"
+rayon = "1.8"
 
 # HTTP API
 axum = { version = "0.7", features = ["json"] }
