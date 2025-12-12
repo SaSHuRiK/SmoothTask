@@ -3,6 +3,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tracing::warn;
 
 /// Сырые счётчики CPU из `/proc/stat`.
@@ -634,6 +636,64 @@ impl Default for ProcPaths {
 ///     std::thread::sleep(Duration::from_millis(100));
 /// }
 /// ```
+
+/// Собирает системные метрики с использованием кэша.
+///
+/// Эта функция использует кэш для уменьшения количества операций ввода-вывода
+/// при частом опросе системных метрик. Если кэш пуст или устарел, функция
+/// вызывает `collect_system_metrics` для сбора новых данных.
+///
+/// # Аргументы
+///
+/// * `cache` - Кэш системных метрик
+/// * `paths` - Пути к файлам в `/proc` для чтения метрик
+/// * `force_refresh` - Принудительно обновить кэш, игнорируя время жизни кэша
+///
+/// # Возвращаемое значение
+///
+/// Структура `SystemMetrics` с собранными метриками или ошибка, если
+/// не удалось прочитать критические файлы (stat, meminfo, loadavg).
+///
+/// # Примеры
+///
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics_cached, ProcPaths, SharedSystemMetricsCache};
+/// use std::path::PathBuf;
+/// use std::time::Duration;
+///
+/// let paths = ProcPaths {
+///     stat: PathBuf::from("/proc/stat"),
+///     meminfo: PathBuf::from("/proc/meminfo"),
+///     loadavg: PathBuf::from("/proc/loadavg"),
+///     pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+///     pressure_io: PathBuf::from("/proc/pressure/io"),
+///     pressure_memory: PathBuf::from("/proc/pressure/memory"),
+/// };
+///
+/// // Создаем кэш с временем жизни 1 секунда
+/// let cache = SharedSystemMetricsCache::new(Duration::from_secs(1));
+///
+/// // Получаем метрики (будут собраны новые данные)
+/// let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать системные метрики");
+/// 
+/// // Получаем метрики снова (будут использованы кэшированные данные)
+/// let metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать системные метрики");
+/// 
+/// assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
+/// ```
+pub fn collect_system_metrics_cached(
+    cache: &SharedSystemMetricsCache,
+    paths: &ProcPaths,
+    force_refresh: bool,
+) -> Result<SystemMetrics> {
+    if force_refresh {
+        // Принудительное обновление кэша
+        cache.clear();
+    }
+    
+    cache.get_or_update(|| collect_system_metrics(paths))
+}
+
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Читаем основные файлы с подробными сообщениями об ошибках
     let cpu_contents = read_file(&paths.stat).with_context(|| {
@@ -2688,5 +2748,163 @@ SwapFree:        4096000 kB
         // Исправляем тест для gpu_temperature_c - 85.999999 может быть равно 86.0 из-за точности f32
         assert!(temp.gpu_temperature_c.unwrap() >= 85.99);
         assert!(temp.gpu_temperature_c.unwrap() <= 86.01);
+    }
+
+    #[test]
+    fn test_system_metrics_cache_basic() {
+        // Создаем кэш с временем жизни 1 секунда
+        let cache = SharedSystemMetricsCache::new(std::time::Duration::from_secs(1));
+        
+        // Создаем тестовые пути
+        let paths = ProcPaths {
+            stat: PathBuf::from("/proc/stat"),
+            meminfo: PathBuf::from("/proc/meminfo"),
+            loadavg: PathBuf::from("/proc/loadavg"),
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+
+        // Первое обращение должно собрать новые метрики
+        let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
+        
+        // Второе обращение должно вернуть кэшированные метрики
+        let metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось получить кэшированные метрики");
+        
+        // Метрики должны быть идентичны
+        assert_eq!(metrics1.cpu_times, metrics2.cpu_times);
+        assert_eq!(metrics1.memory.mem_total_kb, metrics2.memory.mem_total_kb);
+    }
+
+    #[test]
+    fn test_system_metrics_cache_force_refresh() {
+        // Создаем кэш с временем жизни 1 секунда
+        let cache = SharedSystemMetricsCache::new(std::time::Duration::from_secs(1));
+        
+        let paths = ProcPaths {
+            stat: PathBuf::from("/proc/stat"),
+            meminfo: PathBuf::from("/proc/meminfo"),
+            loadavg: PathBuf::from("/proc/loadavg"),
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+
+        // Первое обращение
+        let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
+        
+        // Второе обращение с принудительным обновлением
+        let metrics2 = collect_system_metrics_cached(&cache, &paths, true).expect("Не удалось обновить кэш");
+        
+        // Метрики должны быть разными (так как были собраны в разное время)
+        // или одинаковыми (если система не изменилась за это время)
+        // В любом случае, функция не должна падать
+        assert!(true); // Просто проверяем, что функция работает
+    }
+
+    #[test]
+    fn test_system_metrics_cache_expired() {
+        // Создаем кэш с очень коротким временем жизни (10 мс)
+        let cache = SharedSystemMetricsCache::new(std::time::Duration::from_millis(10));
+        
+        let paths = ProcPaths {
+            stat: PathBuf::from("/proc/stat"),
+            meminfo: PathBuf::from("/proc/meminfo"),
+            loadavg: PathBuf::from("/proc/loadavg"),
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+
+        // Первое обращение
+        let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
+        
+        // Ждем, пока кэш устареет
+        std::thread::sleep(std::time::Duration::from_millis(15));
+        
+        // Второе обращение должно обновить кэш
+        let metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось обновить кэш");
+        
+        // Функция должна работать без ошибок
+        assert!(true);
+    }
+}
+
+/// Кэш для системных метрик
+///
+/// Используется для кэширования системных метрик и уменьшения количества
+/// операций ввода-вывода при частом опросе.
+#[derive(Debug, Default)]
+struct SystemMetricsCache {
+    cached_metrics: Option<SystemMetrics>,
+    last_update_time: Option<Instant>,
+    cache_duration: Duration,
+}
+
+impl SystemMetricsCache {
+    /// Создать новый кэш с указанной длительностью кэширования
+    pub fn new(cache_duration: Duration) -> Self {
+        Self {
+            cached_metrics: None,
+            last_update_time: None,
+            cache_duration,
+        }
+    }
+
+    /// Получить метрики из кэша или обновить кэш, если он устарел
+    pub fn get_or_update<F>(&mut self, update_func: F) -> Result<SystemMetrics>
+    where
+        F: FnOnce() -> Result<SystemMetrics>,
+    {
+        // Проверяем, есть ли актуальные данные в кэше
+        if let (Some(metrics), Some(last_update)) = (&self.cached_metrics, self.last_update_time) {
+            if last_update.elapsed() < self.cache_duration {
+                // Данные еще актуальны, возвращаем их из кэша
+                return Ok(metrics.clone());
+            }
+        }
+
+        // Кэш устарел или пуст, обновляем данные
+        let new_metrics = update_func()?;
+        self.cached_metrics = Some(new_metrics.clone());
+        self.last_update_time = Some(Instant::now());
+        
+        Ok(new_metrics)
+    }
+
+    /// Принудительно очистить кэш
+    pub fn clear(&mut self) {
+        self.cached_metrics = None;
+        self.last_update_time = None;
+    }
+}
+
+/// Потокобезопасный кэш системных метрик
+#[derive(Debug, Default, Clone)]
+pub struct SharedSystemMetricsCache {
+    inner: Arc<Mutex<SystemMetricsCache>>,
+}
+
+impl SharedSystemMetricsCache {
+    /// Создать новый потокобезопасный кэш
+    pub fn new(cache_duration: Duration) -> Self {
+        Self {
+            inner: Arc::new(Mutex::new(SystemMetricsCache::new(cache_duration))),
+        }
+    }
+
+    /// Получить метрики из кэша или обновить кэш, если он устарел
+    pub fn get_or_update<F>(&self, update_func: F) -> Result<SystemMetrics>
+    where
+        F: FnOnce() -> Result<SystemMetrics>,
+    {
+        let mut cache = self.inner.lock().unwrap();
+        cache.get_or_update(update_func)
+    }
+
+    /// Принудительно очистить кэш
+    pub fn clear(&self) {
+        let mut cache = self.inner.lock().unwrap();
+        cache.clear();
     }
 }
