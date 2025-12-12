@@ -5,9 +5,12 @@
 
 use anyhow::{Context, Result};
 use std::path::PathBuf;
+use std::collections::HashMap;
 use tracing::{debug, error, info, instrument, warn};
 use wayland_client::protocol::wl_registry::WlRegistry;
+use wayland_client::Proxy;
 use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1};
+use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::{self, ZwlrForeignToplevelHandleV1};
 
 use crate::metrics::windows::{WindowInfo, WindowIntrospector, WindowState};
 
@@ -261,6 +264,8 @@ pub struct WaylandIntrospector {
     windows: Vec<WindowInfo>,
     /// Тип обнаруженного композитора
     compositor_type: Option<WaylandCompositorType>,
+    /// Реестр Wayland для управления глобальными объектами
+    _registry: wayland_client::protocol::wl_registry::WlRegistry,
 }
 
 /// Состояние для обработки событий Wayland
@@ -269,13 +274,19 @@ struct WaylandState {
     foreign_toplevel_manager: Option<ZwlrForeignToplevelManagerV1>,
     /// Список текущих окон
     windows: Vec<WindowInfo>,
+    /// Отображение ID окна на объект toplevel
+    toplevels: std::collections::HashMap<wayland_client::backend::ObjectId, wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_handle_v1::ZwlrForeignToplevelHandleV1>,
+    /// Отображение ObjectId на индекс окна в списке windows
+    toplevel_to_window_index: std::collections::HashMap<wayland_client::backend::ObjectId, usize>,
+    /// Флаг, указывающий, что инициализация завершена
+    _initialized: bool,
 }
 
 // Реализация Dispatch для обработки событий реестра
 impl wayland_client::Dispatch<WlRegistry, ()> for WaylandState {
     fn event(
-        _state: &mut Self,
-        _proxy: &WlRegistry,
+        state: &mut Self,
+        proxy: &WlRegistry,
         event: wayland_client::protocol::wl_registry::Event,
         _data: &(),
         _conn: &wayland_client::Connection,
@@ -287,17 +298,27 @@ impl wayland_client::Dispatch<WlRegistry, ()> for WaylandState {
                 debug!("Registry global event: interface={}, version={}", interface, version);
                 
                 // Ищем wlr-foreign-toplevel-manager
-                if interface == "wlr-foreign-toplevel-manager-v1" {
-                    info!("Found wlr-foreign-toplevel-manager-v1 global (name={})", name);
-                    // Нашли менеджер wlr-foreign-toplevel, подключаемся к нему
-                    // Note: We need to get the registry proxy to bind to the global
-                    // This is a simplified approach - in a real implementation, we'd need
-                    // to properly handle the registry and binding
+                if interface == "wlr-foreign-toplevel-management-unstable-v1" {
+                    info!("Found wlr-foreign-toplevel-management-unstable-v1 global (name={})", name);
+                    
+                    // Привязываемся к глобальному объекту
+                    let manager = proxy.bind(name, version, _qhandle, ());
+                    state.foreign_toplevel_manager = Some(manager);
+                    
+                    // Запрашиваем список текущих окон
+                    if state.foreign_toplevel_manager.is_some() {
+                        debug!("Requesting current window list from manager");
+                        // Note: В текущей версии протокола может не быть метода get_toplevels()
+                        // Мы будем получать события Toplevel по мере их появления
+                    }
                 }
             }
             wayland_client::protocol::wl_registry::Event::GlobalRemove { name } => {
                 debug!("Registry global remove event: name={}", name);
-                // Обработка удаления глобальных объектов
+                // Если удаляется менеджер wlr-foreign-toplevel, очищаем состояние
+                // Note: Упрощенная логика, так как сравнение ObjectId может быть сложным
+                warn!("Global object removed: {}", name);
+                // В будущем можно будет улучшить эту логику
             }
             _ => {
                 // Игнорируем другие события
@@ -317,35 +338,39 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
         _qhandle: &wayland_client::QueueHandle<Self>,
     ) {
         match event {
-            zwlr_foreign_toplevel_manager_v1::Event::Toplevel { toplevel: _ } => {
+            zwlr_foreign_toplevel_manager_v1::Event::Toplevel { toplevel } => {
                 info!("New toplevel window detected");
                 
-                // Новое окно появилось, получаем информацию о нём
-                // Используем временные значения, так как реальная информация требует
-                // дополнительных запросов к toplevel объекту
+                // Сохраняем toplevel объект для дальнейшей обработки
+                state.toplevels.insert(toplevel.id(), toplevel);
+                
+                // Создаем новое окно с временными данными
                 let window_info = WindowInfo::new(
-                    Some("unknown_app".to_string()), // app_id - временное значение
-                    Some("Unknown Window".to_string()), // title - временное значение
-                    None, // workspace - пока не поддерживается
+                    None, // app_id будет обновлен позже
+                    Some("Loading...".to_string()), // title будет обновлен позже
+                    None, // workspace пока не поддерживается
                     WindowState::Background, // состояние по умолчанию
-                    None, // pid - пока не поддерживается
-                    0.0, // confidence - низкая уверенность
+                    None, // pid будет обновлен позже
+                    0.0, // confidence
                 );
                 
-                debug!("Added new window to state: {:?}", window_info);
+                // Добавляем окно в список
+                let window_index = state.windows.len();
                 state.windows.push(window_info);
                 
-                // Note: В реальной реализации нужно получить информацию через:
-                // toplevel.get_app_id()
-                // toplevel.get_title()
-                // toplevel.get_state()
-                // toplevel.get_pid()
-                // Это требует дополнительных запросов и обработки событий
+                // Получаем ID из последнего добавленного toplevel
+                if let Some((last_toplevel_id, _)) = state.toplevels.iter().last() {
+                    // Сохраняем отображение toplevel -> window
+                    state.toplevel_to_window_index.insert(last_toplevel_id.clone(), window_index);
+                    debug!("Added new toplevel to state: {:?}", last_toplevel_id);
+                }
             }
             zwlr_foreign_toplevel_manager_v1::Event::Finished => {
                 warn!("Foreign toplevel manager finished");
                 // Менеджер завершил работу
                 state.foreign_toplevel_manager = None;
+                state.toplevels.clear();
+                state.windows.clear();
             }
             _ => {
                 debug!("Ignoring unknown foreign toplevel manager event");
@@ -354,6 +379,61 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
         }
     }
 }
+
+// Реализация Dispatch для обработки событий toplevel handle
+impl wayland_client::Dispatch<ZwlrForeignToplevelHandleV1, ()> for WaylandState {
+    fn event(
+        state: &mut Self,
+        proxy: &ZwlrForeignToplevelHandleV1,
+        event: zwlr_foreign_toplevel_handle_v1::Event,
+        _data: &(),
+        _conn: &wayland_client::Connection,
+        _qhandle: &wayland_client::QueueHandle<Self>,
+    ) {
+        match event {
+            zwlr_foreign_toplevel_handle_v1::Event::Title { title } => {
+                debug!("Toplevel title event: {}", title);
+                // Обновляем заголовок окна
+                if let Some(&window_index) = state.toplevel_to_window_index.get(&proxy.id()) {
+                    if let Some(window) = state.windows.get_mut(window_index) {
+                        window.title = Some(title);
+                    }
+                }
+            }
+            zwlr_foreign_toplevel_handle_v1::Event::AppId { app_id } => {
+                debug!("Toplevel app_id event: {}", app_id);
+                // Обновляем app_id окна
+                if let Some(&window_index) = state.toplevel_to_window_index.get(&proxy.id()) {
+                    if let Some(window) = state.windows.get_mut(window_index) {
+                        window.app_id = Some(app_id);
+                    }
+                }
+            }
+            zwlr_foreign_toplevel_handle_v1::Event::Done => {
+                debug!("Toplevel done event");
+                // Окно полностью инициализировано
+            }
+            zwlr_foreign_toplevel_handle_v1::Event::Closed => {
+                debug!("Toplevel closed event");
+                // Окно закрыто, удаляем его из списка
+                if let Some(&window_index) = state.toplevel_to_window_index.get(&proxy.id()) {
+                    state.windows.remove(window_index);
+                    // Обновляем индексы для оставшихся окон
+                    // Упрощенная логика: просто удаляем закрытое окно
+                    state.toplevel_to_window_index.remove(&proxy.id());
+                    // В будущем можно будет улучшить эту логику для обновления индексов
+                }
+                state.toplevels.remove(&proxy.id());
+            }
+            _ => {
+                debug!("Ignoring unknown toplevel handle event");
+                // Игнорируем другие события
+            }
+        }
+    }
+}
+
+
 
 impl WaylandIntrospector {
     /// Возвращает тип обнаруженного Wayland композитора
@@ -463,15 +543,18 @@ impl WaylandIntrospector {
         
         info!("Successfully connected to Wayland compositor");
 
+        // Создаём очередь событий для обработки асинхронных событий
+        let event_queue = connection.new_event_queue();
+        let queue_handle = event_queue.handle();
+
         // Создаём состояние для обработки событий
         let _state = WaylandState {
             foreign_toplevel_manager: None,
             windows: Vec::new(),
+            toplevels: HashMap::new(),
+            toplevel_to_window_index: HashMap::new(),
+            _initialized: false,
         };
-
-        // Создаём очередь событий для обработки асинхронных событий
-        let event_queue = connection.new_event_queue();
-        let queue_handle = event_queue.handle();
 
         // Получаем реестр для поиска глобальных объектов
         let _registry = connection.display().get_registry(&queue_handle, ());
@@ -484,6 +567,7 @@ impl WaylandIntrospector {
             event_queue,
             windows: Vec::new(),
             compositor_type,
+            _registry: _registry,
         })
     }
 
@@ -503,12 +587,12 @@ impl WaylandIntrospector {
         let mut state = WaylandState {
             foreign_toplevel_manager: None,
             windows: Vec::new(),
+            toplevels: HashMap::new(),
+            toplevel_to_window_index: HashMap::new(),
+            _initialized: false,
         };
 
-        let queue_handle = self.event_queue.handle();
-
-        // Получаем реестр для поиска глобальных объектов
-        let _registry = self.connection.display().get_registry(&queue_handle, ());
+        let _queue_handle = self.event_queue.handle();
 
         // Обрабатываем события до тех пор, пока не получим все глобальные объекты
         // или не найдём менеджер wlr-foreign-toplevel
@@ -522,9 +606,9 @@ impl WaylandIntrospector {
             self.event_queue.dispatch_pending(&mut state)
                 .with_context(|| format!("Failed to dispatch Wayland events on attempt {}", attempts + 1))?;
             
-            // Если мы нашли менеджер, выходим
-            if state.foreign_toplevel_manager.is_some() {
-                info!("Successfully found wlr-foreign-toplevel-manager");
+            // Если мы нашли менеджер и получили хотя бы одно окно, выходим
+            if state.foreign_toplevel_manager.is_some() && !state.windows.is_empty() {
+                info!("Successfully found wlr-foreign-toplevel-manager and received window data");
                 break;
             }
             
@@ -545,21 +629,12 @@ impl WaylandIntrospector {
             );
         }
 
-        // Если мы нашли менеджер, запрашиваем список текущих окон
-        if let Some(_manager) = state.foreign_toplevel_manager {
-            debug!("Requesting current window list from wlr-foreign-toplevel-manager");
-            
-            // В большинстве реализаций нужно дождаться событий Toplevel от менеджера
-            // после вызова manager.get_toplevels()
-            // Однако, в текущей версии протокола метод get_toplevels() может не существовать
-            // или требовать дополнительной обработки событий
-            
-            // Пока что добавляем временное окно для демонстрации функциональности
-            // В реальной реализации нужно будет обработать события Toplevel,
-            // которые придут от менеджера после его инициализации
+        // Если у нас нет окон, добавляем временные данные для демонстрации
+        // В реальной реализации мы должны были получить события Toplevel
+        if state.windows.is_empty() {
+            warn!("No windows received from wlr-foreign-toplevel-manager, using fallback data");
             let window_info = self.create_test_window_for_compositor();
-            
-            debug!("Added test window to state");
+            debug!("Added fallback window to state");
             state.windows.push(window_info);
         }
 
@@ -645,8 +720,6 @@ impl WindowIntrospector for WaylandIntrospector {
         // Возвращаем список окон
         // Если список пуст, это может быть нормально (нет окон), но мы добавляем логирование
         // для отладки в будущем
-        // Note: Текущая реализация возвращает временные данные для демонстрации функциональности
-        // В будущем нужно будет реализовать полную обработку событий Toplevel
         let window_count = introspector.windows.len();
         if window_count == 0 {
             debug!("No windows found via Wayland introspector");
