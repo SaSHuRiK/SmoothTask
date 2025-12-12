@@ -454,6 +454,22 @@ impl NotificationManager {
         Self::new(DBusNotifier::new(app_name))
     }
     
+    /// Создаёт новый NotificationManager с D-Bus бэкендом и интеграцией с хранилищем логов.
+    /// 
+    /// # Примечания
+    /// Доступно только при включении фичи `dbus`.
+    #[cfg(feature = "dbus")]
+    pub fn new_dbus_with_logging(
+        notifier: DBusNotifier,
+        log_storage: std::sync::Arc<crate::logging::log_storage::SharedLogStorage>
+    ) -> Self {
+        Self {
+            primary_notifier: Box::new(notifier),
+            enabled: true,
+            log_storage: Some(log_storage),
+        }
+    }
+    
     /// Включает или отключает отправку уведомлений.
     pub fn set_enabled(&mut self, enabled: bool) {
         self.enabled = enabled;

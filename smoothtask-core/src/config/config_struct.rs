@@ -698,6 +698,8 @@ pub enum NotificationBackend {
     Stub,
     /// Desktop уведомления через libnotify.
     Libnotify,
+    /// Уведомления через D-Bus (системный D-Bus).
+    Dbus,
 }
 
 /// Тип ML-модели для ранжирования и классификации.

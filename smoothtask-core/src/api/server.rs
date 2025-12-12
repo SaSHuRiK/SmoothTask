@@ -894,6 +894,11 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Отправка тестового уведомления"
             },
             {
+                "path": "/api/notifications/custom",
+                "method": "POST",
+                "description": "Отправка пользовательского уведомления с указанными параметрами"
+            },
+            {
                 "path": "/api/notifications/status",
                 "method": "GET",
                 "description": "Получение текущего состояния системы уведомлений"
@@ -914,7 +919,7 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Получение последних логов приложения с фильтрацией по уровню и лимиту"
             }
         ],
-        "count": 21
+        "count": 22
     }))
 }
 
@@ -1144,6 +1149,94 @@ async fn notifications_test_handler(State(state): State<ApiState>) -> Result<Jso
     }
 }
 
+/// Обработчик для endpoint `/api/notifications/custom` (POST).
+///
+/// Отправляет пользовательское уведомление с указанными параметрами.
+/// Позволяет тестировать уведомления разных типов и с разными сообщениями.
+///
+/// # Примечания
+///
+/// - Требует наличия notification_manager в состоянии API
+/// - Позволяет указать тип уведомления, заголовок, сообщение и дополнительные детали
+/// - Возвращает информацию об отправленном уведомлении и статусе отправки
+async fn notifications_custom_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    match &state.notification_manager {
+        Some(notification_manager_arc) => {
+            let notification_manager = notification_manager_arc.lock().await;
+            
+            // Извлекаем параметры уведомления из payload
+            let notification_type = match payload.get("type").and_then(|v| v.as_str()) {
+                Some("critical") => crate::notifications::NotificationType::Critical,
+                Some("warning") => crate::notifications::NotificationType::Warning,
+                Some(_) | None => crate::notifications::NotificationType::Info,
+            };
+            
+            let title = payload.get("title")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Custom Notification")
+                .to_string();
+            
+            let message = payload.get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Custom notification message")
+                .to_string();
+            
+            let details = payload.get("details")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            
+            // Создаём уведомление
+            let mut notification = crate::notifications::Notification::new(
+                notification_type,
+                title,
+                message,
+            );
+            
+            if let Some(details_str) = details {
+                notification = notification.with_details(details_str);
+            }
+            
+            // Отправляем уведомление
+            match notification_manager.send(&notification).await {
+                Ok(_) => {
+                    tracing::info!("Custom notification sent successfully");
+                    Ok(Json(json!({
+                        "status": "success",
+                        "message": "Custom notification sent successfully",
+                        "notification": {
+                            "type": format!("{}", notification.notification_type),
+                            "title": notification.title,
+                            "message": notification.message,
+                            "details": notification.details,
+                            "timestamp": notification.timestamp.to_rfc3339()
+                        },
+                        "backend": notification_manager.backend_name()
+                    })))
+                }
+                Err(e) => {
+                    tracing::error!("Failed to send custom notification: {}", e);
+                    Ok(Json(json!({
+                        "status": "error",
+                        "message": format!("Failed to send custom notification: {}", e),
+                        "backend": notification_manager.backend_name()
+                    })))
+                }
+            }
+        }
+        None => {
+            tracing::warn!("Notification manager not available for custom notification");
+            Ok(Json(json!({
+                "status": "error",
+                "message": "Notification manager not available (daemon may not be running or notifications not configured)",
+                "backend": "none"
+            })))
+        }
+    }
+}
+
 /// Обработчик для endpoint `/api/notifications/status` (GET).
 ///
 /// Возвращает текущее состояние системы уведомлений.
@@ -1345,6 +1438,7 @@ async fn notifications_config_handler(
                 match backend_str {
                     "stub" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Stub,
                     "libnotify" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Libnotify,
+                    "dbus" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Dbus,
                     _ => {
                         tracing::warn!("Unknown notification backend: {}", backend_str);
                     }
@@ -1417,6 +1511,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/patterns", get(patterns_handler))
         .route("/api/system", get(system_handler))
         .route("/api/notifications/test", post(notifications_test_handler))
+        .route("/api/notifications/custom", post(notifications_custom_handler))
         .route("/api/notifications/status", get(notifications_status_handler))
         .route("/api/notifications/config", post(notifications_config_handler))
         .route("/api/performance", get(performance_handler))
@@ -3336,10 +3431,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 20); // Обновлено с 19 до 20
+        assert_eq!(json["count"], 22); // Обновлено с 19 до 20
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 20); // Обновлено с 19 до 20
+        assert_eq!(endpoints.len(), 22); // Обновлено с 20 до 22
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -4715,10 +4810,10 @@ max_candidates: 200
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 20); // Обновлено с 19 до 20
+        assert_eq!(json["count"], 22); // Обновлено с 21 до 22
         
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 20);
+        assert_eq!(endpoints.len(), 22);
         
         // Проверяем наличие новых endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -4727,10 +4822,119 @@ max_candidates: 200
             .collect();
         
         assert!(endpoint_paths.contains(&"/api/notifications/test"));
+        assert!(endpoint_paths.contains(&"/api/notifications/custom"));
         assert!(endpoint_paths.contains(&"/api/notifications/status"));
         assert!(endpoint_paths.contains(&"/api/notifications/config"));
         assert!(endpoint_paths.contains(&"/api/performance"));
         assert!(endpoint_paths.contains(&"/api/logs"));
+    }
+    
+    #[tokio::test]
+    async fn test_notifications_custom_handler_without_manager() {
+        // Тест для notifications_custom_handler когда notification_manager не доступен
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: None,
+            config_path: None,
+            pattern_database: None,
+            notification_manager: None,
+            cache: None,
+            log_storage: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        };
+        
+        let payload = json!({
+            "type": "info",
+            "title": "Test Title",
+            "message": "Test Message"
+        });
+        
+        let result = notifications_custom_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap().0;
+        assert_eq!(json["status"], "error");
+        assert_eq!(json["backend"], "none");
+        assert!(json["message"].as_str().unwrap().contains("Notification manager not available"));
+    }
+    
+    #[tokio::test]
+    async fn test_notifications_custom_handler_with_manager() {
+        // Тест для notifications_custom_handler с доступным notification_manager
+        use crate::notifications::NotificationManager;
+        
+        let notification_manager = Arc::new(tokio::sync::Mutex::new(NotificationManager::new_stub()));
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: None,
+            config_path: None,
+            pattern_database: None,
+            notification_manager: Some(Arc::clone(&notification_manager)),
+            cache: None,
+            log_storage: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        };
+        
+        let payload = json!({
+            "type": "warning",
+            "title": "Custom Warning",
+            "message": "This is a custom warning message",
+            "details": "Additional details about the warning"
+        });
+        
+        let result = notifications_custom_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap().0;
+        assert_eq!(json["status"], "success");
+        assert_eq!(json["backend"], "stub");
+        assert_eq!(json["notification"]["type"], "WARNING");
+        assert_eq!(json["notification"]["title"], "Custom Warning");
+        assert_eq!(json["notification"]["message"], "This is a custom warning message");
+        assert_eq!(json["notification"]["details"], "Additional details about the warning");
+    }
+    
+    #[tokio::test]
+    async fn test_notifications_custom_handler_default_values() {
+        // Тест для notifications_custom_handler с значениями по умолчанию
+        use crate::notifications::NotificationManager;
+        
+        let notification_manager = Arc::new(tokio::sync::Mutex::new(NotificationManager::new_stub()));
+        let state = ApiState {
+            daemon_stats: None,
+            system_metrics: None,
+            processes: None,
+            app_groups: None,
+            responsiveness_metrics: None,
+            config: None,
+            config_path: None,
+            pattern_database: None,
+            notification_manager: Some(Arc::clone(&notification_manager)),
+            cache: None,
+            log_storage: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        };
+        
+        // Пустой payload - должны использоваться значения по умолчанию
+        let payload = json!({});
+        
+        let result = notifications_custom_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap().0;
+        assert_eq!(json["status"], "success");
+        assert_eq!(json["notification"]["type"], "INFO");
+        assert_eq!(json["notification"]["title"], "Custom Notification");
+        assert_eq!(json["notification"]["message"], "Custom notification message");
+        assert!(json["notification"]["details"].is_null());
     }
 
     #[tokio::test]

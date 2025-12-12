@@ -550,6 +550,24 @@ pub async fn run_daemon(
                 warn!("Libnotify backend selected but feature 'libnotify' is not enabled, falling back to stub");
                 NotificationManager::new_stub_with_logging(Arc::clone(&log_storage))
             }
+            NotificationBackend::Dbus => {
+                #[cfg(feature = "dbus")]
+                {
+                    info!("Using DBusNotifier for notifications");
+                    let mut notifier = crate::notifications::DBusNotifier::new("SmoothTask");
+                    if let Err(e) = notifier.connect().await {
+                        warn!("Failed to connect to D-Bus: {}, falling back to stub", e);
+                        NotificationManager::new_stub_with_logging(Arc::clone(&log_storage))
+                    } else {
+                        NotificationManager::new_dbus_with_logging(notifier, Arc::clone(&log_storage))
+                    }
+                }
+                #[cfg(not(feature = "dbus"))]
+                {
+                    warn!("DBus backend selected but feature 'dbus' is not enabled, falling back to stub");
+                    NotificationManager::new_stub_with_logging(Arc::clone(&log_storage))
+                }
+            }
         };
 
         info!(

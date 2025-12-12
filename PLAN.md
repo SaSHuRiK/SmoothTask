@@ -30,6 +30,43 @@
     - smoothtask-core/src/metrics/ebpf.rs: Исправлены неиспользуемые mutable переменные в test_ebpf_config_validation
   - Результаты: Все предупреждения компилятора устранены, код компилируется без предупреждений
 
+- [x] ST-546: Добавить поддержку D-Bus бэкенда в систему уведомлений
+  - Тип: Rust / core / notifications
+  - Критерии готовности:
+    - [x] Добавить Dbus вариант в enum NotificationBackend
+    - [x] Обновить интеграцию в lib.rs для обработки Dbus бэкенда
+    - [x] Добавить метод new_dbus_with_logging в NotificationManager
+    - [x] Обновить API сервер для поддержки нового бэкенда
+    - [x] Добавить тесты для нового функционала
+  - Примечания: Расширение системы уведомлений для поддержки D-Bus бэкенда
+  - Приоритет: Высокий
+  - Оценка времени: ~45 минут
+  - Статус: COMPLETED
+  - Время выполнения: ~40 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/config/config_struct.rs: Добавлен Dbus вариант в NotificationBackend
+    - smoothtask-core/src/lib.rs: Обновлена логика выбора бэкенда для поддержки Dbus
+    - smoothtask-core/src/notifications/mod.rs: Добавлен метод new_dbus_with_logging
+    - smoothtask-core/src/api/server.rs: Обновлен обработчик конфигурации уведомлений
+  - Результаты: Система уведомлений теперь поддерживает D-Bus бэкенд с автоматическим fallback на заглушку при ошибках
+
+- [x] ST-547: Добавить API endpoint для отправки пользовательских уведомлений
+  - Тип: Rust / core / api
+  - Критерии готовности:
+    - [x] Добавить новый обработчик notifications_custom_handler
+    - [x] Добавить маршрут /api/notifications/custom в роутер
+    - [x] Добавить endpoint в список доступных endpoints
+    - [x] Добавить тесты для нового обработчика
+    - [x] Обновить тесты endpoints_handler
+  - Примечания: Расширение API для гибкого тестирования уведомлений
+  - Приоритет: Высокий
+  - Оценка времени: ~30 минут
+  - Статус: COMPLETED
+  - Время выполнения: ~35 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Добавлен notifications_custom_handler и маршрут
+  - Результаты: Новый API endpoint позволяет отправлять пользовательские уведомления с любыми параметрами
+
 - [ ] ST-543: Провести тестирование eBPF на реальных системах
   - Тип: Rust / core / metrics / eBPF / testing
   - Критерии готовности:
@@ -73,6 +110,27 @@
   - Приоритет: Низкий
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-547: Добавить API endpoint для отправки пользовательских уведомлений
+  - Тип: Rust / core / api
+  - Примечания: Успешная реализация нового API endpoint для гибкого тестирования уведомлений
+  - Статус: COMPLETED
+  - Время выполнения: ~35 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Добавлен notifications_custom_handler и маршрут
+  - Результаты: Новый API endpoint позволяет отправлять пользовательские уведомления с любыми параметрами
+
+- [x] ST-546: Добавить поддержку D-Bus бэкенда в систему уведомлений
+  - Тип: Rust / core / notifications
+  - Примечания: Успешное расширение системы уведомлений для поддержки D-Bus бэкенда
+  - Статус: COMPLETED
+  - Время выполнения: ~40 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/config/config_struct.rs: Добавлен Dbus вариант в NotificationBackend
+    - smoothtask-core/src/lib.rs: Обновлена логика выбора бэкенда для поддержки Dbus
+    - smoothtask-core/src/notifications/mod.rs: Добавлен метод new_dbus_with_logging
+    - smoothtask-core/src/api/server.rs: Обновлен обработчик конфигурации уведомлений
+  - Результаты: Система уведомлений теперь поддерживает D-Bus бэкенд с автоматическим fallback на заглушку при ошибках
 
 - [x] ST-545: Исправить предупреждения компилятора в основных модулях
   - Тип: Rust / core / cleanup
