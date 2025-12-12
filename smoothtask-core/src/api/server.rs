@@ -37,6 +37,8 @@ pub struct ApiState {
     config_path: Option<String>,
     /// База данных паттернов для классификации процессов (опционально)
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+    /// Менеджер уведомлений для отправки уведомлений через API (опционально)
+    notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
 }
 
 impl ApiState {
@@ -51,6 +53,7 @@ impl ApiState {
             config: None,
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl ApiState {
             config: None,
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         }
     }
 
@@ -81,6 +85,7 @@ impl ApiState {
             config: None,
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         }
     }
 
@@ -100,6 +105,7 @@ impl ApiState {
             config: None,
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         }
     }
 
@@ -120,6 +126,7 @@ impl ApiState {
             config,
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         }
     }
 
@@ -143,6 +150,7 @@ impl ApiState {
             config,
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         }
     }
 
@@ -158,6 +166,7 @@ impl ApiState {
         config: Option<Arc<RwLock<crate::config::config::Config>>>, 
         pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
         config_path: Option<String>,
+        notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
     ) -> Self {
         Self {
             daemon_stats,
@@ -168,6 +177,7 @@ impl ApiState {
             config,
             config_path,
             pattern_database,
+            notification_manager,
         }
     }
 }
@@ -984,6 +994,7 @@ impl ApiServer {
         config: Option<Arc<RwLock<crate::config::config::Config>>>, 
         pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
         config_path: Option<String>,
+        notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
     ) -> Self {
         Self {
             addr,
@@ -996,6 +1007,7 @@ impl ApiServer {
                 config,
                 pattern_database,
                 config_path,
+                notification_manager,
             ),
         }
     }
@@ -2070,6 +2082,7 @@ mod tests {
             None,
             Some(Arc::new(pattern_db)),
             None, // config_path not needed for this test
+            None, // notification_manager not needed for this test
         );
 
         let result = patterns_handler(State(state)).await;
@@ -2133,6 +2146,7 @@ apps:
             None,
             Some(pattern_db_arc),
             None, // config_path not needed for this test
+            None, // notification_manager not needed for this test
         );
 
         let result = patterns_handler(State(state)).await;
@@ -2352,6 +2366,7 @@ apps:
             Some(Arc::new(RwLock::new(config))),
             Some(pattern_db_arc),
             None, // config_path not needed for this test
+            None, // notification_manager not needed for this test
         );
         // Проверяем, что сервер создан
         let _ = server;
@@ -2486,6 +2501,7 @@ apps:
             Some(Arc::new(RwLock::new(config))),
             Some(pattern_db_arc),
             None, // config_path not needed for this test
+            None, // notification_manager not needed for this test
         );
         assert!(state.config.is_some());
         assert!(state.pattern_database.is_some());
@@ -2591,6 +2607,7 @@ apps:
             config: Some(config_arc.clone()),
             config_path: None,
             pattern_database: None,
+            notification_manager: None,
         };
         
         let result = config_reload_handler(State(state)).await;
@@ -2707,6 +2724,7 @@ notifications:
             config: Some(config_arc.clone()),
             config_path: Some(config_path.clone()),
             pattern_database: None,
+            notification_manager: None,
         };
         
         let result = config_reload_handler(State(state)).await;
@@ -2801,6 +2819,7 @@ max_candidates: 200
             config: Some(config_arc.clone()),
             config_path: Some(config_path.clone()),
             pattern_database: None,
+            notification_manager: None,
         };
         
         let result = config_reload_handler(State(state)).await;

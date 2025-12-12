@@ -22,6 +22,10 @@ use crate::actuator::{apply_priority_adjustments, plan_priority_changes, Hystere
 use crate::api::{ApiServer, ApiServerHandle};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
 use crate::config::watcher::ConfigWatcher;
+use crate::config::config::NotificationBackend;
+use crate::notifications::{Notification, NotificationManager, NotificationType, StubNotifier};
+#[cfg(feature = "libnotify")]
+use crate::notifications::LibnotifyNotifier;
 use crate::logging::snapshots::{GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger};
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
@@ -525,6 +529,35 @@ pub async fn run_daemon(
     // Читаем конфигурацию один раз для инициализации
     let initial_config = config_arc.read().await.clone();
 
+    // Инициализация системы уведомлений
+    // Используем Arc для совместного доступа между основным циклом и API сервером
+    let notification_manager: Arc<tokio::sync::Mutex<NotificationManager>> = {
+        // Выбираем бэкенд в зависимости от конфигурации
+        let manager: NotificationManager = match initial_config.notifications.backend {
+            NotificationBackend::Stub => {
+                info!("Using StubNotifier for notifications (testing mode)");
+                NotificationManager::new(StubNotifier::default())
+            }
+            #[cfg(feature = "libnotify")]
+            NotificationBackend::Libnotify => {
+                info!("Using LibnotifyNotifier for desktop notifications");
+                NotificationManager::new(LibnotifyNotifier::new(initial_config.notifications.app_name.clone()))
+            }
+            #[cfg(not(feature = "libnotify"))]
+            NotificationBackend::Libnotify => {
+                warn!("Libnotify backend selected but feature 'libnotify' is not enabled, falling back to stub");
+                NotificationManager::new(StubNotifier::default())
+            }
+        };
+
+        info!(
+            "Notification system initialized (backend: {}, enabled: {})",
+            manager.backend_name(),
+            manager.is_enabled()
+        );
+        Arc::new(tokio::sync::Mutex::new(manager))
+    };
+
     // Инициализация подсистем
     let mut snapshot_logger = {
         if initial_config.enable_snapshot_logging && !initial_config.paths.snapshot_db_path.is_empty() {
@@ -699,6 +732,7 @@ pub async fn run_daemon(
                     Some(Arc::clone(&config_arc)),
                     Some(Arc::clone(&pattern_db_arc)),
                     Some(config_path.clone()),
+                    Some(Arc::clone(&notification_manager)),
                 );
                 match api_server.start().await {
                     Ok(handle) => {
@@ -726,6 +760,19 @@ pub async fn run_daemon(
     // Вызываем callback уведомления о готовности (например, для systemd notify)
     if let Some(ref callback) = on_ready {
         callback();
+    }
+
+    // Отправляем уведомление о успешном запуске демона
+    if notification_manager.lock().await.is_enabled() {
+        let notification = Notification::new(
+            NotificationType::Info,
+            "SmoothTask Daemon Started",
+            format!("SmoothTask daemon has started successfully (dry_run: {})", dry_run),
+        ).with_details(format!("Configuration loaded from: {}", config_path));
+        
+        if let Err(e) = notification_manager.lock().await.send(&notification).await {
+            warn!("Failed to send startup notification: {}", e);
+        }
     }
 
     let mut iteration = 0u64;
