@@ -702,6 +702,11 @@ curl http://127.0.0.1:8080/api/config
       "backend": "stub",
       "app_name": "SmoothTask",
       "min_level": "warning"
+    },
+    "ml_ranker": {
+      "enabled": true,
+      "model_path": "/etc/smoothtask/models/ranker.onnx",
+      "use_categorical_features": false
     }
   }
 }
@@ -743,6 +748,10 @@ curl http://127.0.0.1:8080/api/config
   - `backend` (string) - тип бэкенда уведомлений ("stub" или "libnotify")
   - `app_name` (string) - имя приложения для уведомлений
   - `min_level` (string) - минимальный уровень важности уведомлений ("critical", "warning" или "info")
+- `ml_ranker` (object, опционально) - конфигурация ML-ранкера для гибридного режима
+  - `enabled` (bool) - флаг включения ML-ранкера
+  - `model_path` (string) - путь к ONNX модели
+  - `use_categorical_features` (bool) - использовать категориальные фичи (требуется совместимая модель)
 
 **Примечания:**
 - Конфигурация возвращается как есть, так как в SmoothTask нет явных секретов (паролей, токенов и т.д.)
