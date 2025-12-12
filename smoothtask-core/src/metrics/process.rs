@@ -214,8 +214,8 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
                     match collect_single_process(&proc) {
                         Ok(Some(record)) => {
                             let process_name = record.exe.as_ref()
-                                .or_else(|| record.cmdline.as_ref())
-                                .map(|s| s.split('/').last().unwrap_or(s.as_str()))
+                                .or(record.cmdline.as_ref())
+                                .map(|s| s.split('/').next_back().unwrap_or(s.as_str()))
                                 .unwrap_or("unknown");
                             tracing::debug!("Успешно собраны метрики для процесса PID {} ({})", pid, process_name);
                             Some(record)

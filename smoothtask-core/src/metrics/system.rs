@@ -1086,13 +1086,19 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                 // Нужно перечитать, так как entries уже потреблено
                 if let Ok(entries) = fs::read_dir(hwmon_dir) {
                     for entry in entries {
-                        let mut path_str = String::new(); // Placeholder
-                        let mut path = PathBuf::new(); // Placeholder
+                        let path_str = match &entry {
+                            Ok(entry) => {
+                                let path = entry.path();
+                                let path_str = path.to_string_lossy().into_owned();
+                                tracing::debug!("Processing hwmon device: {}", path_str);
+                                path_str
+                            }
+                            Err(_) => "unknown".to_string(),
+                        };
+
                         match entry {
                             Ok(entry) => {
-                                path = entry.path();
-                                path_str = path.to_string_lossy().into_owned();
-                                tracing::debug!("Processing hwmon device: {}", path_str);
+                                let path = entry.path();
 
                                 // Ищем файлы temp*_input в каждом hwmon устройстве
                                 match fs::read_dir(&path) {

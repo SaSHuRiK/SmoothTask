@@ -2475,6 +2475,7 @@ impl EbpfMetricsCollector {
     /// Оптимизировать детализированную статистику для уменьшения использования памяти
     /// 
     /// Эта функция ограничивает количество детализированных статистик для уменьшения memory footprint
+    #[allow(dead_code)]
     fn optimize_detailed_stats(&self, 
         syscall_details: Option<Vec<SyscallStat>>,
         network_details: Option<Vec<NetworkStat>>,

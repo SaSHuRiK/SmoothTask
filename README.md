@@ -717,6 +717,235 @@ echo "Priority Class: ${APP_GROUP:-Not found}"
    top -p $(pidof smoothtaskd)
    ```
 
+## API Примеры
+
+### Примеры использования Metrics API
+
+#### Сбор системных метрик
+
+```rust
+use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let paths = ProcPaths::default();
+    let metrics = collect_system_metrics(&paths)?;
+    
+    println!("CPU usage: {:.2}%", metrics.cpu_usage_since(&prev_metrics).map_or(0.0, |u| u.user * 100.0));
+    println!("Memory used: {} MB", metrics.memory.mem_used_kb() / 1024);
+    
+    Ok(())
+}
+```
+
+#### Параллельный сбор метрик
+
+```rust
+use smoothtask_core::metrics::system::{collect_system_metrics_parallel, ProcPaths};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let paths = ProcPaths::default();
+    let metrics = collect_system_metrics_parallel(&paths)?;
+    
+    println!("Parallel collection completed");
+    
+    Ok(())
+}
+```
+
+### Примеры использования Policy API
+
+#### Работа с классами приоритетов
+
+```rust
+use smoothtask_core::policy::classes::PriorityClass;
+
+fn main() {
+    // Получение параметров приоритета
+    let params = PriorityClass::CritInteractive.params();
+    println!("CritInteractive nice: {}", params.nice.nice);
+    println!("CritInteractive cpu_weight: {}", params.cgroup.cpu_weight);
+    
+    // Сравнение приоритетов
+    assert!(PriorityClass::CritInteractive > PriorityClass::Interactive);
+    
+    // Конвертация в строку и обратно
+    let class_str = PriorityClass::Background.as_str();
+    let parsed_class = PriorityClass::from_str("INTERACTIVE").unwrap();
+}
+```
+
+#### Применение политики к процессу
+
+```rust
+use smoothtask_core::policy::engine::PolicyEngine;
+use smoothtask_core::logging::snapshots::ProcessRecord;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = PolicyEngine::new();
+    
+    let mut process = ProcessRecord {
+        pid: 1234,
+        exe: Some("firefox".to_string()),
+        process_type: Some("browser".to_string()),
+        // ... другие поля
+    };
+    
+    let system_state = SystemState::default();
+    engine.apply_policy(&mut process, &system_state);
+    
+    println!("Final priority: {:?}", process.priority_class);
+    
+    Ok(())
+}
+```
+
+### Примеры использования Classify API
+
+#### Загрузка и использование паттерн-базы
+
+```rust
+use smoothtask_core::classify::rules::PatternDatabase;
+use std::path::Path;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let pattern_db = PatternDatabase::load(Path::new("configs/patterns"))?;
+    
+    println!("Loaded {} patterns", pattern_db.total_patterns());
+    
+    // Получение паттернов по категории
+    let browser_patterns = pattern_db.patterns_for_category(&PatternCategory("browser".to_string()));
+    println!("Browser patterns: {}", browser_patterns.len());
+    
+    Ok(())
+}
+```
+
+#### Классификация процесса
+
+```rust
+use smoothtask_core::classify::rules::{PatternDatabase, classify_process};
+use smoothtask_core::logging::snapshots::ProcessRecord;
+use std::path::Path;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let pattern_db = PatternDatabase::load(Path::new("configs/patterns"))?;
+    
+    let mut process = ProcessRecord {
+        pid: 1234,
+        exe: Some("firefox".to_string()),
+        has_gui_window: true,
+        cpu_share_10s: Some(0.5),
+        process_type: None,
+        tags: Vec::new(),
+        // ... другие поля
+    };
+    
+    classify_process(&mut process, &pattern_db, None, None);
+    
+    println!("Process type: {:?}", process.process_type);
+    println!("Tags: {:?}", process.tags);
+    
+    Ok(())
+}
+```
+
+#### Классификация с ML
+
+```rust
+use smoothtask_core::classify::rules::classify_process;
+use smoothtask_core::classify::ml_classifier::StubMLClassifier;
+use smoothtask_core::classify::rules::PatternDatabase;
+use smoothtask_core::logging::snapshots::ProcessRecord;
+use std::path::Path;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let pattern_db = PatternDatabase::load(Path::new("configs/patterns"))?;
+    let ml_classifier = StubMLClassifier::new();
+    
+    let mut process = ProcessRecord {
+        pid: 5678,
+        exe: Some("custom_app".to_string()),
+        has_gui_window: true,
+        cpu_share_10s: Some(0.8),
+        process_type: None,
+        tags: Vec::new(),
+        // ... другие поля
+    };
+    
+    classify_process(&mut process, &pattern_db, Some(&ml_classifier), None);
+    
+    println!("ML-enhanced classification:");
+    println!("  Type: {:?}", process.process_type);
+    println!("  Tags: {:?}", process.tags);
+    
+    Ok(())
+}
+```
+
+### Полные примеры интеграции
+
+#### Основной цикл демона
+
+```rust
+use smoothtask_core::metrics::{system, process, gpu};
+use smoothtask_core::policy::engine::PolicyEngine;
+use smoothtask_core::classify::rules::PatternDatabase;
+use std::time::Duration;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Инициализация компонентов
+    let system_paths = system::ProcPaths::default();
+    let mut system_cache = system::SystemMetricsCache::new();
+    let pattern_db = PatternDatabase::load("configs/patterns")?;
+    let policy_engine = PolicyEngine::new();
+    
+    loop {
+        // Сбор метрик
+        let system_metrics = system::collect_system_metrics_cached(&system_paths, &mut system_cache)?;
+        let processes = process::collect_process_metrics()?;
+        let gpus = gpu::collect_gpu_metrics()?;
+        
+        // Классификация процессов
+        classify_all(&mut processes, &pattern_db, None, Some(&system_metrics));
+        
+        // Применение политики
+        for process in &mut processes {
+            policy_engine.apply_policy(process, &system_metrics);
+        }
+        
+        // Применение приоритетов
+        apply_priorities(&processes);
+        
+        // Пауза перед следующей итерацией
+        std::thread::sleep(Duration::from_secs(1));
+    }
+}
+```
+
+#### Обработка ошибок и graceful degradation
+
+```rust
+use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
+
+fn collect_metrics_with_fallback() -> SystemMetrics {
+    let paths = ProcPaths::default();
+    
+    match collect_system_metrics(&paths) {
+        Ok(metrics) => metrics,
+        Err(e) => {
+            eprintln!("Error collecting metrics: {}, using fallback", e);
+            SystemMetrics::default() // Возврат метрик по умолчанию как fallback
+        }
+    }
+}
+```
+
+## Подробная API Документация
+
+- 📊 [Metrics API](docs/API_METRICS.md) - Подробная документация по API метрик
+- ⚙️ [Policy API](docs/API_POLICY.md) - Подробная документация по API политик
+- 🏷️ [Classify API](docs/API_CLASSIFY.md) - Подробная документация по API классификации
+
 ## Ссылки
 
 - 📖 [Техническое задание](docs/tz.md)
