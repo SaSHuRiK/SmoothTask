@@ -32,7 +32,7 @@ use crate::logging::snapshots::{
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
-use crate::metrics::process::collect_process_metrics;
+use crate::metrics::process::{collect_process_metrics, collect_process_metrics_legacy};
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{
     collect_system_metrics, CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics,
@@ -1294,7 +1294,7 @@ pub async fn collect_snapshot(
     *prev_cpu_times = Some(system_metrics.clone());
 
     // Сбор метрик процессов (блокирующая операция - оборачиваем в spawn_blocking)
-    let mut processes = tokio::task::spawn_blocking(collect_process_metrics)
+    let mut processes = tokio::task::spawn_blocking(collect_process_metrics_legacy)
         .await
         .context("Failed to join process metrics task")?
         .context(
@@ -1626,7 +1626,7 @@ pub async fn collect_snapshot_with_caching(
 
     let mut processes = if need_update_process_metrics {
         // Кэш устарел, обновляем метрики процессов
-        let new_processes = tokio::task::spawn_blocking(collect_process_metrics)
+        let new_processes = tokio::task::spawn_blocking(collect_process_metrics_legacy)
             .await
             .context("Failed to join process metrics task")?
             .context(
