@@ -129,6 +129,8 @@ fn test_system_metrics_caching_logic() {
                     fifteen: 0.6,
                 },
                 pressure: smoothtask_core::metrics::system::PressureMetrics::default(),
+                temperature: smoothtask_core::metrics::system::TemperatureMetrics::default(),
+                power: smoothtask_core::metrics::system::PowerMetrics::default(),
             };
             system_metrics_cache = Some(mock_metrics);
             system_metrics_cache_iteration = current_iteration;

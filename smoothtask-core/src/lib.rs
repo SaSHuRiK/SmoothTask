@@ -28,7 +28,7 @@ use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{
     collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, ProcPaths,
-    SystemMetrics,
+    SystemMetrics, TemperatureMetrics, PowerMetrics,
 };
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
@@ -646,6 +646,8 @@ pub async fn run_daemon(
             fifteen: 0.0,
         },
         pressure: PressureMetrics::default(),
+        temperature: TemperatureMetrics::default(),
+        power: PowerMetrics::default(),
     }));
     let processes_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::ProcessRecord>>> =
         Arc::new(tokio::sync::RwLock::new(Vec::new()));

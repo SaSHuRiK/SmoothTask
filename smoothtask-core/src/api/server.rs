@@ -994,7 +994,7 @@ mod tests {
     #[test]
     fn test_api_state_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -1024,6 +1024,8 @@ mod tests {
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc.clone());
@@ -1037,7 +1039,7 @@ mod tests {
     fn test_api_state_with_all() {
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -1067,6 +1069,8 @@ mod tests {
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));
@@ -1152,7 +1156,7 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_handler_with_metrics() {
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -1182,6 +1186,8 @@ mod tests {
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc);
@@ -1201,7 +1207,7 @@ mod tests {
     #[test]
     fn test_api_server_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics,
         };
         let addr: SocketAddr = "127.0.0.1:8082".parse().unwrap();
         let metrics = SystemMetrics {
@@ -1232,6 +1238,8 @@ mod tests {
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let server = ApiServer::with_system_metrics(addr, metrics_arc);
@@ -1984,7 +1992,7 @@ apps:
         let addr: SocketAddr = "127.0.0.1:8084".parse().unwrap();
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics,
+            CpuTimes, LoadAvg, MemoryInfo, PressureMetrics, SystemMetrics, TemperatureMetrics, PowerMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -2014,6 +2022,8 @@ apps:
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));

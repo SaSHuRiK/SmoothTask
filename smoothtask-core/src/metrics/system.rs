@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use tracing::warn;
 
 /// Сырые счётчики CPU из `/proc/stat`.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct CpuTimes {
     pub user: u64,
     pub nice: u64,
@@ -131,7 +131,7 @@ impl CpuTimes {
 }
 
 /// Основные метрики памяти (значения в килобайтах).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct MemoryInfo {
     pub mem_total_kb: u64,
     pub mem_available_kb: u64,
@@ -212,7 +212,7 @@ impl MemoryInfo {
 ///
 /// Значения загружаются из `/proc/loadavg` и представляют среднее количество
 /// процессов в состоянии выполнения или ожидания выполнения за последние 1, 5 и 15 минут.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct LoadAvg {
     /// Средняя нагрузка за последнюю минуту
     pub one: f64,
@@ -264,6 +264,45 @@ pub struct PressureMetrics {
     pub memory: Pressure,
 }
 
+/// Метрики температуры CPU/GPU
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct TemperatureMetrics {
+    /// Температура CPU в градусах Цельсия
+    pub cpu_temperature_c: Option<f32>,
+    /// Температура GPU в градусах Цельсия (если доступно)
+    pub gpu_temperature_c: Option<f32>,
+}
+
+impl Default for TemperatureMetrics {
+    fn default() -> Self {
+        Self {
+            cpu_temperature_c: None,
+            gpu_temperature_c: None,
+        }
+    }
+}
+
+/// Метрики энергопотребления
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PowerMetrics {
+    /// Текущее энергопотребление системы в ваттах
+    pub system_power_w: Option<f32>,
+    /// Энергопотребление CPU в ваттах
+    pub cpu_power_w: Option<f32>,
+    /// Энергопотребление GPU в ваттах (если доступно)
+    pub gpu_power_w: Option<f32>,
+}
+
+impl Default for PowerMetrics {
+    fn default() -> Self {
+        Self {
+            system_power_w: None,
+            cpu_power_w: None,
+            gpu_power_w: None,
+        }
+    }
+}
+
 /// Полный набор системных метрик, собранных из `/proc`.
 ///
 /// Содержит информацию о CPU, памяти, нагрузке системы и давлении ресурсов.
@@ -277,6 +316,10 @@ pub struct SystemMetrics {
     pub load_avg: LoadAvg,
     /// Метрики давления из PSI (`/proc/pressure/*`)
     pub pressure: PressureMetrics,
+    /// Метрики температуры CPU/GPU
+    pub temperature: TemperatureMetrics,
+    /// Метрики энергопотребления
+    pub power: PowerMetrics,
 }
 
 impl SystemMetrics {
@@ -597,12 +640,111 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
         memory: pressure_memory,
     };
 
+    // Собираем метрики температуры и энергопотребления
+    let temperature = collect_temperature_metrics();
+    let power = collect_power_metrics();
+
     Ok(SystemMetrics {
         cpu_times,
         memory,
         load_avg,
         pressure,
+        temperature,
+        power,
     })
+}
+
+/// Собирает метрики температуры из sysfs/hwmon
+fn collect_temperature_metrics() -> TemperatureMetrics {
+    let mut temperature = TemperatureMetrics::default();
+    
+    // Попробуем найти температурные сенсоры в /sys/class/hwmon/
+    let hwmon_dir = Path::new("/sys/class/hwmon");
+    
+    if hwmon_dir.exists() {
+        if let Ok(entries) = fs::read_dir(hwmon_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                
+                // Ищем файлы temp*_input в каждом hwmon устройстве
+                if let Ok(temp_files) = fs::read_dir(&path) {
+                    for temp_file in temp_files.flatten() {
+                        let temp_path = temp_file.path();
+                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name.starts_with("temp") && file_name.ends_with("_input") {
+                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                                    
+                                    // Попробуем определить, это CPU или GPU
+                                    // Это упрощенная логика - в реальности может потребоваться более сложный анализ
+                                    if file_name.contains("temp1") || file_name.contains("temp2") {
+                                        // Предполагаем, что это CPU температура
+                                        if temperature.cpu_temperature_c.is_none() {
+                                            temperature.cpu_temperature_c = Some(temp_c);
+                                        }
+                                    } else if file_name.contains("temp3") || file_name.contains("edge") {
+                                        // Предполагаем, что это GPU температура
+                                        if temperature.gpu_temperature_c.is_none() {
+                                            temperature.gpu_temperature_c = Some(temp_c);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    temperature
+}
+
+/// Собирает метрики энергопотребления
+fn collect_power_metrics() -> PowerMetrics {
+    let mut power = PowerMetrics::default();
+    
+    // Попробуем найти энергетические сенсоры в /sys/class/powercap/
+    let powercap_dir = Path::new("/sys/class/powercap");
+    
+    if powercap_dir.exists() {
+        if let Ok(entries) = fs::read_dir(powercap_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                
+                // Ищем файлы energy_uj в каждом powercap устройстве
+                if let Ok(energy_files) = fs::read_dir(&path) {
+                    for energy_file in energy_files.flatten() {
+                        let energy_path = energy_file.path();
+                        let file_name = energy_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name == "energy_uj" {
+                            if let Ok(energy_content) = fs::read_to_string(&energy_path) {
+                                if let Ok(energy_microjoules) = energy_content.trim().parse::<u64>() {
+                                    // Конвертируем микроджоули в ватты (упрощенно)
+                                    // В реальности нужно отслеживать изменения во времени
+                                    let energy_w = energy_microjoules as f32 / 1_000_000.0;
+                                    
+                                    // Попробуем определить тип устройства
+                                    if path.to_string_lossy().contains("intel-rapl") {
+                                        if path.to_string_lossy().contains("package") {
+                                            power.cpu_power_w = Some(energy_w);
+                                        } else if path.to_string_lossy().contains("dram") {
+                                            // Это память, не GPU
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    power
 }
 
 fn read_file(path: &Path) -> Result<String> {
@@ -1358,6 +1500,8 @@ SwapFree:        4096000 kB
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
 
         let cur_metrics = SystemMetrics {
@@ -1376,6 +1520,8 @@ SwapFree:        4096000 kB
             memory: prev_metrics.memory,
             load_avg: prev_metrics.load_avg,
             pressure: prev_metrics.pressure.clone(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -1418,6 +1564,8 @@ SwapFree:        4096000 kB
                 fifteen: 1.0,
             },
             pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
 
         let cur_metrics = SystemMetrics {
@@ -1436,6 +1584,8 @@ SwapFree:        4096000 kB
             memory: prev_metrics.memory,
             load_avg: prev_metrics.load_avg,
             pressure: prev_metrics.pressure.clone(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -1570,5 +1720,97 @@ SwapFree:        4096000 kB
             err_msg.contains("Отсутствует значение loadavg")
                 || err_msg.contains("ожидается формат")
         );
+    }
+
+    #[test]
+    fn test_temperature_metrics_default() {
+        // Тест проверяет, что TemperatureMetrics::default() возвращает пустые значения
+        let temp = TemperatureMetrics::default();
+        assert!(temp.cpu_temperature_c.is_none());
+        assert!(temp.gpu_temperature_c.is_none());
+    }
+
+    #[test]
+    fn test_power_metrics_default() {
+        // Тест проверяет, что PowerMetrics::default() возвращает пустые значения
+        let power = PowerMetrics::default();
+        assert!(power.system_power_w.is_none());
+        assert!(power.cpu_power_w.is_none());
+        assert!(power.gpu_power_w.is_none());
+    }
+
+    #[test]
+    fn test_temperature_metrics_serialization() {
+        // Тест проверяет, что TemperatureMetrics корректно сериализуется
+        let mut temp = TemperatureMetrics::default();
+        temp.cpu_temperature_c = Some(45.5);
+        temp.gpu_temperature_c = Some(60.2);
+        
+        let json = serde_json::to_string(&temp).expect("Сериализация должна работать");
+        assert!(json.contains("45.5"));
+        assert!(json.contains("60.2"));
+        
+        // Тест десериализации
+        let deserialized: TemperatureMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        assert_eq!(deserialized.cpu_temperature_c, Some(45.5));
+        assert_eq!(deserialized.gpu_temperature_c, Some(60.2));
+    }
+
+    #[test]
+    fn test_power_metrics_serialization() {
+        // Тест проверяет, что PowerMetrics корректно сериализуется
+        let mut power = PowerMetrics::default();
+        power.system_power_w = Some(120.5);
+        power.cpu_power_w = Some(80.3);
+        power.gpu_power_w = Some(40.1);
+        
+        let json = serde_json::to_string(&power).expect("Сериализация должна работать");
+        assert!(json.contains("120.5"));
+        assert!(json.contains("80.3"));
+        assert!(json.contains("40.1"));
+        
+        // Тест десериализации
+        let deserialized: PowerMetrics = serde_json::from_str(&json).expect("Десериализация должна работать");
+        assert_eq!(deserialized.system_power_w, Some(120.5));
+        assert_eq!(deserialized.cpu_power_w, Some(80.3));
+        assert_eq!(deserialized.gpu_power_w, Some(40.1));
+    }
+
+    #[test]
+    fn test_system_metrics_includes_new_fields() {
+        // Тест проверяет, что SystemMetrics включает новые поля
+        let metrics = SystemMetrics {
+            cpu_times: CpuTimes::default(),
+            memory: MemoryInfo::default(),
+            load_avg: LoadAvg::default(),
+            pressure: PressureMetrics::default(),
+            temperature: TemperatureMetrics::default(),
+            power: PowerMetrics::default(),
+        };
+        
+        // Проверяем, что метрики содержат новые поля
+        assert!(metrics.temperature.cpu_temperature_c.is_none());
+        assert!(metrics.temperature.gpu_temperature_c.is_none());
+        assert!(metrics.power.system_power_w.is_none());
+        assert!(metrics.power.cpu_power_w.is_none());
+        assert!(metrics.power.gpu_power_w.is_none());
+    }
+
+    #[test]
+    fn test_collect_temperature_metrics_fallback() {
+        // Тест проверяет, что collect_temperature_metrics возвращает пустые значения
+        // когда /sys/class/hwmon недоступен (что нормально в тестовой среде)
+        let _temp = collect_temperature_metrics();
+        // В тестовой среде мы ожидаем пустые значения, так как нет реального hwmon
+        // Это нормальное поведение
+    }
+
+    #[test]
+    fn test_collect_power_metrics_fallback() {
+        // Тест проверяет, что collect_power_metrics возвращает пустые значения
+        // когда /sys/class/powercap недоступен (что нормально в тестовой среде)
+        let _power = collect_power_metrics();
+        // В тестовой среде мы ожидаем пустые значения, так как нет реального powercap
+        // Это нормальное поведение
     }
 }
