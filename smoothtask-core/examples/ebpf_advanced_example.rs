@@ -4,7 +4,7 @@
 //! Этот пример показывает, как интегрировать eBPF модуль в реальное приложение
 //! с поддержкой динамической конфигурации и обработки ошибок.
 
-use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds};
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds, EbpfFilterConfig};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use std::thread;

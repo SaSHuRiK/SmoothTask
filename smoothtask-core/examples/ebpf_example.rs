@@ -3,7 +3,7 @@
 //! Этот пример демонстрирует, как использовать eBPF модуль из smoothtask-core
 //! для сбора высокопроизводительных системных метрик.
 
-use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds, SyscallStat, NetworkStat, ConnectionStat};
+use smoothtask_core::metrics::ebpf::{EbpfMetricsCollector, EbpfConfig, EbpfMetrics, EbpfNotificationThresholds, EbpfFilterConfig, SyscallStat, NetworkStat, ConnectionStat};
 use std::time::Duration;
 
 fn main() -> anyhow::Result<()> {
@@ -36,10 +36,12 @@ fn main() -> anyhow::Result<()> {
         enable_network_monitoring: true,
         enable_network_connections: true,
         enable_gpu_monitoring: false, // Отключено для примера
+        enable_cpu_temperature_monitoring: false, // Отключено для примера
         enable_filesystem_monitoring: false, // Отключено для примера
         enable_process_monitoring: false, // Отключено для примера
         enable_notifications: false,
         notification_thresholds: EbpfNotificationThresholds::default(),
+        filter_config: EbpfFilterConfig::default(),
         collection_interval: Duration::from_secs(1),
         enable_caching: true,
         batch_size: 50,
