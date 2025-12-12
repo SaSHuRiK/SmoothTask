@@ -23,7 +23,7 @@ use crate::api::{ApiServer, ApiServerHandle, ApiStateBuilder};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
 use crate::config::watcher::ConfigWatcher;
 use crate::config::config_struct::NotificationBackend;
-use crate::notifications::{Notification, NotificationManager, NotificationType, StubNotifier};
+use crate::notifications::{Notification, NotificationManager, NotificationType};
 // #[cfg(feature = "libnotify")]
 // use crate::notifications::LibnotifyNotifier;
 use crate::logging::snapshots::{GlobalMetrics, ProcessRecord, ResponsivenessMetrics, Snapshot, SnapshotLogger};

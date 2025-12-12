@@ -8,8 +8,6 @@ use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
 use tracing::warn;
-#[cfg(test)]
-use rayon::prelude::*;
 
 /// Сырые счётчики CPU из `/proc/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]

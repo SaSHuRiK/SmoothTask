@@ -542,11 +542,9 @@ impl PolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
-    use crate::metrics::ebpf::EbpfConfig;
-    use super::*;
-    use crate::config::config_struct::{CacheIntervals, Config, ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel, Paths, Thresholds};
+    use crate::config::config_struct::{CacheIntervals, Config, MLClassifierConfig, ModelConfig, ModelType, NotificationBackend, NotificationConfig, NotificationLevel, PatternAutoUpdateConfig, Paths, Thresholds};
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};
+    use crate::metrics::ebpf::EbpfConfig;
     use chrono::Utc;
 
     fn create_test_config() -> Config {

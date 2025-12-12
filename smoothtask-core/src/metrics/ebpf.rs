@@ -1471,24 +1471,24 @@ mod tests {
     fn test_ebpf_config_validation() {
         // Тестируем валидацию конфигурации
         let mut config = EbpfConfig::default();
-        let mut collector = EbpfMetricsCollector::new(config.clone());
+        let collector = EbpfMetricsCollector::new(config.clone());
         
         // Корректная конфигурация должна проходить валидацию
         assert!(collector.validate_config().is_ok());
         
         // Тестируем некорректные конфигурации
         config.batch_size = 0;
-        let mut collector = EbpfMetricsCollector::new(config.clone());
+        let collector = EbpfMetricsCollector::new(config.clone());
         assert!(collector.validate_config().is_err());
         
         config.batch_size = 100;
         config.max_init_attempts = 0;
-        let mut collector = EbpfMetricsCollector::new(config.clone());
+        let collector = EbpfMetricsCollector::new(config.clone());
         assert!(collector.validate_config().is_err());
         
         config.max_init_attempts = 3;
         config.collection_interval = Duration::from_secs(0);
-        let mut collector = EbpfMetricsCollector::new(config);
+        let collector = EbpfMetricsCollector::new(config);
         assert!(collector.validate_config().is_err());
     }
 
