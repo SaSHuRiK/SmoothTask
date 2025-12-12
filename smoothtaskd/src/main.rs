@@ -2,9 +2,8 @@ mod systemd;
 
 use anyhow::Result;
 use clap::Parser;
-use smoothtask_core::{config::config_struct::Config, run_daemon};
-use tokio::signal;
-use tokio::sync::watch;
+use smoothtask_core::run_daemon;
+use tokio::{signal, sync::watch};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Parser, Debug)]
@@ -37,9 +36,13 @@ async fn main() -> Result<()> {
     // Создаём задачу для обработки сигналов завершения
     let shutdown_tx_clone = shutdown_tx.clone();
     tokio::spawn(async move {
-        let _ = signal::ctrl_c().await;
+        if let Err(e) = signal::ctrl_c().await {
+            tracing::error!("Error waiting for Ctrl-C signal: {}", e);
+        }
         tracing::info!("Received SIGINT/SIGTERM, initiating graceful shutdown");
-        let _ = shutdown_tx_clone.send(true);
+        if shutdown_tx_clone.send(true).is_err() {
+            tracing::error!("Failed to send shutdown signal");
+        }
     });
 
     // Запускаем демон с каналом shutdown и callback для systemd notify
@@ -54,6 +57,7 @@ async fn main() -> Result<()> {
         }
     });
     let on_status_update = Box::new(|status: &str| {
+        tracing::debug!("Updating systemd status: {}", status);
         systemd::notify_status(status);
     });
     run_daemon(

@@ -3,6 +3,78 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+/// Конфигурация ML-классификатора для классификации типов процессов.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MLClassifierConfig {
+    /// Включить ML-классификатор.
+    ///
+    /// Если `true`, будет использоваться ML-классификатор для классификации процессов
+    /// в дополнение к паттерн-базированной классификации.
+    ///
+    /// По умолчанию: `false` (используется только паттерн-базированная классификация).
+    #[serde(default = "default_ml_classifier_enabled")]
+    pub enabled: bool,
+
+    /// Путь к модели ML-классификатора.
+    ///
+    /// Путь к файлу модели в формате JSON или ONNX.
+    /// Модель должна быть предварительно обучена с использованием smoothtask-trainer.
+    ///
+    /// По умолчанию: `"models/process_classifier.json"`.
+    #[serde(default = "default_ml_classifier_model_path")]
+    pub model_path: String,
+
+    /// Минимальная уверенность для переопределения паттерн-классификации.
+    ///
+    /// Если уверенность ML-классификатора выше этого порога,
+    /// результат ML будет использоваться вместо паттерн-классификации.
+    ///
+    /// По умолчанию: `0.7` (70% уверенность).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть в диапазоне [0.0, 1.0]
+    /// - Рекомендуемые значения: 0.6 (более агрессивное переопределение), 0.7 (баланс),
+    ///   0.8 (более консервативное переопределение)
+    #[serde(default = "default_ml_classifier_confidence_threshold")]
+    pub confidence_threshold: f64,
+
+    /// Использовать ONNX Runtime для загрузки модели.
+    ///
+    /// Если `true`, будет использоваться ONNX Runtime для загрузки модели.
+    /// В противном случае будет использоваться CatBoost JSON формат.
+    ///
+    /// По умолчанию: `false` (используется CatBoost JSON формат).
+    ///
+    /// # Примечания
+    ///
+    /// - ONNX Runtime требует наличия библиотеки onnxruntime
+    /// - ONNX модели могут быть более эффективными для инференса
+    /// - CatBoost JSON формат более портативен и проще в отладке
+    #[serde(default = "default_ml_classifier_use_onnx")]
+    pub use_onnx: bool,
+}
+
+/// Возвращает дефолтное значение для `ml_classifier_enabled`.
+pub(crate) fn default_ml_classifier_enabled() -> bool {
+    false
+}
+
+/// Возвращает дефолтное значение для `ml_classifier_model_path`.
+pub(crate) fn default_ml_classifier_model_path() -> String {
+    "models/process_classifier.json".to_string()
+}
+
+/// Возвращает дефолтное значение для `ml_classifier_confidence_threshold`.
+pub(crate) fn default_ml_classifier_confidence_threshold() -> f64 {
+    0.7
+}
+
+/// Возвращает дефолтное значение для `ml_classifier_use_onnx`.
+pub(crate) fn default_ml_classifier_use_onnx() -> bool {
+    false
+}
+
 /// Конфигурация логирования для системы.
 ///
 /// Определяет параметры ротации логов, сжатия и другие настройки логирования.
@@ -179,6 +251,99 @@ pub struct Config {
     /// По умолчанию: модель отключена, используется заглушка для тестирования.
     #[serde(default = "default_model_config")]
     pub model: ModelConfig,
+
+    /// Конфигурация ML-классификатора для классификации типов процессов.
+    ///
+    /// Определяет параметры загрузки и использования ML-классификатора для определения
+    /// типов процессов (process_type) и тегов. Работает в дополнение к паттерн-базированной
+    /// классификации и может переопределять её результаты при высокой уверенности.
+    ///
+    /// По умолчанию: ML-классификатор отключен, используется только паттерн-базированная классификация.
+    #[serde(default = "default_ml_classifier_config")]
+    pub ml_classifier: MLClassifierConfig,
+
+    /// Конфигурация автообновления паттерн-базы для классификации процессов.
+    ///
+    /// Определяет параметры автоматического обновления паттернов приложений без перезапуска демона.
+    /// Позволяет добавлять поддержку новых приложений и обновлять существующие паттерны на лету.
+    ///
+    /// По умолчанию: автообновление отключено, паттерны загружаются один раз при старте.
+    #[serde(default = "default_pattern_auto_update_config")]
+    pub pattern_auto_update: PatternAutoUpdateConfig,
+}
+
+/// Возвращает дефолтное значение для `ml_classifier`.
+///
+/// По умолчанию ML-классификатор отключен, используется только паттерн-базированная классификация.
+pub(crate) fn default_ml_classifier_config() -> MLClassifierConfig {
+    MLClassifierConfig {
+        enabled: default_ml_classifier_enabled(),
+        model_path: default_ml_classifier_model_path(),
+        confidence_threshold: default_ml_classifier_confidence_threshold(),
+        use_onnx: default_ml_classifier_use_onnx(),
+    }
+}
+
+/// Конфигурация автообновления паттерн-базы.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct PatternAutoUpdateConfig {
+    /// Включить автообновление паттерн-базы.
+    ///
+    /// Если `true`, демон будет отслеживать изменения в директории с паттернами
+    /// и автоматически перезагружать паттерны при обнаружении изменений.
+    ///
+    /// По умолчанию: `false` (автообновление отключено).
+    #[serde(default = "default_pattern_auto_update_enabled")]
+    pub enabled: bool,
+
+    /// Интервал проверки изменений в секундах.
+    ///
+    /// Определяет, как часто демон будет проверять изменения в директории с паттернами.
+    /// Более частые проверки обеспечивают более быстрое обновление, но увеличивают нагрузку.
+    ///
+    /// По умолчанию: `60` секунд (1 минута).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 10 секунд для предотвращения чрезмерной нагрузки
+    /// - Рекомендуемые значения: 30 (30 секунд), 60 (1 минута), 300 (5 минут)
+    #[serde(default = "default_pattern_auto_update_interval_sec")]
+    pub interval_sec: u64,
+
+    /// Включить уведомления об обновлении паттернов.
+    ///
+    /// Если `true`, демон будет отправлять уведомления через систему уведомлений
+    /// при успешном обновлении паттерн-базы.
+    ///
+    /// По умолчанию: `false` (уведомления отключены).
+    #[serde(default = "default_pattern_auto_update_notify")]
+    pub notify_on_update: bool,
+}
+
+/// Возвращает дефолтное значение для `pattern_auto_update_enabled`.
+pub(crate) fn default_pattern_auto_update_enabled() -> bool {
+    false
+}
+
+/// Возвращает дефолтное значение для `pattern_auto_update_interval_sec`.
+pub(crate) fn default_pattern_auto_update_interval_sec() -> u64 {
+    60
+}
+
+/// Возвращает дефолтное значение для `pattern_auto_update_notify`.
+pub(crate) fn default_pattern_auto_update_notify() -> bool {
+    false
+}
+
+/// Возвращает дефолтное значение для `pattern_auto_update`.
+///
+/// По умолчанию автообновление отключено.
+pub(crate) fn default_pattern_auto_update_config() -> PatternAutoUpdateConfig {
+    PatternAutoUpdateConfig {
+        enabled: default_pattern_auto_update_enabled(),
+        interval_sec: default_pattern_auto_update_interval_sec(),
+        notify_on_update: default_pattern_auto_update_notify(),
+    }
 }
 
 /// Режим работы Policy Engine.

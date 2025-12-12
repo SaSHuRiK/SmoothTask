@@ -81,4 +81,5 @@
 
 pub mod grouper;
 pub mod ml_classifier;
+pub mod pattern_watcher;
 pub mod rules;

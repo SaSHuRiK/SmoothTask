@@ -1,188 +1,242 @@
-# Summary of Current Project State - 2025-12-12
+# Summary of Work Session - API Enhancements and ML Integration
 
-## 🎯 Completed Milestones
+## Completed Tasks
 
-### 1. CatBoost v1 Implementation ✅
+This work session successfully completed several important tasks that enhance the SmoothTask daemon's API capabilities and ML classifier integration:
 
-**Status**: Fully implemented and tested
+### ST-503: Добавить endpoint /api/health для мониторинга состояния демона ✅
 
-**Components completed**:
-- ✅ ST-478: CatBoost Ranker training on teacher policy data
-- ✅ ST-479: ONNX Runtime integration for inference
-- ✅ ST-480: Dry-run mode with ONNX/JSON inference
-- ✅ ST-481: Fixed API integration test compilation errors
-- ✅ ST-482: Updated ROADMAP.md to reflect completion
-- ✅ ST-483: Comprehensive testing (706+ Rust tests, 136 Python tests)
-- ✅ ST-484: Complete documentation (CATBOOST_V1_GUIDE.md)
+**What was implemented:**
+- Created comprehensive `/api/health` endpoint in `smoothtask-core/src/api/server.rs`
+- Endpoint returns detailed daemon status including:
+  - Uptime in seconds
+  - Status of all major components (daemon_stats, system_metrics, processes, app_groups, config, pattern_database)
+  - Performance metrics (total requests, cache hit rate, average processing time)
+  - Timestamp
 
-**Key features implemented**:
-- Training pipeline: SQLite snapshot data → CatBoost model → ONNX export
-- ONNX Runtime inference in Rust with comprehensive error handling
-- Hybrid mode: Rules + ML ranker for priority assignment
-- Dry-run mode for testing without applying priorities
-- Full API integration and monitoring
+**Key features:**
+- Integrated with existing API state management
+- Supports both basic and detailed health information
+- Comprehensive error handling
+- Unit tests covering all scenarios
 
-### 2. Core Functionality ✅
+**Files modified:**
+- `smoothtask-core/src/api/server.rs` - Added health_handler function and supporting code
+- `docs/API.md` - Added comprehensive documentation with examples
 
-**Metrics collection**:
-- ✅ System metrics (CPU, memory, PSI, network)
-- ✅ Process metrics (CPU, memory, I/O, scheduling)
-- ✅ Window metrics (X11 and partial Wayland support)
-- ✅ Audio metrics (PipeWire)
-- ✅ Input metrics (evdev)
+### ST-504: Добавить endpoint /api/logs для просмотра последних логов ✅
 
-**Policy engine**:
-- ✅ Process grouping and classification
-- ✅ Priority mapping (nice, ionice, cgroups, latency_nice)
-- ✅ Rule-based policy with ML ranker integration
-- ✅ Hysteresis to prevent rapid priority changes
+**What was implemented:**
+- Created new `/api/logs` endpoint for accessing application logs
+- Implemented complete log storage system in `smoothtask-core/src/logging/log_storage.rs`
+- Features include:
+  - Filtering by log level (ERROR, WARN, INFO, DEBUG, TRACE)
+  - Limiting number of returned entries
+  - Support for additional log fields
+  - Thread-safe shared storage
+  - Integration with tracing subsystem
 
-**Actuation**:
-- ✅ cgroups v2 support
-- ✅ nice/ionice/latency_nice priority adjustment
-- ✅ Comprehensive error handling and logging
+**Key components:**
+- `LogStorage` - Core storage with capacity management
+- `SharedLogStorage` - Thread-safe wrapper
+- `LogEntry` - Structured log entry with timestamp, level, target, message, and optional fields
+- `LogLevel` - Enum compatible with tracing levels
+- Comprehensive unit tests for all functionality
 
-### 3. Infrastructure ✅
+**Files created:**
+- `smoothtask-core/src/logging/log_storage.rs` - Complete log storage implementation
 
-**API and monitoring**:
-- ✅ HTTP API server with 12+ endpoints
-- ✅ System metrics, process lists, app groups monitoring
-- ✅ Health checks and version info
-- ✅ Comprehensive API documentation
+**Files modified:**
+- `smoothtask-core/src/api/server.rs` - Added logs_handler function
+- `docs/API.md` - Added comprehensive documentation with examples
 
-**System integration**:
-- ✅ systemd service file and integration
-- ✅ Configuration management with validation
-- ✅ Snapshot logging to SQLite
-- ✅ Configuration watcher for live reloading
+### ST-501: Проверить наличие простых улучшений кода ✅
 
-## 📊 Testing Status
+**Code quality improvements:**
+- Reviewed and improved code in `smoothtaskd/src/systemd.rs` and `smoothtaskd/src/main.rs`
+- Removed unused imports
+- Enhanced error handling in signal processing
+- Added documentation for systemd functions
+- Improved code readability and maintainability
 
-### Rust Tests
-- **Total**: 706+ unit tests
-- **Coverage**: All core modules (metrics, policy, actuator, API)
-- **Status**: All passing ✅
+### ST-502: Проверить наличие простых тестов, которые можно добавить ✅
 
-### Python Tests  
-- **Total**: 136 tests
-- **Coverage**: Dataset preparation, feature engineering, training, export
-- **Status**: All passing ✅
+**Test coverage analysis:**
+- Reviewed test coverage for all public functions
+- Confirmed comprehensive test coverage in core modules (systemd, actuator, api, classify, model)
+- Made minor improvements to existing tests for better readability
+- Added edge case coverage where needed
 
-### Integration Tests
-- **Actuator**: 56 tests ✅
-- **API**: 15 tests ✅
-- **Performance**: Benchmarks included
+### ST-500: Реализовать примеры использования новых функций ✅
 
-## 🗂️ Documentation Status
+**Configuration examples created:**
+- `configs/examples/smoothtask-ml-enabled.yml` - Complete ML classifier configuration
+- `configs/examples/smoothtask-ml-onnx.yml` - ONNX-based ML configuration
 
-### Complete Documentation
-- ✅ CATBOOST_V1_GUIDE.md - Full ML pipeline documentation
-- ✅ API.md - Comprehensive API reference
-- ✅ ROADMAP.md - Updated with current status
-- ✅ README.md - Installation and usage guide
-- ✅ SETUP_GUIDE.md - Detailed setup instructions
+**Example features:**
+- ML classifier integration with PatternWatcher
+- Application performance monitoring
+- API usage examples for monitoring and management
+- Practical scenarios for quick user onboarding
 
-### Research Documents
-- ✅ ARCHITECTURE.md
-- ✅ METRICS.md
-- ✅ POLICY.md
-- ✅ PATTERNS_RESEARCH.md
-- ✅ BEHAVIORAL_PATTERNS_RESEARCH.md
-- ✅ API_INTROSPECTION_RESEARCH.md
-- ✅ EXISTING_SOLUTIONS_RESEARCH.md
-- ✅ LOW_LATENCY_RESEARCH.md
+### ST-499: Улучшить документацию API для новых функций ✅
 
-## 🚧 Current Development Focus
+**Documentation enhancements:**
+- Added comprehensive ML classifier documentation to `docs/API.md`
+- Included practical usage examples
+- Documented error handling and fallback mechanisms
+- Added performance optimization information
+- Included monitoring and debugging guidance
+- Added API endpoint examples for ML monitoring
 
-### WaylandIntrospector Completion (ST-488)
+### ST-498: Добавить интеграционные тесты для ML-классификатора ✅
 
-**Current state**:
-- ✅ Basic Wayland connection and event handling
-- ✅ Compositor detection (Mutter, KWin, Sway, Hyprland)
-- ✅ Wayland availability checking
-- ✅ 33 comprehensive unit tests
-- ⚠️ Partial wlr-foreign-toplevel-management integration
+**Integration test suite created:**
+- `smoothtask-core/tests/ml_classifier_integration_test.rs` - Comprehensive integration tests
+- 9 integration tests covering:
+  1. ML classifier integration with pattern matching
+  2. Fallback behavior when ML is disabled
+  3. Error handling for missing models
+  4. PatternWatcher integration
+  5. Confidence threshold testing
+  6. Feature extraction validation
+  7. Tag merging between pattern and ML results
+  8. Performance metrics
+  9. Comprehensive feature extraction scenarios
 
-**What needs to be completed**:
-- Full wlr-foreign-toplevel-management protocol implementation
-- Real window data collection (app_id, title, PID, workspace)
-- Focused window detection
+**Test coverage:**
+- Integration between CatBoostMLClassifier and PatternWatcher
 - Error handling and fallback mechanisms
-- Integration with main metrics collection loop
+- Confidence threshold behavior
+- Feature extraction accuracy
+- Tag merging logic
+- Performance characteristics
 
-### Future Enhancements (Backlog)
+## Files Created/Modified
 
-**ST-485: eBPF Metrics Research**
-- Investigate eBPF for enhanced metrics collection
-- Evaluate performance impact and compatibility
-- Potential for kernel-level insights
+### New Files:
+1. `smoothtask-core/src/logging/log_storage.rs` - Complete log storage implementation
+2. `smoothtask-core/tests/ml_classifier_integration_test.rs` - Comprehensive integration tests
+3. `configs/examples/smoothtask-ml-enabled.yml` - ML configuration example
+4. `configs/examples/smoothtask-ml-onnx.yml` - ONNX configuration example
 
-**ST-486: ML Process Type Classifier**
-- Improve process classification accuracy
-- Replace pattern-based classification with ML
-- Better handling of unknown applications
+### Modified Files:
+1. `PLAN.md` - Updated task statuses and documentation
+2. `smoothtask-core/src/api/server.rs` - Added health and logs endpoints
+3. `docs/API.md` - Enhanced API documentation
+4. `smoothtaskd/src/systemd.rs` - Code quality improvements
+5. `smoothtaskd/src/main.rs` - Code quality improvements
 
-**ST-487: Auto-update Pattern Database**
-- Mechanism for updating application patterns
-- Community contributions and updates
-- Versioning and compatibility handling
+## Test Coverage
 
-## 📈 Quality Metrics
+The new implementations include comprehensive test coverage:
 
-### Code Quality
-- ✅ Comprehensive error handling throughout
-- ✅ Detailed logging with tracing
-- ✅ Consistent API design
-- ✅ Proper documentation for all public APIs
+### API Endpoints:
+- ✅ Health endpoint with various data scenarios
+- ✅ Logs endpoint with filtering and limiting
+- ✅ Error handling for missing components
+- ✅ Integration with existing API infrastructure
 
-### Test Coverage
-- ✅ All core functionality covered by unit tests
-- ✅ Integration tests for critical paths
-- ✅ Error case testing and edge cases
-- ✅ Performance benchmarks included
+### Log Storage:
+- ✅ Basic storage operations (add, retrieve, clear)
+- ✅ Capacity management and overflow handling
+- ✅ Filtering by log level
+- ✅ Recent entries retrieval
+- ✅ Thread-safe concurrent operations
+- ✅ Integration with tracing subsystem
 
-### Documentation Quality
-- ✅ Complete user-facing documentation
-- ✅ Developer documentation for all modules
-- ✅ API reference with examples
-- ✅ Troubleshooting guides
+### ML Classifier Integration:
+- ✅ ML classifier + PatternWatcher interaction
+- ✅ Pattern matching with ML override
+- ✅ Fallback to pattern classification when ML confidence is low
+- ✅ Error handling for missing models
+- ✅ Feature extraction from process metrics
+- ✅ Tag merging between pattern and ML results
+- ✅ Confidence threshold behavior
+- ✅ Performance characteristics
 
-## 🎯 Next Steps
+## API Documentation
 
-### Immediate (ST-488)
-1. Complete WaylandIntrospector implementation
-2. Add real window data collection
-3. Implement focused window detection
-4. Add comprehensive integration tests
-5. Update documentation with Wayland usage
+### New Endpoints Documented:
 
-### Short-term
-1. Enhance error handling in Wayland integration
-2. Add fallback mechanisms for unsupported compositors
-3. Improve window state detection (fullscreen, minimized)
-4. Add workspace/workspace detection
+#### GET /api/health
+```bash
+curl http://127.0.0.1:8080/api/health
+```
 
-### Medium-term
-1. Research eBPF metrics (ST-485)
-2. Improve ML classifier (ST-486)
-3. Add pattern auto-update (ST-487)
+Returns comprehensive daemon health information including uptime, component status, and performance metrics.
 
-## 🔧 Technical Debt
+#### GET /api/logs
+```bash
+# Get all logs
+curl http://127.0.0.1:8080/api/logs
 
-### Known Issues
-- WaylandIntrospector returns placeholder data
-- Some compositor-specific features not implemented
-- Limited error recovery in Wayland connection
+# Get logs with level filter
+curl "http://127.0.0.1:8080/api/logs?level=WARN"
 
-### Documentation Gaps
-- Wayland-specific usage documentation needed
-- Troubleshooting guide for Wayland issues
-- Compositor-specific configuration notes
+# Get logs with limit
+curl "http://127.0.0.1:8080/api/logs?limit=50"
 
-## 📋 Summary
+# Combine filters
+curl "http://127.0.0.1:8080/api/logs?level=INFO&limit=100"
+```
 
-The project has successfully completed the CatBoost v1 milestone with comprehensive ML ranker functionality, ONNX integration, and hybrid mode support. All core functionality is working and well-tested. The immediate focus should be on completing the WaylandIntrospector implementation to provide full Wayland support alongside the existing X11 support.
+## Configuration Examples
 
-**Current state**: Production-ready for X11 environments, Wayland support in progress.
+### Basic ML Classifier Configuration:
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.75
+  use_onnx: false
+```
 
-**Recommendation**: Prioritize ST-488 (WaylandIntrospector completion) to achieve full desktop environment support.
+### Advanced Configuration with Pattern Auto-Update:
+```yaml
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.75
+  use_onnx: false
+
+pattern_auto_update:
+  enabled: true
+  interval_sec: 60
+  notify_on_update: true
+```
+
+## How to Run Tests
+
+```bash
+# Run all tests
+cargo test
+
+# Run specific integration tests
+cargo test --test ml_classifier_integration_test
+
+# Run API tests
+cargo test --test api_integration_test
+```
+
+## Summary
+
+This work session significantly enhanced the SmoothTask daemon's capabilities by:
+
+1. **Adding comprehensive API endpoints** for health monitoring and log access
+2. **Implementing a robust log storage system** with filtering and capacity management
+3. **Completing ML classifier integration tests** for reliable operation
+4. **Improving code quality** through reviews and enhancements
+5. **Enhancing documentation** with practical examples and usage guides
+6. **Providing configuration examples** for quick user onboarding
+
+The new features enable better monitoring, debugging, and management of the SmoothTask daemon, making it more production-ready and user-friendly. The ML classifier integration is now thoroughly tested and documented, ensuring reliable operation in various scenarios.
+
+## Next Steps
+
+The completed tasks move several important features from the backlog to production-ready status. The next tasks in the backlog include:
+
+- ST-485: Исследовать и добавить поддержку eBPF-метрик
+- ST-490: Реализовать расширенную систему уведомлений
+
+These tasks represent potential future enhancements but are lower priority compared to the core functionality that has now been completed and tested.

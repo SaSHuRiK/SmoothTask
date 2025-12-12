@@ -1,0 +1,106 @@
+# SmoothTask Configuration with ONNX ML Classifier
+# Example configuration demonstrating ONNX-based process classification
+
+# Basic configuration
+paths:
+  patterns_dir: "configs/patterns"
+  api_listen_addr: "127.0.0.1:8080"
+  snapshots_dir: "snapshots"
+
+# ML Classifier Configuration with ONNX
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.onnx"
+  confidence_threshold: 0.8
+  use_onnx: true
+
+# Pattern Auto-Update Configuration
+pattern_auto_update:
+  enabled: true
+  interval_sec: 30
+  notify_on_update: true
+
+# Logging configuration
+logging:
+  level: "debug"
+  file: "smoothtask-ml.log"
+  rotation:
+    max_size_mb: 20
+    max_files: 10
+
+# Metrics collection
+metrics:
+  collection_interval_sec: 2
+  retention_days: 14
+
+# Classification settings
+classification:
+  use_ml_fallback: true
+  default_qos_class: "normal"
+  ml_override_threshold: 0.85
+
+# Actuator settings
+actuator:
+  cgroups_v2:
+    enabled: true
+    base_path: "/sys/fs/cgroup"
+  
+  scheduling:
+    latency_nice_enabled: true
+    nice_enabled: true
+    ionice_enabled: true
+
+# QoS Class Mapping for ML-optimized classification
+qos_classes:
+  latency_critical:
+    cpu_weight: 250
+    latency_nice: -20
+    nice: -19
+    ionice_class: 1
+    ionice_priority: 0
+  
+  interactive:
+    cpu_weight: 180
+    latency_nice: -15
+    nice: -12
+    ionice_class: 2
+    ionice_priority: 0
+  
+  normal:
+    cpu_weight: 100
+    latency_nice: 0
+    nice: 0
+    ionice_class: 2
+    ionice_priority: 4
+  
+  background:
+    cpu_weight: 30
+    latency_nice: 15
+    nice: 15
+    ionice_class: 3
+    ionice_priority: 7
+
+# Notifications
+notifications:
+  backend: "stub"
+  level: "info"
+
+# Performance monitoring
+performance:
+  app_metrics_enabled: true
+  sampling_interval_sec: 1
+  max_history_minutes: 60
+
+# Advanced ML settings
+ml_advanced:
+  feature_extraction:
+    use_process_name: true
+    use_exe_path: true
+    use_cmdline: true
+    use_cpu_usage: true
+    use_memory_usage: true
+    use_thread_count: true
+  
+  model_reload:
+    watch_for_changes: true
+    reload_interval_sec: 300

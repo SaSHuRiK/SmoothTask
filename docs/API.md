@@ -39,6 +39,64 @@ curl http://127.0.0.1:8080/health
 
 ---
 
+### GET /api/health
+
+Получение расширенной информации о состоянии демона, включая время работы, статус компонентов и метрики производительности.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/health
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "service": "smoothtaskd",
+  "uptime_seconds": 12345,
+  "components": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "performance": {
+    "total_requests": 42,
+    "cache_hit_rate": 75.0,
+    "average_processing_time_us": 123.45
+  },
+  "timestamp": "2023-12-12T12:34:56.789Z"
+}
+```
+
+**Поля ответа:**
+- `status` (string): Статус работы демона (`"ok"` или `"error"`)
+- `service` (string): Название сервиса (`"smoothtaskd"`)
+- `uptime_seconds` (number): Время работы демона в секундах
+- `components` (object): Статус доступности основных компонентов:
+  - `daemon_stats` (boolean): Доступна ли статистика демона
+  - `system_metrics` (boolean): Доступны ли системные метрики
+  - `processes` (boolean): Доступны ли данные о процессах
+  - `app_groups` (boolean): Доступны ли данные о группах приложений
+  - `config` (boolean): Доступна ли конфигурация
+  - `pattern_database` (boolean): Доступна ли база данных паттернов
+- `performance` (object): Метрики производительности API:
+  - `total_requests` (number): Общее количество обработанных запросов
+  - `cache_hit_rate` (number): Процент кэш-хитов (0-100)
+  - `average_processing_time_us` (number): Среднее время обработки запроса в микросекундах
+- `timestamp` (string): Временная метка ответа в формате RFC3339
+
+**Статус коды:**
+- `200 OK` - Демон работает нормально
+- `500 Internal Server Error` - Ошибка при обработке запроса
+
+**Использование:**
+Этот endpoint полезен для мониторинга состояния демона и диагностики проблем. Он предоставляет более детальную информацию, чем базовый `/health` endpoint.
+
+---
+
 ### GET /api/version
 
 Получение версии демона SmoothTask.
@@ -1961,6 +2019,177 @@ curl -X POST http://127.0.0.1:8080/api/notifications/config \
 **Статус коды:**
 - `200 OK` - Успешный запрос
 - `200 OK` с `status: "error"` - Ошибка обновления конфигурации
+
+---
+
+### GET /api/logs
+
+Получение последних логов приложения с возможностью фильтрации по уровню и ограничения количества записей.
+
+**Запрос:**
+```bash
+# Получение последних 100 логов (по умолчанию)
+curl "http://127.0.0.1:8080/api/logs"
+
+# Получение последних 50 логов
+curl "http://127.0.0.1:8080/api/logs?limit=50"
+
+# Получение только ошибок и предупреждений
+curl "http://127.0.0.1:8080/api/logs?level=warn"
+
+# Получение последних 20 информационных сообщений
+curl "http://127.0.0.1:8080/api/logs?level=info&limit=20"
+```
+
+**Параметры запроса:**
+- `level` (опционально): Минимальный уровень логирования. Возможные значения: `error`, `warn`, `info`, `debug`, `trace`. По умолчанию: `trace` (все уровни)
+- `limit` (опционально): Максимальное количество возвращаемых записей. Диапазон: 1-1000. По умолчанию: 100
+
+**Ответ (с логами):**
+```json
+{
+  "status": "ok",
+  "logs": [
+    {
+      "timestamp": "2023-12-12T12:34:56.789Z",
+      "level": "INFO",
+      "target": "smoothtask_core::api::server",
+      "message": "API server started on 127.0.0.1:8080",
+      "fields": {
+        "port": 8080,
+        "address": "127.0.0.1"
+      }
+    },
+    {
+      "timestamp": "2023-12-12T12:35:01.234Z",
+      "level": "WARN",
+      "target": "smoothtask_core::config::watcher",
+      "message": "Configuration file not found, using defaults",
+      "fields": null
+    }
+  ],
+  "count": 2,
+  "total_available": 42,
+  "max_capacity": 1000,
+  "filter": {
+    "min_level": "TRACE",
+    "limit": 100
+  }
+}
+```
+
+**Ответ (без хранилища логов):**
+```json
+{
+  "status": "ok",
+  "logs": [],
+  "count": 0,
+  "message": "Log storage not available (daemon may not be running or logs not configured)",
+  "filter": {
+    "min_level": "TRACE",
+    "limit": 100
+  }
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус ответа (всегда "ok")
+- `logs` (array) - массив записей логов
+  - `timestamp` (string) - временная метка в формате RFC3339
+  - `level` (string) - уровень логирования: "ERROR", "WARN", "INFO", "DEBUG", "TRACE"
+  - `target` (string) - модуль или компонент, создавший запись
+  - `message` (string) - сообщение лога
+  - `fields` (object | null) - дополнительные поля (опционально)
+- `count` (number) - количество возвращённых записей
+- `total_available` (number) - общее количество доступных записей в хранилище
+- `max_capacity` (number) - максимальная ёмкость хранилища логов
+- `filter` (object) - информация о применённых фильтрах
+  - `min_level` (string) - минимальный уровень логирования, использованный для фильтрации
+  - `limit` (number) - максимальное количество записей, использованное для ограничения
+- `message` (string, опционально) - сообщение об отсутствии данных (если хранилище не доступно)
+
+**Уровни логирования:**
+- `ERROR` - Критические ошибки, требующие немедленного внимания
+- `WARN` - Предупреждения о потенциальных проблемах
+- `INFO` - Информационные сообщения о нормальной работе
+- `DEBUG` - Отладочная информация
+- `TRACE` - Очень подробная отладочная информация
+
+**Примеры использования:**
+
+**Мониторинг ошибок:**
+```bash
+# Получение только ошибок
+curl "http://127.0.0.1:8080/api/logs?level=error"
+
+# Получение ошибок и предупреждений
+curl "http://127.0.0.1:8080/api/logs?level=warn"
+```
+
+**Отладка:**
+```bash
+# Получение последних 100 отладочных сообщений
+curl "http://127.0.0.1:8080/api/logs?level=debug&limit=100"
+
+# Получение всех сообщений (до максимальной ёмкости хранилища)
+curl "http://127.0.0.1:8080/api/logs?level=trace&limit=1000"
+```
+
+**Мониторинг в реальном времени:**
+```bash
+#!/bin/bash
+# Скрипт для мониторинга логов в реальном времени
+
+while true; do
+    clear
+    echo "=== SmoothTask Logs Monitor ==="
+    echo "Timestamp: $(date)"
+    echo
+    
+    # Получение последних 20 логов
+    curl -s "http://127.0.0.1:8080/api/logs?limit=20" | jq '.logs[] | "[\(.timestamp)] \(.level) \(.target): \(.message)"'
+    
+    sleep 2
+ done
+```
+
+**Интеграция с системами мониторинга:**
+```python
+#!/usr/bin/env python3
+# Простой мониторинг ошибок для интеграции с системами алертинга
+
+import requests
+import json
+
+def check_for_errors():
+    response = requests.get("http://127.0.0.1:8080/api/logs?level=error")
+    data = response.json()
+    
+    if data["count"] > 0:
+        print(f"Found {data['count']} errors!")
+        for log in data["logs"]:
+            print(f"[{log['timestamp']}] {log['level']} {log['target']}: {log['message']}")
+        return True
+    else:
+        print("No errors found")
+        return False
+
+if __name__ == "__main__":
+    if check_for_errors():
+        # Отправить уведомление в систему мониторинга
+        exit(1)
+    else:
+        exit(0)
+```
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+
+**Примечания:**
+- Хранилище логов имеет ограниченную ёмкость (по умолчанию 1000 записей)
+- Старые записи автоматически удаляются при достижении максимальной ёмкости
+- Логи хранятся в памяти и не сохраняются на диск
+- Для долговременного хранения логов рекомендуется использовать внешние системы логирования
 
 ---
 

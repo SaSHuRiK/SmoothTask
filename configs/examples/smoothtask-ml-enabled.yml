@@ -1,0 +1,124 @@
+# SmoothTask Configuration with ML Classifier
+#
+# This configuration demonstrates how to enable and configure the ML classifier
+# for advanced process classification and priority management.
+
+# Global settings
+logging:
+  level: "info"
+  file: "/var/log/smoothtask/smoothtask.log"
+  max_size_mb: 10
+  max_files: 5
+
+paths:
+  patterns_dir: "/etc/smoothtask/patterns"
+  api_listen_addr: "127.0.0.1:8080"
+  state_dir: "/var/lib/smoothtask"
+
+# ML Classifier Configuration
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.75
+  use_onnx: false
+
+# Pattern Auto-Update Configuration
+pattern_auto_update:
+  enabled: true
+  interval_sec: 60
+  notify_on_update: true
+
+# Policy Configuration
+policy:
+  # Enable adaptive policy that uses ML classification results
+  adaptive_mode: true
+  
+  # Priority classes mapping
+  priority_classes:
+    latency_critical:
+      cpu_weight: 200
+      latency_nice: -20
+      nice: -10
+      ionice_class: "realtime"
+      ionice_prio: 0
+    
+    interactive:
+      cpu_weight: 150
+      latency_nice: -10
+      nice: 0
+      ionice_class: "best-effort"
+      ionice_prio: 3
+    
+    background:
+      cpu_weight: 50
+      latency_nice: 0
+      nice: 10
+      ionice_class: "idle"
+      ionice_prio: 7
+
+# Monitoring Configuration
+monitoring:
+  # Enable application performance monitoring
+  app_performance:
+    enabled: true
+    update_interval_sec: 5
+    max_history_minutes: 30
+
+# Metrics Collection
+metrics:
+  system:
+    enabled: true
+    update_interval_sec: 2
+  
+  processes:
+    enabled: true
+    update_interval_sec: 1
+    max_processes: 500
+  
+  gpu:
+    enabled: true
+    update_interval_sec: 5
+
+# Actuator Configuration
+actuator:
+  cgroups_v2:
+    enabled: true
+    controller_path: "/sys/fs/cgroup"
+  
+  latency_nice:
+    enabled: true
+  
+  nice:
+    enabled: true
+  
+  ionice:
+    enabled: true
+
+# Example pattern categories that work well with ML classifier
+# These are loaded from the patterns_dir specified above
+pattern_categories:
+  - "audio"
+  - "video"
+  - "browsers"
+  - "ide"
+  - "games"
+  - "terminals"
+  - "batch"
+  - "maintenance"
+
+# ML-specific optimizations
+ml_optimizations:
+  # Cache ML model in memory for faster access
+  model_caching: true
+  
+  # Enable feature normalization for better accuracy
+  feature_normalization: true
+  
+  # Maximum number of processes to classify per cycle
+  max_processes_per_cycle: 100
+
+# Debugging and logging for ML classifier
+ml_debug:
+  log_classification_results: true
+  log_feature_extraction: false
+  log_model_loading: true

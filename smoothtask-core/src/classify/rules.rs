@@ -89,6 +89,55 @@ pub struct PatternFile {
     pub apps: Vec<AppPattern>,
 }
 
+/// Результат обновления паттернов.
+///
+/// Содержит статистику об изменениях при перезагрузке паттерн-базы.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PatternUpdateResult {
+    /// Общее количество обработанных файлов паттернов.
+    pub total_files: usize,
+    /// Общее количество загруженных паттернов.
+    pub total_patterns: usize,
+    /// Количество файлов с недопустимыми данными.
+    pub invalid_files: usize,
+    /// Количество изменённых паттернов.
+    pub changed_files: usize,
+    /// Количество новых паттернов.
+    pub new_files: usize,
+    /// Количество удалённых паттернов.
+    pub removed_files: usize,
+    /// Количество паттернов до обновления.
+    pub patterns_before: usize,
+    /// Количество паттернов после обновления.
+    pub patterns_after: usize,
+}
+
+impl PatternUpdateResult {
+    /// Возвращает `true`, если были обнаружены изменения.
+    pub fn has_changes(&self) -> bool {
+        self.changed_files > 0 || self.new_files > 0 || self.removed_files > 0
+    }
+
+    /// Возвращает краткое описание результата обновления.
+    pub fn summary(&self) -> String {
+        if !self.has_changes() {
+            format!("No changes detected ({} patterns)", self.patterns_after)
+        } else {
+            let mut parts = Vec::new();
+            if self.new_files > 0 {
+                parts.push(format!("{} new", self.new_files));
+            }
+            if self.changed_files > 0 {
+                parts.push(format!("{} changed", self.changed_files));
+            }
+            if self.removed_files > 0 {
+                parts.push(format!("{} removed", self.removed_files));
+            }
+            format!("Updated: {} ({} patterns)", parts.join(", "), self.patterns_after)
+        }
+    }
+}
+
 /// База паттернов для классификации процессов.
 ///
 /// PatternDatabase загружает паттерны из YAML файлов и предоставляет методы
@@ -256,6 +305,254 @@ impl PatternDatabase {
     /// Возвращает все паттерны из базы.
     pub fn all_patterns(&self) -> &[(PatternCategory, AppPattern)] {
         &self.all_patterns
+    }
+
+    /// Перезагружает паттерны из директории.
+    ///
+    /// Эта функция позволяет обновить паттерны без создания нового экземпляра PatternDatabase.
+    /// Полезно для автообновления паттернов во время работы демона.
+    ///
+    /// # Аргументы
+    ///
+    /// * `patterns_dir` - путь к директории с YAML файлами паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<PatternUpdateResult>` - результат обновления с информацией об изменениях
+    ///
+    /// # Ошибки
+    ///
+    /// Функция возвращает ошибку, если:
+    /// - директория не существует или недоступна для чтения
+    /// - YAML файл имеет неверный формат
+    /// - структура паттерна не соответствует ожидаемой
+    pub fn reload(&mut self, patterns_dir: impl AsRef<Path>) -> Result<PatternUpdateResult> {
+        let patterns_dir = patterns_dir.as_ref();
+        let mut new_patterns_by_category = HashMap::new();
+        let mut new_all_patterns = Vec::new();
+
+        info!("Перезагрузка паттернов из директории: {:?}", patterns_dir);
+
+        // Проверяем, существует ли директория
+        if !patterns_dir.exists() {
+            error!("Директория с паттернами не существует: {:?}", patterns_dir);
+            return Err(anyhow!("Директория с паттернами не существует: {:?}", patterns_dir));
+        }
+
+        if !patterns_dir.is_dir() {
+            error!("Путь не является директорией: {:?}", patterns_dir);
+            return Err(anyhow!("Путь не является директорией: {:?}", patterns_dir));
+        }
+
+        let entries = fs::read_dir(patterns_dir)
+            .with_context(|| format!("Не удалось прочитать директорию с паттернами: {:?}", patterns_dir))?;
+
+        let mut total_patterns = 0;
+        let mut total_files = 0;
+        let mut invalid_files = 0;
+        let mut changed_files = 0;
+        let mut new_files = 0;
+
+        // Собираем текущие имена файлов для сравнения
+        let current_files: HashSet<_> = self.all_patterns.iter()
+            .map(|(_, pattern)| pattern.name.clone())
+            .collect();
+
+        let mut new_file_names = HashSet::new();
+
+        for entry in entries {
+            let entry = entry.with_context(|| format!("Ошибка при чтении записи в директории {:?}", patterns_dir))?;
+            let path = entry.path();
+
+            // Пропускаем не-YAML файлы
+            if path.extension().and_then(|s| s.to_str()) != Some("yml")
+                && path.extension().and_then(|s| s.to_str()) != Some("yaml")
+            {
+                debug!("Пропущен не-YAML файл: {:?}", path);
+                continue;
+            }
+
+            total_files += 1;
+            debug!("Обработка файла паттернов: {:?}", path);
+
+            // Загружаем и парсим YAML файл
+            let content = fs::read_to_string(&path)
+                .with_context(|| format!("Не удалось прочитать файл паттернов: {:?}", path))?;
+
+            let pattern_file: PatternFile = serde_yaml::from_str(&content)
+                .with_context(|| format!("Не удалось разобрать YAML в файле паттернов: {:?}", path))?;
+
+            // Валидация паттернов
+            if !Self::validate_pattern_file(&pattern_file) {
+                error!("Файл паттернов содержит недопустимые данные: {:?}", path);
+                invalid_files += 1;
+                continue;
+            }
+
+            // Добавляем паттерны в новую базу
+            let category = pattern_file.category.clone();
+            let apps = pattern_file.apps;
+
+            if apps.is_empty() {
+                warn!("Файл паттернов не содержит приложений: {:?}", path);
+            }
+
+            for app in apps.clone() {
+                if !Self::validate_app_pattern(&app) {
+                    error!("Некорректный паттерн приложения в файле {:?}: {:?}", path, app.name);
+                    continue;
+                }
+                
+                // Отслеживаем новые имена паттернов
+                new_file_names.insert(app.name.clone());
+                
+                // Проверяем, изменился ли паттерн
+                let pattern_changed = self.all_patterns.iter()
+                    .find(|(_, existing_pattern)| existing_pattern.name == app.name)
+                    .map(|(_, existing_pattern)| existing_pattern != &app)
+                    .unwrap_or(true);
+                    
+                if pattern_changed {
+                    changed_files += 1;
+                    debug!("Паттерн {} был изменён или является новым", app.name);
+                }
+                
+                new_all_patterns.push((category.clone(), app));
+                total_patterns += 1;
+            }
+
+            new_patterns_by_category.insert(category, apps);
+        }
+
+        // Проверяем удалённые паттерны
+        let removed_patterns: Vec<_> = current_files.difference(&new_file_names).collect();
+        let removed_count = removed_patterns.len();
+
+        if !removed_patterns.is_empty() {
+            debug!("Обнаружено {} удалённых паттернов: {:?}", removed_count, removed_patterns);
+        }
+
+        // Проверяем новые паттерны
+        let added_patterns: Vec<_> = new_file_names.difference(&current_files).collect();
+        new_files = added_patterns.len();
+
+        if new_files > 0 {
+            debug!("Обнаружено {} новых паттернов: {:?}", new_files, added_patterns);
+        }
+
+        info!("Перезагрузка паттернов завершена: {} файлов, {} паттернов, {} недопустимых файлов, {} изменений, {} новых паттернов, {} удалённых паттернов",
+              total_files, total_patterns, invalid_files, changed_files, new_files, removed_count);
+
+        // Обновляем внутреннее состояние
+        let old_count = self.all_patterns.len();
+        self.patterns_by_category = new_patterns_by_category;
+        self.all_patterns = new_all_patterns;
+
+        Ok(PatternUpdateResult {
+            total_files,
+            total_patterns,
+            invalid_files,
+            changed_files,
+            new_files,
+            removed_files: removed_count,
+            patterns_before: old_count,
+            patterns_after: total_patterns,
+        })
+    }
+
+    /// Проверяет, изменились ли паттерны в директории.
+    ///
+    /// Эта функция выполняет быструю проверку без полной перезагрузки паттернов.
+    /// Полезно для оптимизации автообновления.
+    ///
+    /// # Аргументы
+    ///
+    /// * `patterns_dir` - путь к директории с YAML файлами паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<bool>` - `true`, если обнаружены изменения, `false` в противном случае
+    ///
+    /// # Ошибки
+    ///
+    /// Функция возвращает ошибку, если директория не существует или недоступна для чтения
+    pub fn has_changes(&self, patterns_dir: impl AsRef<Path>) -> Result<bool> {
+        let patterns_dir = patterns_dir.as_ref();
+
+        // Проверяем, существует ли директория
+        if !patterns_dir.exists() {
+            return Err(anyhow!("Директория с паттернами не существует: {:?}", patterns_dir));
+        }
+
+        if !patterns_dir.is_dir() {
+            return Err(anyhow!("Путь не является директорией: {:?}", patterns_dir));
+        }
+
+        let entries = fs::read_dir(patterns_dir)
+            .with_context(|| format!("Не удалось прочитать директорию с паттернами: {:?}", patterns_dir))?;
+
+        let mut file_count = 0;
+        let mut total_patterns = 0;
+        let mut current_patterns: HashSet<String> = HashSet::new();
+
+        for entry in entries {
+            let entry = entry.with_context(|| format!("Ошибка при чтении записи в директории {:?}", patterns_dir))?;
+            let path = entry.path();
+
+            // Пропускаем не-YAML файлы
+            if path.extension().and_then(|s| s.to_str()) != Some("yml")
+                && path.extension().and_then(|s| s.to_str()) != Some("yaml")
+            {
+                continue;
+            }
+
+            file_count += 1;
+
+            // Загружаем и парсим YAML файл
+            let content = match fs::read_to_string(&path) {
+                Ok(content) => content,
+                Err(e) => {
+                    warn!("Не удалось прочитать файл паттернов {:?}: {}", path, e);
+                    continue;
+                }
+            };
+
+            let pattern_file: PatternFile = match serde_yaml::from_str(&content) {
+                Ok(pattern_file) => pattern_file,
+                Err(e) => {
+                    warn!("Не удалось разобрать YAML в файле паттернов {:?}: {}", path, e);
+                    continue;
+                }
+            };
+
+            // Собираем имена паттернов из файла
+            for app in pattern_file.apps {
+                if Self::validate_app_pattern(&app) {
+                    current_patterns.insert(app.name);
+                    total_patterns += 1;
+                }
+            }
+        }
+
+        // Сравниваем с текущими паттернами
+        let current_names: HashSet<_> = self.all_patterns.iter()
+            .map(|(_, pattern)| pattern.name.clone())
+            .collect();
+
+        // Есть изменения, если:
+        // 1. Количество файлов изменилось
+        // 2. Количество паттернов изменилось
+        // 3. Имена паттернов изменились
+        let files_changed = file_count != self.patterns_by_category.len();
+        let patterns_changed = total_patterns != self.all_patterns.len();
+        let names_changed = current_patterns != current_names;
+
+        let has_changes = files_changed || patterns_changed || names_changed;
+
+        debug!("Проверка изменений паттернов: файлов={} (было={}), паттернов={} (было={}), изменений={}",
+               file_count, self.patterns_by_category.len(), total_patterns, self.all_patterns.len(), has_changes);
+
+        Ok(has_changes)
     }
 
     /// Валидирует файл паттернов.
@@ -1841,5 +2138,357 @@ apps:
         assert_eq!(app_group.tags.len(), 2);
         assert!(app_group.tags.contains(&"browser".to_string()));
         assert!(app_group.tags.contains(&"ide".to_string()));
+    }
+
+    #[test]
+    fn test_pattern_database_reload() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browsers.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        let initial_count = db.all_patterns().len();
+        assert_eq!(initial_count, 1);
+
+        // Добавляем новый паттерн
+        create_test_pattern_file(
+            patterns_dir,
+            "ide.yml",
+            r#"
+category: ide
+apps:
+  - name: "vscode"
+    label: "Visual Studio Code"
+    exe_patterns: ["code"]
+    tags: ["ide"]
+"#,
+        );
+
+        // Перезагружаем паттерны
+        let result = db.reload(patterns_dir).expect("reload patterns");
+        
+        assert!(result.has_changes());
+        assert_eq!(result.new_files, 1);
+        assert_eq!(result.changed_files, 0);
+        assert_eq!(result.removed_files, 0);
+        assert_eq!(result.patterns_before, 1);
+        assert_eq!(result.patterns_after, 2);
+        
+        // Проверяем, что новый паттерн загружен
+        let updated_count = db.all_patterns().len();
+        assert_eq!(updated_count, 2);
+        
+        // Проверяем, что можно найти новый паттерн
+        let matches = db.match_process(Some("code"), None, None);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.name, "vscode");
+    }
+
+    #[test]
+    fn test_pattern_database_reload_with_changes() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        
+        // Изменяем существующий паттерн
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox Updated"
+    exe_patterns: ["firefox", "firefox-bin"]
+    tags: ["browser", "updated"]
+"#,
+        );
+
+        // Перезагружаем паттерны
+        let result = db.reload(patterns_dir).expect("reload patterns");
+        
+        assert!(result.has_changes());
+        assert_eq!(result.changed_files, 1);
+        assert_eq!(result.new_files, 0);
+        assert_eq!(result.removed_files, 0);
+        
+        // Проверяем, что паттерн обновлён
+        let matches = db.match_process(Some("firefox-bin"), None, None);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.exe_patterns, vec!["firefox", "firefox-bin"]);
+        assert!(matches[0].1.tags.contains(&"updated".to_string()));
+    }
+
+    #[test]
+    fn test_pattern_database_reload_with_removals() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+  - name: "chrome"
+    label: "Google Chrome"
+    exe_patterns: ["chrome"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        assert_eq!(db.all_patterns().len(), 2);
+
+        // Удаляем один паттерн
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        // Перезагружаем паттерны
+        let result = db.reload(patterns_dir).expect("reload patterns");
+        
+        assert!(result.has_changes());
+        assert_eq!(result.removed_files, 1);
+        assert_eq!(result.patterns_before, 2);
+        assert_eq!(result.patterns_after, 1);
+        
+        // Проверяем, что паттерн удалён
+        assert_eq!(db.all_patterns().len(), 1);
+        let matches = db.match_process(Some("chrome"), None, None);
+        assert_eq!(matches.len(), 0);
+    }
+
+    #[test]
+    fn test_pattern_database_has_changes() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        
+        // Проверяем, что изменений нет
+        let has_changes = db.has_changes(patterns_dir).expect("check changes");
+        assert!(!has_changes);
+        
+        // Добавляем новый паттерн
+        create_test_pattern_file(
+            patterns_dir,
+            "ide.yml",
+            r#"
+category: ide
+apps:
+  - name: "vscode"
+    label: "Visual Studio Code"
+    exe_patterns: ["code"]
+    tags: ["ide"]
+"#,
+        );
+        
+        // Проверяем, что изменения обнаружены
+        let has_changes = db.has_changes(patterns_dir).expect("check changes");
+        assert!(has_changes);
+    }
+
+    #[test]
+    fn test_pattern_database_has_changes_no_changes() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        
+        // Проверяем, что изменений нет
+        let has_changes = db.has_changes(patterns_dir).expect("check changes");
+        assert!(!has_changes);
+        
+        // Проверяем ещё раз (без изменений)
+        let has_changes = db.has_changes(patterns_dir).expect("check changes");
+        assert!(!has_changes);
+    }
+
+    #[test]
+    fn test_pattern_update_result() {
+        let result = PatternUpdateResult {
+            total_files: 2,
+            total_patterns: 5,
+            invalid_files: 1,
+            changed_files: 1,
+            new_files: 2,
+            removed_files: 1,
+            patterns_before: 4,
+            patterns_after: 5,
+        };
+
+        assert!(result.has_changes());
+        assert_eq!(result.summary(), "Updated: 1 changed, 2 new, 1 removed (5 patterns)");
+
+        let no_change_result = PatternUpdateResult {
+            total_files: 1,
+            total_patterns: 3,
+            invalid_files: 0,
+            changed_files: 0,
+            new_files: 0,
+            removed_files: 0,
+            patterns_before: 3,
+            patterns_after: 3,
+        };
+
+        assert!(!no_change_result.has_changes());
+        assert_eq!(no_change_result.summary(), "No changes detected (3 patterns)");
+    }
+
+    #[test]
+    fn test_pattern_reload_error_handling() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        
+        // Проверяем обработку ошибок для несуществующей директории
+        let result = db.reload("/nonexistent/patterns");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("не существует"));
+    }
+
+    #[test]
+    fn test_pattern_has_changes_error_handling() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        
+        // Проверяем обработку ошибок для несуществующей директории
+        let result = db.has_changes("/nonexistent/patterns");
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("не существует"));
+    }
+
+    #[test]
+    fn test_pattern_reload_preserves_existing_on_error() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём начальные паттерны
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load initial patterns");
+        let initial_patterns = db.all_patterns().len();
+        
+        // Пытаемся перезагрузить из несуществующей директории
+        let result = db.reload("/nonexistent/patterns");
+        assert!(result.is_err());
+        
+        // Проверяем, что существующие паттерны сохранены
+        assert_eq!(db.all_patterns().len(), initial_patterns);
     }
 }

@@ -2,13 +2,15 @@
 
 use anyhow::{Context, Result};
 use axum::{
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
     Router,
 };
+use chrono::Utc;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 use std::time::{Instant, Duration};
@@ -43,6 +45,8 @@ pub struct ApiState {
     /// Кэш для часто запрашиваемых данных (опционально)
     /// Используется для оптимизации производительности API
     cache: Option<Arc<RwLock<ApiCache>>>,  
+    /// Хранилище логов для предоставления через API (опционально)
+    log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     /// Метрики производительности API
     performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,  
 }
@@ -263,6 +267,7 @@ pub struct ApiStateBuilder {
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
     notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
     cache: Option<Arc<RwLock<ApiCache>>>,  
+    log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,  
 }
 
@@ -527,6 +532,28 @@ impl ApiStateBuilder {
         self
     }
 
+    /// Устанавливает хранилище логов для API.
+    ///
+    /// # Параметры
+    ///
+    /// - `log_storage`: Хранилище логов для предоставления через API
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::logging::log_storage::SharedLogStorage;
+    /// use std::sync::Arc;
+    ///
+    /// let log_storage = Arc::new(SharedLogStorage::new(1000));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_log_storage(Some(log_storage));
+    /// ```
+    pub fn with_log_storage(mut self, log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>) -> Self {
+        self.log_storage = log_storage;
+        self
+    }
+
     /// Завершает построение и возвращает ApiState.
     ///
     /// Этот метод потребляет builder и возвращает готовое состояние API,
@@ -554,6 +581,7 @@ impl ApiStateBuilder {
             pattern_database: self.pattern_database,
             notification_manager: self.notification_manager,
             cache: self.cache,
+            log_storage: self.log_storage,
             performance_metrics: self.performance_metrics.unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
         }
     }
@@ -573,6 +601,7 @@ impl ApiState {
             pattern_database: None,
             notification_manager: None,
             cache: None,
+            log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
@@ -590,6 +619,7 @@ impl ApiState {
             pattern_database: None,
             notification_manager: None,
             cache: None,
+            log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
@@ -609,6 +639,7 @@ impl ApiState {
             pattern_database: None,
             notification_manager: None,
             cache: None,
+            log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
@@ -631,6 +662,7 @@ impl ApiState {
             pattern_database: None,
             notification_manager: None,
             cache: None,
+            log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
@@ -654,6 +686,7 @@ impl ApiState {
             pattern_database: None,
             notification_manager: None,
             cache: None,
+            log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
@@ -680,6 +713,7 @@ impl ApiState {
             pattern_database: None,
             notification_manager: None,
             cache: None,
+            log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
@@ -714,6 +748,46 @@ async fn health_handler() -> Json<Value> {
     }))
 }
 
+/// Обработчик для endpoint `/api/health`.
+///
+/// Возвращает расширенную информацию о состоянии демона, включая время работы,
+/// статус основных компонентов и метрики производительности.
+async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    let start_time = state.performance_metrics.read().await.last_request_time;
+    let uptime_seconds = start_time.map(|t| t.elapsed().as_secs()).unwrap_or(0);
+    
+    // Проверка доступности основных компонентов
+    let daemon_stats_available = state.daemon_stats.is_some();
+    let system_metrics_available = state.system_metrics.is_some();
+    let processes_available = state.processes.is_some();
+    let app_groups_available = state.app_groups.is_some();
+    let config_available = state.config.is_some();
+    let pattern_database_available = state.pattern_database.is_some();
+    
+    // Получение метрик производительности
+    let perf_metrics = state.performance_metrics.read().await;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "service": "smoothtaskd",
+        "uptime_seconds": uptime_seconds,
+        "components": {
+            "daemon_stats": daemon_stats_available,
+            "system_metrics": system_metrics_available,
+            "processes": processes_available,
+            "app_groups": app_groups_available,
+            "config": config_available,
+            "pattern_database": pattern_database_available
+        },
+        "performance": {
+            "total_requests": perf_metrics.total_requests,
+            "cache_hit_rate": perf_metrics.cache_hit_rate(),
+            "average_processing_time_us": perf_metrics.average_processing_time_us()
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    })))
+}
+
 /// Обработчик для endpoint `/api/version`.
 ///
 /// Возвращает версию демона SmoothTask.
@@ -736,6 +810,11 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/health",
                 "method": "GET",
                 "description": "Проверка работоспособности API сервера"
+            },
+            {
+                "path": "/api/health",
+                "method": "GET",
+                "description": "Получение расширенной информации о состоянии демона, включая время работы и статус компонентов"
             },
             {
                 "path": "/api/version",
@@ -826,9 +905,14 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/performance",
                 "method": "GET",
                 "description": "Получение метрик производительности API сервера"
+            },
+            {
+                "path": "/api/logs",
+                "method": "GET",
+                "description": "Получение последних логов приложения с фильтрацией по уровню и лимиту"
             }
         ],
-        "count": 19
+        "count": 21
     }))
 }
 
@@ -1129,6 +1213,108 @@ async fn performance_handler(State(state): State<ApiState>) -> Result<Json<Value
     })))
 }
 
+/// Обработчик для endpoint `/api/logs` (GET).
+///
+/// Возвращает последние логи приложения с возможностью фильтрации по уровню
+/// и ограничения количества записей.
+///
+/// # Параметры запроса
+///
+/// - `level` (опционально): Минимальный уровень логирования (error, warn, info, debug, trace)
+/// - `limit` (опционально): Максимальное количество возвращаемых записей (по умолчанию: 100)
+///
+/// # Примеры
+///
+/// ```bash
+/// # Получение последних 50 логов
+/// curl "http://127.0.0.1:8080/api/logs?limit=50"
+///
+/// # Получение только ошибок и предупреждений
+/// curl "http://127.0.0.1:8080/api/logs?level=warn"
+///
+/// # Получение последних 20 информационных сообщений
+/// curl "http://127.0.0.1:8080/api/logs?level=info&limit=20"
+/// ```
+async fn logs_handler(
+    State(state): State<ApiState>,
+    Query(params): Query<HashMap<String, String>>,
+) -> Result<Json<Value>, StatusCode> {
+    // Извлекаем параметры запроса
+    let level_param = params.get("level").map(|s| s.as_str());
+    let limit_param = params.get("limit").and_then(|s| s.parse::<usize>().ok());
+
+    // Определяем минимальный уровень логирования
+    let min_level = match level_param {
+        Some("error") => crate::logging::log_storage::LogLevel::Error,
+        Some("warn") => crate::logging::log_storage::LogLevel::Warn,
+        Some("info") => crate::logging::log_storage::LogLevel::Info,
+        Some("debug") => crate::logging::log_storage::LogLevel::Debug,
+        Some("trace") => crate::logging::log_storage::LogLevel::Trace,
+        _ => crate::logging::log_storage::LogLevel::Trace, // По умолчанию: все уровни
+    };
+
+    // Определяем лимит (по умолчанию: 100, максимум: 1000)
+    let limit = limit_param.unwrap_or(100).min(1000);
+
+    match &state.log_storage {
+        Some(log_storage) => {
+            // Получаем записи логов, отфильтрованные по уровню
+            let entries = log_storage.get_entries_by_level(min_level).await;
+            
+            // Применяем лимит
+            let limited_entries = if limit > 0 && entries.len() > limit {
+                entries.into_iter().rev().take(limit).rev().collect()
+            } else {
+                entries
+            };
+            
+            // Преобразуем записи в JSON
+            let logs: Vec<Value> = limited_entries
+                .into_iter()
+                .map(|entry| {
+                    let mut log_json = json!({
+                        "timestamp": entry.timestamp.to_rfc3339(),
+                        "level": format!("{}", entry.level),
+                        "target": entry.target,
+                        "message": entry.message,
+                    });
+                    
+                    if let Some(fields) = entry.fields {
+                        log_json["fields"] = fields;
+                    }
+                    
+                    log_json
+                })
+                .collect();
+            
+            Ok(Json(json!({
+                "status": "ok",
+                "logs": logs,
+                "count": logs.len(),
+                "total_available": log_storage.len().await,
+                "max_capacity": log_storage.max_entries().await,
+                "filter": {
+                    "min_level": format!("{}", min_level),
+                    "limit": limit
+                }
+            })))
+        }
+        None => {
+            // Хранилище логов не доступно
+            Ok(Json(json!({
+                "status": "ok",
+                "logs": [],
+                "count": 0,
+                "message": "Log storage not available (daemon may not be running or logs not configured)",
+                "filter": {
+                    "min_level": format!("{}", min_level),
+                    "limit": limit
+                }
+            })))
+        }
+    }
+}
+
 /// Обработчик для endpoint `/api/notifications/config` (POST).
 ///
 /// Изменяет конфигурацию уведомлений в runtime.
@@ -1213,6 +1399,7 @@ async fn notifications_config_handler(
 fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
+        .route("/api/health", get(health_detailed_handler))
         .route("/api/version", get(version_handler))
         .route("/api/endpoints", get(endpoints_handler))
         .route("/api/stats", get(stats_handler))
@@ -1231,6 +1418,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/notifications/status", get(notifications_status_handler))
         .route("/api/notifications/config", post(notifications_config_handler))
         .route("/api/performance", get(performance_handler))
+        .route("/api/logs", get(logs_handler))
         .with_state(state)
 }
 
@@ -3077,10 +3265,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 19); // Обновлено с 18 до 19
+        assert_eq!(json["count"], 20); // Обновлено с 19 до 20
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 19); // Обновлено с 18 до 19
+        assert_eq!(endpoints.len(), 20); // Обновлено с 19 до 20
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -3107,6 +3295,7 @@ mod tests {
         assert!(endpoint_paths.contains(&"/api/notifications/status"));
         assert!(endpoint_paths.contains(&"/api/notifications/config"));
         assert!(endpoint_paths.contains(&"/api/performance"));
+        assert!(endpoint_paths.contains(&"/api/health"));
 
         // Проверяем структуру endpoint
         let first_endpoint = &endpoints[0];
@@ -3663,6 +3852,85 @@ apps:
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert_eq!(json["service"], "smoothtask-api");
+    }
+
+    #[tokio::test]
+    async fn test_health_detailed_handler_without_data() {
+        // Тестируем обработчик health_detailed_handler без данных
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(None)
+            .with_config_path(None)
+            .with_pattern_database(None)
+            .with_notification_manager(None)
+            .build();
+
+        let result = health_detailed_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap().0;
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["service"], "smoothtaskd");
+        assert_eq!(json["uptime_seconds"], 0);
+        
+        let components = &json["components"];
+        assert_eq!(components["daemon_stats"], false);
+        assert_eq!(components["system_metrics"], false);
+        assert_eq!(components["processes"], false);
+        assert_eq!(components["app_groups"], false);
+        assert_eq!(components["config"], false);
+        assert_eq!(components["pattern_database"], false);
+        
+        let performance = &json["performance"];
+        assert_eq!(performance["total_requests"], 0);
+        assert_eq!(performance["cache_hit_rate"], 0.0);
+        assert_eq!(performance["average_processing_time_us"], 0.0);
+        
+        assert!(json["timestamp"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_health_detailed_handler_with_data() {
+        // Тестируем обработчик health_detailed_handler с данными
+        let daemon_stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
+        let system_metrics = Arc::new(RwLock::new(crate::metrics::system::SystemMetrics::default()));
+        let processes = Arc::new(RwLock::new(Vec::<crate::logging::snapshots::ProcessRecord>::new()));
+        let app_groups = Arc::new(RwLock::new(Vec::<crate::logging::snapshots::AppGroupRecord>::new()));
+        let config = Arc::new(RwLock::new(crate::config::config_struct::Config::default()));
+        let pattern_db = Arc::new(crate::classify::rules::PatternDatabase::load("/tmp/test_patterns").unwrap_or_default());
+
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(Some(daemon_stats))
+            .with_system_metrics(Some(system_metrics))
+            .with_processes(Some(processes))
+            .with_app_groups(Some(app_groups))
+            .with_responsiveness_metrics(None)
+            .with_config(Some(config))
+            .with_config_path(None)
+            .with_pattern_database(Some(pattern_db))
+            .with_notification_manager(None)
+            .build();
+
+        let result = health_detailed_handler(State(state)).await;
+        assert!(result.is_ok());
+        
+        let json = result.unwrap().0;
+        assert_eq!(json["status"], "ok");
+        assert_eq!(json["service"], "smoothtaskd");
+        
+        let components = &json["components"];
+        assert_eq!(components["daemon_stats"], true);
+        assert_eq!(components["system_metrics"], true);
+        assert_eq!(components["processes"], true);
+        assert_eq!(components["app_groups"], true);
+        assert_eq!(components["config"], true);
+        assert_eq!(components["pattern_database"], true);
+        
+        assert!(json["timestamp"].is_string());
     }
 
     #[tokio::test]
@@ -4327,10 +4595,10 @@ max_candidates: 200
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 19); // Обновлено с 18 до 19
+        assert_eq!(json["count"], 20); // Обновлено с 19 до 20
         
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 19);
+        assert_eq!(endpoints.len(), 20);
         
         // Проверяем наличие новых endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -4342,5 +4610,213 @@ max_candidates: 200
         assert!(endpoint_paths.contains(&"/api/notifications/status"));
         assert!(endpoint_paths.contains(&"/api/notifications/config"));
         assert!(endpoint_paths.contains(&"/api/performance"));
+        assert!(endpoint_paths.contains(&"/api/logs"));
+    }
+
+    #[tokio::test]
+    async fn test_logs_handler_without_log_storage() {
+        // Тест для logs_handler без хранилища логов
+        let state = ApiState::new();
+        
+        let result = logs_handler(
+            State(state),
+            Query(HashMap::new())
+        ).await;
+        
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["count"], 0);
+        assert!(value["logs"].is_array());
+        assert_eq!(value["logs"].as_array().unwrap().len(), 0);
+        assert!(value["message"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_logs_handler_with_log_storage() {
+        // Тест для logs_handler с хранилищем логов
+        use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
+        
+        let log_storage = Arc::new(SharedLogStorage::new(100));
+        
+        // Добавляем тестовые записи
+        log_storage.add_entry(LogEntry::new(
+            LogLevel::Info,
+            "test_module",
+            "Test info message"
+        )).await;
+        
+        log_storage.add_entry(LogEntry::new(
+            LogLevel::Warn,
+            "test_module",
+            "Test warning message"
+        )).await;
+        
+        log_storage.add_entry(LogEntry::new(
+            LogLevel::Error,
+            "test_module",
+            "Test error message"
+        )).await;
+        
+        let state = ApiStateBuilder::new()
+            .with_log_storage(Some(log_storage))
+            .build();
+        
+        let result = logs_handler(
+            State(state),
+            Query(HashMap::new())
+        ).await;
+        
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["count"], 3);
+        assert!(value["logs"].is_array());
+        
+        let logs = value["logs"].as_array().unwrap();
+        assert_eq!(logs.len(), 3);
+        
+        // Проверяем структуру логов
+        assert_eq!(logs[0]["level"], "INFO");
+        assert_eq!(logs[0]["target"], "test_module");
+        assert_eq!(logs[0]["message"], "Test info message");
+        
+        assert_eq!(logs[1]["level"], "WARN");
+        assert_eq!(logs[1]["target"], "test_module");
+        assert_eq!(logs[1]["message"], "Test warning message");
+        
+        assert_eq!(logs[2]["level"], "ERROR");
+        assert_eq!(logs[2]["target"], "test_module");
+        assert_eq!(logs[2]["message"], "Test error message");
+    }
+
+    #[tokio::test]
+    async fn test_logs_handler_with_level_filter() {
+        // Тест для logs_handler с фильтрацией по уровню
+        use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
+        
+        let log_storage = Arc::new(SharedLogStorage::new(100));
+        
+        // Добавляем тестовые записи разных уровней
+        log_storage.add_entry(LogEntry::new(LogLevel::Trace, "test", "Trace message")).await;
+        log_storage.add_entry(LogEntry::new(LogLevel::Debug, "test", "Debug message")).await;
+        log_storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Info message")).await;
+        log_storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warn message")).await;
+        log_storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error message")).await;
+        
+        let state = ApiStateBuilder::new()
+            .with_log_storage(Some(log_storage))
+            .build();
+        
+        // Тестируем фильтрацию по уровню WARN
+        let mut params = HashMap::new();
+        params.insert("level".to_string(), "warn".to_string());
+        
+        let result = logs_handler(
+            State(state),
+            Query(params)
+        ).await;
+        
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["count"], 2); // Только WARN и ERROR
+        
+        let logs = value["logs"].as_array().unwrap();
+        assert_eq!(logs[0]["level"], "WARN");
+        assert_eq!(logs[1]["level"], "ERROR");
+    }
+
+    #[tokio::test]
+    async fn test_logs_handler_with_limit() {
+        // Тест для logs_handler с лимитом
+        use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
+        
+        let log_storage = Arc::new(SharedLogStorage::new(100));
+        
+        // Добавляем 5 тестовых записей
+        for i in 1..=5 {
+            log_storage.add_entry(LogEntry::new(
+                LogLevel::Info,
+                "test",
+                format!("Message {}", i)
+            )).await;
+        }
+        
+        let state = ApiStateBuilder::new()
+            .with_log_storage(Some(log_storage))
+            .build();
+        
+        // Тестируем лимит 3
+        let mut params = HashMap::new();
+        params.insert("limit".to_string(), "3".to_string());
+        
+        let result = logs_handler(
+            State(state),
+            Query(params)
+        ).await;
+        
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["count"], 3);
+        assert_eq!(value["filter"]["limit"], 3);
+        
+        let logs = value["logs"].as_array().unwrap();
+        assert_eq!(logs.len(), 3);
+        // Должны быть последние 3 сообщения
+        assert_eq!(logs[0]["message"], "Message 3");
+        assert_eq!(logs[1]["message"], "Message 4");
+        assert_eq!(logs[2]["message"], "Message 5");
+    }
+
+    #[tokio::test]
+    async fn test_logs_handler_with_fields() {
+        // Тест для logs_handler с дополнительными полями
+        use crate::logging::log_storage::{LogEntry, LogLevel, SharedLogStorage};
+        
+        let log_storage = Arc::new(SharedLogStorage::new(100));
+        
+        // Добавляем запись с дополнительными полями
+        let mut entry = LogEntry::new(LogLevel::Info, "test", "Message with fields");
+        let fields = serde_json::json!({
+            "user_id": 123,
+            "action": "login",
+            "status": "success"
+        });
+        entry = entry.with_fields(fields);
+        
+        log_storage.add_entry(entry).await;
+        
+        let state = ApiStateBuilder::new()
+            .with_log_storage(Some(log_storage))
+            .build();
+        
+        let result = logs_handler(
+            State(state),
+            Query(HashMap::new())
+        ).await;
+        
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        
+        assert_eq!(value["status"], "ok");
+        assert_eq!(value["count"], 1);
+        
+        let log = &value["logs"][0];
+        assert_eq!(log["message"], "Message with fields");
+        assert!(log["fields"].is_object());
+        assert_eq!(log["fields"]["user_id"], 123);
+        assert_eq!(log["fields"]["action"], "login");
+        assert_eq!(log["fields"]["status"], "success");
     }
 }

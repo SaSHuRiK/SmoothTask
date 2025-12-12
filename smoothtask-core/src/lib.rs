@@ -893,8 +893,25 @@ pub async fn run_daemon(
         let mut processes = snapshot.processes.clone();
         let mut app_groups = ProcessGrouper::group_processes(&processes);
 
+        // Создаем ML-классификатор, если он включен в конфигурации
+        let ml_classifier = if config.ml_classifier.enabled {
+            match ml_classifier::create_ml_classifier(config.ml_classifier.clone()) {
+                Ok(classifier) => {
+                    info!("ML-классификатор успешно инициализирован");
+                    Some(classifier)
+                }
+                Err(e) => {
+                    error!("Не удалось инициализировать ML-классификатор: {}", e);
+                    None
+                }
+            }
+        } else {
+            debug!("ML-классификатор отключен в конфигурации");
+            None
+        };
+
         // Классификация процессов и групп
-        classify_all(&mut processes, &mut app_groups, &pattern_db, None);
+        classify_all(&mut processes, &mut app_groups, &pattern_db, ml_classifier.as_deref());
 
         // Обновляем app_group_id в процессах на основе группировки
         for process in &mut processes {
