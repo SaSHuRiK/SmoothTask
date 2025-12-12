@@ -336,7 +336,7 @@ fn test_cpu_temperature_monitoring() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let mut collector = EbpfMetricsCollector::new(config.clone());
 
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
@@ -412,6 +412,7 @@ fn test_process_type_filtering() {
 }
 
 #[test]
+#[cfg(feature = "ebpf")]
 fn test_real_time_event_processing_optimization() {
     // Тестируем оптимизацию обработки eBPF событий в реальном времени
     let config = EbpfConfig {
@@ -430,10 +431,11 @@ fn test_real_time_event_processing_optimization() {
     let result = collector.optimize_real_time_event_processing();
     assert!(result.is_ok());
 
-    // Проверяем, что оптимизации применены
-    assert_eq!(collector.config.batch_size, 50, "Размер batches должен быть уменьшен до 50");
-    assert!(!collector.config.enable_aggressive_caching, "Агрессивное кэширование должно быть отключено");
-    assert_eq!(collector.config.aggressive_cache_interval_ms, 1000, "Интервал агрессивного кэширования должен быть уменьшен до 1000ms");
+    // Проверяем, что оптимизации применены (через публичные методы)
+    let config = collector.get_config();
+    assert_eq!(config.batch_size, 50, "Размер batches должен быть уменьшен до 50");
+    assert!(!config.enable_aggressive_caching, "Агрессивное кэширование должно быть отключено");
+    assert_eq!(config.aggressive_cache_interval_ms, 1000, "Интервал агрессивного кэширования должен быть уменьшен до 1000ms");
 
     // Проверяем, что сбор метрик все еще работает после оптимизации
     let metrics = collector.collect_metrics();

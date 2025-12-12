@@ -4133,6 +4133,10 @@ impl EbpfMetricsCollector {
         (hits, misses, hit_rate)
     }
 
+    /// Получение текущей конфигурации (для тестирования)
+    pub fn get_config(&self) -> EbpfConfig {
+        self.config.clone()
+    }
 
 }
 

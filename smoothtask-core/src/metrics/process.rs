@@ -193,9 +193,13 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
     let all_procs = procfs::process::all_processes()
         .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc. Попробуйте: ls -la /proc | sudo ls /proc")?;
 
+    // Сохраняем количество процессов до обработки
+    let total_process_count = all_procs.size_hint().0;
+    tracing::info!("Начало сбора метрик процессов. Найдено {} потенциальных процессов", total_process_count);
+
     // Оптимизация: предварительное выделение памяти для вектора процессов
     // Это уменьшает количество реаллокаций при добавлении элементов
-    let mut processes = Vec::with_capacity(all_procs.size_hint().0);
+    let mut processes = Vec::with_capacity(total_process_count);
 
     // Оптимизация: параллельная обработка процессов с использованием rayon
     // Это значительно ускоряет сбор метрик для большого количества процессов
@@ -204,16 +208,32 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
         .filter_map(|proc_result| {
             match proc_result {
                 Ok(proc) => {
+                    let pid = proc.pid();
+                    tracing::debug!("Обработка процесса PID {}", pid);
+                    
                     match collect_single_process(&proc) {
-                        Ok(Some(record)) => Some(record),
-                        Ok(None) => None, // процесс завершился между итерациями
+                        Ok(Some(record)) => {
+                            let process_name = record.exe.as_ref()
+                                .or_else(|| record.cmdline.as_ref())
+                                .map(|s| s.split('/').last().unwrap_or(s.as_str()))
+                                .unwrap_or("unknown");
+                            tracing::debug!("Успешно собраны метрики для процесса PID {} ({})", pid, process_name);
+                            Some(record)
+                        },
+                        Ok(None) => {
+                            tracing::debug!("Процесс PID {} завершился между итерациями", pid);
+                            None
+                        },
                         Err(e) => {
-                            tracing::debug!(
+                            tracing::warn!(
                                 "Ошибка сбора метрик для процесса PID {}: {}. \
-                                 Процесс мог завершиться или нет прав доступа к /proc/{}/",
-                                proc.pid(),
+                                 Процесс мог завершиться или нет прав доступа к /proc/{}/. \
+                                 Проверьте: ls -la /proc/{}/ | sudo cat /proc/{}/status",
+                                pid,
                                 e,
-                                proc.pid()
+                                pid,
+                                pid,
+                                pid
                             );
                             None
                         }
@@ -221,9 +241,10 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
                 }
                 Err(ProcError::NotFound(_)) => None, // процесс завершился
                 Err(e) => {
-                    tracing::debug!(
+                    tracing::warn!(
                         "Ошибка доступа к процессу при чтении /proc: {}. \
-                         Процесс мог завершиться или нет прав доступа",
+                         Процесс мог завершиться или нет прав доступа. \
+                         Рекомендация: проверьте права доступа и попробуйте sudo",
                         e
                     );
                     None
@@ -236,6 +257,13 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
 
     // Оптимизация: уменьшаем выделенную память до фактического размера
     processes.shrink_to_fit();
+    
+    tracing::info!("Завершен сбор метрик процессов. Успешно собрано {} из {} процессов", processes.len(), total_process_count);
+    
+    if processes.is_empty() {
+        tracing::warn!("Не удалось собрать метрики ни для одного процесса. Возможные причины: отсутствие прав доступа, /proc не смонтирован, или все процессы завершились");
+    }
+    
     Ok(processes)
 }
 
@@ -243,16 +271,25 @@ pub fn collect_process_metrics() -> Result<Vec<ProcessRecord>> {
 ///
 /// Возвращает `None`, если процесс завершился или к нему нет доступа.
 fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
+    let pid = proc.pid();
+    tracing::debug!("Сбор метрик для процесса PID {}", pid);
+    
     // Читаем stat для базовой информации
     let stat = match proc.stat() {
         Ok(s) => s,
-        Err(ProcError::NotFound(_)) => return Ok(None),
+        Err(ProcError::NotFound(_)) => {
+            tracing::debug!("Процесс PID {} не найден в /proc (возможно завершился)", pid);
+            return Ok(None);
+        },
         Err(e) => {
+            tracing::warn!("Не удалось прочитать /proc/{}/stat: {}. Проверьте права доступа: ls -la /proc/{}/stat", pid, e, pid);
             return Err(anyhow::anyhow!(
                 "Не удалось прочитать /proc/{}/stat: {}. \
-                 Проверьте, что процесс существует и доступен для чтения",
-                proc.pid(),
-                e
+                 Проверьте, что процесс существует и доступен для чтения. \
+                 Попробуйте: sudo cat /proc/{}/stat",
+                pid,
+                e,
+                pid
             ))
         }
     };
@@ -260,13 +297,19 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     // Читаем status для UID/GID и дополнительной информации
     let status = match proc.status() {
         Ok(s) => s,
-        Err(ProcError::NotFound(_)) => return Ok(None),
+        Err(ProcError::NotFound(_)) => {
+            tracing::debug!("Файл status для процесса PID {} не найден (процесс завершился)", pid);
+            return Ok(None);
+        },
         Err(e) => {
+            tracing::warn!("Не удалось прочитать /proc/{}/status: {}. Проверьте права доступа: ls -la /proc/{}/status", pid, e, pid);
             return Err(anyhow::anyhow!(
                 "Не удалось прочитать /proc/{}/status: {}. \
-                 Проверьте, что процесс существует и доступен для чтения",
-                proc.pid(),
-                e
+                 Проверьте, что процесс существует и доступен для чтения. \
+                 Попробуйте: sudo cat /proc/{}/status",
+                pid,
+                e,
+                pid
             ))
         }
     };
