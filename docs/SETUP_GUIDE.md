@@ -39,6 +39,9 @@ sudo apt install -y libwayland-dev libpipewire-0.3-dev libpulse-dev
 
 # Для Python тренера (опционально)
 sudo apt install -y python3 python3-pip python3-venv
+
+# Для ONNX Runtime (опционально, для ML-ранжирования)
+sudo apt install -y libonnxruntime-dev
 ```
 
 ### 2. Настройка cgroups v2
@@ -207,6 +210,58 @@ stat -fc %T /sys/fs/cgroup/
 ### 3. Сборка и установка
 
 Следуйте тем же шагам, что и для Ubuntu/Debian, начиная с шага 3.
+
+## Настройка ONNX моделей (опционально)
+
+Для использования ML-ранжирования с ONNX моделями выполните следующие шаги:
+
+### 1. Установка зависимостей для ONNX
+
+```bash
+# Для Python тренера
+pip install onnxruntime catboost
+
+# Для Rust ONNX Runtime
+# Уже включено в зависимости smoothtask-core
+```
+
+### 2. Обучение и экспорт модели
+
+```bash
+cd smoothtask-trainer
+
+# Обучение модели и экспорт в ONNX
+python -m smoothtask_trainer.train_ranker \
+    --db snapshots.db \
+    --model-json models/ranker.json \
+    --model-onnx models/ranker.onnx
+```
+
+### 3. Настройка демона для использования ONNX
+
+Добавьте в конфигурацию `smoothtask.yml`:
+
+```yaml
+model:
+  # Путь к ONNX модели
+  model_path: "models/ranker.onnx"
+  # Включение ONNX ранкера
+  enabled: true
+
+policy:
+  # Режим работы: hybrid (использует ONNX + правила)
+  mode: "hybrid"
+```
+
+### 4. Проверка интеграции
+
+```bash
+# Запуск демона с ONNX моделью
+cargo run --bin smoothtaskd -- --config configs/smoothtask.yml
+
+# Проверка логов
+journalctl -u smoothtaskd -f
+```
 
 ## Настройка конфигурации
 
