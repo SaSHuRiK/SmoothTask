@@ -4,6 +4,8 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "ebpf")]
+use lazy_static::lazy_static;
 use std::time::{Duration, Instant};
 use tracing::warn;
 
@@ -1242,6 +1244,15 @@ fn collect_gpu_metrics() -> crate::metrics::gpu::GpuMetricsCollection {
 }
 
 /// Собирает метрики eBPF
+/// Глобальный кэш для eBPF коллектора (оптимизация производительности)
+#[cfg(feature = "ebpf")]
+lazy_static! {
+    static ref EBPF_COLLECTOR: std::sync::Mutex<Option<crate::metrics::ebpf::EbpfMetricsCollector>> = 
+        std::sync::Mutex::new(None);
+}
+
+
+
 fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
     // Проверяем, включена ли поддержка eBPF
     if !crate::metrics::ebpf::EbpfMetricsCollector::is_ebpf_enabled() {
@@ -1249,26 +1260,43 @@ fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
         return None;
     }
     
-    // Создаем коллектор eBPF метрик
-    let config = crate::metrics::ebpf::EbpfConfig::default();
-    let mut collector = crate::metrics::ebpf::EbpfMetricsCollector::new(config);
-    
-    // Инициализируем коллектор
-    if let Err(e) = collector.initialize() {
-        tracing::warn!("Failed to initialize eBPF metrics collector: {}", e);
-        return None;
+    #[cfg(feature = "ebpf")]
+    {
+        // Используем кэшированный коллектор для уменьшения накладных расходов
+        let mut collector_guard = EBPF_COLLECTOR.lock().unwrap();
+        
+        if collector_guard.is_none() {
+            // Инициализируем коллектор при первом вызове
+            let config = crate::metrics::ebpf::EbpfConfig::default();
+            let mut collector = crate::metrics::ebpf::EbpfMetricsCollector::new(config);
+            
+            if let Err(e) = collector.initialize() {
+                tracing::warn!("Failed to initialize eBPF metrics collector: {}", e);
+                return None;
+            }
+            
+            *collector_guard = Some(collector);
+        }
+        
+        // Собираем метрики с использованием кэшированного коллектора
+        if let Some(collector) = collector_guard.as_mut() {
+            match collector.collect_metrics() {
+                Ok(metrics) => {
+                    tracing::debug!("Successfully collected eBPF metrics: {:?}", metrics);
+                    return Some(metrics);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to collect eBPF metrics: {}", e);
+                    return None;
+                }
+            }
+        }
     }
     
-    // Собираем метрики
-    match collector.collect_metrics() {
-        Ok(metrics) => {
-            tracing::debug!("Successfully collected eBPF metrics: {:?}", metrics);
-            Some(metrics)
-        }
-        Err(e) => {
-            tracing::warn!("Failed to collect eBPF metrics: {}", e);
-            None
-        }
+    #[cfg(not(feature = "ebpf"))]
+    {
+        // Без eBPF поддержки возвращаем None
+        None
     }
 }
 
@@ -3086,3 +3114,5 @@ impl SharedSystemMetricsCache {
         cache.clear();
     }
 }
+
+

@@ -4,7 +4,9 @@
 //! для определения целевого класса приоритета для каждой AppGroup в снапшоте.
 //! В режиме hybrid также использует ML-ранкер для более точного определения приоритетов.
 
-use crate::config::config_struct::{Config, PolicyMode, ModelType, ModelConfig, MLClassifierConfig, PatternAutoUpdateConfig};
+use crate::config::config_struct::{
+    Config, MLClassifierConfig, ModelType, PatternAutoUpdateConfig, PolicyMode,
+};
 use crate::metrics::ebpf::EbpfConfig;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 use crate::model::ranker::{Ranker, RankingResult};

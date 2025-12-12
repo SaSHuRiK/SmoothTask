@@ -8,9 +8,8 @@ use crate::config::config_struct::{MLClassifierConfig, ModelType};
 use crate::logging::snapshots::ProcessRecord;
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 use anyhow::{Context, Result};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 #[cfg(feature = "catboost")]
 use catboost::CatBoostClassifier;

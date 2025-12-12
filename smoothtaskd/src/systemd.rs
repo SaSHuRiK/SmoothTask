@@ -18,7 +18,7 @@
 //! systemd::notify_status("Running, iteration 42");
 //! ```
 
-use anyhow::Context;
+use anyhow::{Context, Result};
 use libsystemd::daemon::NotifyState;
 
 /// Отправляет systemd уведомление READY=1, сигнализируя о том, что демон успешно инициализирован.

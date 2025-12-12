@@ -18,8 +18,7 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info, trace};
 
-use crate::config::config_struct::{ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
-use crate::metrics::ebpf::EbpfConfig;
+
 
 
 
@@ -2319,7 +2318,8 @@ mod tests {
     use std::net::SocketAddr;
     
     // Import notification types for test configurations
-    use crate::config::config_struct::{ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel};
+    use crate::config::config_struct::{NotificationBackend, NotificationConfig, NotificationLevel, ModelType, MLClassifierConfig, PatternAutoUpdateConfig};
+    use crate::metrics::ebpf::EbpfConfig;
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -2837,6 +2837,8 @@ mod tests {
                 enable_memory_metrics: false,
                 enable_syscall_monitoring: false,
                 collection_interval: Duration::from_secs(1),
+                enable_caching: true,
+                batch_size: 100,
             },
 
         };
@@ -2923,6 +2925,8 @@ mod tests {
                 enable_memory_metrics: false,
                 enable_syscall_monitoring: false,
                 collection_interval: Duration::from_secs(1),
+                enable_caching: true,
+                batch_size: 100,
             },
         };
         let config_arc = Arc::new(RwLock::new(config));
@@ -2982,6 +2986,7 @@ mod tests {
     #[test]
     fn test_api_server_with_all_and_config() {
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -3621,6 +3626,7 @@ apps:
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config() {
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         use crate::logging::snapshots::ResponsivenessMetrics;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
@@ -3700,6 +3706,7 @@ apps:
     fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -3771,6 +3778,7 @@ apps:
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config() {
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         use crate::logging::snapshots::ResponsivenessMetrics;
         let config = Config {
             polling_interval_ms: 1000,
@@ -3849,6 +3857,7 @@ apps:
     fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -4408,6 +4417,7 @@ max_candidates: 200
     async fn test_notifications_status_handler_with_config() {
         // Тест для notifications_status_handler когда конфигурация доступна
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         
         let config = Config {
             polling_interval_ms: 1000,
@@ -4530,6 +4540,7 @@ max_candidates: 200
     async fn test_notifications_config_handler_with_config() {
         // Тест для notifications_config_handler когда конфигурация доступна
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         
         let config = Config {
             polling_interval_ms: 1000,
@@ -4609,6 +4620,7 @@ max_candidates: 200
     async fn test_notifications_config_handler_partial_update() {
         // Тест для notifications_config_handler с частичным обновлением
         use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::metrics::ebpf::EbpfConfig;
         
         let config = Config {
             polling_interval_ms: 1000,

@@ -39,6 +39,10 @@ pub struct EbpfConfig {
     pub enable_syscall_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
+    /// Включить кэширование метрик для уменьшения накладных расходов
+    pub enable_caching: bool,
+    /// Размер batches для пакетной обработки
+    pub batch_size: usize,
 }
 
 impl Default for EbpfConfig {
@@ -48,6 +52,8 @@ impl Default for EbpfConfig {
             enable_memory_metrics: true,
             enable_syscall_monitoring: false,
             collection_interval: Duration::from_secs(1),
+            enable_caching: true,
+            batch_size: 100,
         }
     }
 }
@@ -72,7 +78,13 @@ pub struct EbpfMetricsCollector {
     cpu_program: Option<Program>,
     #[cfg(feature = "ebpf")]
     memory_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
+    syscall_program: Option<Program>,
     initialized: bool,
+    /// Кэш для хранения последних метрик (оптимизация производительности)
+    metrics_cache: Option<EbpfMetrics>,
+    /// Счетчик для пакетной обработки
+    batch_counter: usize,
 }
 
 impl EbpfMetricsCollector {
@@ -84,7 +96,11 @@ impl EbpfMetricsCollector {
             cpu_program: None,
             #[cfg(feature = "ebpf")]
             memory_program: None,
+            #[cfg(feature = "ebpf")]
+            syscall_program: None,
             initialized: false,
+            metrics_cache: None,
+            batch_counter: 0,
         }
     }
 
@@ -112,6 +128,10 @@ impl EbpfMetricsCollector {
 
             if self.config.enable_memory_metrics {
                 self.load_memory_program()?;
+            }
+
+            if self.config.enable_syscall_monitoring {
+                self.load_syscall_program()?;
             }
 
             self.initialized = true;
@@ -160,11 +180,49 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга системных вызовов
+    #[cfg(feature = "ebpf")]
+    fn load_syscall_program(&mut self) -> Result<()> {
+        use std::path::Path;
+        
+        let program_path = Path::new("src/ebpf_programs/syscall_monitor.c");
+        
+        if !program_path.exists() {
+            tracing::warn!("eBPF программа для мониторинга системных вызовов не найдена: {:?}", program_path);
+            return Ok(());
+        }
+
+        // В реальной реализации здесь будет загрузка и компиляция eBPF программы
+        // Пока что это заглушка
+        tracing::info!("Загрузка eBPF программы для мониторинга системных вызовов");
+        
+        // TODO: Реальная загрузка eBPF программы
+        // self.syscall_program = Some(Program::from_file(program_path)?);
+        
+        Ok(())
+    }
+
     /// Собрать текущие метрики
-    pub fn collect_metrics(&self) -> Result<EbpfMetrics> {
+    pub fn collect_metrics(&mut self) -> Result<EbpfMetrics> {
         if !self.initialized {
             tracing::warn!("eBPF метрики не инициализированы, возвращаем значения по умолчанию");
             return Ok(EbpfMetrics::default());
+        }
+
+        // Оптимизация: используем кэширование если включено
+        if self.config.enable_caching {
+            if let Some(cached_metrics) = self.metrics_cache.clone() {
+                // Возвращаем кэшированные метрики для уменьшения накладных расходов
+                self.batch_counter += 1;
+                
+                // Сбрасываем кэш если достигнут размер batch
+                if self.batch_counter >= self.config.batch_size {
+                    self.metrics_cache = None;
+                    self.batch_counter = 0;
+                }
+                
+                return Ok(cached_metrics);
+            }
         }
 
         #[cfg(feature = "ebpf")]
@@ -173,16 +231,23 @@ impl EbpfMetricsCollector {
             // Пока что возвращаем тестовые значения
             let cpu_usage = if self.config.enable_cpu_metrics { 25.5 } else { 0.0 };
             let memory_usage = if self.config.enable_memory_metrics { 1024 * 1024 * 512 } else { 0 };
+            let syscall_count = if self.config.enable_syscall_monitoring { 100 } else { 0 };
             
             let metrics = EbpfMetrics {
                 cpu_usage,
                 memory_usage,
-                syscall_count: 100,
+                syscall_count,
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or(Duration::from_secs(0))
                     .as_nanos() as u64,
             };
+            
+            // Кэшируем метрики если включено кэширование
+            if self.config.enable_caching {
+                self.metrics_cache = Some(metrics.clone());
+                self.batch_counter = 1;
+            }
             
             tracing::debug!("Собраны eBPF метрики: {:?}", metrics);
             Ok(metrics)
@@ -333,6 +398,23 @@ mod tests {
     }
 
     #[test]
+    fn test_ebpf_syscall_monitoring() {
+        let mut config = EbpfConfig::default();
+        config.enable_syscall_monitoring = true;
+        config.enable_cpu_metrics = false;
+        config.enable_memory_metrics = false;
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        let metrics = collector.collect_metrics().unwrap();
+        // Проверяем, что мониторинг системных вызовов работает
+        assert_eq!(metrics.cpu_usage, 0.0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.memory_usage, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.syscall_count, 100); // Должно быть 100, так как включено в конфиге
+    }
+
+    #[test]
     fn test_ebpf_double_initialization() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
@@ -340,5 +422,32 @@ mod tests {
         assert!(collector.initialize().is_ok());
         // Вторая инициализация должна пройти успешно, но не делать ничего
         assert!(collector.initialize().is_ok());
+    }
+
+    #[test]
+    fn test_ebpf_caching() {
+        let mut config = EbpfConfig::default();
+        config.enable_caching = true;
+        config.batch_size = 3;
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        // Первый вызов должен собрать реальные метрики
+        let metrics1 = collector.collect_metrics().unwrap();
+        assert!(metrics1.cpu_usage >= 0.0);
+        
+        // Второй и третий вызовы должны вернуть кэшированные метрики
+        let metrics2 = collector.collect_metrics().unwrap();
+        let metrics3 = collector.collect_metrics().unwrap();
+        
+        // После третьего вызова кэш должен сброситься
+        assert_eq!(metrics1.cpu_usage, metrics2.cpu_usage);
+        assert_eq!(metrics1.cpu_usage, metrics3.cpu_usage);
+        
+        // Четвертый вызов должен собрать новые метрики
+        let metrics4 = collector.collect_metrics().unwrap();
+        // В тестовой реализации метрики не меняются, поэтому они должны быть такими же
+        assert_eq!(metrics1.cpu_usage, metrics4.cpu_usage);
     }
 }

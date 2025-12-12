@@ -3,7 +3,8 @@
 use smoothtask_core::metrics::ebpf::{EbpfConfig, EbpfMetricsCollector, EbpfMetrics};
 use std::time::Duration;
 
-#[test]n test_ebpf_config_default() {
+#[test]
+fn test_ebpf_config_default() {
     let config = EbpfConfig::default();
     assert!(config.enable_cpu_metrics);
     assert!(config.enable_memory_metrics);

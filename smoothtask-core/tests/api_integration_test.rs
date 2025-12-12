@@ -569,6 +569,7 @@ async fn test_api_health_endpoint_stability() {
     // Останавливаем сервер
     let _ = handle.shutdown().await;
 }
+
     assert!(system_metrics_json["network"].is_object());
     
     let network_json = &system_metrics_json["network"];

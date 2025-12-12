@@ -8,8 +8,12 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 // Conditional import for libnotify
+// libnotify support is temporarily disabled due to crate availability issues
 // #[cfg(feature = "libnotify")]
 // use libnotify::Notification as LibnotifyNotification;
+
+#[cfg(feature = "dbus")]
+use zbus::Connection;
 
 /// Тип уведомления, определяющий его важность и визуальное представление.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -150,6 +154,8 @@ impl Notifier for StubNotifier {
 /// Доступно только при включении фичи `libnotify`.
 // #[cfg(feature = "libnotify")]
 // #[derive(Debug, Default)]
+// libnotify support is temporarily disabled due to crate availability issues
+// #[cfg(feature = "libnotify")]
 // pub struct LibnotifyNotifier {
 //     /// Имя приложения для уведомлений.
 //     app_name: String,
@@ -163,23 +169,23 @@ impl Notifier for StubNotifier {
 //     /// * `app_name` - Имя приложения, которое будет отображаться в уведомлениях.
 //     /// 
 //     /// # Возвращает
-    /// Новый экземпляр LibnotifyNotifier.
-    // pub fn new(app_name: impl Into<String>) -> Self {
-    //     Self {
-    //         app_name: app_name.into(),
-    //     }
-    // }
-    
-    /// Инициализирует библиотеку libnotify.
-    /// 
-    /// # Возвращает
-    /// `Result<()>` - Ok, если инициализация прошла успешно, иначе ошибка.
-    // pub fn init() -> Result<()> {
-    //     libnotify::init("SmoothTask")?;
-    //     Ok(())
-    // }
-
-// #[cfg(feature = "libnotify")]
+//     /// Новый экземпляр LibnotifyNotifier.
+//     pub fn new(app_name: impl Into<String>) -> Self {
+//         Self {
+//             app_name: app_name.into(),
+//         }
+//     }
+//     
+//     /// Инициализирует библиотеку libnotify.
+//     /// 
+//     /// # Возвращает
+//     /// `Result<()>` - Ok, если инициализация прошла успешно, иначе ошибка.
+//     pub fn init() -> Result<()> {
+//         libnotify::init("SmoothTask")?;
+//         Ok(())
+//     }
+// 
+// // #[cfg(feature = "libnotify")]
 // #[async_trait::async_trait]
 // impl Notifier for LibnotifyNotifier {
 //     async fn send_notification(&self, notification: &Notification) -> Result<()> {
@@ -207,7 +213,7 @@ impl Notifier for StubNotifier {
 //             body.push_str("\n");
 //             body.push_str(details);
 //             libnotify_notification.set_body(&body);
-//
+// //
 //         }
 //         
 //         // Отправляем уведомление
@@ -222,11 +228,99 @@ impl Notifier for StubNotifier {
 //         
 //         Ok(())
 //     }
-    
+//     
 //     fn backend_name(&self) -> &str {
 //         "libnotify"
-//     }
-// }
+
+/// Notifier на основе D-Bus для отправки уведомлений через системный D-Bus.
+/// Использует стандартный протокол org.freedesktop.Notifications.
+#[cfg(feature = "dbus")]
+pub struct DBusNotifier {
+    /// Имя приложения для уведомлений.
+    app_name: String,
+    /// Идентификатор соединения D-Bus.
+    connection: Option<Connection>,
+}
+
+#[cfg(feature = "dbus")]
+impl DBusNotifier {
+    /// Создаёт новый DBusNotifier с указанным именем приложения.
+    pub fn new(app_name: impl Into<String>) -> Self {
+        Self {
+            app_name: app_name.into(),
+            connection: None,
+        }
+    }
+
+    /// Устанавливает соединение с системным D-Bus.
+    pub async fn connect(&mut self) -> Result<()> {
+        self.connection = Some(Connection::system().await?);
+        Ok(())
+    }
+
+    /// Проверяет, установлено ли соединение с D-Bus.
+    pub fn is_connected(&self) -> bool {
+        self.connection.is_some()
+    }
+}
+
+#[cfg(feature = "dbus")]
+#[async_trait::async_trait]
+impl Notifier for DBusNotifier {
+    async fn send_notification(&self, notification: &Notification) -> Result<()> {
+        // Проверяем, что соединение установлено
+        let connection = match &self.connection {
+            Some(conn) => conn,
+            None => {
+                tracing::warn!("D-Bus connection not established, cannot send notification");
+                return Ok(());
+            }
+        };
+
+        // Преобразуем тип уведомления в уровень срочности
+        let urgency = match notification.notification_type {
+            NotificationType::Critical => "critical",
+            NotificationType::Warning => "normal",
+            NotificationType::Info => "low",
+        };
+
+        // Формируем сообщение уведомления
+        let mut body = notification.message.clone();
+        if let Some(details) = &notification.details {
+            body.push_str("\n");
+            body.push_str(details);
+        }
+
+        // В реальной реализации здесь будет отправка уведомления через D-Bus
+        // Используем заглушку, так как полная реализация требует интеграции с системным D-Bus
+        tracing::info!(
+            "Would send D-Bus notification: {} - {} (urgency: {})",
+            notification.title,
+            body,
+            urgency
+        );
+
+        // TODO: Реальная отправка уведомления через D-Bus
+        // Например:
+        // let proxy = zbus_notification::NotificationProxy::new(connection).await?;
+        // proxy.notify(
+        //     &self.app_name,
+        //     0, // replaces_id
+        //     "dialog-information", // icon
+        //     &notification.title,
+        //     &body,
+        //     &[], // actions
+        //     &std::collections::HashMap::new(), // hints
+        //     5000, // timeout
+        // ).await?;
+
+        Ok(())
+    }
+
+    fn backend_name(&self) -> &str {
+        "dbus"
+    }
+}
 
 /// Основной менеджер уведомлений, управляющий отправкой уведомлений через различные бэкенды.
 pub struct NotificationManager {
@@ -262,9 +356,19 @@ impl NotificationManager {
     /// 
     /// # Примечания
     /// Доступно только при включении фичи `libnotify`.
-    #[cfg(feature = "libnotify")]
-    pub fn new_libnotify(app_name: impl Into<String>) -> Self {
-        Self::new(LibnotifyNotifier::new(app_name))
+
+    // libnotify support is temporarily disabled
+    // pub fn new_libnotify(app_name: impl Into<String>) -> Self {
+    //     Self::new(LibnotifyNotifier::new(app_name))
+    // }
+
+    /// Создаёт новый NotificationManager с D-Bus бэкендом.
+    /// 
+    /// # Примечания
+    /// Доступно только при включении фичи `dbus`.
+    #[cfg(feature = "dbus")]
+    pub fn new_dbus(app_name: impl Into<String>) -> Self {
+        Self::new(DBusNotifier::new(app_name))
     }
     
     /// Включает или отключает отправку уведомлений.
@@ -399,18 +503,34 @@ mod tests {
         assert!(serialized.contains("info"));
     }
     
-    #[cfg(feature = "libnotify")]
+
+//     #[test]
+//     fn test_libnotify_notifier_creation() {
+//         let notifier = LibnotifyNotifier::new("TestApp");
+//         assert_eq!(notifier.backend_name(), "libnotify");
+//     }
+//     
+// 
+//     #[test]
+//     fn test_notification_manager_libnotify() {
+//         let manager = NotificationManager::new_libnotify("TestApp");
+//         assert_eq!(manager.backend_name(), "libnotify");
+//         assert!(manager.is_enabled());
+//     }
+
+    #[cfg(feature = "dbus")]
     #[test]
-    fn test_libnotify_notifier_creation() {
-        let notifier = LibnotifyNotifier::new("TestApp");
-        assert_eq!(notifier.backend_name(), "libnotify");
+    fn test_dbus_notifier_creation() {
+        let notifier = DBusNotifier::new("TestApp");
+        assert_eq!(notifier.backend_name(), "dbus");
+        assert!(!notifier.is_connected());
     }
-    
-    #[cfg(feature = "libnotify")]
+
+    #[cfg(feature = "dbus")]
     #[test]
-    fn test_notification_manager_libnotify() {
-        let manager = NotificationManager::new_libnotify("TestApp");
-        assert_eq!(manager.backend_name(), "libnotify");
+    fn test_notification_manager_dbus() {
+        let manager = NotificationManager::new_dbus("TestApp");
+        assert_eq!(manager.backend_name(), "dbus");
         assert!(manager.is_enabled());
     }
 }
