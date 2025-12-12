@@ -1205,9 +1205,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("CPU программа успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки CPU программы: {}", e);
+                        let error_msg = format!("Ошибка загрузки CPU программы: {}. Это может быть вызвано отсутствием файла программы, несовместимостью версии ядра или недостаточными правами", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("CPU: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1219,9 +1221,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа памяти успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы памяти: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы памяти: {}. Проверьте доступность памяти и права доступа", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("Memory: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1233,9 +1237,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга системных вызовов успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга системных вызовов: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга системных вызовов: {}. Требуются права CAP_SYS_ADMIN или root", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("Syscall: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1247,9 +1253,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга сети успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга сети: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга сети: {}. Проверьте сетевые интерфейсы и права доступа", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("Network: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1261,9 +1269,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга GPU успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга GPU: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга GPU: {}. GPU может быть недоступен или не поддерживаться", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("GPU: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1275,9 +1285,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга файловой системы успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга файловой системы: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга файловой системы: {}. Проверьте права доступа к файловой системе", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("Filesystem: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1289,9 +1301,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга сетевых соединений успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга сетевых соединений: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга сетевых соединений: {}. Проверьте таблицу соединений и права доступа", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("NetworkConnections: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1303,9 +1317,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга температуры CPU успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга температуры CPU: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга температуры CPU: {}. Датчики температуры могут быть недоступны", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("CpuTemperature: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1317,9 +1333,11 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга процесс-специфичных метрик успешно загружена");
                     }
                     Err(e) => {
-                        tracing::error!("Ошибка загрузки программы мониторинга процесс-специфичных метрик: {}", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга процесс-специфичных метрик: {}. Проверьте доступ к информации о процессах", e);
+                        tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("ProcessMonitoring: {}", e));
                         error_count += 1;
+                        self.last_error = Some(error_msg);
                     }
                 }
             }
@@ -1334,16 +1352,16 @@ impl EbpfMetricsCollector {
                 );
                 
                 if !detailed_errors.is_empty() {
-                    tracing::debug!("Детали ошибок: {}", detailed_errors.join(", "));
+                    tracing::warn!("Некоторые программы не были загружены, но основная функциональность доступна. Детали: {}", detailed_errors.join(", "));
                 }
             } else {
                 tracing::warn!(
-                    "Не удалось загрузить ни одну eBPF программу ({} ошибок)",
+                    "Не удалось загрузить ни одну eBPF программу ({} ошибок). Продолжаем работу с ограниченной функциональностью",
                     error_count
                 );
                 
                 if !detailed_errors.is_empty() {
-                    self.last_error = Some(format!("Не удалось загрузить программы: {}", detailed_errors.join(", ")));
+                    self.last_error = Some(format!("Не удалось загрузить программы: {}. eBPF функциональность будет ограничена", detailed_errors.join(", ")));
                 }
             }
         }
@@ -3156,6 +3174,24 @@ impl EbpfMetricsCollector {
             return Ok(EbpfMetrics::default());
         }
 
+        // Проверяем, доступна ли eBPF функциональность
+        #[cfg(feature = "ebpf")]
+        {
+            if !self.is_ebpf_available() {
+                tracing::warn!("eBPF функциональность недоступна в данный момент, возвращаем кэшированные или значения по умолчанию");
+                
+                // Пробуем вернуть кэшированные метрики если они есть
+                if let Some(cached_metrics) = self.metrics_cache.clone() {
+                    tracing::info!("Возвращаем кэшированные метрики при недоступности eBPF");
+                    return Ok(cached_metrics);
+                }
+                
+                // Если кэша нет, возвращаем значения по умолчанию с предупреждением
+                tracing::warn!("Нет кэшированных метрик, возвращаем значения по умолчанию");
+                return Ok(EbpfMetrics::default());
+            }
+        }
+
         // Оптимизация: агрессивное кэширование
         if self.config.enable_aggressive_caching {
             if let Some(last_cache_time) = self.last_aggressive_cache_time {
@@ -3191,30 +3227,35 @@ impl EbpfMetricsCollector {
 
         #[cfg(feature = "ebpf")]
         {
-            // Сбор реальных метрик из eBPF программ
-            let metrics = self.collect_real_ebpf_metrics()?;
-
-            // Кэшируем метрики если включено кэширование
-            if self.config.enable_caching {
-                self.metrics_cache = Some(metrics.clone());
-                self.batch_counter = 1;
+            // Сбор реальных метрик из eBPF программ с обработкой ошибок
+            match self.collect_real_ebpf_metrics() {
+                Ok(metrics) => {
+                    // Кэшируем метрики если включено кэширование
+                    if self.config.enable_caching {
+                        self.metrics_cache = Some(metrics.clone());
+                        self.batch_counter = 1;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка сбора eBPF метрик: {}. Возвращаем кэшированные данные или значения по умолчанию", e);
+                    
+                    // Пробуем вернуть кэшированные метрики
+                    if let Some(cached_metrics) = self.metrics_cache.clone() {
+                        tracing::info!("Возвращаем кэшированные метрики при ошибке сбора eBPF");
+                        return Ok(cached_metrics);
+                    }
+                    
+                    // Если кэша нет, возвращаем значения по умолчанию
+                    tracing::warn!("Нет кэшированных метрик, возвращаем значения по умолчанию при ошибке eBPF");
+                    return Ok(EbpfMetrics::default());
+                }
             }
-
-            // Обновляем время агрессивного кэширования
-            if self.config.enable_aggressive_caching {
-                self.last_aggressive_cache_time = Some(std::time::SystemTime::now());
-            }
-
-            // Оптимизируем использование памяти
-            self.optimize_memory_usage();
-
-            tracing::debug!("Собраны eBPF метрики: {:?}", metrics);
-            Ok(metrics)
         }
-
+        
         #[cfg(not(feature = "ebpf"))]
         {
             // Без eBPF поддержки возвращаем значения по умолчанию
+            tracing::info!("eBPF поддержка отключена на уровне компиляции, возвращаем значения по умолчанию");
             Ok(EbpfMetrics::default())
         }
     }
@@ -3284,6 +3325,19 @@ impl EbpfMetricsCollector {
         #[cfg(feature = "ebpf")]
         {
             true
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            false
+        }
+    }
+
+    /// Проверить, доступна ли eBPF функциональность в данный момент
+    pub fn is_ebpf_available(&self) -> bool {
+        #[cfg(feature = "ebpf")]
+        {
+            // Проверяем, что eBPF был успешно инициализирован и нет критических ошибок
+            self.initialized && self.last_error.is_none()
         }
         #[cfg(not(feature = "ebpf"))]
         {

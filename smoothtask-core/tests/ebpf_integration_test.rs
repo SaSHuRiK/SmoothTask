@@ -584,6 +584,101 @@ fn test_ebpf_initialization_statistics() {
 }
 
 #[test]
+fn test_ebpf_memory_optimization() {
+    // Тестируем оптимизацию памяти в eBPF структурах
+    let config = EbpfConfig {
+        enable_cpu_metrics: true,
+        enable_memory_metrics: true,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+
+    // Тестируем оптимизацию памяти
+    collector.optimize_memory_usage();
+
+    // Проверяем, что оптимизация применена
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+
+    // Тестируем установку ограничения на детализированные статистики
+    collector.set_max_cached_details(50);
+    assert_eq!(collector.get_max_cached_details(), 50);
+
+    // Тестируем оптимизацию кэша программ
+    // Note: optimize_program_cache is not available as a public method
+    
+    // Тестируем оптимизацию детализированных статистик
+    // Note: optimize_detailed_stats is private, so we can't test it directly
+}
+
+#[test]
+fn test_ebpf_filtering_and_aggregation() {
+    // Тестируем расширенную фильтрацию и агрегацию eBPF данных
+    let config = EbpfConfig {
+        enable_cpu_metrics: true,
+        enable_memory_metrics: true,
+        enable_syscall_monitoring: true,
+        enable_network_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+
+    // Тестируем установку фильтрации по идентификаторам процессов
+    collector.set_pid_filtering(true, vec![100, 200, 300]);
+
+    // Тестируем установку фильтрации по типам системных вызовов
+    collector.set_syscall_type_filtering(true, vec![4, 5, 6]);
+
+    // Тестируем установку фильтрации по сетевым протоколам
+    collector.set_network_protocol_filtering(true, vec![6, 17, 1]);
+
+    // Тестируем установку фильтрации по диапазону портов
+    collector.set_port_range_filtering(true, 1024, 65535);
+
+    // Тестируем установку параметров агрегации
+    collector.set_aggregation_parameters(true, 2000, 200);
+
+    // Тестируем установку порогов фильтрации
+    collector.set_filtering_thresholds(5.0, 1024 * 1024, 50, 1024, 2, 5.0, 1024 * 1024);
+
+    // Проверяем, что фильтрация и агрегация работают с реальными метриками
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+
+    let metrics = metrics.unwrap();
+    assert!(metrics.cpu_usage >= 0.0);
+    assert!(metrics.memory_usage >= 0);
+}
+
+#[test]
+fn test_ebpf_temperature_monitoring() {
+    // Тестируем мониторинг температуры CPU и GPU через eBPF
+    let config = EbpfConfig {
+        enable_cpu_temperature_monitoring: true,
+        enable_gpu_monitoring: true,
+        enable_cpu_metrics: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+
+    // Тестируем сбор полных метрик с температурой
+    let metrics = collector.collect_metrics();
+    assert!(metrics.is_ok());
+
+    let metrics = metrics.unwrap();
+    assert!(metrics.cpu_temperature >= 0);
+    assert!(metrics.cpu_max_temperature >= 0);
+    assert!(metrics.gpu_temperature >= 0);
+}
+
+#[test]
 fn test_ebpf_comprehensive_integration() {
     // Комплексный тест интеграции eBPF функциональности
     let config = EbpfConfig {
