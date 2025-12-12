@@ -11,63 +11,27 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-545: Исправить предупреждения компилятора в основных модулях
+- [x] ST-548: Исправить предупреждения Clippy в основных модулях
   - Тип: Rust / core / cleanup
   - Критерии готовности:
-    - [x] Исправить неиспользуемый импорт в policy/engine.rs
-    - [x] Исправить неиспользуемый импорт в lib.rs
-    - [x] Исправить неиспользуемый импорт в metrics/system.rs
-    - [x] Исправить неиспользуемые mutable переменные в metrics/ebpf.rs
-  - Примечания: Устранение предупреждений компилятора для чистоты кода
-  - Приоритет: Высокий
-  - Оценка времени: ~30 минут
-  - Статус: COMPLETED
-  - Время выполнения: ~20 минут
-  - Изменённые файлы:
-    - smoothtask-core/src/policy/engine.rs: Удален дублирующийся импорт use super::*
-    - smoothtask-core/src/lib.rs: Удален неиспользуемый импорт StubNotifier
-    - smoothtask-core/src/metrics/system.rs: Удален неиспользуемый импорт rayon::prelude::*
-    - smoothtask-core/src/metrics/ebpf.rs: Исправлены неиспользуемые mutable переменные в test_ebpf_config_validation
-  - Результаты: Все предупреждения компилятора устранены, код компилируется без предупреждений
-
-- [x] ST-546: Добавить поддержку D-Bus бэкенда в систему уведомлений
-  - Тип: Rust / core / notifications
-  - Критерии готовности:
-    - [x] Добавить Dbus вариант в enum NotificationBackend
-    - [x] Обновить интеграцию в lib.rs для обработки Dbus бэкенда
-    - [x] Добавить метод new_dbus_with_logging в NotificationManager
-    - [x] Обновить API сервер для поддержки нового бэкенда
-    - [x] Добавить тесты для нового функционала
-  - Примечания: Расширение системы уведомлений для поддержки D-Bus бэкенда
+    - [x] Исправить let_and_return в api/server.rs
+    - [x] Исправить needless_late_init в classify/rules.rs
+    - [x] Исправить unnecessary_map_or в tests/process_parallel_test.rs
+    - [x] Исправить absurd_extreme_comparisons в tests/ebpf_integration_test.rs
+    - [x] Исправить field_reassign_with_default в tests/ebpf_integration_test.rs
+  - Примечания: Устранение предупреждений Clippy для улучшения качества кода
   - Приоритет: Высокий
   - Оценка времени: ~45 минут
   - Статус: COMPLETED
-  - Время выполнения: ~40 минут
+  - Время выполнения: ~30 минут
   - Изменённые файлы:
-    - smoothtask-core/src/config/config_struct.rs: Добавлен Dbus вариант в NotificationBackend
-    - smoothtask-core/src/lib.rs: Обновлена логика выбора бэкенда для поддержки Dbus
-    - smoothtask-core/src/notifications/mod.rs: Добавлен метод new_dbus_with_logging
-    - smoothtask-core/src/api/server.rs: Обновлен обработчик конфигурации уведомлений
-  - Результаты: Система уведомлений теперь поддерживает D-Bus бэкенд с автоматическим fallback на заглушку при ошибках
+    - smoothtask-core/src/api/server.rs: Исправлено let_and_return предупреждение
+    - smoothtask-core/src/classify/rules.rs: Исправлено needless_late_init предупреждение
+    - smoothtask-core/tests/process_parallel_test.rs: Исправлено unnecessary_map_or предупреждение
+    - smoothtask-core/tests/ebpf_integration_test.rs: Исправлены absurd_extreme_comparisons и field_reassign_with_default предупреждения
+  - Результаты: Все предупреждения Clippy устранены, код соответствует лучшим практикам
 
-- [x] ST-547: Добавить API endpoint для отправки пользовательских уведомлений
-  - Тип: Rust / core / api
-  - Критерии готовности:
-    - [x] Добавить новый обработчик notifications_custom_handler
-    - [x] Добавить маршрут /api/notifications/custom в роутер
-    - [x] Добавить endpoint в список доступных endpoints
-    - [x] Добавить тесты для нового обработчика
-    - [x] Обновить тесты endpoints_handler
-  - Примечания: Расширение API для гибкого тестирования уведомлений
-  - Приоритет: Высокий
-  - Оценка времени: ~30 минут
-  - Статус: COMPLETED
-  - Время выполнения: ~35 минут
-  - Изменённые файлы:
-    - smoothtask-core/src/api/server.rs: Добавлен notifications_custom_handler и маршрут
-  - Результаты: Новый API endpoint позволяет отправлять пользовательские уведомления с любыми параметрами
-
-- [ ] ST-543: Провести тестирование eBPF на реальных системах
+- [ ] ST-549: Провести тестирование eBPF на реальных системах
   - Тип: Rust / core / metrics / eBPF / testing
   - Критерии готовности:
     - [ ] Провести тестирование на различных конфигурациях ядра
@@ -111,6 +75,18 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-548: Исправить предупреждения Clippy в основных модулях
+  - Тип: Rust / core / cleanup
+  - Примечания: Успешное исправление всех предупреждений Clippy для улучшения качества кода
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Исправлено let_and_return предупреждение
+    - smoothtask-core/src/classify/rules.rs: Исправлено needless_late_init предупреждение
+    - smoothtask-core/tests/process_parallel_test.rs: Исправлено unnecessary_map_or предупреждение
+    - smoothtask-core/tests/ebpf_integration_test.rs: Исправлены absurd_extreme_comparisons и field_reassign_with_default предупреждения
+  - Результаты: Все предупреждения Clippy устранены, код соответствует лучшим практикам
+
 - [x] ST-547: Добавить API endpoint для отправки пользовательских уведомлений
   - Тип: Rust / core / api
   - Примечания: Успешная реализация нового API endpoint для гибкого тестирования уведомлений
@@ -131,65 +107,6 @@
     - smoothtask-core/src/notifications/mod.rs: Добавлен метод new_dbus_with_logging
     - smoothtask-core/src/api/server.rs: Обновлен обработчик конфигурации уведомлений
   - Результаты: Система уведомлений теперь поддерживает D-Bus бэкенд с автоматическим fallback на заглушку при ошибках
-
-- [x] ST-545: Исправить предупреждения компилятора в основных модулях
-  - Тип: Rust / core / cleanup
-  - Примечания: Успешное исправление всех предупреждений компилятора в проекте
-  - Статус: COMPLETED
-  - Время выполнения: ~20 минут
-  - Изменённые файлы:
-    - smoothtask-core/src/policy/engine.rs: Удален дублирующийся импорт use super::*
-    - smoothtask-core/src/lib.rs: Удален неиспользуемый импорт StubNotifier
-    - smoothtask-core/src/metrics/system.rs: Удален неиспользуемый импорт rayon::prelude::*
-    - smoothtask-core/src/metrics/ebpf.rs: Исправлены неиспользуемые mutable переменные в test_ebpf_config_validation
-  - Результаты: Все предупреждения компилятора устранены, код компилируется без предупреждений
-
-- [x] ST-544: Реализовать расширенную систему уведомлений (ST-544)
-  - Тип: Rust / core / notifications
-  - Примечания: Успешная реализация расширенной системы уведомлений с поддержкой D-Bus, интеграцией с логированием и уведомлениями о изменениях приоритетов
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Изменённые файлы:
-    - smoothtask-core/src/notifications/mod.rs: Завершена реализация D-Bus уведомлений, добавлена интеграция с хранилищем логов, добавлены новые тесты
-    - smoothtask-core/src/lib.rs: Добавлены уведомления о изменениях приоритетов, интеграция с хранилищем логов
-  - Результаты: Расширенная система уведомлений с поддержкой D-Bus, интеграцией с логированием и уведомлениями о изменениях приоритетов
-
-- [x] ST-542: Исправить предупреждения компилятора в eBPF и других модулях
-  - Тип: Rust / core / cleanup
-  - Примечания: Успешное исправление всех предупреждений компилятора в проекте
-  - Статус: COMPLETED
-  - Время выполнения: ~45 минут
-  - Изменённые файлы:
-    - smoothtask-core/src/policy/engine.rs: Перемещены импорты в тестовый модуль
-    - smoothtask-core/src/metrics/system.rs: Сделаны параллельные функции условными (cfg(test))
-    - smoothtask-core/src/classify/rules.rs: Исправлено неиспользуемое присваивание
-    - smoothtask-core/src/classify/ml_classifier.rs: Удалено неиспользуемое поле config
-    - smoothtask-core/src/logging/log_storage.rs: Добавлены комментарии для структуры
-  - Результаты: Все предупреждения компилятора устранены, код компилируется без предупреждений
-
-- [x] ST-541: Исправить предупреждения компилятора в eBPF коде
-  - Тип: Rust / core / metrics / eBPF / cleanup
-  - Примечания: Успешное исправление предупреждений компилятора в eBPF коде
-  - Статус: COMPLETED
-  - Время выполнения: ~15 минут
-
-- [x] ST-540: Оптимизировать производительность eBPF программ (завершено)
-  - Тип: Rust / core / metrics / eBPF
-  - Примечания: Успешная оптимизация eBPF программ с добавлением высокопроизводительных версий, агрессивного кэширования и бенчмарков
-  - Статус: COMPLETED
-  - Время выполнения: ~120 минут
-
-- [x] ST-539: Добавить поддержку мониторинга файловой системы через eBPF
-  - Тип: Rust / core / metrics / eBPF / filesystem
-  - Примечания: Успешная реализация мониторинга операций с файловой системой через eBPF
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-
-- [x] ST-538: Добавить поддержку мониторинга производительности GPU через eBPF
-  - Тип: Rust / core / metrics / eBPF / GPU
-  - Примечания: Успешная реализация мониторинга производительности GPU через eBPF
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
 
 См. архив: docs/history/PLAN_DONE_archive.md
 

@@ -22,7 +22,7 @@ fn test_collect_process_metrics_parallel() {
     // Проверяем, что все процессы имеют корректные PID
     for process in &processes {
         assert!(process.pid > 0, "PID должен быть положительным");
-        assert!(process.cmdline.as_ref().map_or(true, |c| !c.is_empty()) || process.exe.is_some(), 
+        assert!(process.cmdline.as_ref().is_none_or(|c| !c.is_empty()) || process.exe.is_some(), 
                "Процесс должен иметь cmdline или exe");
     }
 }

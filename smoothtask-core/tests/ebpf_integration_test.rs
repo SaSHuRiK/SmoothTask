@@ -22,7 +22,7 @@ fn test_ebpf_basic_functionality() {
     // Проверяем, что метрики имеют разумные значения
     // Примечание: без реальной eBPF поддержки значения могут быть по умолчанию
     assert!(metrics.cpu_usage >= 0.0);
-    assert!(metrics.memory_usage >= 0);
+    // memory_usage всегда >= 0 (unsigned type), проверка не нужна
     // В тестовой среде без eBPF timestamp может быть 0
     // assert!(metrics.timestamp > 0);
 }
@@ -30,11 +30,11 @@ fn test_ebpf_basic_functionality() {
 #[test]
 fn test_ebpf_config_options() {
     // Тестируем различные конфигурации
-    let mut config = EbpfConfig::default();
-    
-    // Тест с отключенными метриками CPU
-    config.enable_cpu_metrics = false;
-    config.enable_memory_metrics = true;
+    let mut config = EbpfConfig {
+        enable_cpu_metrics: false,
+        enable_memory_metrics: true,
+        ..Default::default()
+    };
     
     let mut collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
@@ -96,8 +96,10 @@ fn test_ebpf_multiple_initializations() {
 #[test]
 fn test_ebpf_custom_interval() {
     // Тестируем кастомный интервал сбора
-    let mut config = EbpfConfig::default();
-    config.collection_interval = Duration::from_secs(5);
+    let mut config = EbpfConfig {
+        collection_interval: Duration::from_secs(5),
+        ..Default::default()
+    };
     
     let mut collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
@@ -123,8 +125,10 @@ fn test_ebpf_syscall_monitoring_disabled() {
 #[test]
 fn test_ebpf_network_monitoring() {
     // Тестируем поддержку мониторинга сетевой активности
-    let mut config = EbpfConfig::default();
-    config.enable_network_monitoring = true;
+    let mut config = EbpfConfig {
+        enable_network_monitoring: true,
+        ..Default::default()
+    };
     
     let mut collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
@@ -157,8 +161,10 @@ fn test_ebpf_network_monitoring() {
 #[test]
 fn test_ebpf_filesystem_monitoring() {
     // Тестируем поддержку мониторинга файловой системы
-    let mut config = EbpfConfig::default();
-    config.enable_filesystem_monitoring = true;
+    let mut config = EbpfConfig {
+        enable_filesystem_monitoring: true,
+        ..Default::default()
+    };
     
     let mut collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
@@ -218,11 +224,7 @@ fn test_ebpf_comprehensive_integration() {
     
     // Проверяем, что все метрики имеют разумные значения
     assert!(metrics.cpu_usage >= 0.0);
-    assert!(metrics.memory_usage >= 0);
-    assert!(metrics.syscall_count >= 0);
-    assert!(metrics.network_packets >= 0);
-    assert!(metrics.network_bytes >= 0);
-    assert!(metrics.filesystem_ops >= 0);
+    // memory_usage, syscall_count, network_packets, network_bytes, filesystem_ops всегда >= 0 (unsigned types)
     // В тестовой среде timestamp может быть 0
     // assert!(metrics.timestamp > 0);
     
@@ -239,10 +241,7 @@ fn test_ebpf_comprehensive_integration() {
     if let Some(network_details) = metrics.network_details {
         assert!(!network_details.is_empty());
         for detail in network_details {
-            assert!(detail.packets_sent >= 0);
-            assert!(detail.packets_received >= 0);
-            assert!(detail.bytes_sent >= 0);
-            assert!(detail.bytes_received >= 0);
+            // packets_sent, packets_received, bytes_sent, bytes_received всегда >= 0 (unsigned types)
         }
     }
 
@@ -250,12 +249,7 @@ fn test_ebpf_comprehensive_integration() {
     if let Some(filesystem_details) = metrics.filesystem_details {
         assert!(!filesystem_details.is_empty());
         for detail in filesystem_details {
-            assert!(detail.read_count >= 0);
-            assert!(detail.write_count >= 0);
-            assert!(detail.open_count >= 0);
-            assert!(detail.close_count >= 0);
-            assert!(detail.bytes_read >= 0);
-            assert!(detail.bytes_written >= 0);
+            // read_count, write_count, open_count, close_count, bytes_read, bytes_written всегда >= 0 (unsigned types)
         }
     }
     

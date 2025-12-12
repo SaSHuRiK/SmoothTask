@@ -723,10 +723,9 @@ impl ApiState {
     /// Возвращает кэш, создавая новый по умолчанию если он не установлен.
     pub fn get_or_create_cache(&self) -> Arc<RwLock<ApiCache>> {
         self.cache.clone().unwrap_or_else(|| {
-            let cache = Arc::new(RwLock::new(ApiCache::new(60))); // 60 seconds TTL by default
             // Note: We can't store this back in self.cache because self is immutable
             // This is fine for our use case as we'll use the cache temporarily
-            cache
+            Arc::new(RwLock::new(ApiCache::new(60))) // 60 seconds TTL by default
         })
     }
 }

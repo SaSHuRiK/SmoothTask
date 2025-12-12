@@ -353,7 +353,6 @@ impl PatternDatabase {
         let mut total_files = 0;
         let mut invalid_files = 0;
         let mut changed_files = 0;
-        let new_files;
 
         // Собираем текущие имена файлов для сравнения
         let current_files: HashSet<_> = self.all_patterns.iter()
@@ -436,7 +435,7 @@ impl PatternDatabase {
 
         // Проверяем новые паттерны
         let added_patterns: Vec<_> = new_file_names.difference(&current_files).collect();
-        new_files = added_patterns.len();
+        let new_files = added_patterns.len();
 
         if new_files > 0 {
             debug!("Обнаружено {} новых паттернов: {:?}", new_files, added_patterns);
