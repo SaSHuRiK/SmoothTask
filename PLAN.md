@@ -11,6 +11,27 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-529: Исправить ошибки компиляции в тестах
+  - Тип: Rust / core / testing
+  - Критерии готовности:
+    - ✅ Исправить синтаксические ошибки в ebpf_integration_test.rs
+    - ✅ Исправить проблемы с mutability в ebpf_mock_test.rs
+    - ✅ Добавить missing поле ebpf в caching_test.rs
+    - ✅ Исправить дублирующийся код в api_integration_test.rs
+    - ✅ Исправить проблемы с conditional compilation в ml_classifier_integration_test.rs
+    - ✅ Исправить проблемы с mutability в ebpf_integration_test.rs
+    - ✅ Убедиться, что все тесты компилируются без ошибок
+  - Примечания: Успешно исправлены все ошибки компиляции в тестовых файлах. Код теперь компилируется без ошибок.
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/tests/ebpf_integration_test.rs: Исправлены синтаксические ошибки и проблемы с mutability
+    - smoothtask-core/tests/ebpf_mock_test.rs: Исправлены проблемы с mutability
+    - smoothtask-core/tests/caching_test.rs: Добавлено missing поле ebpf
+    - smoothtask-core/tests/api_integration_test.rs: Удален дублирующийся код
+    - smoothtask-core/tests/ml_classifier_integration_test.rs: Исправлены проблемы с conditional compilation
+
 - [x] ST-528: Исправить clippy warnings и errors
   - Тип: Rust / core / build
   - Критерии готовности:
@@ -228,7 +249,7 @@
 
 ## 2. Бэклог
 
-- [ ] ST-529: Улучшить документацию и тестирование eBPF функциональности
+- [ ] ST-530: Улучшить документацию и тестирование eBPF функциональности
   - Тип: Rust / core / metrics / eBPF / documentation
   - Критерии готовности:
     - ✅ Обновить EBPF_SETUP.md с последними изменениями
@@ -289,6 +310,18 @@
   - Приоритет: Низкий
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-529: Исправить ошибки компиляции в тестах
+  - Тип: Rust / core / testing
+  - Примечания: Успешно исправлены все ошибки компиляции в тестовых файлах. Код теперь компилируется без ошибок.
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/tests/ebpf_integration_test.rs: Исправлены синтаксические ошибки и проблемы с mutability
+    - smoothtask-core/tests/ebpf_mock_test.rs: Исправлены проблемы с mutability
+    - smoothtask-core/tests/caching_test.rs: Добавлено missing поле ebpf
+    - smoothtask-core/tests/api_integration_test.rs: Удален дублирующийся код
+    - smoothtask-core/tests/ml_classifier_integration_test.rs: Исправлены проблемы с conditional compilation
 
 - [x] ST-527: Исправить ошибки компиляции в smoothtaskd и API сервере
   - Тип: Rust / core / build

@@ -7,7 +7,6 @@
 //! - Производительность и надежность
 
 #[cfg(any(feature = "catboost", feature = "onnx"))]
-{
 use smoothtask_core::classify::ml_classifier::{create_ml_classifier, MLClassifier, MLClassificationResult};
 use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherConfig};
 use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
@@ -69,6 +68,7 @@ fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) {
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_integration_with_pattern_matching() {
     let temp_dir = tempdir().expect("temp dir");
     let patterns_dir = temp_dir.path();
@@ -117,6 +117,7 @@ apps:
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_fallback_when_disabled() {
     let temp_dir = tempdir().expect("temp dir");
     let patterns_dir = temp_dir.path();
@@ -161,6 +162,7 @@ apps:
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_error_handling() {
     // Тестируем обработку ошибок при несуществующей модели
     let config = MLClassifierConfig {
@@ -178,6 +180,7 @@ fn test_ml_classifier_error_handling() {
 }
 
 #[tokio::test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 async fn test_ml_classifier_with_pattern_watcher_integration() {
     let temp_dir = tempdir().expect("temp dir");
     let patterns_dir = temp_dir.path();
@@ -240,6 +243,7 @@ apps:
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_confidence_thresholds() {
     let temp_dir = tempdir().expect("temp dir");
     let patterns_dir = temp_dir.path();
@@ -281,6 +285,7 @@ apps:
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_feature_extraction_comprehensive() {
     let config = MLClassifierConfig {
         enabled: false, // Используем заглушку для тестирования
@@ -335,6 +340,7 @@ fn test_ml_classifier_feature_extraction_comprehensive() {
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_tag_merging() {
     let temp_dir = tempdir().expect("temp dir");
     let patterns_dir = temp_dir.path();
@@ -388,6 +394,7 @@ apps:
 }
 
 #[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn test_ml_classifier_performance_metrics() {
     let config = MLClassifierConfig {
         enabled: false, // Используем заглушку для тестирования производительности
@@ -412,5 +419,4 @@ fn test_ml_classifier_performance_metrics() {
     
     // Должно выполняться быстро (менее 100мс для 1000 процессов)
     assert!(duration.as_millis() < 100, "Performance test failed: took {}ms", duration.as_millis());
-}
 }

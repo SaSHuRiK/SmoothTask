@@ -24,7 +24,7 @@ fn test_ebpf_metrics_default() {
 #[test]
 fn test_ebpf_collector_creation() {
     let config = EbpfConfig::default();
-    let collector = EbpfMetricsCollector::new(config);
+    let mut collector = EbpfMetricsCollector::new(config);
     
     // Проверяем, что коллектор создан успешно
     assert!(collector.initialize().is_ok());
@@ -38,7 +38,7 @@ fn test_ebpf_collector_with_custom_config() {
     config.enable_memory_metrics = true;
     config.collection_interval = Duration::from_secs(5);
     
-    let collector = EbpfMetricsCollector::new(config);
+    let mut collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
     
     let metrics = collector.collect_metrics().unwrap();

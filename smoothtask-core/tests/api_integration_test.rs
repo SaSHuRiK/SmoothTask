@@ -570,34 +570,6 @@ async fn test_api_health_endpoint_stability() {
     let _ = handle.shutdown().await;
 }
 
-    assert!(system_metrics_json["network"].is_object());
-    
-    let network_json = &system_metrics_json["network"];
-    assert!(network_json["interfaces"].is_array());
-    assert!(network_json["total_rx_bytes"].is_number());
-    assert!(network_json["total_tx_bytes"].is_number());
-    
-    // Проверяем, что интерфейсы содержат ожидаемые данные
-    let interfaces = network_json["interfaces"].as_array().unwrap();
-    assert!(!interfaces.is_empty());
-    
-    let first_interface = &interfaces[0];
-    assert_eq!(first_interface["name"].as_str(), Some("eth0"));
-    assert_eq!(first_interface["rx_bytes"].as_u64(), Some(1000));
-    assert_eq!(first_interface["tx_bytes"].as_u64(), Some(2000));
-    assert_eq!(first_interface["rx_packets"].as_u64(), Some(100));
-    assert_eq!(first_interface["tx_packets"].as_u64(), Some(200));
-    assert_eq!(first_interface["rx_errors"].as_u64(), Some(1));
-    assert_eq!(first_interface["tx_errors"].as_u64(), Some(2));
-    
-    // Проверяем общие метрики
-    assert_eq!(network_json["total_rx_bytes"].as_u64(), Some(1000));
-    assert_eq!(network_json["total_tx_bytes"].as_u64(), Some(2000));
-    
-    // Останавливаем сервер
-    handle.shutdown().await.expect("Сервер должен корректно остановиться");
-}
-
 #[tokio::test]
 async fn test_network_metrics_empty() {
     // Тест: проверка, что API корректно обрабатывает пустые сетевые метрики
