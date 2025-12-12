@@ -1,0 +1,46 @@
+# Конфигурация SmoothTask для серверов
+# Оптимизирована для серверов без графического интерфейса
+
+# Увеличенный интервал опроса для серверов
+polling_interval_ms: 2000
+
+# Увеличенное количество кандидатов для серверных нагрузок
+max_candidates: 200
+
+# Режим "сухого прогона" по умолчанию - отключено
+dry_run_default: false
+
+# Режим работы Policy Engine - только правила
+policy_mode: rules-only
+
+paths:
+  # Путь к SQLite базе данных для сохранения снапшотов
+  snapshot_db_path: "/var/lib/smoothtask/snapshots.sqlite"
+  
+  # Директория с YAML файлами паттернов приложений
+  patterns_dir: "/etc/smoothtask/patterns"
+  
+  # Адрес для API сервера (опционально)
+  api_listen_addr: "127.0.0.1:8080"
+
+thresholds:
+  # Пороги PSI для определения нагрузки
+  # Менее чувствительные настройки для серверов
+  psi_cpu_some_high: 0.7
+  psi_io_some_high: 0.5
+  
+  # Увеличенный таймаут неактивности для серверов
+  user_idle_timeout_sec: 300
+  
+  # Стандартный период отсрочки для интерактивных сборок
+  interactive_build_grace_sec: 10
+  
+  # Порог доли CPU для определения "шумного соседа"
+  noisy_neighbour_cpu_share: 0.8
+  
+  # Перцентили для классов приоритетов
+  # Менее агрессивное распределение для серверных нагрузок
+  crit_interactive_percentile: 0.95
+  interactive_percentile: 0.7
+  normal_percentile: 0.4
+  background_percentile: 0.2
