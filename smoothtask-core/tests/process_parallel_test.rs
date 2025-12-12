@@ -9,7 +9,7 @@ use smoothtask_core::metrics::process::collect_process_metrics;
 fn test_collect_process_metrics_parallel() {
     // Тест: проверяем, что функция collect_process_metrics работает без ошибок
     // и возвращает корректные данные при параллельной обработке
-    let result = collect_process_metrics();
+    let result = collect_process_metrics(None);
 
     // Функция должна вернуть Ok результат
     assert!(result.is_ok());
@@ -34,8 +34,8 @@ fn test_collect_process_metrics_consistency() {
     // Тест: проверяем, что параллельная обработка возвращает консистентные результаты
     // при многократном вызове
 
-    let result1 = collect_process_metrics();
-    let result2 = collect_process_metrics();
+    let result1 = collect_process_metrics(None);
+    let result2 = collect_process_metrics(None);
 
     assert!(result1.is_ok(), "Первый вызов должен быть успешным");
     assert!(result2.is_ok(), "Второй вызов должен быть успешным");
@@ -70,7 +70,7 @@ fn test_collect_process_metrics_performance() {
     // Этот тест не должен занимать слишком много времени
 
     let start_time = std::time::Instant::now();
-    let result = collect_process_metrics();
+    let result = collect_process_metrics(None);
     let duration = start_time.elapsed();
 
     assert!(result.is_ok(), "Функция должна работать без ошибок");
@@ -89,7 +89,7 @@ fn test_collect_process_metrics_error_handling() {
     // Тест: проверяем, что функция корректно обрабатывает ошибки доступа
     // и возвращает graceful degradation вместо паники
 
-    let result = collect_process_metrics();
+    let result = collect_process_metrics(None);
 
     // Функция должна всегда возвращать Ok результат
     // (даже если некоторые процессы недоступны)
@@ -133,7 +133,7 @@ fn test_collect_process_metrics_empty_fallback() {
     // (этот тест может не пройти без специальных прав, но проверяет логику)
 
     // Пробуем собрать метрики
-    let result = collect_process_metrics();
+    let result = collect_process_metrics(None);
 
     match result {
         Ok(processes) => {

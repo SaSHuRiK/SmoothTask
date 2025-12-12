@@ -2283,7 +2283,7 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к сетевым картам
         if self.network_maps.is_empty() {
-            tracing::warn!("Сетевые карты не инициализированы для детализированной статистики");
+            tracing::warn!("Сетевые карты не инициализированы для детализированной статистики. Проверьте, что eBPF программа загружена и карты созданы");
             return None;
         }
 
@@ -2295,6 +2295,7 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем IP адресам
 
         let mut details = Vec::new();
+        let mut error_count = 0;
 
         for map in &self.network_maps {
             // Используем новую функцию итерации по ключам
@@ -2308,7 +2309,8 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по сетевой карте: {}", e);
+                    error_count += 1;
+                    tracing::error!("Ошибка при итерации по сетевой карте: {}. Это может быть вызвано проблемами с eBPF картой или ядром. Попробуйте перезагрузить eBPF программы или проверить права доступа", e);
                     continue;
                 }
             }
@@ -2316,8 +2318,15 @@ impl EbpfMetricsCollector {
 
         // Если не удалось получить данные из карт, возвращаем None
         if details.is_empty() {
+            if error_count > 0 {
+                tracing::warn!("Не удалось получить сетевую статистику из {} карт. Возвращаем пустой результат для graceful degradation", error_count);
+            }
             None
         } else {
+            if error_count > 0 {
+                tracing::warn!("Получено сетевая статистика из {} карт, но {} карт вернули ошибки. Частичные данные могут быть неполными", 
+                    self.network_maps.len() - error_count, error_count);
+            }
             Some(details)
         }
     }
@@ -2342,7 +2351,8 @@ impl EbpfMetricsCollector {
         // Пробуем получить доступ к картам файловой системы
         if self.filesystem_maps.is_empty() {
             tracing::warn!(
-                "Карты файловой системы не инициализированы для детализированной статистики"
+                "Карты файловой системы не инициализированы для детализированной статистики. 
+                 Проверьте, что модуль eBPF загружен и конфигурация enable_filesystem_monitoring включена."
             );
             return None;
         }
@@ -2355,11 +2365,14 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем файлам
 
         let mut details = Vec::new();
+        let mut error_count = 0;
+        let mut successful_maps = 0;
 
         for map in &self.filesystem_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<FilesystemStat>(map, 48) {
                 Ok(filesystem_stats) => {
+                    successful_maps += 1;
                     // Фильтруем только файлы с ненулевой активностью
                     for stat in filesystem_stats {
                         if stat.read_count > 0
@@ -2372,18 +2385,37 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте файловой системы: {}", e);
+                    error_count += 1;
+                    tracing::error!(
+                        "Ошибка при итерации по карте файловой системы для детализированной статистики: {}. 
+                         Рекомендации: 1) Проверьте права доступа к eBPF картам, 2) Убедитесь, что ядро поддерживает eBPF, 3) Перезагрузите модуль eBPF",
+                        e
+                    );
                     continue;
                 }
             }
         }
 
-        // Если не удалось получить данные из карт, возвращаем None
-        if details.is_empty() {
-            None
-        } else {
-            Some(details)
+        // Логируем результаты сбора данных
+        if error_count > 0 {
+            tracing::warn!(
+                "Обнаружено {} ошибок при сборе детализированной статистики файловой системы из {} карт. 
+                 Успешно обработано {} карт",
+                error_count,
+                self.filesystem_maps.len(),
+                successful_maps
+            );
         }
+
+        // Возвращаем None только если не удалось собрать данные из всех карт
+        if successful_maps == 0 {
+            tracing::error!("Не удалось собрать детализированную статистику файловой системы ни из одной карты");
+            return None;
+        }
+
+        // Если удалось собрать данные хотя бы из одной карты, возвращаем результат
+        // Даже если details пустой, это может быть нормально (нет активных файлов)
+        Some(details)
     }
 
     /// Собрать детализированную статистику по сетевым соединениям
@@ -3179,12 +3211,13 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к сетевым картам
         if self.network_maps.is_empty() {
-            tracing::warn!("Сетевые карты не инициализированы");
+            tracing::warn!("Сетевые карты не инициализированы для сбора статистики пакетов. Проверьте, что eBPF программа загружена");
             return Ok(0);
         }
 
         // Реальный сбор данных из сетевых карт с использованием итерации по ключам
         let mut total_packets = 0u64;
+        let mut error_count = 0;
 
         for map in &self.network_maps {
             // Используем функцию итерации по ключам для получения всех данных о сетевых пакетах
@@ -3195,10 +3228,15 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по сетевой карте пакетов: {}", e);
+                    error_count += 1;
+                    tracing::error!("Ошибка при итерации по сетевой карте пакетов: {}. Проверьте целостность eBPF карты и права доступа", e);
                     continue;
                 }
             }
+        }
+
+        if error_count > 0 {
+            tracing::warn!("Ошибки при сборе статистики пакетов из {} сетевых карт. Результат может быть неполным", error_count);
         }
 
         Ok(total_packets)
@@ -3211,12 +3249,13 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к сетевым картам
         if self.network_maps.is_empty() {
-            tracing::warn!("Сетевые карты не инициализированы");
+            tracing::warn!("Сетевые карты не инициализированы для сбора статистики байт. Проверьте, что eBPF программа загружена");
             return Ok(0);
         }
 
         // Реальный сбор данных из сетевых карт с использованием итерации по ключам
         let mut total_bytes = 0u64;
+        let mut error_count = 0;
 
         for map in &self.network_maps {
             // Используем функцию итерации по ключам для получения всех данных о сетевых байтах
@@ -3227,10 +3266,15 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по сетевой карте байт: {}", e);
+                    error_count += 1;
+                    tracing::error!("Ошибка при итерации по сетевой карте байт: {}. Проверьте целостность eBPF карты и права доступа", e);
                     continue;
                 }
             }
+        }
+
+        if error_count > 0 {
+            tracing::warn!("Ошибки при сборе статистики байт из {} сетевых карт. Результат может быть неполным", error_count);
         }
 
         Ok(total_bytes)
@@ -3567,12 +3611,16 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к картам файловой системы
         if self.filesystem_maps.is_empty() {
-            tracing::warn!("Карты файловой системы не инициализированы");
+            tracing::warn!(
+                "Карты файловой системы не инициализированы. 
+                 Проверьте, что модуль eBPF загружен и конфигурация enable_filesystem_monitoring включена."
+            );
             return Ok(0);
         }
 
         // Реальный сбор данных из карт файловой системы с использованием итерации по ключам
         let mut total_ops = 0u64;
+        let mut error_count = 0;
 
         for map in &self.filesystem_maps {
             // Используем функцию итерации по ключам для получения всех данных о файловой системе
@@ -3583,10 +3631,24 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте файловой системы: {}", e);
+                    error_count += 1;
+                    tracing::error!(
+                        "Ошибка при итерации по карте файловой системы: {}. 
+                         Рекомендации: 1) Проверьте права доступа к eBPF картам, 2) Убедитесь, что ядро поддерживает eBPF, 3) Перезагрузите модуль eBPF",
+                        e
+                    );
                     continue;
                 }
             }
+        }
+
+        // Логируем количество ошибок, если они были
+        if error_count > 0 {
+            tracing::warn!(
+                "Обнаружено {} ошибок при сборе метрик файловой системы из {} карт",
+                error_count,
+                self.filesystem_maps.len()
+            );
         }
 
         Ok(total_ops)

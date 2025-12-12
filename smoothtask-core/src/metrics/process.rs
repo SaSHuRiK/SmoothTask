@@ -691,6 +691,9 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let (env_has_display, env_has_wayland, env_term, env_ssh) =
         read_env_vars(proc.pid()).unwrap_or((false, false, None, false));
 
+    // Читаем статистику ввода-вывода (опционально, так как это тяжелая операция)
+    let (io_read_bytes, io_write_bytes) = read_io_stats(proc.pid()).unwrap_or((None, None));
+
     // Читаем nice из stat (конвертируем i64 в i32)
     let nice = stat.nice as i32;
 
@@ -735,8 +738,8 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         has_tty,
         cpu_share_1s: None,   // будет вычислено при следующем снапшоте
         cpu_share_10s: None,  // будет вычислено при следующем снапшоте
-        io_read_bytes: None,  // требует чтения /proc/[pid]/io (тяжелая операция)
-        io_write_bytes: None, // требует чтения /proc/[pid]/io (тяжелая операция)
+        io_read_bytes,        // статистика ввода-вывода из /proc/[pid]/io
+        io_write_bytes,       // статистика ввода-вывода из /proc/[pid]/io
         rss_mb,
         swap_mb,
         voluntary_ctx,
@@ -929,6 +932,47 @@ fn read_env_vars(pid: i32) -> Result<(bool, bool, Option<String>, bool)> {
     Ok((has_display, has_wayland, term, ssh))
 }
 
+/// Читает статистику ввода-вывода процесса из /proc/[pid]/io.
+/// Эта операция может быть тяжелой, поэтому используется опционально.
+fn read_io_stats(pid: i32) -> Result<(Option<u64>, Option<u64>)> {
+    let io_path = format!("/proc/{}/io", pid);
+    let io_content = match fs::read_to_string(&io_path) {
+        Ok(c) => c,
+        Err(e) => {
+            // Не критичная ошибка - io статистика может быть недоступна
+            tracing::debug!(
+                "Не удалось прочитать /proc/{}/io: {}. 
+                 Статистика ввода-вывода может быть недоступна для этого процесса",
+                pid,
+                e
+            );
+            return Ok((None, None));
+        }
+    };
+
+    let mut read_bytes = None;
+    let mut write_bytes = None;
+
+    for line in io_content.lines() {
+        if let Some(value) = line.strip_prefix("read_bytes: ") {
+            if let Ok(bytes) = value.trim().parse::<u64>() {
+                read_bytes = Some(bytes);
+            }
+        } else if let Some(value) = line.strip_prefix("write_bytes: ") {
+            if let Ok(bytes) = value.trim().parse::<u64>() {
+                write_bytes = Some(bytes);
+            }
+        }
+
+        // Если нашли оба значения, можно прекратить парсинг
+        if read_bytes.is_some() && write_bytes.is_some() {
+            break;
+        }
+    }
+
+    Ok((read_bytes, write_bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -980,6 +1024,32 @@ mod tests {
             found_path,
             Some("/user.slice/user-1000.slice/session-2.scope".to_string())
         );
+    }
+
+    #[test]
+    fn test_read_io_stats() {
+        let tmp = TempDir::new().unwrap();
+        let proc_dir = tmp.path().join("proc").join("999");
+        fs::create_dir_all(&proc_dir).unwrap();
+
+        // Создаем тестовый файл /proc/999/io с реалистичными данными
+        let io_content = "rchar: 123456\n\nwchar: 789012\n\nsyscr: 345\n\nsyscw: 678\n\nread_bytes: 1024000\n\nwrite_bytes: 2048000\n\ncancelled_write_bytes: 0\n\n";
+        fs::write(proc_dir.join("io"), io_content).unwrap();
+
+        // Тестируем функцию read_io_stats
+        let (read_bytes, write_bytes) = read_io_stats(999).unwrap();
+        assert_eq!(read_bytes, Some(1024000));
+        assert_eq!(write_bytes, Some(2048000));
+    }
+
+    #[test]
+    fn test_read_io_stats_missing_file() {
+        // Тестируем обработку ошибок, когда файл /proc/[pid]/io отсутствует
+        let result = read_io_stats(99999);
+        assert!(result.is_ok());
+        let (read_bytes, write_bytes) = result.unwrap();
+        assert_eq!(read_bytes, None);
+        assert_eq!(write_bytes, None);
     }
 
     #[test]

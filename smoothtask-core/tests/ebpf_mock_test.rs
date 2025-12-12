@@ -117,6 +117,7 @@ fn test_ebpf_metrics_structure() {
         cpu_temperature_details: None,
         filesystem_details: None,
         process_details: None,
+        process_energy_details: None,
     };
 
     // Проверяем, что структура корректно хранит данные
@@ -167,6 +168,7 @@ fn test_ebpf_metrics_cloning() {
         cpu_temperature_details: None,
         filesystem_details: None,
         process_details: None,
+        process_energy_details: None,
     };
 
     let metrics2 = metrics1.clone();

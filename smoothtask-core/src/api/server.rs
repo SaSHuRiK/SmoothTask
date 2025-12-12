@@ -67,6 +67,8 @@ pub struct ApiCache {
     cached_config_json: Option<(Value, Instant)>,
     /// Кэшированная версия данных об энергопотреблении процессов (JSON)
     cached_process_energy_json: Option<(Value, Instant)>,
+    /// Кэшированная версия данных об использовании памяти процессами (JSON)
+    cached_process_memory_json: Option<(Value, Instant)>,
     /// Время жизни кэша (в секундах)
     cache_ttl_seconds: u64,
 }
@@ -92,6 +94,7 @@ impl ApiCache {
         self.cached_metrics_json = None;
         self.cached_config_json = None;
         self.cached_process_energy_json = None;
+        self.cached_process_memory_json = None;
     }
 }
 
@@ -982,6 +985,11 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Получение статистики энергопотребления процессов"
             },
             {
+                "path": "/api/processes/memory",
+                "method": "GET",
+                "description": "Получение статистики использования памяти процессами"
+            },
+            {
                 "path": "/api/appgroups",
                 "method": "GET",
                 "description": "Получение списка последних групп приложений"
@@ -1660,6 +1668,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/processes", get(processes_handler))
         .route("/api/processes/:pid", get(process_by_pid_handler))
         .route("/api/processes/energy", get(process_energy_handler))
+        .route("/api/processes/memory", get(process_memory_handler))
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
@@ -1900,6 +1909,111 @@ async fn process_energy_handler(State(state): State<ApiState>) -> Result<Json<Va
     cache_write.cached_process_energy_json = Some((result.clone(), Instant::now()));
 
     trace!("Cached process energy data (count: {})", result["count"]);
+    Ok(Json(result))
+}
+
+/// Обработчик для endpoint `/api/processes/memory`.
+///
+/// Возвращает статистику использования памяти процессами (если доступны).
+async fn process_memory_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+
+    if let Some((cached_json, cache_time)) = &cache_write.cached_process_memory_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+
+            trace!("Cache hit for process_memory_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+
+    // Пробуем получить данные из процессов
+    let mut result = json!({
+        "status": "degraded",
+        "process_memory": null,
+        "count": 0,
+        "total_rss_mb": 0,
+        "total_swap_mb": 0,
+        "message": "Process memory monitoring not available",
+        "suggestion": "Ensure the daemon is running and has completed at least one collection cycle",
+        "component_status": check_component_availability(&state),
+        "cache_info": {
+            "cached": false,
+            "ttl_seconds": cache_write.cache_ttl_seconds
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    });
+
+    // Пробуем получить доступ к данным процессов
+    if let Some(processes_arc) = &state.processes {
+        let processes = processes_arc.read().await;
+        
+        // Фильтруем процессы с доступными метриками памяти
+        let memory_processes: Vec<_> = processes
+            .iter()
+            .filter_map(|proc| {
+                if proc.rss_mb.is_some() || proc.swap_mb.is_some() {
+                    Some(json!({
+                        "pid": proc.pid,
+                        "name": proc.exe.clone().unwrap_or_else(|| "unknown".to_string()),
+                        "rss_mb": proc.rss_mb,
+                        "swap_mb": proc.swap_mb,
+                        "cmdline": proc.cmdline.clone(),
+                        "app_group_id": proc.app_group_id
+                    }))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if !memory_processes.is_empty() {
+            let total_rss_mb: u64 = processes
+                .iter()
+                .filter_map(|proc| proc.rss_mb)
+                .sum();
+            let total_swap_mb: u64 = processes
+                .iter()
+                .filter_map(|proc| proc.swap_mb)
+                .sum();
+
+            result = json!({
+                "status": "ok",
+                "process_memory": memory_processes,
+                "count": memory_processes.len(),
+                "total_rss_mb": total_rss_mb,
+                "total_swap_mb": total_swap_mb,
+                "cache_info": {
+                    "cached": false,
+                    "ttl_seconds": cache_write.cache_ttl_seconds
+                },
+                "timestamp": Utc::now().to_rfc3339()
+            });
+        }
+    }
+
+    // Кэшируем результат
+    cache_write.cached_process_memory_json = Some((result.clone(), Instant::now()));
+
+    trace!("Cached process memory data (count: {})", result["count"]);
     Ok(Json(result))
 }
 
@@ -3905,10 +4019,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 23); // Обновлено с 22 до 23
+        assert_eq!(json["count"], 25); // Обновлено с 23 до 25 (добавлен /api/processes/memory)
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 23); // Обновлено с 22 до 23
+        assert_eq!(endpoints.len(), 25); // Обновлено с 23 до 25 (добавлен /api/processes/memory)
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -5331,10 +5445,10 @@ max_candidates: 200
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 23); // Обновлено с 22 до 23
+        assert_eq!(json["count"], 25); // Обновлено с 23 до 25 (добавлен /api/processes/memory)
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 23);
+        assert_eq!(endpoints.len(), 25);
 
         // Проверяем наличие новых endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -5348,6 +5462,7 @@ max_candidates: 200
         assert!(endpoint_paths.contains(&"/api/notifications/config"));
         assert!(endpoint_paths.contains(&"/api/performance"));
         assert!(endpoint_paths.contains(&"/api/logs"));
+        assert!(endpoint_paths.contains(&"/api/processes/memory"));
     }
 
     #[tokio::test]
