@@ -11,14 +11,15 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-372: Добавить утилитные функции для работы с cgroups v2
+- [x] ST-372: Добавить утилитные функции для работы с cgroups v2
   - Тип: Rust / core / utils
   - Критерии готовности:
-    - Добавить функции для проверки доступности cgroups v2;
-    - Добавить функции для чтения/записи параметров cgroups;
-    - Добавить unit-тесты для новых функций;
-    - Убедиться, что все тесты проходят успешно.
+    - ✅ Добавить функции для проверки доступности cgroups v2;
+    - ✅ Добавить функции для чтения/записи параметров cgroups;
+    - ✅ Добавить unit-тесты для новых функций;
+    - ✅ Убедиться, что все тесты проходят успешно.
   - Примечания: Утилитные функции для работы с cgroups v2 будут полезны для модуля actuator и улучшат модульность кода.
+  - Результаты: Создан новый модуль `smoothtask-core/src/utils/cgroups.rs` с 10 функциями для работы с cgroups v2: `is_cgroup_v2_available`, `get_cgroup_root`, `is_controller_available`, `read_cgroup_param`, `write_cgroup_param`, `create_app_cgroup`, `remove_cgroup_if_empty`, `move_process_to_cgroup`, `is_process_in_cgroup`, `get_processes_in_cgroup`. Добавлены 17 unit-тестов, все тесты проходят успешно.
 
 - [ ] ST-373: Улучшить документацию модуля windows.rs с примерами использования
   - Тип: Rust / core / documentation
@@ -76,6 +77,10 @@
 - [x] ST-374: Добавить дополнительные тесты для модуля windows.rs
   - Тип: Rust / core / tests
   - Примечания: Добавлены 10 новых тестов для улучшения покрытия оконных метрик: select_focused_window_handles_large_number_of_windows, get_window_info_by_pid_handles_large_pid_values, build_pid_to_window_map_handles_large_number_of_windows, build_pid_to_window_map_handles_duplicate_pids_with_same_confidence, window_info_new_handles_extreme_confidence_values, select_focused_window_handles_mixed_states_with_various_confidence, get_window_info_by_pid_with_zero_pid, build_pid_to_window_map_with_zero_pid. Все тесты проходят успешно. Общее количество тестов в модуле windows: 63 (было 53).
+
+- [x] ST-372: Добавить утилитные функции для работы с cgroups v2
+  - Тип: Rust / core / utils
+  - Примечания: Создан новый модуль `smoothtask-core/src/utils/cgroups.rs` с 10 функциями для работы с cgroups v2 и 17 unit-тестами. Все тесты проходят успешно. Функции включают проверку доступности cgroups, чтение/запись параметров, создание/удаление cgroups, управление процессами в cgroups.
 
 - [x] ST-371: Добавить дополнительные тесты для граничных случаев в process.rs
   - Тип: Rust / core / tests

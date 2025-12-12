@@ -6,6 +6,7 @@ pub mod logging;
 pub mod metrics;
 pub mod model;
 pub mod policy;
+pub mod utils;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
