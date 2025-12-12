@@ -2853,16 +2853,20 @@ SwapFree:        4096000 kB
             syscall_count: 100,
             network_packets: 0,
             network_bytes: 0,
+            active_connections: 0,
             gpu_usage: 0.0,
             gpu_memory_usage: 0,
             filesystem_ops: 0,
+            active_processes: 0,
             timestamp: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap_or(std::time::Duration::from_secs(0))
                 .as_nanos() as u64,
             syscall_details: None,
             network_details: None,
+            connection_details: None,
             gpu_details: None,
+            process_details: None,
             filesystem_details: None,
         };
         metrics.ebpf = Some(ebpf_metrics.clone());
