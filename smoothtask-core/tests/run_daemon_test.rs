@@ -7,7 +7,7 @@
 //! - работа с snapshot logger
 //! - один полный цикл сбора снапшота (с моками)
 
-use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::run_daemon;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -49,13 +49,13 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             system_metrics_cache_interval: 3,
             process_metrics_cache_interval: 1,
         },
-        notifications: smoothtask_core::config::config::NotificationConfig {
+        notifications: smoothtask_core::config::config_struct::NotificationConfig {
             enabled: false,
-            backend: smoothtask_core::config::config::NotificationBackend::Stub,
+            backend: smoothtask_core::config::config_struct::NotificationBackend::Stub,
             app_name: "SmoothTask".to_string(),
-            min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+            min_level: smoothtask_core::config::config_struct::NotificationLevel::Warning,
         },
-        model: smoothtask_core::config::config::ModelConfig {
+        model: smoothtask_core::config::config_struct::ModelConfig {
             enabled: false,
             model_path: "models/ranker.onnx".to_string(),
         },

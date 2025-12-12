@@ -4,7 +4,7 @@
 //! Кэширование позволяет снизить нагрузку на систему за счёт повторного
 //! использования ранее собранных метрик.
 
-use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, ModelConfig, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config_struct::{CacheIntervals, Config, LoggingConfig, ModelConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics, NetworkMetrics, DiskMetrics};
 use smoothtask_core::metrics::process::collect_process_metrics;
 use std::sync::{Arc, Mutex};
@@ -85,11 +85,11 @@ fn test_config_includes_cache_intervals() {
             process_metrics_cache_interval: 2,
         },
         enable_snapshot_logging: false,
-        notifications: smoothtask_core::config::config::NotificationConfig {
+        notifications: smoothtask_core::config::config_struct::NotificationConfig {
             enabled: false,
-            backend: smoothtask_core::config::config::NotificationBackend::Stub,
+            backend: smoothtask_core::config::config_struct::NotificationBackend::Stub,
             app_name: "SmoothTask".to_string(),
-            min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+            min_level: smoothtask_core::config::config_struct::NotificationLevel::Warning,
         },
         model: ModelConfig {
             enabled: false,
@@ -432,11 +432,11 @@ fn test_cache_configuration_integration() {
         },
         dry_run_default: false,
         enable_snapshot_logging: true,
-        notifications: smoothtask_core::config::config::NotificationConfig {
+        notifications: smoothtask_core::config::config_struct::NotificationConfig {
             enabled: false,
-            backend: smoothtask_core::config::config::NotificationBackend::Stub,
+            backend: smoothtask_core::config::config_struct::NotificationBackend::Stub,
             app_name: "SmoothTask".to_string(),
-            min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+            min_level: smoothtask_core::config::config_struct::NotificationLevel::Warning,
         },
         model: ModelConfig {
             enabled: false,

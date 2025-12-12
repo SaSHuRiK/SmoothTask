@@ -88,7 +88,7 @@ fn test_window_introspector_performance() {
 
 #[test]
 fn test_config_creation_performance() {
-    use smoothtask_core::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+    use smoothtask_core::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
     
     let start = Instant::now();
     
@@ -128,13 +128,13 @@ fn test_config_creation_performance() {
                 system_metrics_cache_interval: 5,
                 process_metrics_cache_interval: 2,
             },
-            notifications: smoothtask_core::config::config::NotificationConfig {
+            notifications: smoothtask_core::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: smoothtask_core::config::config::NotificationBackend::Stub,
+                backend: smoothtask_core::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: smoothtask_core::config::config::NotificationLevel::Warning,
+                min_level: smoothtask_core::config::config_struct::NotificationLevel::Warning,
             },
-            model: smoothtask_core::config::config::ModelConfig {
+            model: smoothtask_core::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },

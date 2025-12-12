@@ -2737,10 +2737,10 @@ SwapFree:        4096000 kB
         };
 
         // Первое обращение
-        let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
+        let _metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
         
         // Второе обращение с принудительным обновлением
-        let metrics2 = collect_system_metrics_cached(&cache, &paths, true).expect("Не удалось обновить кэш");
+        let _metrics2 = collect_system_metrics_cached(&cache, &paths, true).expect("Не удалось обновить кэш");
         
         // Метрики должны быть разными (так как были собраны в разное время)
         // или одинаковыми (если система не изменилась за это время)
@@ -2763,13 +2763,13 @@ SwapFree:        4096000 kB
         };
 
         // Первое обращение
-        let metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
+        let _metrics1 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось собрать метрики");
         
         // Ждем, пока кэш устареет
         std::thread::sleep(std::time::Duration::from_millis(15));
         
         // Второе обращение должно обновить кэш
-        let metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось обновить кэш");
+        let _metrics2 = collect_system_metrics_cached(&cache, &paths, false).expect("Не удалось обновить кэш");
         
         // Функция должна работать без ошибок
         assert!(true);
