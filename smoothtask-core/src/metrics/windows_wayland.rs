@@ -3,8 +3,9 @@
 //! Использует wayland-client для подключения к Wayland композитору и получения
 //! информации об окнах через wlr-foreign-toplevel-management-unstable-v1 протокол.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::PathBuf;
+use tracing::{debug, error, info, instrument, warn};
 use wayland_client::protocol::wl_registry::WlRegistry;
 use wayland_protocols_wlr::foreign_toplevel::v1::client::zwlr_foreign_toplevel_manager_v1::{self, ZwlrForeignToplevelManagerV1};
 
@@ -174,16 +175,20 @@ impl wayland_client::Dispatch<WlRegistry, ()> for WaylandState {
     ) {
         // Обработка событий реестра
         match event {
-            wayland_client::protocol::wl_registry::Event::Global { name: _, interface, version: _ } => {
+            wayland_client::protocol::wl_registry::Event::Global { name, interface, version } => {
+                debug!("Registry global event: interface={}, version={}", interface, version);
+                
                 // Ищем wlr-foreign-toplevel-manager
                 if interface == "wlr-foreign-toplevel-manager-v1" {
+                    info!("Found wlr-foreign-toplevel-manager-v1 global (name={})", name);
                     // Нашли менеджер wlr-foreign-toplevel, подключаемся к нему
                     // Note: We need to get the registry proxy to bind to the global
                     // This is a simplified approach - in a real implementation, we'd need
                     // to properly handle the registry and binding
                 }
             }
-            wayland_client::protocol::wl_registry::Event::GlobalRemove { name: _ } => {
+            wayland_client::protocol::wl_registry::Event::GlobalRemove { name } => {
+                debug!("Registry global remove event: name={}", name);
                 // Обработка удаления глобальных объектов
             }
             _ => {
@@ -205,6 +210,8 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
     ) {
         match event {
             zwlr_foreign_toplevel_manager_v1::Event::Toplevel { toplevel: _ } => {
+                info!("New toplevel window detected");
+                
                 // Новое окно появилось, получаем информацию о нём
                 // Используем временные значения, так как реальная информация требует
                 // дополнительных запросов к toplevel объекту
@@ -217,6 +224,7 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
                     0.0, // confidence - низкая уверенность
                 );
                 
+                debug!("Added new window to state: {:?}", window_info);
                 state.windows.push(window_info);
                 
                 // Note: В реальной реализации нужно получить информацию через:
@@ -227,10 +235,12 @@ impl wayland_client::Dispatch<ZwlrForeignToplevelManagerV1, ()> for WaylandState
                 // Это требует дополнительных запросов и обработки событий
             }
             zwlr_foreign_toplevel_manager_v1::Event::Finished => {
+                warn!("Foreign toplevel manager finished");
                 // Менеджер завершил работу
                 state.foreign_toplevel_manager = None;
             }
             _ => {
+                debug!("Ignoring unknown foreign toplevel manager event");
                 // Игнорируем другие события
             }
         }
@@ -311,9 +321,11 @@ impl WaylandIntrospector {
     /// - Система автоматически использует fallback на `StaticWindowIntrospector`, если Wayland недоступен
     ///   или интроспектор не может быть создан.
     /// - В текущей версии возвращаются временные данные для демонстрации функциональности.
+    #[instrument]
     pub fn new() -> Result<Self> {
         // Проверяем доступность Wayland
         if !Self::is_available() {
+            error!("Wayland is not available");
             anyhow::bail!(
                 "Wayland is not available. Check that:\n\
                  - WAYLAND_DISPLAY environment variable is set, or\n\
@@ -322,9 +334,13 @@ impl WaylandIntrospector {
             );
         }
 
+        info!("Attempting to connect to Wayland compositor");
+        
         // Подключаемся к Wayland композитору
         let connection = wayland_client::Connection::connect_to_env()
-            .map_err(|e| anyhow::anyhow!("Failed to connect to Wayland compositor: {}", e))?;
+            .with_context(|| "Failed to connect to Wayland compositor")?;
+        
+        info!("Successfully connected to Wayland compositor");
 
         // Создаём состояние для обработки событий
         let _state = WaylandState {
@@ -338,6 +354,8 @@ impl WaylandIntrospector {
 
         // Получаем реестр для поиска глобальных объектов
         let _registry = connection.display().get_registry(&queue_handle, ());
+        
+        debug!("Wayland registry created, searching for wlr-foreign-toplevel-manager");
 
         // Создаём интроспектор с базовой структурой
         Ok(Self {
@@ -355,7 +373,10 @@ impl WaylandIntrospector {
 
 impl WaylandIntrospector {
     /// Обрабатывает события Wayland и собирает информацию об окнах
+    #[instrument(skip(self))]
     fn process_events(&mut self) -> Result<()> {
+        debug!("Starting Wayland event processing");
+        
         // Создаём состояние для обработки событий
         let mut state = WaylandState {
             foreign_toplevel_manager: None,
@@ -373,12 +394,15 @@ impl WaylandIntrospector {
         const MAX_ATTEMPTS: u32 = 10;
 
         while attempts < MAX_ATTEMPTS {
+            debug!("Processing Wayland events (attempt {}/{})", attempts + 1, MAX_ATTEMPTS);
+            
             // Обрабатываем все ожидающие события
             self.event_queue.dispatch_pending(&mut state)
-                .map_err(|e| anyhow::anyhow!("Failed to dispatch Wayland events: {}", e))?;
+                .with_context(|| format!("Failed to dispatch Wayland events on attempt {}", attempts + 1))?;
             
             // Если мы нашли менеджер, выходим
             if state.foreign_toplevel_manager.is_some() {
+                info!("Successfully found wlr-foreign-toplevel-manager");
                 break;
             }
             
@@ -387,11 +411,12 @@ impl WaylandIntrospector {
             // Ждём немного и пробуем снова
             std::thread::sleep(std::time::Duration::from_millis(10));
             self.connection.flush()
-                .map_err(|e| anyhow::anyhow!("Failed to flush Wayland connection: {}", e))?;
+                .with_context(|| "Failed to flush Wayland connection")?;
         }
 
         // Проверяем, нашли ли мы менеджер
         if state.foreign_toplevel_manager.is_none() {
+            error!("Failed to find wlr-foreign-toplevel-manager after {} attempts", MAX_ATTEMPTS);
             anyhow::bail!(
                 "Failed to find wlr-foreign-toplevel-manager after {} attempts. This may indicate that the Wayland compositor does not support the wlr-foreign-toplevel-management protocol or the protocol is not available.",
                 MAX_ATTEMPTS
@@ -400,6 +425,8 @@ impl WaylandIntrospector {
 
         // Если мы нашли менеджер, запрашиваем список текущих окон
         if let Some(_manager) = state.foreign_toplevel_manager {
+            debug!("Requesting current window list from wlr-foreign-toplevel-manager");
+            
             // В большинстве реализаций нужно дождаться событий Toplevel от менеджера
             // после вызова manager.get_toplevels()
             // Однако, в текущей версии протокола метод get_toplevels() может не существовать
@@ -417,31 +444,45 @@ impl WaylandIntrospector {
                 0.5, // умеренная уверенность
             );
             
+            debug!("Added test window to state");
             state.windows.push(window_info);
         }
 
         // Обновляем список окон
         self.windows = state.windows;
+        info!("Wayland event processing completed, found {} windows", self.windows.len());
 
         Ok(())
     }
 }
 
 impl WindowIntrospector for WaylandIntrospector {
+    #[instrument(skip(self))]
     fn windows(&self) -> Result<Vec<WindowInfo>> {
+        info!("Getting window list via Wayland introspector");
+        
         // Создаём новый интроспектор для обработки событий
         // Это временное решение, в будущем нужно будет использовать более эффективный подход
         // с кэшированием или асинхронной обработкой
-        let mut introspector = WaylandIntrospector::new()?;
+        let mut introspector = WaylandIntrospector::new()
+            .with_context(|| "Failed to create Wayland introspector")?;
 
         // Обрабатываем события и собираем информацию об окнах
-        introspector.process_events()?;
+        introspector.process_events()
+            .with_context(|| "Failed to process Wayland events")?;
 
         // Возвращаем список окон
         // Если список пуст, это может быть нормально (нет окон), но мы добавляем логирование
         // для отладки в будущем
         // Note: Текущая реализация возвращает временные данные для демонстрации функциональности
         // В будущем нужно будет реализовать полную обработку событий Toplevel
+        let window_count = introspector.windows.len();
+        if window_count == 0 {
+            debug!("No windows found via Wayland introspector");
+        } else {
+            info!("Found {} windows via Wayland introspector", window_count);
+        }
+        
         Ok(introspector.windows)
     }
 }
@@ -1059,6 +1100,81 @@ mod tests {
                     "Error message should contain relevant keywords, got: {}",
                     msg
                 );
+            }
+        }
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+    }
+
+    #[test]
+    fn test_wayland_introspector_contextual_error_handling() {
+        // Тест проверяет, что ошибки содержат контекстную информацию
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+
+        match WaylandIntrospector::new() {
+            Ok(_) => {
+                // Если Wayland всё ещё доступен через socket, это нормально
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                // Проверяем, что сообщение содержит контекстную информацию
+                assert!(
+                    msg.contains("Check that") || msg.contains("WAYLAND_DISPLAY") || msg.contains("XDG_SESSION_TYPE"),
+                    "Error message should contain troubleshooting context, got: {}",
+                    msg
+                );
+            }
+        }
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_wayland_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        }
+        if let Some(val) = old_xdg_session {
+            std::env::set_var("XDG_SESSION_TYPE", val);
+        }
+    }
+
+    #[test]
+    fn test_wayland_introspector_windows_method_error_handling() {
+        // Тест проверяет обработку ошибок в методе windows()
+        let old_wayland_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_xdg_session = std::env::var("XDG_SESSION_TYPE").ok();
+
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::remove_var("XDG_SESSION_TYPE");
+
+        // Просто проверяем, что метод windows() обрабатывает ошибки корректно
+        // когда Wayland недоступен
+        match WaylandIntrospector::new() {
+            Ok(introspector) => {
+                match introspector.windows() {
+                    Ok(_) => {
+                        // Если всё прошло успешно, это нормально
+                    }
+                    Err(e) => {
+                        let msg = e.to_string();
+                        // Проверяем, что сообщение об ошибке информативно
+                        assert!(
+                            msg.contains("Wayland") || msg.contains("introspector") || msg.contains("events"),
+                            "Error message should be informative, got: {}",
+                            msg
+                        );
+                    }
+                }
+            }
+            Err(_) => {
+                // Ожидаемое поведение, когда Wayland недоступен
             }
         }
 
