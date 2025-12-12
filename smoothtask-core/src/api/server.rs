@@ -32,13 +32,92 @@ pub struct ApiState {
     responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>,
     /// Текущая конфигурация демона (опционально)
     /// Используем Arc<RwLock<Config>> для поддержки динамического обновления конфигурации
-    config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+    config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
     /// Путь к конфигурационному файлу (опционально)
     config_path: Option<String>,
     /// База данных паттернов для классификации процессов (опционально)
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
     /// Менеджер уведомлений для отправки уведомлений через API (опционально)
     notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
+}
+
+/// Builder для ApiState, чтобы избежать слишком большого количества аргументов в конструкторах.
+#[derive(Default)]
+pub struct ApiStateBuilder {
+    daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>, 
+    system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>, 
+    processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>, 
+    app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>, 
+    responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>, 
+    config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
+    config_path: Option<String>,
+    pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
+    notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
+}
+
+impl ApiStateBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_daemon_stats(mut self, daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>) -> Self {
+        self.daemon_stats = daemon_stats;
+        self
+    }
+
+    pub fn with_system_metrics(mut self, system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>) -> Self {
+        self.system_metrics = system_metrics;
+        self
+    }
+
+    pub fn with_processes(mut self, processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>) -> Self {
+        self.processes = processes;
+        self
+    }
+
+    pub fn with_app_groups(mut self, app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>) -> Self {
+        self.app_groups = app_groups;
+        self
+    }
+
+    pub fn with_responsiveness_metrics(mut self, responsiveness_metrics: Option<Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>>) -> Self {
+        self.responsiveness_metrics = responsiveness_metrics;
+        self
+    }
+
+    pub fn with_config(mut self, config: Option<Arc<RwLock<crate::config::config_struct::Config>>>) -> Self {
+        self.config = config;
+        self
+    }
+
+    pub fn with_config_path(mut self, config_path: Option<String>) -> Self {
+        self.config_path = config_path;
+        self
+    }
+
+    pub fn with_pattern_database(mut self, pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>) -> Self {
+        self.pattern_database = pattern_database;
+        self
+    }
+
+    pub fn with_notification_manager(mut self, notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>) -> Self {
+        self.notification_manager = notification_manager;
+        self
+    }
+
+    pub fn build(self) -> ApiState {
+        ApiState {
+            daemon_stats: self.daemon_stats,
+            system_metrics: self.system_metrics,
+            processes: self.processes,
+            app_groups: self.app_groups,
+            responsiveness_metrics: self.responsiveness_metrics,
+            config: self.config,
+            config_path: self.config_path,
+            pattern_database: self.pattern_database,
+            notification_manager: self.notification_manager,
+        }
+    }
 }
 
 impl ApiState {
@@ -115,7 +194,7 @@ impl ApiState {
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
         processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
         app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
     ) -> Self {
         Self {
             daemon_stats,
@@ -139,7 +218,7 @@ impl ApiState {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
     ) -> Self {
         Self {
             daemon_stats,
@@ -155,6 +234,10 @@ impl ApiState {
     }
 
     /// Создаёт новое состояние API сервера со всеми данными, включая метрики отзывчивости, конфигурацию и базу паттернов.
+    /// Используйте ApiStateBuilder для более гибкого создания состояния.
+    #[deprecated(note = "Use ApiStateBuilder instead")]
+    #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     pub fn with_all_and_responsiveness_and_config_and_patterns(
         daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
@@ -163,22 +246,22 @@ impl ApiState {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
         pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
         config_path: Option<String>,
         notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
     ) -> Self {
-        Self {
-            daemon_stats,
-            system_metrics,
-            processes,
-            app_groups,
-            responsiveness_metrics,
-            config,
-            config_path,
-            pattern_database,
-            notification_manager,
-        }
+        ApiStateBuilder::new()
+            .with_daemon_stats(daemon_stats)
+            .with_system_metrics(system_metrics)
+            .with_processes(processes)
+            .with_app_groups(app_groups)
+            .with_responsiveness_metrics(responsiveness_metrics)
+            .with_config(config)
+            .with_config_path(config_path)
+            .with_pattern_database(pattern_database)
+            .with_notification_manager(notification_manager)
+            .build()
     }
 }
 
@@ -602,8 +685,8 @@ async fn notifications_config_handler(
             
             if let Some(backend_str) = payload.get("backend").and_then(|v| v.as_str()) {
                 match backend_str {
-                    "stub" => config_guard.notifications.backend = crate::config::config::NotificationBackend::Stub,
-                    "libnotify" => config_guard.notifications.backend = crate::config::config::NotificationBackend::Libnotify,
+                    "stub" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Stub,
+                    "libnotify" => config_guard.notifications.backend = crate::config::config_struct::NotificationBackend::Libnotify,
                     _ => {
                         tracing::warn!("Unknown notification backend: {}", backend_str);
                     }
@@ -616,9 +699,9 @@ async fn notifications_config_handler(
             
             if let Some(min_level_str) = payload.get("min_level").and_then(|v| v.as_str()) {
                 match min_level_str {
-                    "critical" => config_guard.notifications.min_level = crate::config::config::NotificationLevel::Critical,
-                    "warning" => config_guard.notifications.min_level = crate::config::config::NotificationLevel::Warning,
-                    "info" => config_guard.notifications.min_level = crate::config::config::NotificationLevel::Info,
+                    "critical" => config_guard.notifications.min_level = crate::config::config_struct::NotificationLevel::Critical,
+                    "warning" => config_guard.notifications.min_level = crate::config::config_struct::NotificationLevel::Warning,
+                    "info" => config_guard.notifications.min_level = crate::config::config_struct::NotificationLevel::Info,
                     _ => {
                         tracing::warn!("Unknown notification level: {}", min_level_str);
                     }
@@ -917,7 +1000,7 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
     match (&state.config, &state.config_path) {
         (Some(config_arc), Some(config_path)) => {
             // Пробуем загрузить новую конфигурацию из файла
-            match crate::config::config::Config::load(config_path) {
+            match crate::config::config_struct::Config::load(config_path) {
                 Ok(new_config) => {
                     // Успешно загрузили новую конфигурацию
                     // Теперь мы можем напрямую обновить конфигурацию через Arc<RwLock<Config>>
@@ -1112,7 +1195,7 @@ impl ApiServer {
         system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
         processes: Option<Arc<RwLock<Vec<crate::logging::snapshots::ProcessRecord>>>>,
         app_groups: Option<Arc<RwLock<Vec<crate::logging::snapshots::AppGroupRecord>>>>,
-        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
     ) -> Self {
         Self {
             addr,
@@ -1146,7 +1229,7 @@ impl ApiServer {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
     ) -> Self {
         Self {
             addr,
@@ -1184,24 +1267,24 @@ impl ApiServer {
         responsiveness_metrics: Option<
             Arc<RwLock<crate::logging::snapshots::ResponsivenessMetrics>>,
         >,
-        config: Option<Arc<RwLock<crate::config::config::Config>>>, 
+        config: Option<Arc<RwLock<crate::config::config_struct::Config>>>, 
         pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
         config_path: Option<String>,
         notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
     ) -> Self {
         Self {
             addr,
-            state: ApiState::with_all_and_responsiveness_and_config_and_patterns(
-                daemon_stats,
-                system_metrics,
-                processes,
-                app_groups,
-                responsiveness_metrics,
-                config,
-                pattern_database,
-                config_path,
-                notification_manager,
-            ),
+            state: ApiStateBuilder::new()
+                .with_daemon_stats(daemon_stats)
+                .with_system_metrics(system_metrics)
+                .with_processes(processes)
+                .with_app_groups(app_groups)
+                .with_responsiveness_metrics(responsiveness_metrics)
+                .with_config(config)
+                .with_pattern_database(pattern_database)
+                .with_config_path(config_path)
+                .with_notification_manager(notification_manager)
+                .build(),
         }
     }
 
@@ -1274,7 +1357,7 @@ mod tests {
     use std::net::SocketAddr;
     
     // Import notification types for test configurations
-    use crate::config::config::{ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel};
+    use crate::config::config_struct::{ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel};
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -1725,7 +1808,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_handler_with_config() {
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1760,11 +1843,11 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
             model: ModelConfig {
                 enabled: false,
@@ -1791,7 +1874,7 @@ mod tests {
 
     #[test]
     fn test_api_state_with_all_and_config() {
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1826,11 +1909,11 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
             model: ModelConfig {
                 enabled: false,
@@ -1893,7 +1976,7 @@ mod tests {
 
     #[test]
     fn test_api_server_with_all_and_config() {
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -1929,13 +2012,13 @@ mod tests {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -2282,17 +2365,17 @@ mod tests {
         let pattern_db = PatternDatabase::load(temp_dir.path()).unwrap();
         assert_eq!(pattern_db.all_patterns().len(), 0);
 
-        let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(Arc::new(pattern_db)),
-            None, // config_path not needed for this test
-            None, // notification_manager not needed for this test
-        );
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(None)
+            .with_pattern_database(Some(Arc::new(pattern_db)))
+            .with_config_path(None)
+            .with_notification_manager(None)
+            .build();
 
         let result = patterns_handler(State(state)).await;
         assert!(result.is_ok());
@@ -2346,17 +2429,17 @@ apps:
         // Загружаем паттерны
         let pattern_db = PatternDatabase::load(patterns_dir).unwrap();
         let pattern_db_arc = Arc::new(pattern_db);
-        let state = ApiState::with_all_and_responsiveness_and_config_and_patterns(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(pattern_db_arc),
-            None, // config_path not needed for this test
-            None, // notification_manager not needed for this test
-        );
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(None)
+            .with_pattern_database(Some(pattern_db_arc))
+            .with_config_path(None)
+            .with_notification_manager(None)
+            .build();
 
         let result = patterns_handler(State(state)).await;
         assert!(result.is_ok());
@@ -2445,7 +2528,7 @@ apps:
 
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config() {
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
@@ -2482,13 +2565,13 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -2520,7 +2603,7 @@ apps:
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -2556,13 +2639,13 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -2591,7 +2674,7 @@ apps:
 
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config() {
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let config = Config {
             polling_interval_ms: 1000,
@@ -2627,13 +2710,13 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -2665,7 +2748,7 @@ apps:
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -2700,13 +2783,13 @@ apps:
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -2779,7 +2862,7 @@ apps:
     #[tokio::test]
     async fn test_config_reload_handler_with_config() {
         // Тест для config_reload_handler когда конфигурация доступна
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         
         let config = Config {
             polling_interval_ms: 500,
@@ -2899,13 +2982,13 @@ notifications:
         std::fs::create_dir_all("/tmp/patterns").expect("create patterns dir");
         
         // Создаём текущую конфигурацию (отличную от файла)
-        let current_config = crate::config::config::Config {
+        let current_config = crate::config::config_struct::Config {
             polling_interval_ms: 500,
             max_candidates: 150,
             dry_run_default: false,
-            policy_mode: crate::config::config::PolicyMode::RulesOnly,
+            policy_mode: crate::config::config_struct::PolicyMode::RulesOnly,
             enable_snapshot_logging: false,
-            thresholds: crate::config::config::Thresholds {
+            thresholds: crate::config::config_struct::Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,
                 user_idle_timeout_sec: 120,
@@ -2918,28 +3001,28 @@ notifications:
                 sched_latency_p99_threshold_ms: 20.0,
                 ui_loop_p95_threshold_ms: 16.67,
             },
-            paths: crate::config::config::Paths {
+            paths: crate::config::config_struct::Paths {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
             },
-            logging: crate::config::config::LoggingConfig {
+            logging: crate::config::config_struct::LoggingConfig {
                 log_max_size_bytes: 10_485_760,
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
             },
-            cache_intervals: crate::config::config::CacheIntervals {
+            cache_intervals: crate::config::config_struct::CacheIntervals {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -2998,13 +3081,13 @@ max_candidates: 200
         
         std::fs::write(&config_file_path, invalid_config_content).expect("write invalid config");
         
-        let current_config = crate::config::config::Config {
+        let current_config = crate::config::config_struct::Config {
             polling_interval_ms: 500,
             max_candidates: 150,
             dry_run_default: false,
-            policy_mode: crate::config::config::PolicyMode::RulesOnly,
+            policy_mode: crate::config::config_struct::PolicyMode::RulesOnly,
             enable_snapshot_logging: false,
-            thresholds: crate::config::config::Thresholds {
+            thresholds: crate::config::config_struct::Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,
                 user_idle_timeout_sec: 120,
@@ -3017,28 +3100,28 @@ max_candidates: 200
                 sched_latency_p99_threshold_ms: 20.0,
                 ui_loop_p95_threshold_ms: 16.67,
             },
-            paths: crate::config::config::Paths {
+            paths: crate::config::config_struct::Paths {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
             },
-            logging: crate::config::config::LoggingConfig {
+            logging: crate::config::config_struct::LoggingConfig {
                 log_max_size_bytes: 10_485_760,
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
             },
-            cache_intervals: crate::config::config::CacheIntervals {
+            cache_intervals: crate::config::config_struct::CacheIntervals {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -3135,7 +3218,7 @@ max_candidates: 200
     #[tokio::test]
     async fn test_notifications_status_handler_with_config() {
         // Тест для notifications_status_handler когда конфигурация доступна
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         
         let config = Config {
             polling_interval_ms: 1000,
@@ -3171,13 +3254,13 @@ max_candidates: 200
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: true,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Info,
+                min_level: crate::config::config_struct::NotificationLevel::Info,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -3253,7 +3336,7 @@ max_candidates: 200
     #[tokio::test]
     async fn test_notifications_config_handler_with_config() {
         // Тест для notifications_config_handler когда конфигурация доступна
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         
         let config = Config {
             polling_interval_ms: 1000,
@@ -3289,13 +3372,13 @@ max_candidates: 200
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },
@@ -3328,7 +3411,7 @@ max_candidates: 200
     #[tokio::test]
     async fn test_notifications_config_handler_partial_update() {
         // Тест для notifications_config_handler с частичным обновлением
-        use crate::config::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
+        use crate::config::config_struct::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         
         let config = Config {
             polling_interval_ms: 1000,
@@ -3364,13 +3447,13 @@ max_candidates: 200
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
             },
-            notifications: crate::config::config::NotificationConfig {
+            notifications: crate::config::config_struct::NotificationConfig {
                 enabled: false,
-                backend: crate::config::config::NotificationBackend::Stub,
+                backend: crate::config::config_struct::NotificationBackend::Stub,
                 app_name: "SmoothTask".to_string(),
-                min_level: crate::config::config::NotificationLevel::Warning,
+                min_level: crate::config::config_struct::NotificationLevel::Warning,
             },
-            model: crate::config::config::ModelConfig {
+            model: crate::config::config_struct::ModelConfig {
                 enabled: false,
                 model_path: "models/ranker.onnx".to_string(),
             },

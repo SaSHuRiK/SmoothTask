@@ -107,7 +107,6 @@ pub fn is_controller_available(controller: &str) -> bool {
     match fs::read_to_string(&controllers_file) {
         Ok(content) => {
             let available_controllers: Vec<&str> = content
-                .trim()
                 .split_whitespace()
                 .collect();
             
@@ -298,7 +297,7 @@ pub fn remove_cgroup_if_empty(cgroup_path: &Path) -> Result<bool> {
 
     match fs::read_to_string(&procs_file) {
         Ok(content) => {
-            let procs: Vec<&str> = content.trim().split_whitespace().collect();
+            let procs: Vec<&str> = content.split_whitespace().collect();
             
             if procs.is_empty() {
                 // Cgroup пустой, можно удалять
@@ -398,7 +397,7 @@ pub fn is_process_in_cgroup(pid: i32, cgroup_path: &Path) -> Result<bool> {
 
     match fs::read_to_string(&procs_file) {
         Ok(content) => {
-            let procs: Vec<&str> = content.trim().split_whitespace().collect();
+            let procs: Vec<&str> = content.split_whitespace().collect();
             let pid_str = pid.to_string();
             Ok(procs.contains(&pid_str.as_str()))
         }
@@ -445,7 +444,6 @@ pub fn get_processes_in_cgroup(cgroup_path: &Path) -> Result<Vec<i32>> {
     match fs::read_to_string(&procs_file) {
         Ok(content) => {
             let pids: Vec<i32> = content
-                .trim()
                 .split_whitespace()
                 .filter_map(|s| s.parse::<i32>().ok())
                 .collect();

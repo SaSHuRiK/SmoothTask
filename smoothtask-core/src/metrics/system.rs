@@ -268,6 +268,7 @@ pub struct PressureMetrics {
 
 /// Метрики температуры CPU/GPU
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct TemperatureMetrics {
     /// Температура CPU в градусах Цельсия
     pub cpu_temperature_c: Option<f32>,
@@ -275,17 +276,9 @@ pub struct TemperatureMetrics {
     pub gpu_temperature_c: Option<f32>,
 }
 
-impl Default for TemperatureMetrics {
-    fn default() -> Self {
-        Self {
-            cpu_temperature_c: None,
-            gpu_temperature_c: None,
-        }
-    }
-}
-
 /// Метрики энергопотребления
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct PowerMetrics {
     /// Текущее энергопотребление системы в ваттах
     pub system_power_w: Option<f32>,
@@ -295,18 +288,9 @@ pub struct PowerMetrics {
     pub gpu_power_w: Option<f32>,
 }
 
-impl Default for PowerMetrics {
-    fn default() -> Self {
-        Self {
-            system_power_w: None,
-            cpu_power_w: None,
-            gpu_power_w: None,
-        }
-    }
-}
-
 /// Метрики сетевой активности
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct NetworkMetrics {
     /// Список сетевых интерфейсов
     pub interfaces: Vec<NetworkInterface>,
@@ -314,16 +298,6 @@ pub struct NetworkMetrics {
     pub total_rx_bytes: u64,
     /// Общее количество отправленных байт
     pub total_tx_bytes: u64,
-}
-
-impl Default for NetworkMetrics {
-    fn default() -> Self {
-        Self {
-            interfaces: Vec::new(),
-            total_rx_bytes: 0,
-            total_tx_bytes: 0,
-        }
-    }
 }
 
 /// Информация о сетевом интерфейсе
@@ -347,6 +321,7 @@ pub struct NetworkInterface {
 
 /// Метрики дисковых операций
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct DiskMetrics {
     /// Список дисковых устройств
     pub devices: Vec<DiskDevice>,
@@ -354,16 +329,6 @@ pub struct DiskMetrics {
     pub total_read_bytes: u64,
     /// Общее количество записанных байт
     pub total_write_bytes: u64,
-}
-
-impl Default for DiskMetrics {
-    fn default() -> Self {
-        Self {
-            devices: Vec::new(),
-            total_read_bytes: 0,
-            total_write_bytes: 0,
-        }
-    }
 }
 
 /// Информация о дисковом устройстве
@@ -387,6 +352,7 @@ pub struct DiskDevice {
 ///
 /// Содержит информацию о CPU, памяти, нагрузке системы и давлении ресурсов.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct SystemMetrics {
     /// Счётчики CPU из `/proc/stat`
     pub cpu_times: CpuTimes,
@@ -406,22 +372,6 @@ pub struct SystemMetrics {
     pub disk: DiskMetrics,
     /// Метрики GPU (опционально, так как может быть недоступно на некоторых системах)
     pub gpu: Option<crate::metrics::gpu::GpuMetricsCollection>,
-}
-
-impl Default for SystemMetrics {
-    fn default() -> Self {
-        Self {
-            cpu_times: CpuTimes::default(),
-            memory: MemoryInfo::default(),
-            load_avg: LoadAvg::default(),
-            pressure: PressureMetrics::default(),
-            temperature: TemperatureMetrics::default(),
-            power: PowerMetrics::default(),
-            network: NetworkMetrics::default(),
-            disk: DiskMetrics::default(),
-            gpu: None,
-        }
-    }
 }
 
 impl SystemMetrics {
@@ -893,11 +843,9 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                     temperature.cpu_temperature_c = Some(temp_c);
                                                     tracing::debug!("CPU temperature (sensor {}): {:.1}°C", name, temp_c);
                                                 }
-                                            } else if name.contains("amdgpu") || name.contains("radeon") || name.contains("nouveau") {
-                                                if temperature.gpu_temperature_c.is_none() {
-                                                    temperature.gpu_temperature_c = Some(temp_c);
-                                                    tracing::debug!("GPU temperature (sensor {}): {:.1}°C", name, temp_c);
-                                                }
+                                            } else if (name.contains("amdgpu") || name.contains("radeon") || name.contains("nouveau")) && temperature.gpu_temperature_c.is_none() {
+                                                temperature.gpu_temperature_c = Some(temp_c);
+                                                tracing::debug!("GPU temperature (sensor {}): {:.1}°C", name, temp_c);
                                             }
                                         }
                                     }
@@ -1097,7 +1045,7 @@ fn collect_power_metrics() -> PowerMetrics {
             
             for cpu_entry in cpu_entries.flatten() {
                 let cpu_path = cpu_entry.path();
-                if cpu_path.file_name().and_then(|s| s.to_str()).map_or(false, |s| s.starts_with("cpu")) {
+                if cpu_path.file_name().and_then(|s| s.to_str()).is_some_and(|s| s.starts_with("cpu")) {
                     let energy_path = cpu_path.join("power/energy_uj");
                     if energy_path.exists() {
                         if let Ok(energy_content) = fs::read_to_string(&energy_path) {
@@ -1127,7 +1075,7 @@ fn collect_power_metrics() -> PowerMetrics {
         if let Ok(drm_entries) = fs::read_dir(drm_dir) {
             for drm_entry in drm_entries.flatten() {
                 let card_path = drm_entry.path();
-                if card_path.file_name().and_then(|s| s.to_str()).map_or(false, |s| s.starts_with("card")) {
+                if card_path.file_name().and_then(|s| s.to_str()).is_some_and(|s| s.starts_with("card")) {
                     let energy_path = card_path.join("device/power/energy_uj");
                     if energy_path.exists() {
                         if let Ok(energy_content) = fs::read_to_string(&energy_path) {

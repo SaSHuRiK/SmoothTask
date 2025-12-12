@@ -2,7 +2,7 @@ mod systemd;
 
 use anyhow::Result;
 use clap::Parser;
-use smoothtask_core::{config::config::Config, run_daemon};
+use smoothtask_core::{config::config_struct::Config, run_daemon};
 use tokio::signal;
 use tokio::sync::watch;
 use tracing_subscriber::EnvFilter;

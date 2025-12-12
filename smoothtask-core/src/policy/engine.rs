@@ -4,7 +4,7 @@
 //! для определения целевого класса приоритета для каждой AppGroup в снапшоте.
 //! В режиме hybrid также использует ML-ранкер для более точного определения приоритетов.
 
-use crate::config::config::{Config, PolicyMode};
+use crate::config::config_struct::{Config, PolicyMode};
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 use crate::model::ranker::{Ranker, RankingResult};
 use crate::policy::classes::PriorityClass;
@@ -534,12 +534,12 @@ impl PolicyEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::config::{CacheIntervals, Config, ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel, Paths, Thresholds};
+    use crate::config::config_struct::{CacheIntervals, Config, ModelConfig, NotificationBackend, NotificationConfig, NotificationLevel, Paths, Thresholds};
     use crate::logging::snapshots::{GlobalMetrics, ResponsivenessMetrics};
     use chrono::Utc;
 
     fn create_test_config() -> Config {
-        use crate::config::config::LoggingConfig;
+        use crate::config::config_struct::LoggingConfig;
         Config {
             polling_interval_ms: 500,
             max_candidates: 150,
@@ -588,7 +588,7 @@ mod tests {
     }
 
     fn create_hybrid_config() -> Config {
-        use crate::config::config::LoggingConfig;
+        use crate::config::config_struct::LoggingConfig;
         Config {
             polling_interval_ms: 500,
             max_candidates: 150,

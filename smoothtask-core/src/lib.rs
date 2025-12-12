@@ -11,7 +11,7 @@ pub mod utils;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
-use config::config::Config;
+use config::config_struct::Config;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -22,7 +22,7 @@ use crate::actuator::{apply_priority_adjustments, plan_priority_changes, Hystere
 use crate::api::{ApiServer, ApiServerHandle};
 use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
 use crate::config::watcher::ConfigWatcher;
-use crate::config::config::NotificationBackend;
+use crate::config::config_struct::NotificationBackend;
 use crate::notifications::{Notification, NotificationManager, NotificationType, StubNotifier};
 #[cfg(feature = "libnotify")]
 use crate::notifications::LibnotifyNotifier;
@@ -536,7 +536,7 @@ pub async fn run_daemon(
         let manager: NotificationManager = match initial_config.notifications.backend {
             NotificationBackend::Stub => {
                 info!("Using StubNotifier for notifications (testing mode)");
-                NotificationManager::new(StubNotifier::default())
+                NotificationManager::new(StubNotifier)
             }
             #[cfg(feature = "libnotify")]
             NotificationBackend::Libnotify => {
@@ -546,7 +546,7 @@ pub async fn run_daemon(
             #[cfg(not(feature = "libnotify"))]
             NotificationBackend::Libnotify => {
                 warn!("Libnotify backend selected but feature 'libnotify' is not enabled, falling back to stub");
-                NotificationManager::new(StubNotifier::default())
+                NotificationManager::new(StubNotifier)
             }
         };
 
@@ -1152,7 +1152,7 @@ pub async fn collect_snapshot(
     audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
     input_tracker: &Arc<Mutex<InputTracker>>,
     prev_cpu_times: &mut Option<SystemMetrics>,
-    thresholds: &crate::config::config::Thresholds,
+    thresholds: &crate::config::config_struct::Thresholds,
     latency_collector: &Arc<LatencyCollector>,
 ) -> Result<Snapshot> {
     let now = Instant::now();
@@ -1447,7 +1447,7 @@ pub async fn collect_snapshot_with_caching(
     audio_introspector: &Arc<Mutex<Box<dyn AudioIntrospector>>>,
     input_tracker: &Arc<Mutex<InputTracker>>,
     prev_cpu_times: &mut Option<SystemMetrics>,
-    thresholds: &crate::config::config::Thresholds,
+    thresholds: &crate::config::config_struct::Thresholds,
     latency_collector: &Arc<LatencyCollector>,
     system_metrics_cache: &mut Option<SystemMetrics>,
     system_metrics_cache_iteration: &mut u64,
@@ -1687,7 +1687,7 @@ pub async fn collect_snapshot_with_caching(
         frame_jank_ratio: None, // Will be computed later
         bad_responsiveness: input_metrics.user_active && 
             input_metrics.time_since_last_input_ms
-                .map_or(false, |time_since_input| 
+                .is_some_and(|time_since_input| 
                     time_since_input > thresholds.user_idle_timeout_sec * 1000
                 ),
         responsiveness_score: None, // Will be computed later
@@ -2047,8 +2047,8 @@ mod tests {
             }
         }
 
-        fn create_test_thresholds() -> crate::config::config::Thresholds {
-            crate::config::config::Thresholds {
+        fn create_test_thresholds() -> crate::config::config_struct::Thresholds {
+            crate::config::config_struct::Thresholds {
                 psi_cpu_some_high: 0.6,
                 psi_io_some_high: 0.4,
                 user_idle_timeout_sec: 120,
