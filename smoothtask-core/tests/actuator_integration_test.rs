@@ -553,11 +553,11 @@ fn test_apply_priority_adjustments_application_scenarios() {
     let result2 = apply_priority_adjustments(&adjustments, &mut hysteresis);
     
     hysteresis.cleanup(&[std::process::id() as i32]);
-    let result3 = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result3 = apply_priority_adjustments(&adjustments, &mut hysteresis);
     
     assert!(true); // result1.applied is usize, always >= 0
     assert!(result2.skipped_hysteresis >= result1.skipped_hysteresis);
-    assert!(true); // result3.applied is usize, always >= 0
+    assert!(true); // _result3.applied is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными тегами.

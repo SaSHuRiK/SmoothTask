@@ -239,15 +239,10 @@ fn test_caching_with_interval_2() {
 /// Тест проверяет, что кэширование работает корректно при изменении интервала.
 #[test]
 fn test_caching_with_dynamic_interval() {
-    let mut cache: Option<u64> = None;
-    let mut cache_iteration: u64 = 0;
-    
     // Тестируем с разными интервалами
     let intervals = vec![1, 2, 3, 5];
     
-    for interval in intervals {
-        cache = None;
-        cache_iteration = 0;
+    for _ in intervals {
         
         for current_iteration in 1..=10 {
             let need_update = cache.is_none() ||
