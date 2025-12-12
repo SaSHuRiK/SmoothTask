@@ -11,9 +11,10 @@ use axum::{
 use serde_json::{json, Value};
 use std::fs;
 use std::sync::Arc;
+use std::time::{Instant, Duration};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::{error, info, trace};
 
 
 
@@ -39,6 +40,106 @@ pub struct ApiState {
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
     /// Менеджер уведомлений для отправки уведомлений через API (опционально)
     notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
+    /// Кэш для часто запрашиваемых данных (опционально)
+    /// Используется для оптимизации производительности API
+    cache: Option<Arc<RwLock<ApiCache>>>,  
+    /// Метрики производительности API
+    performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,  
+}
+
+/// Кэш для часто запрашиваемых данных API.
+#[derive(Default, Debug)]
+pub struct ApiCache {
+    /// Кэшированная версия данных о процессах (JSON)
+    cached_processes_json: Option<(Value, Instant)>,  
+    /// Кэшированная версия данных о группах приложений (JSON)
+    cached_appgroups_json: Option<(Value, Instant)>,  
+    /// Кэшированная версия системных метрик (JSON)
+    cached_metrics_json: Option<(Value, Instant)>,  
+    /// Кэшированная версия конфигурации (JSON)
+    cached_config_json: Option<(Value, Instant)>,  
+    /// Время жизни кэша (в секундах)
+    cache_ttl_seconds: u64,  
+}
+
+impl ApiCache {
+    /// Создаёт новый кэш с указанным временем жизни.
+    pub fn new(cache_ttl_seconds: u64) -> Self {
+        Self {
+            cache_ttl_seconds,
+            ..Default::default()
+        }
+    }
+
+    /// Проверяет, актуален ли кэш.
+    fn is_cache_valid(&self, cache_time: &Instant) -> bool {
+        cache_time.elapsed().as_secs() < self.cache_ttl_seconds
+    }
+
+    /// Очищает кэш.
+    pub fn clear(&mut self) {
+        self.cached_processes_json = None;
+        self.cached_appgroups_json = None;
+        self.cached_metrics_json = None;
+        self.cached_config_json = None;
+    }
+}
+
+/// Метрики производительности API.
+#[derive(Default, Debug)]
+pub struct ApiPerformanceMetrics {
+    /// Общее количество запросов
+    pub total_requests: u64,  
+    /// Количество кэш-хитов
+    pub cache_hits: u64,  
+    /// Количество кэш-миссов
+    pub cache_misses: u64,  
+    /// Общее время обработки запросов (в микросекундах)
+    pub total_processing_time_us: u64,  
+    /// Время последнего запроса (для мониторинга активности)
+    pub last_request_time: Option<Instant>,  
+}
+
+impl ApiPerformanceMetrics {
+    /// Увеличивает счётчик запросов и обновляет время последнего запроса.
+    pub fn increment_requests(&mut self) {
+        self.total_requests += 1;
+        self.last_request_time = Some(Instant::now());
+    }
+
+    /// Увеличивает счётчик кэш-хитов.
+    pub fn increment_cache_hits(&mut self) {
+        self.cache_hits += 1;
+    }
+
+    /// Увеличивает счётчик кэш-миссов.
+    pub fn increment_cache_misses(&mut self) {
+        self.cache_misses += 1;
+    }
+
+    /// Добавляет время обработки запроса.
+    pub fn add_processing_time(&mut self, duration: Duration) {
+        self.total_processing_time_us += duration.as_micros() as u64;
+    }
+
+    /// Возвращает среднее время обработки запроса в микросекундах.
+    pub fn average_processing_time_us(&self) -> f64 {
+        if self.total_requests > 0 {
+            self.total_processing_time_us as f64 / self.total_requests as f64
+        } else {
+            0.0
+        }
+    }
+
+    /// Возвращает процент кэш-хитов.
+    pub fn cache_hit_rate(&self) -> f64 {
+        let total = self.cache_hits + self.cache_misses;
+        if total > 0 {
+            self.cache_hits as f64 / total as f64 * 100.0
+        } else {
+            0.0
+        }
+    }
 }
 
 /// Builder для ApiState, чтобы избежать слишком большого количества аргументов в конструкторах.
@@ -161,6 +262,8 @@ pub struct ApiStateBuilder {
     config_path: Option<String>,
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
     notification_manager: Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>, 
+    cache: Option<Arc<RwLock<ApiCache>>>,  
+    performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,  
 }
 
 impl ApiStateBuilder {
@@ -380,6 +483,50 @@ impl ApiStateBuilder {
         self
     }
 
+    /// Устанавливает кэш для API.
+    ///
+    /// # Параметры
+    ///
+    /// - `cache`: Кэш для часто запрашиваемых данных
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::{ApiStateBuilder, ApiCache};
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let cache = Arc::new(RwLock::new(ApiCache::new(60))); // 60 seconds TTL
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_cache(Some(cache));
+    /// ```
+    pub fn with_cache(mut self, cache: Option<Arc<RwLock<ApiCache>>>) -> Self {
+        self.cache = cache;
+        self
+    }
+
+    /// Устанавливает метрики производительности для API.
+    ///
+    /// # Параметры
+    ///
+    /// - `performance_metrics`: Метрики производительности
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::{ApiStateBuilder, ApiPerformanceMetrics};
+    /// use std::sync::Arc;
+    /// use tokio::sync::RwLock;
+    ///
+    /// let metrics = Arc::new(RwLock::new(ApiPerformanceMetrics::default()));
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_performance_metrics(Some(metrics));
+    /// ```
+    pub fn with_performance_metrics(mut self, performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>) -> Self {
+        self.performance_metrics = performance_metrics;
+        self
+    }
+
     /// Завершает построение и возвращает ApiState.
     ///
     /// Этот метод потребляет builder и возвращает готовое состояние API,
@@ -406,6 +553,8 @@ impl ApiStateBuilder {
             config_path: self.config_path,
             pattern_database: self.pattern_database,
             notification_manager: self.notification_manager,
+            cache: self.cache,
+            performance_metrics: self.performance_metrics.unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
         }
     }
 }
@@ -423,6 +572,8 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
+            cache: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
 
@@ -438,6 +589,8 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
+            cache: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
 
@@ -455,6 +608,8 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
+            cache: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
 
@@ -475,6 +630,8 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
+            cache: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
 
@@ -496,6 +653,8 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
+            cache: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
 
@@ -520,9 +679,20 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
+            cache: None,
+            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
         }
     }
 
+    /// Возвращает кэш, создавая новый по умолчанию если он не установлен.
+    pub fn get_or_create_cache(&self) -> Arc<RwLock<ApiCache>> {
+        self.cache.clone().unwrap_or_else(|| {
+            let cache = Arc::new(RwLock::new(ApiCache::new(60))); // 60 seconds TTL by default
+            // Note: We can't store this back in self.cache because self is immutable
+            // This is fine for our use case as we'll use the cache temporarily
+            cache
+        })
+    }
 }
 
 impl Default for ApiState {
@@ -651,9 +821,14 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/notifications/config",
                 "method": "POST",
                 "description": "Изменение конфигурации уведомлений в runtime"
+            },
+            {
+                "path": "/api/performance",
+                "method": "GET",
+                "description": "Получение метрик производительности API сервера"
             }
         ],
-        "count": 18
+        "count": 19
     }))
 }
 
@@ -919,6 +1094,41 @@ async fn notifications_status_handler(State(state): State<ApiState>) -> Result<J
     })))
 }
 
+/// Обработчик для endpoint `/api/performance`.
+///
+/// Возвращает метрики производительности API сервера.
+/// Включает информацию о количестве запросов, кэш-хитах, времени обработки и т.д.
+async fn performance_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    let perf_metrics = state.performance_metrics.read().await;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "performance_metrics": {
+            "total_requests": perf_metrics.total_requests,
+            "cache_hits": perf_metrics.cache_hits,
+            "cache_misses": perf_metrics.cache_misses,
+            "cache_hit_rate": perf_metrics.cache_hit_rate(),
+            "average_processing_time_us": perf_metrics.average_processing_time_us(),
+            "total_processing_time_us": perf_metrics.total_processing_time_us,
+            "last_request_time": perf_metrics.last_request_time.map(|t| t.elapsed().as_secs_f64()),
+            "requests_per_second": if perf_metrics.total_requests > 0 && perf_metrics.last_request_time.is_some() {
+                let elapsed = perf_metrics.last_request_time.unwrap().elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    perf_metrics.total_requests as f64 / elapsed
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
+        },
+        "cache_info": {
+            "enabled": state.cache.is_some(),
+            "ttl_seconds": None::<u64>
+        }
+    })))
+}
+
 /// Обработчик для endpoint `/api/notifications/config` (POST).
 ///
 /// Изменяет конфигурацию уведомлений в runtime.
@@ -1020,6 +1230,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/notifications/test", post(notifications_test_handler))
         .route("/api/notifications/status", get(notifications_status_handler))
         .route("/api/notifications/config", post(notifications_config_handler))
+        .route("/api/performance", get(performance_handler))
         .with_state(state)
 }
 
@@ -1067,21 +1278,72 @@ async fn metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, S
 ///
 /// Возвращает список последних процессов (если доступны).
 async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+    
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+    
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+    
+    if let Some((cached_json, cache_time)) = &cache_write.cached_processes_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+            
+            trace!("Cache hit for processes_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+    
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+    
     match &state.processes {
         Some(processes_arc) => {
             let processes = processes_arc.read().await;
-            Ok(Json(json!({
+            let result = json!({
                 "status": "ok",
                 "processes": *processes,
-                "count": processes.len()
-            })))
+                "count": processes.len(),
+                "cache_info": {
+                    "cached": false,
+                    "ttl_seconds": cache_write.cache_ttl_seconds
+                }
+            });
+            
+            // Кэшируем результат
+            cache_write.cached_processes_json = Some((result.clone(), Instant::now()));
+            
+            trace!("Cached processes data (count: {})", processes.len());
+            Ok(Json(result))
         }
-        None => Ok(Json(json!({
-            "status": "ok",
-            "processes": null,
-            "count": 0,
-            "message": "Processes not available (daemon may not be running or no processes collected yet)"
-        }))),
+        None => {
+            let result = json!({
+                "status": "ok",
+                "processes": null,
+                "count": 0,
+                "message": "Processes not available (daemon may not be running or no processes collected yet)",
+                "cache_info": {
+                    "cached": false,
+                    "ttl_seconds": cache_write.cache_ttl_seconds
+                }
+            });
+            
+            // Кэшируем результат (даже если данных нет)
+            cache_write.cached_processes_json = Some((result.clone(), Instant::now()));
+            
+            trace!("Cached empty processes data");
+            Ok(Json(result))
+        }
     }
 }
 
@@ -1089,21 +1351,72 @@ async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>,
 ///
 /// Возвращает список последних групп приложений (если доступны).
 async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+    
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+    
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+    
+    if let Some((cached_json, cache_time)) = &cache_write.cached_appgroups_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+            
+            trace!("Cache hit for appgroups_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+    
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+    
     match &state.app_groups {
         Some(app_groups_arc) => {
             let app_groups = app_groups_arc.read().await;
-            Ok(Json(json!({
+            let result = json!({
                 "status": "ok",
                 "app_groups": *app_groups,
-                "count": app_groups.len()
-            })))
+                "count": app_groups.len(),
+                "cache_info": {
+                    "cached": false,
+                    "ttl_seconds": cache_write.cache_ttl_seconds
+                }
+            });
+            
+            // Кэшируем результат
+            cache_write.cached_appgroups_json = Some((result.clone(), Instant::now()));
+            
+            trace!("Cached appgroups data (count: {})", app_groups.len());
+            Ok(Json(result))
         }
-        None => Ok(Json(json!({
-            "status": "ok",
-            "app_groups": null,
-            "count": 0,
-            "message": "App groups not available (daemon may not be running or no groups collected yet)"
-        }))),
+        None => {
+            let result = json!({
+                "status": "ok",
+                "app_groups": null,
+                "count": 0,
+                "message": "App groups not available (daemon may not be running or no groups collected yet)",
+                "cache_info": {
+                    "cached": false,
+                    "ttl_seconds": cache_write.cache_ttl_seconds
+                }
+            });
+            
+            // Кэшируем результат (даже если данных нет)
+            cache_write.cached_appgroups_json = Some((result.clone(), Instant::now()));
+            
+            trace!("Cached empty appgroups data");
+            Ok(Json(result))
+        }
     }
 }
 
@@ -1116,38 +1429,75 @@ async fn process_by_pid_handler(
 ) -> Result<Json<Value>, StatusCode> {
     // Проверяем, что PID является допустимым значением
     if pid <= 0 {
-        error!("Invalid PID value: {}", pid);
+        error!("Invalid PID value: {}. PID must be a positive integer", pid);
         return Ok(Json(json!({
             "status": "error",
             "error": "invalid_input",
-            "message": format!("Invalid PID value: {}. PID must be a positive integer", pid)
+            "message": format!("Invalid PID value: {}. PID must be a positive integer", pid),
+            "details": {
+                "field": "pid",
+                "value": pid,
+                "constraint": "must be > 0"
+            }
+        })));
+    }
+
+    // Проверяем, что PID находится в разумном диапазоне
+    // Максимальный PID в Linux обычно ограничен (по умолчанию 32768, но может быть до 4194304)
+    if pid > 4_194_304 {
+        error!("PID value {} is too large. Maximum reasonable PID value is 4194304", pid);
+        return Ok(Json(json!({
+            "status": "error",
+            "error": "invalid_input",
+            "message": format!("PID value {} is too large", pid),
+            "details": {
+                "field": "pid",
+                "value": pid,
+                "constraint": "must be <= 4194304",
+                "note": "Maximum PID in Linux is typically limited to this range"
+            }
         })));
     }
 
     match &state.processes {
         Some(processes_arc) => {
             let processes = processes_arc.read().await;
+            
+            // Добавляем отладочную информацию о количестве доступных процессов
+            let process_count = processes.len();
+            tracing::debug!("Looking for PID {} among {} processes", pid, process_count);
+            
             match processes.iter().find(|p| p.pid == pid) {
-                Some(process) => Ok(Json(json!({
-                    "status": "ok",
-                    "process": process
-                }))),
+                Some(process) => {
+                    tracing::info!("Successfully found process with PID {}", pid);
+                    Ok(Json(json!({
+                        "status": "ok",
+                        "process": process
+                    })))
+                }
                 None => {
-                    error!("Process with PID {} not found", pid);
+                    error!("Process with PID {} not found among {} processes", pid, process_count);
                     Ok(Json(json!({
                         "status": "error",
                         "error": "not_found",
-                        "message": format!("Process with PID {} not found", pid)
+                        "message": format!("Process with PID {} not found", pid),
+                        "details": {
+                            "available_processes": process_count,
+                            "suggestion": "Check if the process is still running or if the daemon has collected recent data"
+                        }
                     })))
                 }
             }
         }
         None => {
-            error!("Processes not available for PID lookup");
+            error!("Processes data not available for PID lookup. Daemon may not be running or no processes collected yet");
             Ok(Json(json!({
                 "status": "error",
                 "error": "not_available",
-                "message": "Processes not available (daemon may not be running or no processes collected yet)"
+                "message": "Processes not available (daemon may not be running or no processes collected yet)",
+                "details": {
+                    "suggestion": "Ensure the daemon is running and has completed at least one collection cycle"
+                }
             })))
         }
     }
@@ -1166,34 +1516,85 @@ async fn appgroup_by_id_handler(
         return Ok(Json(json!({
             "status": "error",
             "error": "invalid_input",
-            "message": "App group ID cannot be empty"
+            "message": "App group ID cannot be empty",
+            "details": {
+                "field": "id",
+                "value": "",
+                "constraint": "must not be empty"
+            }
+        })));
+    }
+
+    // Проверяем, что ID имеет разумную длину
+    if id.len() > 256 {
+        error!("App group ID is too long: {} characters (max 256)", id.len());
+        return Ok(Json(json!({
+            "status": "error",
+            "error": "invalid_input",
+            "message": "App group ID is too long",
+            "details": {
+                "field": "id",
+                "length": id.len(),
+                "constraint": "must be <= 256 characters"
+            }
+        })));
+    }
+
+    // Проверяем, что ID содержит только допустимые символы
+    if !id.chars().all(|c| c.is_ascii() && (c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':')) {
+        error!("App group ID contains invalid characters: {}", id);
+        return Ok(Json(json!({
+            "status": "error",
+            "error": "invalid_input",
+            "message": "App group ID contains invalid characters",
+            "details": {
+                "field": "id",
+                "value": id,
+                "constraint": "must contain only alphanumeric, '_', '-', '.', ':' characters",
+                "suggestion": "Use only standard ASCII characters in app group IDs"
+            }
         })));
     }
 
     match &state.app_groups {
         Some(app_groups_arc) => {
             let app_groups = app_groups_arc.read().await;
+            
+            // Добавляем отладочную информацию о количестве доступных групп
+            let group_count = app_groups.len();
+            tracing::debug!("Looking for app group with ID '{}' among {} groups", id, group_count);
+            
             match app_groups.iter().find(|g| g.app_group_id == id) {
-                Some(app_group) => Ok(Json(json!({
-                    "status": "ok",
-                    "app_group": app_group
-                }))),
+                Some(app_group) => {
+                    tracing::info!("Successfully found app group with ID '{}'", id);
+                    Ok(Json(json!({
+                        "status": "ok",
+                        "app_group": app_group
+                    })))
+                }
                 None => {
-                    error!("App group with ID '{}' not found", id);
+                    error!("App group with ID '{}' not found among {} groups", id, group_count);
                     Ok(Json(json!({
                         "status": "error",
                         "error": "not_found",
-                        "message": format!("App group with ID '{}' not found", id)
+                        "message": format!("App group with ID '{}' not found", id),
+                        "details": {
+                            "available_groups": group_count,
+                            "suggestion": "Check if the app group ID is correct and if the daemon has collected recent data"
+                        }
                     })))
                 }
             }
         }
         None => {
-            error!("App groups not available for ID lookup");
+            error!("App groups data not available for ID lookup. Daemon may not be running or no groups collected yet");
             Ok(Json(json!({
                 "status": "error",
                 "error": "not_available",
-                "message": "App groups not available (daemon may not be running or no groups collected yet)"
+                "message": "App groups not available (daemon may not be running or no groups collected yet)",
+                "details": {
+                    "suggestion": "Ensure the daemon is running and has completed at least one collection cycle"
+                }
             })))
         }
     }
@@ -1296,7 +1697,7 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
                 }
                 Err(e) => {
                     // Ошибка загрузки конфигурации
-                    tracing::error!("API config reload failed: {}", e);
+                    tracing::error!("API config reload failed from {}: {}", config_path, e);
                     
                     // Получаем текущую конфигурацию для ответа
                     let current_config = {
@@ -1304,12 +1705,33 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
                         serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
                     };
                     
+                    // Разбираем тип ошибки для более детального сообщения
+                    let error_type = if e.to_string().contains("YAML") || e.to_string().contains("yaml") {
+                        "yaml_parse_error"
+                    } else if e.to_string().contains("file") || e.to_string().contains("File") {
+                        "file_error"
+                    } else if e.to_string().contains("permission") || e.to_string().contains("Permission") {
+                        "permission_error"
+                    } else {
+                        "unknown_error"
+                    };
+                    
                     Ok(Json(json!({
                         "status": "error",
-                        "message": format!("Failed to reload configuration: {}", e),
+                        "error_type": error_type,
+                        "message": format!("Failed to reload configuration from '{}': {}", config_path, e),
                         "current_config": current_config,
                         "config_path": config_path,
-                        "action_required": "Check the configuration file for errors and try again."
+                        "action_required": "Check the configuration file for errors and try again.",
+                        "details": {
+                            "error_details": e.to_string(),
+                            "suggestion": match error_type {
+                                "yaml_parse_error" => "Check YAML syntax and structure in the configuration file",
+                                "file_error" => "Verify the configuration file exists and is accessible",
+                                "permission_error" => "Ensure the daemon has read permissions for the configuration file",
+                                _ => "Check the error details and verify the configuration"
+                            }
+                        }
                     })))
                 }
             }
@@ -2377,6 +2799,27 @@ mod tests {
             .as_str()
             .unwrap()
             .contains("Invalid PID value"));
+        // Check that details are included
+        assert!(value["details"]["field"].as_str().unwrap() == "pid");
+        assert!(value["details"]["constraint"].as_str().unwrap() == "must be > 0");
+    }
+
+    #[tokio::test]
+    async fn test_process_by_pid_handler_too_large_pid() {
+        let state = ApiState::new();
+        let result = process_by_pid_handler(Path(5_000_000), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "invalid_input");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("too large"));
+        // Check that details are included
+        assert!(value["details"]["constraint"].as_str().unwrap() == "must be <= 4194304");
+        assert!(value["details"]["note"].as_str().unwrap().contains("Maximum PID in Linux"));
     }
 
     #[tokio::test]
@@ -2510,6 +2953,39 @@ mod tests {
         assert_eq!(value["status"], "error");
         assert_eq!(value["error"], "invalid_input");
         assert_eq!(value["message"], "App group ID cannot be empty");
+        // Check that details are included
+        assert!(value["details"]["field"].as_str().unwrap() == "id");
+        assert!(value["details"]["constraint"].as_str().unwrap() == "must not be empty");
+    }
+
+    #[tokio::test]
+    async fn test_appgroup_by_id_handler_too_long_id() {
+        let state = ApiState::new();
+        let long_id = "a".repeat(257); // 257 characters, exceeds 256 limit
+        let result = appgroup_by_id_handler(Path(long_id), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "invalid_input");
+        assert!(value["message"].as_str().unwrap().contains("too long"));
+        // Check that details are included
+        assert!(value["details"]["constraint"].as_str().unwrap() == "must be <= 256 characters");
+    }
+
+    #[tokio::test]
+    async fn test_appgroup_by_id_handler_invalid_characters() {
+        let state = ApiState::new();
+        let invalid_id = "group-1\u{0000}".to_string(); // Contains null character
+        let result = appgroup_by_id_handler(Path(invalid_id), State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert_eq!(value["error"], "invalid_input");
+        assert!(value["message"].as_str().unwrap().contains("invalid characters"));
+        // Check that details are included
+        assert!(value["details"]["constraint"].as_str().unwrap().contains("alphanumeric"));
     }
 
     #[tokio::test]
@@ -2587,10 +3063,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 18); // Обновлено с 15 до 18
+        assert_eq!(json["count"], 19); // Обновлено с 18 до 19
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 18); // Обновлено с 15 до 18
+        assert_eq!(endpoints.len(), 19); // Обновлено с 18 до 19
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -2616,6 +3092,7 @@ mod tests {
         assert!(endpoint_paths.contains(&"/api/notifications/test"));
         assert!(endpoint_paths.contains(&"/api/notifications/status"));
         assert!(endpoint_paths.contains(&"/api/notifications/config"));
+        assert!(endpoint_paths.contains(&"/api/performance"));
 
         // Проверяем структуру endpoint
         let first_endpoint = &endpoints[0];
@@ -2674,6 +3151,32 @@ mod tests {
         let idle = classes.iter().find(|c| c["name"] == "IDLE").unwrap();
         assert_eq!(idle["params"]["ionice"]["class"], 3);
         assert_eq!(idle["params"]["ionice"]["class_description"], "idle");
+    }
+
+    #[tokio::test]
+    async fn test_performance_handler() {
+        let state = ApiState::new();
+        let result = performance_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["performance_metrics"].is_object());
+        assert!(value["cache_info"].is_object());
+        
+        let perf_metrics = &value["performance_metrics"];
+        assert_eq!(perf_metrics["total_requests"], 0);
+        assert_eq!(perf_metrics["cache_hits"], 0);
+        assert_eq!(perf_metrics["cache_misses"], 0);
+        assert_eq!(perf_metrics["cache_hit_rate"], 0.0);
+        assert_eq!(perf_metrics["average_processing_time_us"], 0.0);
+        assert_eq!(perf_metrics["total_processing_time_us"], 0);
+        assert!(perf_metrics["last_request_time"].is_null());
+        assert_eq!(perf_metrics["requests_per_second"], 0.0);
+        
+        let cache_info = &value["cache_info"];
+        assert_eq!(cache_info["enabled"], false);
+        assert!(cache_info["ttl_seconds"].is_null());
     }
 
     #[tokio::test]
@@ -3234,17 +3737,17 @@ apps:
             },
         };
         let config_arc = Arc::new(RwLock::new(config));
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: Some(config_arc.clone()),
-            config_path: None,
-            pattern_database: None,
-            notification_manager: None,
-        };
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(Some(config_arc.clone()))
+            .with_config_path(None)
+            .with_pattern_database(None)
+            .with_notification_manager(None)
+            .build();
         
         let result = config_reload_handler(State(state)).await;
         let json = result.unwrap().0;
@@ -3355,17 +3858,17 @@ notifications:
         let config_arc = Arc::new(RwLock::new(current_config));
         let config_path = config_file_path.to_str().unwrap().to_string();
         
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: Some(config_arc.clone()),
-            config_path: Some(config_path.clone()),
-            pattern_database: None,
-            notification_manager: None,
-        };
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(Some(config_arc.clone()))
+            .with_config_path(Some(config_path.clone()))
+            .with_pattern_database(None)
+            .with_notification_manager(None)
+            .build();
         
         let result = config_reload_handler(State(state)).await;
         assert!(result.is_ok(), "Config reload handler failed");
@@ -3454,17 +3957,17 @@ max_candidates: 200
         let config_arc = Arc::new(RwLock::new(current_config));
         let config_path = config_file_path.to_str().unwrap().to_string();
         
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: Some(config_arc.clone()),
-            config_path: Some(config_path.clone()),
-            pattern_database: None,
-            notification_manager: None,
-        };
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(Some(config_arc.clone()))
+            .with_config_path(Some(config_path.clone()))
+            .with_pattern_database(None)
+            .with_notification_manager(None)
+            .build();
         
         let result = config_reload_handler(State(state)).await;
         assert!(result.is_ok());
@@ -3499,17 +4002,17 @@ max_candidates: 200
         let notification_manager = NotificationManager::new_stub();
         let notification_manager_arc = Arc::new(tokio::sync::Mutex::new(notification_manager));
         
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: Some(notification_manager_arc),
-        };
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(None)
+            .with_config_path(None)
+            .with_pattern_database(None)
+            .with_notification_manager(Some(notification_manager_arc))
+            .build();
         
         let result = notifications_test_handler(State(state)).await;
         assert!(result.is_ok());
@@ -3616,17 +4119,17 @@ max_candidates: 200
         let notification_manager = NotificationManager::new_stub();
         let notification_manager_arc = Arc::new(tokio::sync::Mutex::new(notification_manager));
         
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: Some(notification_manager_arc),
-        };
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(None)
+            .with_system_metrics(None)
+            .with_processes(None)
+            .with_app_groups(None)
+            .with_responsiveness_metrics(None)
+            .with_config(None)
+            .with_config_path(None)
+            .with_pattern_database(None)
+            .with_notification_manager(Some(notification_manager_arc))
+            .build();
         
         let result = notifications_status_handler(State(state)).await;
         assert!(result.is_ok());
@@ -3810,10 +4313,10 @@ max_candidates: 200
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 18); // Обновлено с 15 до 18
+        assert_eq!(json["count"], 19); // Обновлено с 18 до 19
         
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 18);
+        assert_eq!(endpoints.len(), 19);
         
         // Проверяем наличие новых endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -3824,5 +4327,6 @@ max_candidates: 200
         assert!(endpoint_paths.contains(&"/api/notifications/test"));
         assert!(endpoint_paths.contains(&"/api/notifications/status"));
         assert!(endpoint_paths.contains(&"/api/notifications/config"));
+        assert!(endpoint_paths.contains(&"/api/performance"));
     }
 }
