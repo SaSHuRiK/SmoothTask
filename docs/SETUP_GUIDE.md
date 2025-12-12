@@ -35,7 +35,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
 # Установите зависимости для сборки
-sudo apt install -y libwayland-dev libpipewire-0.3-dev libpulse-dev
+sudo apt install -y libwayland-dev libpipewire-0.3-dev libpulse-dev libglib2.0-dev
 
 # Для Python тренера (опционально)
 sudo apt install -y python3 python3-pip python3-venv
@@ -120,7 +120,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
 # Установите зависимости для сборки
-sudo dnf install -y wayland-devel pipewire-devel pulseaudio-libs-devel
+sudo dnf install -y wayland-devel pipewire-devel pulseaudio-libs-devel glib2-devel
 
 # Для Python тренера (опционально)
 sudo dnf install -y python3 python3-pip
@@ -155,7 +155,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
 # Установите зависимости для сборки
-sudo pacman -S --needed wayland pipewire pulseaudio
+sudo pacman -S --needed wayland pipewire pulseaudio glib2
 
 # Для Python тренера (опционально)
 sudo pacman -S --needed python python-pip
@@ -192,7 +192,7 @@ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 source $HOME/.cargo/env
 
 # Установите зависимости для сборки
-sudo zypper install -y wayland-devel pipewire-devel libpulse-devel
+sudo zypper install -y wayland-devel pipewire-devel libpulse-devel glib2-devel
 
 # Для Python тренера (опционально)
 sudo zypper install -y python3 python3-pip
@@ -648,6 +648,102 @@ curl http://127.0.0.1:8080/health
 ### Как добавить поддержку нового приложения?
 
 Создайте новый паттерн в `/etc/smoothtask/patterns/` и перезапустите демон.
+
+## Устранение неполадок при установке
+
+### Ошибка сборки: glib-2.0 не найден
+
+**Проблема:** Ошибка сборки с сообщением "The system library `glib-2.0` required by crate `glib-2-0-sys` was not found."
+
+**Решения:**
+
+1. **Установите glib-2.0 для вашего дистрибутива:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install -y libglib2.0-dev
+   
+   # Fedora
+   sudo dnf install -y glib2-devel
+   
+   # Arch Linux
+   sudo pacman -S --needed glib2
+   
+   # openSUSE
+   sudo zypper install -y glib2-devel
+   ```
+
+2. **Убедитесь, что pkg-config может найти glib-2.0:**
+   ```bash
+   pkg-config --libs --cflags glib-2.0 'glib-2.0 >= 2.46'
+   ```
+
+3. **Если pkg-config не может найти библиотеку, установите PKG_CONFIG_PATH:**
+   ```bash
+   export PKG_CONFIG_PATH=/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/share/pkgconfig
+   ```
+
+4. **Проверьте, что файл glib-2.0.pc существует:**
+   ```bash
+   find /usr -name "glib-2.0.pc"
+   ```
+
+5. **Пересоберите проект:**
+   ```bash
+   cargo clean
+   cargo build --release
+   ```
+
+### Проблемы с pkg-config
+
+**Проблема:** pkg-config не установлен или не может найти библиотеки.
+
+**Решения:**
+
+1. **Установите pkg-config:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install -y pkg-config
+   
+   # Fedora
+   sudo dnf install -y pkgconf-pkg-config
+   
+   # Arch Linux
+   sudo pacman -S --needed pkgconf
+   
+   # openSUSE
+   sudo zypper install -y pkg-config
+   ```
+
+2. **Проверьте, что pkg-config работает:**
+   ```bash
+   pkg-config --version
+   ```
+
+### Отсутствующие зависимости для Wayland
+
+**Проблема:** Ошибки сборки, связанные с Wayland.
+
+**Решения:**
+
+1. **Убедитесь, что установлены все зависимости Wayland:**
+   ```bash
+   # Ubuntu/Debian
+   sudo apt install -y libwayland-dev wayland-protocols
+   
+   # Fedora
+   sudo dnf install -y wayland-devel
+   
+   # Arch Linux
+   sudo pacman -S --needed wayland
+   
+   # openSUSE
+   sudo zypper install -y wayland-devel
+   ```
+
+2. **Проверьте, что Wayland доступен:**
+   ```bash
+   echo $WAYLAND_DISPLAY
+   ```
 
 ## Поддержка
 
