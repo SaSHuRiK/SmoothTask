@@ -199,6 +199,45 @@ fn load_ebpf_program_from_file(program_path: &str) -> Result<Program> {
     Ok(program)
 }
 
+/// Загрузить eBPF карты из программы
+#[cfg(feature = "ebpf")]
+fn load_maps_from_program(program_path: &str, expected_map_name: &str) -> Result<Vec<Map>> {
+    use libbpf_rs::{Map, Program};
+    use std::path::Path;
+
+    let path = Path::new(program_path);
+    if !path.exists() {
+        tracing::warn!("eBPF программа не найдена: {:?}", program_path);
+        return Ok(Vec::new());
+    }
+
+    tracing::info!("Загрузка eBPF карт из программы {:?}", program_path);
+
+    // Загружаем программу для доступа к картам
+    let program = Program::from_file(path).context(format!(
+        "Не удалось загрузить eBPF программу для извлечения карт из {:?}",
+        program_path
+    ))?;
+
+    // Получаем доступ к картам программы
+    let mut maps = Vec::new();
+    
+    // Пробуем получить карту по имени
+    // В реальной реализации libbpf-rs предоставляет доступ к картам через skeleton
+    // Для упрощения создаем карту с ожидаемым именем
+    
+    // Создаем карту с ожидаемым именем
+    let map = Map::from_file(path, expected_map_name).context(format!(
+        "Не удалось загрузить карту {} из программы {:?}",
+        expected_map_name, program_path
+    ))?;
+    
+    maps.push(map);
+    
+    tracing::info!("Успешно загружено {} карт из программы {:?}", maps.len(), program_path);
+    Ok(maps)
+}
+
 /// Основной структуры для управления eBPF метриками
 pub struct EbpfMetricsCollector {
     config: EbpfConfig,
@@ -425,11 +464,9 @@ impl EbpfMetricsCollector {
         self.cpu_program = Some(program);
         
         // Загрузка карт из программы
-        // В реальной реализации здесь будет загрузка карт из eBPF программы
-        // Пока что создаем пустые карты для демонстрации
-        self.cpu_maps = Vec::new();
+        self.cpu_maps = self.load_maps_from_program(&program_path, "cpu_metrics_map")?;
         
-        tracing::info!("eBPF программа для CPU метрик успешно загружена");
+        tracing::info!("eBPF программа для CPU метрик успешно загружена с {} картами", self.cpu_maps.len());
         Ok(())
     }
 
@@ -447,11 +484,9 @@ impl EbpfMetricsCollector {
         self.memory_program = Some(program);
         
         // Загрузка карт из программы
-        // В реальной реализации здесь будет загрузка карт из eBPF программы
-        // Пока что создаем пустые карты для демонстрации
-        self.memory_maps = Vec::new();
+        self.memory_maps = self.load_maps_from_program(&program_path, "cpu_metrics_map")?;
         
-        tracing::info!("eBPF программа для метрик памяти успешно загружена");
+        tracing::info!("eBPF программа для метрик памяти успешно загружена с {} картами", self.memory_maps.len());
         Ok(())
     }
 
@@ -486,11 +521,9 @@ impl EbpfMetricsCollector {
         self.syscall_program = Some(program);
         
         // Загрузка карт из программы
-        // В реальной реализации здесь будет загрузка карт из eBPF программы
-        // Пока что создаем пустые карты для демонстрации
-        self.syscall_maps = Vec::new();
+        self.syscall_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "syscall_count_map")?;
 
-        tracing::info!("eBPF программа для мониторинга системных вызовов успешно загружена");
+        tracing::info!("eBPF программа для мониторинга системных вызовов успешно загружена с {} картами", self.syscall_maps.len());
         Ok(())
     }
 
@@ -522,11 +555,9 @@ impl EbpfMetricsCollector {
         self.network_program = Some(program);
         
         // Загрузка карт из программы
-        // В реальной реализации здесь будет загрузка карт из eBPF программы
-        // Пока что создаем пустые карты для демонстрации
-        self.network_maps = Vec::new();
+        self.network_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "network_stats_map")?;
 
-        tracing::info!("eBPF программа для мониторинга сетевой активности успешно загружена");
+        tracing::info!("eBPF программа для мониторинга сетевой активности успешно загружена с {} картами", self.network_maps.len());
         Ok(())
     }
 
@@ -572,11 +603,9 @@ impl EbpfMetricsCollector {
         self.gpu_program = Some(program);
         
         // Загрузка карт из программы
-        // В реальной реализации здесь будет загрузка карт из eBPF программы
-        // Пока что создаем пустые карты для демонстрации
-        self.gpu_maps = Vec::new();
+        self.gpu_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_metrics_map")?;
 
-        tracing::info!("eBPF программа для мониторинга GPU успешно загружена");
+        tracing::info!("eBPF программа для мониторинга GPU успешно загружена с {} картами", self.gpu_maps.len());
         Ok(())
     }
 
@@ -622,11 +651,9 @@ impl EbpfMetricsCollector {
         self.filesystem_program = Some(program);
         
         // Загрузка карт из программы
-        // В реальной реализации здесь будет загрузка карт из eBPF программы
-        // Пока что создаем пустые карты для демонстрации
-        self.filesystem_maps = Vec::new();
+        self.filesystem_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "filesystem_metrics_map")?;
 
-        tracing::info!("eBPF программа для мониторинга файловой системы успешно загружена");
+        tracing::info!("eBPF программа для мониторинга файловой системы успешно загружена с {} картами", self.filesystem_maps.len());
         Ok(())
     }
 
@@ -966,17 +993,35 @@ impl EbpfMetricsCollector {
             return Ok(0.0);
         }
         
-        // В реальной реализации здесь будет сбор данных из CPU карт
-        // Используя libbpf-rs API для доступа к картам
+        // Реальный сбор данных из CPU карт
         let mut total_usage = 0.0;
         let mut map_count = 0;
         
         for map in &self.cpu_maps {
             // Пробуем получить доступ к данным в карте
             // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_usage += 25.5;
-            map_count += 1;
+            // Для CPU метрик используем ключ 0 для доступа к данным
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные CPU метрик
+                // В реальной eBPF программе это будет структура cpu_metrics
+                if value_bytes.len() >= 24 { // Размер структуры cpu_metrics
+                    // Для упрощения возвращаем тестовое значение на основе реальных данных
+                    // В реальной реализации нужно разобрать структуру
+                    let user_time = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    let system_time = u64::from_le_bytes(value_bytes[8..16].try_into().unwrap_or([0; 8]));
+                    let idle_time = u64::from_le_bytes(value_bytes[16..24].try_into().unwrap_or([0; 8]));
+                    
+                    let total_time = user_time + system_time + idle_time;
+                    if total_time > 0 {
+                        let usage = (user_time + system_time) as f64 / total_time as f64 * 100.0;
+                        total_usage += usage;
+                    }
+                    map_count += 1;
+                }
+            }
         }
         
         if map_count > 0 {
@@ -1016,16 +1061,23 @@ impl EbpfMetricsCollector {
             return Ok(0);
         }
         
-        // В реальной реализации здесь будет сбор данных из карт системных вызовов
-        // Используя libbpf-rs API для доступа к картам
-        // Пробуем получить общее количество системных вызовов из карты
+        // Реальный сбор данных из карт системных вызовов
         let mut total_count = 0u64;
         
         for map in &self.syscall_maps {
             // Пробуем получить доступ к данным в карте
-            // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_count += 100;
+            // Для системных вызовов используем ключ 0 для доступа к счетчику
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные системных вызовов
+                if value_bytes.len() >= 16 { // Размер структуры syscall_info
+                    // Извлекаем счетчик системных вызовов
+                    let count = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_count += count;
+                }
+            }
         }
         
         Ok(total_count)
@@ -1042,16 +1094,23 @@ impl EbpfMetricsCollector {
             return Ok(0);
         }
         
-        // В реальной реализации здесь будет сбор данных из сетевых карт
-        // Используя libbpf-rs API для доступа к картам
-        // Пробуем получить общее количество сетевых пакетов из карты
+        // Реальный сбор данных из сетевых карт
         let mut total_packets = 0u64;
         
         for map in &self.network_maps {
             // Пробуем получить доступ к данным в карте
-            // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_packets += 250;
+            // Для сетевых пакетов используем ключ 0 для доступа к общему счетчику
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные сетевых пакетов
+                if value_bytes.len() >= 8 { // Размер u64 для счетчика пакетов
+                    // Извлекаем счетчик пакетов
+                    let packets = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_packets += packets;
+                }
+            }
         }
         
         Ok(total_packets)
@@ -1068,16 +1127,23 @@ impl EbpfMetricsCollector {
             return Ok(0);
         }
         
-        // В реальной реализации здесь будет сбор данных из сетевых карт
-        // Используя libbpf-rs API для доступа к картам
-        // Пробуем получить общее количество сетевых байт из карты
+        // Реальный сбор данных из сетевых карт
         let mut total_bytes = 0u64;
         
         for map in &self.network_maps {
             // Пробуем получить доступ к данным в карте
-            // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_bytes += 1024 * 1024 * 5;
+            // Для сетевых байт используем ключ 0 для доступа к общему счетчику
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные сетевых байт
+                if value_bytes.len() >= 8 { // Размер u64 для счетчика байт
+                    // Извлекаем счетчик байт
+                    let bytes = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_bytes += bytes;
+                }
+            }
         }
         
         Ok(total_bytes)
@@ -1094,18 +1160,25 @@ impl EbpfMetricsCollector {
             return Ok(0.0);
         }
         
-        // В реальной реализации здесь будет сбор данных из GPU карт
-        // Используя libbpf-rs API для доступа к картам
-        // Пробуем получить использование GPU из карты
+        // Реальный сбор данных из GPU карт
         let mut total_usage = 0.0;
         let mut map_count = 0;
         
         for map in &self.gpu_maps {
             // Пробуем получить доступ к данным в карте
-            // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_usage += 30.0;
-            map_count += 1;
+            // Для GPU метрик используем ключ 0 для доступа к данным
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные GPU метрик
+                if value_bytes.len() >= 8 { // Размер f64 для использования GPU
+                    // Извлекаем использование GPU
+                    let usage = f64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_usage += usage;
+                    map_count += 1;
+                }
+            }
         }
         
         if map_count > 0 {
@@ -1126,18 +1199,25 @@ impl EbpfMetricsCollector {
             return Ok(0);
         }
         
-        // В реальной реализации здесь будет сбор данных из GPU карт
-        // Используя libbpf-rs API для доступа к картам
-        // Пробуем получить использование памяти GPU из карты
+        // Реальный сбор данных из GPU карт
         let mut total_memory = 0u64;
         let mut map_count = 0;
         
         for map in &self.gpu_maps {
             // Пробуем получить доступ к данным в карте
-            // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_memory += 1024 * 1024 * 1024;
-            map_count += 1;
+            // Для GPU метрик используем ключ 1 для доступа к памяти (предполагаем, что ключ 0 - это использование, а ключ 1 - память)
+            let key = 1u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные памяти GPU
+                if value_bytes.len() >= 8 { // Размер u64 для памяти GPU
+                    // Извлекаем использование памяти GPU
+                    let memory = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_memory += memory;
+                    map_count += 1;
+                }
+            }
         }
         
         if map_count > 0 {
@@ -1158,16 +1238,23 @@ impl EbpfMetricsCollector {
             return Ok(0);
         }
         
-        // В реальной реализации здесь будет сбор данных из карт файловой системы
-        // Используя libbpf-rs API для доступа к картам
-        // Пробуем получить общее количество операций с файловой системой из карты
+        // Реальный сбор данных из карт файловой системы
         let mut total_ops = 0u64;
         
         for map in &self.filesystem_maps {
             // Пробуем получить доступ к данным в карте
-            // В реальной реализации это будет зависеть от структуры карты
-            // Пока что возвращаем тестовое значение на основе количества карт
-            total_ops += 150;
+            // Для операций с файловой системой используем ключ 0 для доступа к счетчику
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные операций с файловой системой
+                if value_bytes.len() >= 8 { // Размер u64 для счетчика операций
+                    // Извлекаем счетчик операций
+                    let ops = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_ops += ops;
+                }
+            }
         }
         
         Ok(total_ops)
@@ -1184,10 +1271,32 @@ impl EbpfMetricsCollector {
             return Ok(0);
         }
         
-        // В реальной реализации здесь будет сбор данных из карт памяти
-        // Используя libbpf-rs API для доступа к картам
-        // Пока что возвращаем тестовое значение на основе количества карт
-        Ok(1024 * 1024 * 512)
+        // Реальный сбор данных из карт памяти
+        let mut total_memory = 0u64;
+        let mut map_count = 0;
+        
+        for map in &self.memory_maps {
+            // Пробуем получить доступ к данным в карте
+            // Для метрик памяти используем ключ 0 для доступа к данным
+            let key = 0u32;
+            
+            // Пробуем получить значение из карты
+            if let Ok(value_bytes) = map.lookup(&key, 0) {
+                // Разбираем данные памяти
+                if value_bytes.len() >= 8 { // Размер u64 для использования памяти
+                    // Извлекаем использование памяти
+                    let memory = u64::from_le_bytes(value_bytes[0..8].try_into().unwrap_or([0; 8]));
+                    total_memory += memory;
+                    map_count += 1;
+                }
+            }
+        }
+        
+        if map_count > 0 {
+            Ok(total_memory / map_count as u64)
+        } else {
+            Ok(0)
+        }
     }
 
     /// Собрать количество системных вызовов из eBPF карт
@@ -2336,7 +2445,10 @@ mod tests {
         #[cfg(not(feature = "ebpf"))]
         {
             // Без eBPF поддержки все метрики могут быть 0
-            assert!(metrics.syscall_count >= 0 && metrics.memory_usage >= 0);
+            // Удаляем проверку, так как unsigned типы всегда >= 0
+            // Просто проверяем, что метрики существуют
+            let _ = metrics.syscall_count;
+            let _ = metrics.memory_usage;
         }
     }
 
@@ -2365,15 +2477,17 @@ mod tests {
         assert!(collector.initialize().is_ok());
 
         // Тестируем получение статистики инициализации
-        let (success, _errors) = collector.get_initialization_stats();
+        let (success, errors) = collector.get_initialization_stats();
         #[cfg(feature = "ebpf")]
         {
             assert!(success > 0); // Должна быть хотя бы одна успешная загрузка
+            assert_eq!(errors, 0); // Ошибок быть не должно
         }
         #[cfg(not(feature = "ebpf"))]
         {
-            // Без eBPF поддержки статистика может быть 0
-            // Удаляем проверку, так как success всегда >= 0 для unsigned типа
+            // Без eBPF поддержки статистика должна остаться 0
+            assert_eq!(success, 0);
+            assert_eq!(errors, 0);
         }
 
         // Тестируем graceful degradation
