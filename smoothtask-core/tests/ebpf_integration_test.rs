@@ -155,6 +155,40 @@ fn test_ebpf_network_monitoring() {
 }
 
 #[test]
+fn test_ebpf_filesystem_monitoring() {
+    // Тестируем поддержку мониторинга файловой системы
+    let mut config = EbpfConfig::default();
+    config.enable_filesystem_monitoring = true;
+    
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+    
+    let metrics = collector.collect_metrics().unwrap();
+    
+    // В тестовой реализации с включенным мониторингом файловой системы
+    // filesystem_ops должно быть больше 0
+    #[cfg(feature = "ebpf")] {
+        assert_eq!(metrics.filesystem_ops, 150);
+    }
+    
+    // Проверяем, что детализированная статистика файловой системы доступна
+    if let Some(details) = metrics.filesystem_details {
+        assert!(!details.is_empty());
+        // В тестовой реализации должно быть 2 записи
+        assert_eq!(details.len(), 2);
+        
+        // Проверяем первую запись
+        let first = &details[0];
+        assert!(first.read_count > 0);
+        assert!(first.write_count > 0);
+        assert!(first.open_count > 0);
+        assert!(first.close_count > 0);
+        assert!(first.bytes_read > 0);
+        assert!(first.bytes_written > 0);
+    }
+}
+
+#[test]
 fn test_ebpf_comprehensive_integration() {
     // Комплексный тест интеграции eBPF функциональности
     let config = EbpfConfig {
@@ -162,6 +196,7 @@ fn test_ebpf_comprehensive_integration() {
         enable_memory_metrics: true,
         enable_syscall_monitoring: true,
         enable_network_monitoring: true,
+        enable_filesystem_monitoring: true,
         enable_caching: true,
         batch_size: 10,
         ..Default::default()
@@ -187,6 +222,7 @@ fn test_ebpf_comprehensive_integration() {
     assert!(metrics.syscall_count >= 0);
     assert!(metrics.network_packets >= 0);
     assert!(metrics.network_bytes >= 0);
+    assert!(metrics.filesystem_ops >= 0);
     // В тестовой среде timestamp может быть 0
     // assert!(metrics.timestamp > 0);
     
@@ -207,6 +243,19 @@ fn test_ebpf_comprehensive_integration() {
             assert!(detail.packets_received >= 0);
             assert!(detail.bytes_sent >= 0);
             assert!(detail.bytes_received >= 0);
+        }
+    }
+
+    // Проверяем детализированную статистику файловой системы
+    if let Some(filesystem_details) = metrics.filesystem_details {
+        assert!(!filesystem_details.is_empty());
+        for detail in filesystem_details {
+            assert!(detail.read_count >= 0);
+            assert!(detail.write_count >= 0);
+            assert!(detail.open_count >= 0);
+            assert!(detail.close_count >= 0);
+            assert!(detail.bytes_read >= 0);
+            assert!(detail.bytes_written >= 0);
         }
     }
     

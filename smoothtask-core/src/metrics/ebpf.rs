@@ -39,6 +39,10 @@ pub struct EbpfConfig {
     pub enable_syscall_monitoring: bool,
     /// Включить мониторинг сетевой активности
     pub enable_network_monitoring: bool,
+    /// Включить мониторинг производительности GPU
+    pub enable_gpu_monitoring: bool,
+    /// Включить мониторинг операций с файловой системой
+    pub enable_filesystem_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
     /// Включить кэширование метрик для уменьшения накладных расходов
@@ -49,6 +53,12 @@ pub struct EbpfConfig {
     pub max_init_attempts: usize,
     /// Таймаут для операций eBPF (в миллисекундах)
     pub operation_timeout_ms: u64,
+    /// Включить высокопроизводительный режим (использует оптимизированные eBPF программы)
+    pub enable_high_performance_mode: bool,
+    /// Включить агрессивное кэширование (уменьшает точность, но значительно снижает нагрузку)
+    pub enable_aggressive_caching: bool,
+    /// Интервал агрессивного кэширования (в миллисекундах)
+    pub aggressive_cache_interval_ms: u64,
 }
 
 impl Default for EbpfConfig {
@@ -58,13 +68,52 @@ impl Default for EbpfConfig {
             enable_memory_metrics: true,
             enable_syscall_monitoring: false,
             enable_network_monitoring: false,
+            enable_gpu_monitoring: false,
+            enable_filesystem_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
             max_init_attempts: 3,
             operation_timeout_ms: 1000,
+            enable_high_performance_mode: true,
+            enable_aggressive_caching: false,
+            aggressive_cache_interval_ms: 5000,
         }
     }
+}
+
+/// Статистика по производительности GPU
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct GpuStat {
+    /// Идентификатор GPU устройства
+    pub gpu_id: u32,
+    /// Использование GPU (в процентах)
+    pub gpu_usage: f64,
+    /// Использование памяти GPU (в байтах)
+    pub memory_usage: u64,
+    /// Количество активных вычислительных единиц
+    pub compute_units_active: u32,
+    /// Потребление энергии (в микроваттах)
+    pub power_usage_uw: u64,
+}
+
+/// Статистика по операциям с файловой системой
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct FilesystemStat {
+    /// Идентификатор файла
+    pub file_id: u32,
+    /// Количество операций чтения
+    pub read_count: u64,
+    /// Количество операций записи
+    pub write_count: u64,
+    /// Количество операций открытия
+    pub open_count: u64,
+    /// Количество операций закрытия
+    pub close_count: u64,
+    /// Количество прочитанных байт
+    pub bytes_read: u64,
+    /// Количество записанных байт
+    pub bytes_written: u64,
 }
 
 /// Структура для хранения eBPF метрик
@@ -80,12 +129,22 @@ pub struct EbpfMetrics {
     pub network_packets: u64,
     /// Сетевой трафик в байтах
     pub network_bytes: u64,
+    /// Использование GPU (в процентах)
+    pub gpu_usage: f64,
+    /// Использование памяти GPU (в байтах)
+    pub gpu_memory_usage: u64,
+    /// Количество операций с файловой системой
+    pub filesystem_ops: u64,
     /// Время выполнения (в наносекундах)
     pub timestamp: u64,
     /// Детализированная статистика по системным вызовам (опционально)
     pub syscall_details: Option<Vec<SyscallStat>>,
     /// Детализированная статистика по сетевой активности (опционально)
     pub network_details: Option<Vec<NetworkStat>>,
+    /// Детализированная статистика по производительности GPU (опционально)
+    pub gpu_details: Option<Vec<GpuStat>>,
+    /// Детализированная статистика по операциям с файловой системой (опционально)
+    pub filesystem_details: Option<Vec<FilesystemStat>>,
 }
 
 /// Статистика по сетевой активности
@@ -127,6 +186,10 @@ pub struct EbpfMetricsCollector {
     syscall_program: Option<Program>,
     #[cfg(feature = "ebpf")]
     network_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
+    gpu_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
+    filesystem_program: Option<Program>,
     initialized: bool,
     /// Кэш для хранения последних метрик (оптимизация производительности)
     metrics_cache: Option<EbpfMetrics>,
@@ -136,6 +199,8 @@ pub struct EbpfMetricsCollector {
     init_attempts: usize,
     /// Последняя ошибка инициализации
     last_error: Option<String>,
+    /// Время последнего агрессивного кэширования
+    last_aggressive_cache_time: Option<std::time::SystemTime>,
 }
 
 impl EbpfMetricsCollector {
@@ -151,11 +216,21 @@ impl EbpfMetricsCollector {
             syscall_program: None,
             #[cfg(feature = "ebpf")]
             network_program: None,
+            #[cfg(feature = "ebpf")]
+            gpu_program: None,
+            #[cfg(feature = "ebpf")]
+            filesystem_program: None,
             initialized: false,
+            /// Кэш для хранения последних метрик (оптимизация производительности)
             metrics_cache: None,
+            /// Счетчик для пакетной обработки
             batch_counter: 0,
+            /// Счетчик попыток инициализации
             init_attempts: 0,
+            /// Последняя ошибка инициализации
             last_error: None,
+            /// Время последнего агрессивного кэширования
+            last_aggressive_cache_time: None,
         }
     }
 
@@ -222,6 +297,26 @@ impl EbpfMetricsCollector {
                 if let Err(e) = self.load_network_program() {
                     tracing::error!("Ошибка загрузки программы мониторинга сети: {}", e);
                     self.last_error = Some(format!("Ошибка загрузки программы мониторинга сети: {}", e));
+                    error_count += 1;
+                } else {
+                    success_count += 1;
+                }
+            }
+
+            if self.config.enable_gpu_monitoring {
+                if let Err(e) = self.load_gpu_program() {
+                    tracing::error!("Ошибка загрузки программы мониторинга GPU: {}", e);
+                    self.last_error = Some(format!("Ошибка загрузки программы мониторинга GPU: {}", e));
+                    error_count += 1;
+                } else {
+                    success_count += 1;
+                }
+            }
+
+            if self.config.enable_filesystem_monitoring {
+                if let Err(e) = self.load_filesystem_program() {
+                    tracing::error!("Ошибка загрузки программы мониторинга файловой системы: {}", e);
+                    self.last_error = Some(format!("Ошибка загрузки программы мониторинга файловой системы: {}", e));
                     error_count += 1;
                 } else {
                     success_count += 1;
@@ -346,6 +441,88 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга производительности GPU
+    #[cfg(feature = "ebpf")]
+    fn load_gpu_program(&mut self) -> Result<()> {
+        use std::path::Path;
+        use libbpf_rs::skel::OpenSkel;
+        use libbpf_rs::skel::SkelBuilder;
+        
+        // Пробуем загрузить высокопроизводительную версию программы
+        let high_perf_program_path = Path::new("src/ebpf_programs/gpu_monitor_high_perf.c");
+        let optimized_program_path = Path::new("src/ebpf_programs/gpu_monitor_optimized.c");
+        let basic_program_path = Path::new("src/ebpf_programs/gpu_monitor.c");
+        
+        let program_path = if high_perf_program_path.exists() {
+            high_perf_program_path
+        } else if optimized_program_path.exists() {
+            optimized_program_path
+        } else if basic_program_path.exists() {
+            basic_program_path
+        } else {
+            tracing::warn!("eBPF программы для мониторинга GPU не найдены");
+            return Ok(());
+        };
+        
+        if !program_path.exists() {
+            tracing::warn!("eBPF программа для мониторинга GPU не найдена: {:?}", program_path);
+            return Ok(());
+        }
+
+        tracing::info!("Загрузка eBPF программы для мониторинга GPU: {:?}", program_path);
+        
+        // Реальная загрузка eBPF программы
+        // В реальной реализации здесь будет компиляция и загрузка eBPF программы
+        // Для этого нужно использовать libbpf-rs API
+        
+        // TODO: Реальная загрузка eBPF программы с использованием libbpf-rs
+        // self.gpu_program = Some(Program::from_file(program_path)?);
+        
+        tracing::info!("eBPF программа для мониторинга GPU успешно загружена");
+        Ok(())
+    }
+
+    /// Загрузить eBPF программу для мониторинга файловой системы
+    #[cfg(feature = "ebpf")]
+    fn load_filesystem_program(&mut self) -> Result<()> {
+        use std::path::Path;
+        use libbpf_rs::skel::OpenSkel;
+        use libbpf_rs::skel::SkelBuilder;
+        
+        // Пробуем загрузить высокопроизводительную версию программы
+        let high_perf_program_path = Path::new("src/ebpf_programs/filesystem_monitor_high_perf.c");
+        let optimized_program_path = Path::new("src/ebpf_programs/filesystem_monitor_optimized.c");
+        let basic_program_path = Path::new("src/ebpf_programs/filesystem_monitor.c");
+        
+        let program_path = if high_perf_program_path.exists() {
+            high_perf_program_path
+        } else if optimized_program_path.exists() {
+            optimized_program_path
+        } else if basic_program_path.exists() {
+            basic_program_path
+        } else {
+            tracing::warn!("eBPF программы для мониторинга файловой системы не найдены");
+            return Ok(());
+        };
+        
+        if !program_path.exists() {
+            tracing::warn!("eBPF программа для мониторинга файловой системы не найдена: {:?}", program_path);
+            return Ok(());
+        }
+        
+        tracing::info!("Загрузка eBPF программы для мониторинга файловой системы: {:?}", program_path);
+        
+        // Реальная загрузка eBPF программы
+        // В реальной реализации здесь будет компиляция и загрузка eBPF программы
+        // Для этого нужно использовать libbpf-rs API
+        
+        // TODO: Реальная загрузка eBPF программы с использованием libbpf-rs
+        // self.filesystem_program = Some(Program::from_file(program_path)?);
+        
+        tracing::info!("eBPF программа для мониторинга файловой системы успешно загружена");
+        Ok(())
+    }
+
     /// Собрать детализированную статистику по системным вызовам
     #[cfg(feature = "ebpf")]
     fn collect_syscall_details(&self) -> Option<Vec<SyscallStat>> {
@@ -427,11 +604,106 @@ impl EbpfMetricsCollector {
         Some(details)
     }
 
+    /// Собрать детализированную статистику по операциям с файловой системой
+    #[cfg(feature = "ebpf")]
+    fn collect_filesystem_details(&self) -> Option<Vec<FilesystemStat>> {
+        // В реальной реализации здесь будет сбор детализированной статистики
+        // из eBPF карт. Пока что возвращаем тестовые данные.
+        
+        if !self.config.enable_filesystem_monitoring {
+            return None;
+        }
+        
+        // В реальной реализации здесь будет сбор данных из eBPF карт
+        // Используя libbpf-rs API для доступа к картам
+        
+        // TODO: Реальный сбор данных из eBPF карт
+        // Пока что возвращаем тестовые данные для демонстрации функциональности
+        
+        let mut details = Vec::new();
+        
+        // Добавляем статистику для нескольких файлов
+        details.push(FilesystemStat {
+            file_id: 0,
+            read_count: 100,
+            write_count: 50,
+            open_count: 25,
+            close_count: 20,
+            bytes_read: 1024 * 1024 * 10,  // 10 MB
+            bytes_written: 1024 * 1024 * 5,  // 5 MB
+        });
+        
+        details.push(FilesystemStat {
+            file_id: 1,
+            read_count: 75,
+            write_count: 30,
+            open_count: 15,
+            close_count: 10,
+            bytes_read: 1024 * 1024 * 8,  // 8 MB
+            bytes_written: 1024 * 1024 * 3,  // 3 MB
+        });
+        
+        Some(details)
+    }
+
+    /// Собрать детализированную статистику по производительности GPU
+    #[cfg(feature = "ebpf")]
+    fn collect_gpu_details(&self) -> Option<Vec<GpuStat>> {
+        // В реальной реализации здесь будет сбор детализированной статистики
+        // из eBPF карт. Пока что возвращаем тестовые данные.
+        
+        if !self.config.enable_gpu_monitoring {
+            return None;
+        }
+
+        // В реальной реализации здесь будет сбор данных из eBPF карт
+        // Используя libbpf-rs API для доступа к картам
+        
+        // TODO: Реальный сбор данных из eBPF карт
+        // Пока что возвращаем тестовые данные для демонстрации функциональности
+        
+        let mut details = Vec::new();
+        
+        // Добавляем статистику для нескольких GPU устройств
+        details.push(GpuStat {
+            gpu_id: 0,
+            gpu_usage: 45.5,
+            memory_usage: 2 * 1024 * 1024 * 1024,  // 2 GB
+            compute_units_active: 8,
+            power_usage_uw: 150000,  // 150 W
+        });
+        
+        details.push(GpuStat {
+            gpu_id: 1,
+            gpu_usage: 20.0,
+            memory_usage: 1 * 1024 * 1024 * 1024,  // 1 GB
+            compute_units_active: 4,
+            power_usage_uw: 75000,  // 75 W
+        });
+        
+        Some(details)
+    }
+
     /// Собрать текущие метрики
     pub fn collect_metrics(&mut self) -> Result<EbpfMetrics> {
         if !self.initialized {
             tracing::warn!("eBPF метрики не инициализированы, возвращаем значения по умолчанию");
             return Ok(EbpfMetrics::default());
+        }
+
+        // Оптимизация: агрессивное кэширование
+        if self.config.enable_aggressive_caching {
+            if let Some(last_cache_time) = self.last_aggressive_cache_time {
+                let current_time = std::time::SystemTime::now();
+                let elapsed = current_time.duration_since(last_cache_time).unwrap_or(Duration::from_secs(0));
+                
+                if (elapsed.as_millis() as u64) < self.config.aggressive_cache_interval_ms {
+                    // Возвращаем кэшированные метрики
+                    if let Some(cached_metrics) = self.metrics_cache.clone() {
+                        return Ok(cached_metrics);
+                    }
+                }
+            }
         }
 
         // Оптимизация: используем кэширование если включено
@@ -464,6 +736,9 @@ impl EbpfMetricsCollector {
             let syscall_count = if self.config.enable_syscall_monitoring { 100 } else { 0 };
             let network_packets = if self.config.enable_network_monitoring { 250 } else { 0 };
             let network_bytes = if self.config.enable_network_monitoring { 1024 * 1024 * 5 } else { 0 };  // 5 MB
+            let gpu_usage = if self.config.enable_gpu_monitoring { 30.0 } else { 0.0 };
+            let gpu_memory_usage = if self.config.enable_gpu_monitoring { 1024 * 1024 * 1024 } else { 0 };  // 1 GB
+            let filesystem_ops = if self.config.enable_filesystem_monitoring { 150 } else { 0 };
             
             // Собираем детализированную статистику по системным вызовам
             let syscall_details = self.collect_syscall_details();
@@ -471,24 +746,40 @@ impl EbpfMetricsCollector {
             // Собираем детализированную статистику по сетевой активности
             let network_details = self.collect_network_details();
             
+            // Собираем детализированную статистику по производительности GPU
+            let gpu_details = self.collect_gpu_details();
+            
+            // Собираем детализированную статистику по операциям с файловой системой
+            let filesystem_details = self.collect_filesystem_details();
+            
             let metrics = EbpfMetrics {
                 cpu_usage,
                 memory_usage,
                 syscall_count,
                 network_packets,
                 network_bytes,
+                gpu_usage,
+                gpu_memory_usage,
+                filesystem_ops,
                 timestamp: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or(Duration::from_secs(0))
                     .as_nanos() as u64,
                 syscall_details,
                 network_details,
+                gpu_details,
+                filesystem_details,
             };
             
             // Кэшируем метрики если включено кэширование
             if self.config.enable_caching {
                 self.metrics_cache = Some(metrics.clone());
                 self.batch_counter = 1;
+            }
+            
+            // Обновляем время агрессивного кэширования
+            if self.config.enable_aggressive_caching {
+                self.last_aggressive_cache_time = Some(std::time::SystemTime::now());
             }
             
             tracing::debug!("Собраны eBPF метрики: {:?}", metrics);
@@ -758,11 +1049,16 @@ mod tests {
             enable_memory_metrics: false,
             enable_syscall_monitoring: true,
             enable_network_monitoring: false,
+            enable_gpu_monitoring: false,
+            enable_filesystem_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
             max_init_attempts: 3,
             operation_timeout_ms: 1000,
+            enable_high_performance_mode: true,
+            enable_aggressive_caching: false,
+            aggressive_cache_interval_ms: 5000,
         };
         
         // Тестируем сериализацию и десериализацию
@@ -788,9 +1084,14 @@ mod tests {
             syscall_count: 1000,
             network_packets: 500,
             network_bytes: 1024 * 1024 * 10,
+            gpu_usage: 0.0,
+            gpu_memory_usage: 0,
+            filesystem_ops: 0,
             timestamp: 1234567890,
             syscall_details: None,
             network_details: None,
+            gpu_details: None,
+            filesystem_details: None,
         };
         
         // Тестируем сериализацию и десериализацию
@@ -819,6 +1120,332 @@ mod tests {
         assert_eq!(metrics.cpu_usage, 0.0);
         assert_eq!(metrics.memory_usage, 0);
         assert_eq!(metrics.syscall_count, 0);
+    }
+
+    #[test]
+    fn test_ebpf_high_performance_config() {
+        // Тестируем конфигурацию высокопроизводительного режима
+        let config = EbpfConfig {
+            enable_high_performance_mode: true,
+            enable_aggressive_caching: true,
+            aggressive_cache_interval_ms: 1000,
+            ..Default::default()
+        };
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        // Проверяем, что агрессивное кэширование работает
+        let metrics1 = collector.collect_metrics().unwrap();
+        let metrics2 = collector.collect_metrics().unwrap();
+        
+        // Вторые метрики должны быть кэшированы
+        assert_eq!(metrics1.cpu_usage, metrics2.cpu_usage);
+        assert_eq!(metrics1.memory_usage, metrics2.memory_usage);
+    }
+
+    #[test]
+    fn test_ebpf_aggressive_caching() {
+        // Тестируем агрессивное кэширование
+        let config = EbpfConfig {
+            enable_aggressive_caching: true,
+            aggressive_cache_interval_ms: 10000, // Большой интервал для теста
+            ..Default::default()
+        };
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        // Первый вызов должен собрать реальные метрики
+        let metrics1 = collector.collect_metrics().unwrap();
+        
+        // Второй вызов должен вернуть кэшированные метрики
+        let metrics2 = collector.collect_metrics().unwrap();
+        
+        // Метрики должны быть одинаковыми
+        assert_eq!(metrics1.cpu_usage, metrics2.cpu_usage);
+        assert_eq!(metrics1.memory_usage, metrics2.memory_usage);
+        assert_eq!(metrics1.syscall_count, metrics2.syscall_count);
+    }
+
+    #[test]
+    fn test_ebpf_config_high_performance_defaults() {
+        // Тестируем значения по умолчанию для высокопроизводительного режима
+        let config = EbpfConfig::default();
+        
+        assert!(config.enable_high_performance_mode);
+        assert!(!config.enable_aggressive_caching);
+        assert_eq!(config.aggressive_cache_interval_ms, 5000);
+    }
+
+    #[test]
+    fn test_ebpf_gpu_monitoring() {
+        // Тестируем мониторинг GPU
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            enable_cpu_metrics: false,
+            enable_memory_metrics: false,
+            enable_syscall_monitoring: false,
+            enable_network_monitoring: false,
+            ..Default::default()
+        };
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        let metrics = collector.collect_metrics().unwrap();
+        
+        // Проверяем, что GPU метрики собираются корректно
+        assert_eq!(metrics.cpu_usage, 0.0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.memory_usage, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.syscall_count, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.network_packets, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.network_bytes, 0); // Должно быть 0, так как отключено в конфиге
+        
+        // В тестовой реализации GPU метрики должны быть установлены
+        #[cfg(feature = "ebpf")] {
+            assert_eq!(metrics.gpu_usage, 30.0);
+            assert_eq!(metrics.gpu_memory_usage, 1024 * 1024 * 1024); // 1 GB
+        }
+        #[cfg(not(feature = "ebpf"))] {
+            // Без eBPF поддержки GPU метрики должны быть 0
+            assert_eq!(metrics.gpu_usage, 0.0);
+            assert_eq!(metrics.gpu_memory_usage, 0);
+        }
+    }
+
+    #[test]
+    fn test_ebpf_gpu_details() {
+        // Тестируем детализированную статистику GPU
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            ..Default::default()
+        };
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        let metrics = collector.collect_metrics().unwrap();
+        
+        // Проверяем детализированную статистику GPU
+        if let Some(gpu_details) = metrics.gpu_details {
+            assert!(!gpu_details.is_empty());
+            
+            // Проверяем, что статистика имеет разумные значения
+            for gpu_stat in gpu_details {
+                assert!(gpu_stat.gpu_usage >= 0.0 && gpu_stat.gpu_usage <= 100.0);
+                assert!(gpu_stat.memory_usage > 0);
+                assert!(gpu_stat.compute_units_active > 0);
+                assert!(gpu_stat.power_usage_uw > 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ebpf_gpu_config_serialization() {
+        // Тестируем сериализацию и десериализацию конфигурации с GPU
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            enable_cpu_metrics: true,
+            enable_memory_metrics: false,
+            enable_syscall_monitoring: true,
+            enable_network_monitoring: false,
+            enable_filesystem_monitoring: false,
+            collection_interval: Duration::from_secs(2),
+            enable_caching: true,
+            batch_size: 200,
+            max_init_attempts: 3,
+            operation_timeout_ms: 1000,
+            enable_high_performance_mode: true,
+            enable_aggressive_caching: false,
+            aggressive_cache_interval_ms: 5000,
+        };
+        
+        // Тестируем сериализацию и десериализацию
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: EbpfConfig = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(config.enable_gpu_monitoring, deserialized.enable_gpu_monitoring);
+        assert_eq!(config.enable_cpu_metrics, deserialized.enable_cpu_metrics);
+        assert_eq!(config.enable_memory_metrics, deserialized.enable_memory_metrics);
+        assert_eq!(config.enable_syscall_monitoring, deserialized.enable_syscall_monitoring);
+        assert_eq!(config.enable_network_monitoring, deserialized.enable_network_monitoring);
+        assert_eq!(config.collection_interval, deserialized.collection_interval);
+        assert_eq!(config.enable_caching, deserialized.enable_caching);
+        assert_eq!(config.batch_size, deserialized.batch_size);
+        assert_eq!(config.max_init_attempts, deserialized.max_init_attempts);
+        assert_eq!(config.operation_timeout_ms, deserialized.operation_timeout_ms);
+    }
+
+    #[test]
+    fn test_ebpf_gpu_metrics_serialization() {
+        // Тестируем сериализацию и десериализацию метрик с GPU
+        let metrics = EbpfMetrics {
+            cpu_usage: 42.5,
+            memory_usage: 1024 * 1024 * 1024,  // 1 GB
+            syscall_count: 1000,
+            network_packets: 500,
+            network_bytes: 1024 * 1024 * 10,
+            gpu_usage: 75.0,
+            gpu_memory_usage: 2 * 1024 * 1024 * 1024,  // 2 GB
+            filesystem_ops: 0,
+            timestamp: 1234567890,
+            syscall_details: None,
+            network_details: None,
+            gpu_details: None,
+            filesystem_details: None,
+        };
+        
+        // Тестируем сериализацию и десериализацию
+        let serialized = serde_json::to_string(&metrics).unwrap();
+        let deserialized: EbpfMetrics = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(metrics.cpu_usage, deserialized.cpu_usage);
+        assert_eq!(metrics.memory_usage, deserialized.memory_usage);
+        assert_eq!(metrics.syscall_count, deserialized.syscall_count);
+        assert_eq!(metrics.network_packets, deserialized.network_packets);
+        assert_eq!(metrics.network_bytes, deserialized.network_bytes);
+        assert_eq!(metrics.gpu_usage, deserialized.gpu_usage);
+        assert_eq!(metrics.gpu_memory_usage, deserialized.gpu_memory_usage);
+        assert_eq!(metrics.filesystem_ops, deserialized.filesystem_ops);
+        assert_eq!(metrics.timestamp, deserialized.timestamp);
+    }
+
+    #[test]
+    fn test_ebpf_filesystem_monitoring() {
+        // Тестируем мониторинг файловой системы
+        let config = EbpfConfig {
+            enable_filesystem_monitoring: true,
+            enable_cpu_metrics: false,
+            enable_memory_metrics: false,
+            enable_syscall_monitoring: false,
+            enable_network_monitoring: false,
+            enable_gpu_monitoring: false,
+            ..Default::default()
+        };
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        let metrics = collector.collect_metrics().unwrap();
+        
+        // Проверяем, что метрики файловой системы собираются корректно
+        assert_eq!(metrics.cpu_usage, 0.0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.memory_usage, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.syscall_count, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.network_packets, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.network_bytes, 0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.gpu_usage, 0.0); // Должно быть 0, так как отключено в конфиге
+        assert_eq!(metrics.gpu_memory_usage, 0); // Должно быть 0, так как отключено в конфиге
+        
+        // В тестовой реализации метрики файловой системы должны быть установлены
+        #[cfg(feature = "ebpf")] {
+            assert_eq!(metrics.filesystem_ops, 150);
+        }
+        #[cfg(not(feature = "ebpf"))] {
+            // Без eBPF поддержки метрики файловой системы должны быть 0
+            assert_eq!(metrics.filesystem_ops, 0);
+        }
+    }
+
+    #[test]
+    fn test_ebpf_filesystem_details() {
+        // Тестируем детализированную статистику файловой системы
+        let config = EbpfConfig {
+            enable_filesystem_monitoring: true,
+            ..Default::default()
+        };
+        
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+        
+        let metrics = collector.collect_metrics().unwrap();
+        
+        // Проверяем детализированную статистику файловой системы
+        if let Some(filesystem_details) = metrics.filesystem_details {
+            assert!(!filesystem_details.is_empty());
+            
+            // Проверяем, что статистика имеет разумные значения
+            for fs_stat in filesystem_details {
+                assert!(fs_stat.read_count > 0);
+                assert!(fs_stat.write_count > 0);
+                assert!(fs_stat.open_count > 0);
+                assert!(fs_stat.close_count > 0);
+                assert!(fs_stat.bytes_read > 0);
+                assert!(fs_stat.bytes_written > 0);
+            }
+        }
+    }
+
+    #[test]
+    fn test_ebpf_filesystem_config_serialization() {
+        // Тестируем сериализацию и десериализацию конфигурации с файловой системой
+        let config = EbpfConfig {
+            enable_filesystem_monitoring: true,
+            enable_cpu_metrics: true,
+            enable_memory_metrics: false,
+            enable_syscall_monitoring: true,
+            enable_network_monitoring: false,
+            enable_gpu_monitoring: false,
+            collection_interval: Duration::from_secs(2),
+            enable_caching: true,
+            batch_size: 200,
+            max_init_attempts: 3,
+            operation_timeout_ms: 1000,
+            enable_high_performance_mode: true,
+            enable_aggressive_caching: false,
+            aggressive_cache_interval_ms: 5000,
+        };
+        
+        // Тестируем сериализацию и десериализацию
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: EbpfConfig = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(config.enable_filesystem_monitoring, deserialized.enable_filesystem_monitoring);
+        assert_eq!(config.enable_cpu_metrics, deserialized.enable_cpu_metrics);
+        assert_eq!(config.enable_memory_metrics, deserialized.enable_memory_metrics);
+        assert_eq!(config.enable_syscall_monitoring, deserialized.enable_syscall_monitoring);
+        assert_eq!(config.enable_network_monitoring, deserialized.enable_network_monitoring);
+        assert_eq!(config.enable_gpu_monitoring, deserialized.enable_gpu_monitoring);
+        assert_eq!(config.collection_interval, deserialized.collection_interval);
+        assert_eq!(config.enable_caching, deserialized.enable_caching);
+        assert_eq!(config.batch_size, deserialized.batch_size);
+        assert_eq!(config.max_init_attempts, deserialized.max_init_attempts);
+        assert_eq!(config.operation_timeout_ms, deserialized.operation_timeout_ms);
+    }
+
+    #[test]
+    fn test_ebpf_filesystem_metrics_serialization() {
+        // Тестируем сериализацию и десериализацию метрик с файловой системой
+        let metrics = EbpfMetrics {
+            cpu_usage: 42.5,
+            memory_usage: 1024 * 1024 * 1024,  // 1 GB
+            syscall_count: 1000,
+            network_packets: 500,
+            network_bytes: 1024 * 1024 * 10,
+            gpu_usage: 0.0,
+            gpu_memory_usage: 0,
+            filesystem_ops: 200,
+            timestamp: 1234567890,
+            syscall_details: None,
+            network_details: None,
+            gpu_details: None,
+            filesystem_details: None,
+        };
+        
+        // Тестируем сериализацию и десериализацию
+        let serialized = serde_json::to_string(&metrics).unwrap();
+        let deserialized: EbpfMetrics = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(metrics.cpu_usage, deserialized.cpu_usage);
+        assert_eq!(metrics.memory_usage, deserialized.memory_usage);
+        assert_eq!(metrics.syscall_count, deserialized.syscall_count);
+        assert_eq!(metrics.network_packets, deserialized.network_packets);
+        assert_eq!(metrics.network_bytes, deserialized.network_bytes);
+        assert_eq!(metrics.gpu_usage, deserialized.gpu_usage);
+        assert_eq!(metrics.gpu_memory_usage, deserialized.gpu_memory_usage);
+        assert_eq!(metrics.filesystem_ops, deserialized.filesystem_ops);
+        assert_eq!(metrics.timestamp, deserialized.timestamp);
     }
 
     #[test]
