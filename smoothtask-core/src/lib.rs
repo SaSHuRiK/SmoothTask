@@ -529,6 +529,14 @@ pub async fn run_daemon(
     // Читаем конфигурацию один раз для инициализации
     let initial_config = config_arc.read().await.clone();
 
+    // Инициализация хранилища логов для уведомлений и API
+    let log_storage: Arc<crate::logging::log_storage::SharedLogStorage> = {
+        // Создаём хранилище логов с разумным лимитом (например, 1000 записей)
+        let storage = crate::logging::log_storage::SharedLogStorage::new(1000);
+        info!("Initialized log storage with capacity for 1000 entries");
+        Arc::new(storage)
+    };
+
     // Инициализация системы уведомлений
     // Используем Arc для совместного доступа между основным циклом и API сервером
     let notification_manager: Arc<tokio::sync::Mutex<NotificationManager>> = {
@@ -536,18 +544,19 @@ pub async fn run_daemon(
         let manager: NotificationManager = match initial_config.notifications.backend {
             NotificationBackend::Stub => {
                 info!("Using StubNotifier for notifications (testing mode)");
-                NotificationManager::new(StubNotifier)
+                NotificationManager::new_stub_with_logging(Arc::clone(&log_storage))
             }
             NotificationBackend::Libnotify => {
                 warn!("Libnotify backend selected but feature 'libnotify' is not enabled, falling back to stub");
-                NotificationManager::new(StubNotifier)
+                NotificationManager::new_stub_with_logging(Arc::clone(&log_storage))
             }
         };
 
         info!(
-            "Notification system initialized (backend: {}, enabled: {})",
+            "Notification system initialized (backend: {}, enabled: {}, logging: {})",
             manager.backend_name(),
-            manager.is_enabled()
+            manager.is_enabled(),
+            manager.log_storage.is_some()
         );
         Arc::new(tokio::sync::Mutex::new(manager))
     };
@@ -727,6 +736,7 @@ pub async fn run_daemon(
                     .with_pattern_database(Some(Arc::clone(&pattern_db_arc)))
                     .with_config_path(Some(config_path.clone()))
                     .with_notification_manager(Some(Arc::clone(&notification_manager)))
+                    .with_log_storage(Some(Arc::clone(&log_storage)))
                     .build();
                 let api_server = ApiServer::with_state(addr, api_state);
                 match api_server.start().await {
@@ -955,12 +965,54 @@ pub async fn run_daemon(
                     "Applied {} priority adjustments ({} skipped due to hysteresis, {} errors)",
                     apply_result.applied, apply_result.skipped_hysteresis, apply_result.errors
                 );
+                
+                // Отправляем уведомление о изменении приоритетов
+                if notification_manager.lock().await.is_enabled() {
+                    let notification = crate::notifications::Notification::new(
+                        crate::notifications::NotificationType::Info,
+                        "Priority Adjustments Applied",
+                        format!(
+                            "Applied {} priority adjustments to processes",
+                            apply_result.applied
+                        ),
+                    ).with_details(format!(
+                        "Successfully applied {} adjustments, skipped {} due to hysteresis, {} errors. Total processes affected: {}",
+                        apply_result.applied,
+                        apply_result.skipped_hysteresis,
+                        apply_result.errors,
+                        adjustments.len()
+                    ));
+                    
+                    if let Err(e) = notification_manager.lock().await.send(&notification).await {
+                        warn!("Failed to send priority change notification: {}", e);
+                    }
+                }
             }
             if apply_result.errors > 0 {
                 warn!(
                     "Failed to apply {} priority adjustments",
                     apply_result.errors
                 );
+                
+                // Отправляем уведомление об ошибках при изменении приоритетов
+                if notification_manager.lock().await.is_enabled() {
+                    let notification = crate::notifications::Notification::new(
+                        crate::notifications::NotificationType::Warning,
+                        "Priority Adjustment Errors",
+                        format!(
+                            "Failed to apply {} priority adjustments",
+                            apply_result.errors
+                        ),
+                    ).with_details(format!(
+                        "{} errors occurred while applying priority adjustments to {} processes",
+                        apply_result.errors,
+                        adjustments.len()
+                    ));
+                    
+                    if let Err(e) = notification_manager.lock().await.send(&notification).await {
+                        warn!("Failed to send priority error notification: {}", e);
+                    }
+                }
             }
             (apply_result.applied, apply_result.errors)
         };

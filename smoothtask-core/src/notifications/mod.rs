@@ -15,6 +15,9 @@ use std::fmt;
 #[cfg(feature = "dbus")]
 use zbus::Connection;
 
+#[cfg(feature = "dbus")]
+use zbus::zvariant::Value;
+
 /// Тип уведомления, определяющий его важность и визуальное представление.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -291,30 +294,96 @@ impl Notifier for DBusNotifier {
             body.push_str(details);
         }
 
-        // В реальной реализации здесь будет отправка уведомления через D-Bus
-        // Используем заглушку, так как полная реализация требует интеграции с системным D-Bus
-        tracing::info!(
-            "Would send D-Bus notification: {} - {} (urgency: {})",
-            notification.title,
-            body,
-            urgency
-        );
+        // Реальная отправка уведомления через D-Bus
+        // Используем стандартный интерфейс org.freedesktop.Notifications
+        let proxy = zbus::Proxy::new(
+            connection,
+            "org.freedesktop.Notifications",
+            "/org/freedesktop/Notifications",
+            "org.freedesktop.Notifications",
+        )?;
 
-        // TODO: Реальная отправка уведомления через D-Bus
-        // Например:
-        // let proxy = zbus_notification::NotificationProxy::new(connection).await?;
-        // proxy.notify(
-        //     &self.app_name,
-        //     0, // replaces_id
-        //     "dialog-information", // icon
-        //     &notification.title,
-        //     &body,
-        //     &[], // actions
-        //     &std::collections::HashMap::new(), // hints
-        //     5000, // timeout
-        // ).await?;
+        // Подготавливаем параметры для вызова метода Notify
+        let app_name: &str = &self.app_name;
+        let replaces_id: u32 = 0; // 0 означает новое уведомление
+        let app_icon: &str = match notification.notification_type {
+            NotificationType::Critical => "dialog-error",
+            NotificationType::Warning => "dialog-warning",
+            NotificationType::Info => "dialog-information",
+        };
+        let summary: &str = &notification.title;
+        let body_str: &str = &body;
+        let actions: Vec<&str> = vec![]; // Нет действий
+        let hints: std::collections::HashMap<&str, zbus::zvariant::Value> = {
+            let mut hints_map = std::collections::HashMap::new();
+            // Устанавливаем уровень срочности
+            hints_map.insert("urgency", zbus::zvariant::Value::new(urgency));
+            hints_map
+        };
+        let expire_timeout: i32 = 5000; // 5 секунд
 
-        Ok(())
+        // Отправляем уведомление через D-Bus
+        let result: zbus::Result<u32> = proxy
+            .call_method(
+                "Notify",
+                &(
+                    app_name,
+                    replaces_id,
+                    app_icon,
+                    summary,
+                    body_str,
+                    actions,
+                    hints,
+                    expire_timeout,
+                ),
+            )
+            .await;
+
+        match result {
+            Ok(notification_id) => {
+                tracing::info!(
+                    "Successfully sent D-Bus notification (ID: {}): {} - {}",
+                    notification_id,
+                    notification.title,
+                    notification.message
+                );
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to send D-Bus notification: {}. Falling back to logging.",
+                    e
+                );
+                // В случае ошибки, логируем уведомление как заглушка
+                match notification.notification_type {
+                    NotificationType::Critical => {
+                        tracing::error!(
+                            "[NOTIFICATION] {}: {}",
+                            notification.title,
+                            notification.message
+                        );
+                    }
+                    NotificationType::Warning => {
+                        tracing::warn!(
+                            "[NOTIFICATION] {}: {}",
+                            notification.title,
+                            notification.message
+                        );
+                    }
+                    NotificationType::Info => {
+                        tracing::info!(
+                            "[NOTIFICATION] {}: {}",
+                            notification.title,
+                            notification.message
+                        );
+                    }
+                }
+                if let Some(details) = &notification.details {
+                    tracing::debug!("Notification details: {}", details);
+                }
+                Ok(())
+            }
+        }
     }
 
     fn backend_name(&self) -> &str {
@@ -330,6 +399,10 @@ pub struct NotificationManager {
     /// Флаг, разрешающий отправку уведомлений.
     /// Если false, уведомления не отправляются (полезно для тестирования или тихого режима).
     enabled: bool,
+    
+    /// Опциональное хранилище логов для интеграции с системой логирования.
+    /// Если указано, уведомления будут также логироваться в хранилище.
+    pub log_storage: Option<std::sync::Arc<crate::logging::log_storage::SharedLogStorage>>,
 }
 
 impl NotificationManager {
@@ -338,12 +411,22 @@ impl NotificationManager {
         Self {
             primary_notifier: Box::new(notifier),
             enabled: true,
+            log_storage: None,
         }
     }
     
     /// Создаёт новый NotificationManager с заглушкой (для тестирования).
     pub fn new_stub() -> Self {
         Self::new(StubNotifier)
+    }
+    
+    /// Создаёт новый NotificationManager с заглушкой и интеграцией с хранилищем логов.
+    pub fn new_stub_with_logging(log_storage: std::sync::Arc<crate::logging::log_storage::SharedLogStorage>) -> Self {
+        Self {
+            primary_notifier: Box::new(StubNotifier),
+            enabled: true,
+            log_storage: Some(log_storage),
+        }
     }
     
     /// Создаёт новый NotificationManager с libnotify бэкендом.
@@ -393,6 +476,32 @@ impl NotificationManager {
         if !self.enabled {
             tracing::debug!("Notifications are disabled, skipping notification");
             return Ok(());
+        }
+        
+        // Логируем уведомление в хранилище логов, если оно доступно
+        if let Some(ref log_storage_arc) = self.log_storage {
+            let log_level = match notification.notification_type {
+                NotificationType::Critical => crate::logging::log_storage::LogLevel::Error,
+                NotificationType::Warning => crate::logging::log_storage::LogLevel::Warn,
+                NotificationType::Info => crate::logging::log_storage::LogLevel::Info,
+            };
+            
+            let mut log_entry = crate::logging::log_storage::LogEntry::new(
+                log_level,
+                "notifications",
+                format!("{} - {}", notification.title, notification.message),
+            );
+            
+            if let Some(details) = &notification.details {
+                let fields = serde_json::json!({
+                    "notification_type": format!("{}", notification.notification_type),
+                    "timestamp": notification.timestamp.to_rfc3339(),
+                    "details": details,
+                });
+                log_entry = log_entry.with_fields(fields);
+            }
+            
+            log_storage_arc.add_entry(log_entry).await;
         }
         
         self.primary_notifier.send_notification(notification).await
@@ -532,5 +641,109 @@ mod tests {
         let manager = NotificationManager::new_dbus("TestApp");
         assert_eq!(manager.backend_name(), "dbus");
         assert!(manager.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_with_logging() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        assert!(manager.is_enabled());
+        assert!(manager.log_storage.is_some());
+        
+        // Отправляем уведомление
+        let notification = Notification::new(
+            NotificationType::Info,
+            "Test Title",
+            "Test Message",
+        ).with_details("Test details");
+        
+        let result = manager.send(&notification).await;
+        assert!(result.is_ok());
+        
+        // Проверяем, что уведомление было залоггировано
+        let entries = log_storage.get_entries_by_level(crate::logging::log_storage::LogLevel::Info).await;
+        assert_eq!(entries.len(), 1);
+        
+        let entry = &entries[0];
+        assert_eq!(entry.target, "notifications");
+        assert!(entry.message.contains("Test Title - Test Message"));
+        assert!(entry.fields.is_some());
+        
+        if let Some(fields) = &entry.fields {
+            assert!(fields.get("notification_type").is_some());
+            assert!(fields.get("details").is_some());
+        }
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_logging_levels() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(20));
+        let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        
+        // Отправляем уведомления разных уровней
+        let critical_notification = Notification::new(
+            NotificationType::Critical,
+            "Critical Title",
+            "Critical Message",
+        );
+        
+        let warning_notification = Notification::new(
+            NotificationType::Warning,
+            "Warning Title",
+            "Warning Message",
+        );
+        
+        let info_notification = Notification::new(
+            NotificationType::Info,
+            "Info Title",
+            "Info Message",
+        );
+        
+        // Отправляем уведомления
+        manager.send(&critical_notification).await.unwrap();
+        manager.send(&warning_notification).await.unwrap();
+        manager.send(&info_notification).await.unwrap();
+        
+        // Проверяем, что уведомления были залоггированы с правильными уровнями
+        // Используем get_all_entries и фильтруем по уровню, чтобы избежать проблем с кэшированием
+        let all_entries = log_storage.get_all_entries().await;
+        let error_entries: Vec<_> = all_entries.iter().filter(|e| e.level == crate::logging::log_storage::LogLevel::Error).collect();
+        let warn_entries: Vec<_> = all_entries.iter().filter(|e| e.level == crate::logging::log_storage::LogLevel::Warn).collect();
+        let info_entries: Vec<_> = all_entries.iter().filter(|e| e.level == crate::logging::log_storage::LogLevel::Info).collect();
+        
+        assert_eq!(error_entries.len(), 1); // Critical -> Error
+        assert_eq!(warn_entries.len(), 1);  // Warning -> Warn
+        assert_eq!(info_entries.len(), 1);  // Info -> Info
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_disabled_with_logging() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+        
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let mut manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+        manager.set_enabled(false);
+        
+        // Отправляем уведомление (должно быть проигнорировано)
+        let notification = Notification::new(
+            NotificationType::Info,
+            "Test Title",
+            "Test Message",
+        );
+        
+        let result = manager.send(&notification).await;
+        assert!(result.is_ok());
+        
+        // Проверяем, что уведомление НЕ было залоггировано
+        let entries = log_storage.get_entries_by_level(crate::logging::log_storage::LogLevel::Info).await;
+        assert_eq!(entries.len(), 0);
     }
 }
