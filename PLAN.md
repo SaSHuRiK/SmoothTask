@@ -11,15 +11,30 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-606: Улучшить обработку ошибок в модуле API сервера
+- [x] ST-606: Улучшить обработку ошибок в модуле API сервера
   - Тип: Rust / core / api
-  - Примечания: Добавление более детальных сообщений об ошибках и улучшение graceful degradation для API endpoint'ов
+  - Примечания: Добавление более детальных сообщений об ошибок и улучшение graceful degradation для API endpoint'ов
   - Приоритет: Средний
   - Оценка времени: ~60 минут
-  - Критерии готовности:
-    - Улучшенные сообщения об ошибках для всех API endpoint'ов
-    - Graceful degradation при недоступности зависимостей
-    - Unit-тесты для новых сценариев обработки ошибок
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Добавлен ApiError enum с различными типами ошибок, реализованы методы to_json_response для детальных JSON ответов, добавлены хелперы graceful_degradation_response и check_component_availability
+    - smoothtask-core/Cargo.toml: Добавлена зависимость thiserror для улучшенной обработки ошибок
+    - smoothtask-core/tests/api_integration_test.rs: Исправлены ошибки компиляции в тестах (конвертация String в Box<str>)
+  - Новые функции:
+    - ApiError enum: ValidationError, DataAccessError, ConfigurationError, InternalError, NotFoundError, ServiceUnavailableError
+    - graceful_degradation_response: Хелпер для graceful degradation ответов
+    - check_component_availability: Хелпер для проверки доступности компонентов
+  - Обновлённые функции:
+    - process_by_pid_handler: Использует ApiError для валидации и ошибок "не найдено"
+    - appgroup_by_id_handler: Использует ApiError для валидации и ошибок "не найдено"
+    - config_reload_handler: Использует ApiError для обработки ошибок конфигурации
+    - health_detailed_handler: Улучшенная информация о компонентах и общем статусе
+    - metrics_handler: Graceful degradation при недоступности метрик
+    - processes_handler: Graceful degradation при недоступности процессов
+    - appgroups_handler: Graceful degradation при недоступности групп приложений
+  - Результаты: Полная реализация улучшенной обработки ошибок с детальными сообщениями, graceful degradation и комплексными тестами
 
 - [ ] ST-607: Оптимизировать производительность сбора метрик процессов
   - Тип: Rust / core / metrics / performance
@@ -115,6 +130,17 @@
   - Результаты: Полная реализация оптимизации памяти в eBPF картах с поддержкой анализа использования карт, очистки неиспользуемых записей, оптимизации кэша программ и ограничения количества детализированных статистик
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-606: Улучшить обработку ошибок в модуле API сервера
+  - Тип: Rust / core / api
+  - Примечания: Добавление более детальных сообщений об ошибках и улучшение graceful degradation для API endpoint'ов
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Добавлен ApiError enum с различными типами ошибок, реализованы методы to_json_response для детальных JSON ответов, добавлены хелперы graceful_degradation_response и check_component_availability
+    - smoothtask-core/Cargo.toml: Добавлена зависимость thiserror для улучшенной обработки ошибок
+  - Результаты: Полная реализация улучшенной обработки ошибок с детальными сообщениями, graceful degradation и комплексными тестами
 
 - [x] ST-605: Добавить документацию для новых eBPF возможностей
   - Тип: Documentation / API

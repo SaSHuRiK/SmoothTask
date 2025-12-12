@@ -243,7 +243,7 @@ async fn test_network_metrics_in_api() {
     // Создаем тестовые сетевые метрики
     let mut network_metrics = NetworkMetrics::default();
     network_metrics.interfaces.push(NetworkInterface {
-        name: "eth0".to_string(),
+        name: "eth0".to_string().into(),
         rx_bytes: 1000,
         tx_bytes: 2000,
         rx_packets: 100,
@@ -676,7 +676,7 @@ async fn test_network_metrics_multiple_interfaces() {
 
     // Добавляем первый интерфейс
     network_metrics.interfaces.push(NetworkInterface {
-        name: "eth0".to_string(),
+        name: "eth0".to_string().into(),
         rx_bytes: 1000,
         tx_bytes: 2000,
         rx_packets: 100,
@@ -687,7 +687,7 @@ async fn test_network_metrics_multiple_interfaces() {
 
     // Добавляем второй интерфейс
     network_metrics.interfaces.push(NetworkInterface {
-        name: "wlan0".to_string(),
+        name: "wlan0".to_string().into(),
         rx_bytes: 500,
         tx_bytes: 1500,
         rx_packets: 50,

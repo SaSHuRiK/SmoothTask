@@ -791,35 +791,51 @@ async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<V
     let start_time = state.performance_metrics.read().await.last_request_time;
     let uptime_seconds = start_time.map(|t| t.elapsed().as_secs()).unwrap_or(0);
 
-    // Проверка доступности основных компонентов
-    let daemon_stats_available = state.daemon_stats.is_some();
-    let system_metrics_available = state.system_metrics.is_some();
-    let processes_available = state.processes.is_some();
-    let app_groups_available = state.app_groups.is_some();
-    let config_available = state.config.is_some();
-    let pattern_database_available = state.pattern_database.is_some();
-
     // Получение метрик производительности
     let perf_metrics = state.performance_metrics.read().await;
+
+    // Получаем детальную информацию о доступности компонентов
+    let component_availability = check_component_availability(&state);
+
+    // Определяем общий статус системы
+    let overall_status = if component_availability["daemon_stats_available"].as_bool().unwrap_or(false) {
+        "operational"
+    } else if component_availability["system_metrics_available"].as_bool().unwrap_or(false) {
+        "partial"
+    } else {
+        "degraded"
+    };
 
     Ok(Json(json!({
         "status": "ok",
         "service": "smoothtaskd",
         "uptime_seconds": uptime_seconds,
-        "components": {
-            "daemon_stats": daemon_stats_available,
-            "system_metrics": system_metrics_available,
-            "processes": processes_available,
-            "app_groups": app_groups_available,
-            "config": config_available,
-            "pattern_database": pattern_database_available
-        },
+        "overall_status": overall_status,
+        "components": component_availability,
         "performance": {
             "total_requests": perf_metrics.total_requests,
+            "cache_hits": perf_metrics.cache_hits,
+            "cache_misses": perf_metrics.cache_misses,
             "cache_hit_rate": perf_metrics.cache_hit_rate(),
-            "average_processing_time_us": perf_metrics.average_processing_time_us()
+            "average_processing_time_us": perf_metrics.average_processing_time_us(),
+            "requests_per_second": if perf_metrics.total_requests > 0 && perf_metrics.last_request_time.is_some() {
+                let elapsed = perf_metrics.last_request_time.unwrap().elapsed().as_secs_f64();
+                if elapsed > 0.0 {
+                    perf_metrics.total_requests as f64 / elapsed
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            }
         },
-        "timestamp": Utc::now().to_rfc3339()
+        "timestamp": Utc::now().to_rfc3339(),
+        "suggestions": match overall_status {
+            "operational" => "All systems operational",
+            "partial" => "Some components unavailable, but core functionality working",
+            "degraded" => "Major components unavailable, graceful degradation mode",
+            _ => "Unknown status"
+        }
     })))
 }
 
@@ -1613,14 +1629,31 @@ async fn metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, S
             let metrics = metrics_arc.read().await;
             Ok(Json(json!({
                 "status": "ok",
-                "system_metrics": *metrics
+                "system_metrics": *metrics,
+                "availability": {
+                    "available": true,
+                    "timestamp": Utc::now().to_rfc3339()
+                }
             })))
         }
-        None => Ok(Json(json!({
-            "status": "ok",
-            "system_metrics": null,
-            "message": "System metrics not available (daemon may not be running or no metrics collected yet)"
-        }))),
+        None => {
+            // Graceful degradation - возвращаем информацию о недоступности с предложениями
+            let component_status = check_component_availability(&state);
+            let suggestion = if component_status["daemon_stats_available"].as_bool().unwrap_or(false) {
+                "Daemon is running but metrics not yet collected"
+            } else {
+                "Daemon may not be running or metrics collection disabled"
+            };
+            
+            Ok(Json(json!({
+                "status": "degraded",
+                "system_metrics": null,
+                "message": "System metrics not available",
+                "suggestion": suggestion,
+                "component_status": component_status,
+                "timestamp": Utc::now().to_rfc3339()
+            })))
+        }
     }
 }
 
@@ -1678,20 +1711,23 @@ async fn processes_handler(State(state): State<ApiState>) -> Result<Json<Value>,
         }
         None => {
             let result = json!({
-                "status": "ok",
+                "status": "degraded",
                 "processes": null,
                 "count": 0,
-                "message": "Processes not available (daemon may not be running or no processes collected yet)",
+                "message": "Processes not available",
+                "suggestion": "Ensure the daemon is running and has completed at least one collection cycle",
+                "component_status": check_component_availability(&state),
                 "cache_info": {
                     "cached": false,
                     "ttl_seconds": cache_write.cache_ttl_seconds
-                }
+                },
+                "timestamp": Utc::now().to_rfc3339()
             });
 
             // Кэшируем результат (даже если данных нет)
             cache_write.cached_processes_json = Some((result.clone(), Instant::now()));
 
-            trace!("Cached empty processes data");
+            trace!("Cached empty processes data with graceful degradation info");
             Ok(Json(result))
         }
     }
@@ -1751,20 +1787,23 @@ async fn appgroups_handler(State(state): State<ApiState>) -> Result<Json<Value>,
         }
         None => {
             let result = json!({
-                "status": "ok",
+                "status": "degraded",
                 "app_groups": null,
                 "count": 0,
-                "message": "App groups not available (daemon may not be running or no groups collected yet)",
+                "message": "App groups not available",
+                "suggestion": "Ensure the daemon is running and has completed at least one collection cycle",
+                "component_status": check_component_availability(&state),
                 "cache_info": {
                     "cached": false,
                     "ttl_seconds": cache_write.cache_ttl_seconds
-                }
+                },
+                "timestamp": Utc::now().to_rfc3339()
             });
 
             // Кэшируем результат (даже если данных нет)
             cache_write.cached_appgroups_json = Some((result.clone(), Instant::now()));
 
-            trace!("Cached empty appgroups data");
+            trace!("Cached empty appgroups data with graceful degradation info");
             Ok(Json(result))
         }
     }
@@ -1784,10 +1823,13 @@ async fn process_by_pid_handler(
             "status": "error",
             "error": "invalid_input",
             "message": format!("Invalid PID value: {}. PID must be a positive integer", pid),
+            "timestamp": Utc::now().to_rfc3339(),
             "details": {
+                "type": "validation",
                 "field": "pid",
                 "value": pid,
-                "constraint": "must be > 0"
+                "constraint": "must be > 0",
+                "suggestion": "Provide a positive integer PID value"
             }
         })));
     }
@@ -1803,11 +1845,14 @@ async fn process_by_pid_handler(
             "status": "error",
             "error": "invalid_input",
             "message": format!("PID value {} is too large", pid),
+            "timestamp": Utc::now().to_rfc3339(),
             "details": {
+                "type": "validation",
                 "field": "pid",
                 "value": pid,
                 "constraint": "must be <= 4194304",
-                "note": "Maximum PID in Linux is typically limited to this range"
+                "note": "Maximum PID in Linux is typically limited to this range",
+                "suggestion": "Use a PID value within the reasonable range"
             }
         })));
     }
@@ -1836,10 +1881,12 @@ async fn process_by_pid_handler(
                     Ok(Json(json!({
                         "status": "error",
                         "error": "not_found",
-                        "message": format!("Process with PID {} not found", pid),
+                        "message": format!("Process with PID {} not found (available processes: {})", pid, process_count),
+                        "timestamp": Utc::now().to_rfc3339(),
                         "details": {
-                            "available_processes": process_count,
-                            "suggestion": "Check if the process is still running or if the daemon has collected recent data"
+                            "type": "not_found",
+                            "suggestion": "Check if the process is still running or if the daemon has collected recent data",
+                            "available_processes": process_count
                         }
                     })))
                 }
@@ -1849,10 +1896,13 @@ async fn process_by_pid_handler(
             error!("Processes data not available for PID lookup. Daemon may not be running or no processes collected yet");
             Ok(Json(json!({
                 "status": "error",
-                "error": "not_available",
-                "message": "Processes not available (daemon may not be running or no processes collected yet)",
+                "error": "service_unavailable",
+                "message": "Processes data not available - daemon may not be running or no processes collected yet",
+                "timestamp": Utc::now().to_rfc3339(),
                 "details": {
-                    "suggestion": "Ensure the daemon is running and has completed at least one collection cycle"
+                    "type": "service_unavailable",
+                    "suggestion": "Ensure the daemon is running and has completed at least one collection cycle",
+                    "component_status": check_component_availability(&state)
                 }
             })))
         }
@@ -1873,10 +1923,13 @@ async fn appgroup_by_id_handler(
             "status": "error",
             "error": "invalid_input",
             "message": "App group ID cannot be empty",
+            "timestamp": Utc::now().to_rfc3339(),
             "details": {
+                "type": "validation",
                 "field": "id",
                 "value": "",
-                "constraint": "must not be empty"
+                "constraint": "must not be empty",
+                "suggestion": "Provide a non-empty app group ID"
             }
         })));
     }
@@ -1891,10 +1944,13 @@ async fn appgroup_by_id_handler(
             "status": "error",
             "error": "invalid_input",
             "message": "App group ID is too long",
+            "timestamp": Utc::now().to_rfc3339(),
             "details": {
+                "type": "validation",
                 "field": "id",
                 "length": id.len(),
-                "constraint": "must be <= 256 characters"
+                "constraint": "must be <= 256 characters",
+                "suggestion": "Use a shorter app group ID"
             }
         })));
     }
@@ -1908,11 +1964,14 @@ async fn appgroup_by_id_handler(
             "status": "error",
             "error": "invalid_input",
             "message": "App group ID contains invalid characters",
+            "timestamp": Utc::now().to_rfc3339(),
             "details": {
+                "type": "validation",
                 "field": "id",
                 "value": id,
                 "constraint": "must contain only alphanumeric, '_', '-', '.', ':' characters",
-                "suggestion": "Use only standard ASCII characters in app group IDs"
+                "suggestion": "Use only standard ASCII characters in app group IDs",
+                "note": "Special characters can cause issues with system integration"
             }
         })));
     }
@@ -1945,10 +2004,12 @@ async fn appgroup_by_id_handler(
                     Ok(Json(json!({
                         "status": "error",
                         "error": "not_found",
-                        "message": format!("App group with ID '{}' not found", id),
+                        "message": format!("App group with ID '{}' not found (available groups: {})", id, group_count),
+                        "timestamp": Utc::now().to_rfc3339(),
                         "details": {
-                            "available_groups": group_count,
-                            "suggestion": "Check if the app group ID is correct and if the daemon has collected recent data"
+                            "type": "not_found",
+                            "suggestion": "Check if the app group ID is correct and if the daemon has collected recent data",
+                            "available_groups": group_count
                         }
                     })))
                 }
@@ -1958,10 +2019,13 @@ async fn appgroup_by_id_handler(
             error!("App groups data not available for ID lookup. Daemon may not be running or no groups collected yet");
             Ok(Json(json!({
                 "status": "error",
-                "error": "not_available",
-                "message": "App groups not available (daemon may not be running or no groups collected yet)",
+                "error": "service_unavailable",
+                "message": "App groups data not available - daemon may not be running or no groups collected yet",
+                "timestamp": Utc::now().to_rfc3339(),
                 "details": {
-                    "suggestion": "Ensure the daemon is running and has completed at least one collection cycle"
+                    "type": "service_unavailable",
+                    "suggestion": "Ensure the daemon is running and has completed at least one collection cycle",
+                    "component_status": check_component_availability(&state)
                 }
             })))
         }
@@ -2093,9 +2157,9 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
                         "message": format!("Failed to reload configuration from '{}': {}", config_path, e),
                         "current_config": current_config,
                         "config_path": config_path,
-                        "action_required": "Check the configuration file for errors and try again.",
+                        "timestamp": Utc::now().to_rfc3339(),
                         "details": {
-                            "error_details": e.to_string(),
+                            "type": "configuration",
                             "suggestion": match error_type {
                                 "yaml_parse_error" => "Check YAML syntax and structure in the configuration file",
                                 "file_error" => "Verify the configuration file exists and is accessible",
@@ -2121,14 +2185,23 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
                 "status": "warning",
                 "message": "Config reload requested but config file path is not available",
                 "current_config": current_config,
-                "action_required": "To enable full config reload, ensure the daemon is running with config path information."
+                "timestamp": Utc::now().to_rfc3339(),
+                "details": {
+                    "type": "configuration",
+                    "suggestion": "To enable full config reload, ensure the daemon is running with config path information."
+                }
             })))
         }
         (None, _) => {
             // Конфигурация недоступна
             Ok(Json(json!({
                 "status": "error",
-                "message": "Config reload not available (daemon may not be running or config not set)"
+                "message": "Config reload not available (daemon may not be running or config not set)",
+                "timestamp": Utc::now().to_rfc3339(),
+                "details": {
+                    "type": "service_unavailable",
+                    "suggestion": "Ensure the daemon is running and properly configured"
+                }
             })))
         }
     }
@@ -2138,6 +2211,119 @@ async fn config_reload_handler(State(state): State<ApiState>) -> Result<Json<Val
 ///
 /// Сервер предоставляет REST API для мониторинга работы демона.
 /// Сервер запускается в отдельной задаче и может быть остановлен через handle.
+
+/// Тип ошибки API для более детальной обработки ошибок.
+#[derive(Debug, thiserror::Error)]
+pub enum ApiError {
+    /// Ошибка валидации входных данных
+    #[error("Validation error: {0}")]
+    ValidationError(String),
+    
+    /// Ошибка доступа к данным
+    #[error("Data access error: {0}")]
+    DataAccessError(String),
+    
+    /// Ошибка конфигурации
+    #[error("Configuration error: {0}")]
+    ConfigurationError(String),
+    
+    /// Внутренняя ошибка сервера
+    #[error("Internal server error: {0}")]
+    InternalError(String),
+    
+    /// Ошибка не найдено
+    #[error("Not found: {0}")]
+    NotFoundError(String),
+    
+    /// Ошибка недоступности сервиса
+    #[error("Service unavailable: {0}")]
+    ServiceUnavailableError(String),
+}
+
+impl ApiError {
+    /// Создает детальный JSON ответ об ошибке
+    pub fn to_json_response(&self) -> (StatusCode, Json<Value>) {
+        let status_code = match self {
+            ApiError::ValidationError(_) => StatusCode::BAD_REQUEST,
+            ApiError::DataAccessError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::ConfigurationError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::NotFoundError(_) => StatusCode::NOT_FOUND,
+            ApiError::ServiceUnavailableError(_) => StatusCode::SERVICE_UNAVAILABLE,
+        };
+        
+        let error_response = json!({
+            "status": "error",
+            "error": status_code.as_str(),
+            "message": self.to_string(),
+            "timestamp": Utc::now().to_rfc3339(),
+            "details": match self {
+                ApiError::ValidationError(_details) => json!({
+                    "type": "validation",
+                    "suggestion": "Check your request parameters and try again"
+                }),
+                ApiError::DataAccessError(_details) => json!({
+                    "type": "data_access",
+                    "suggestion": "Check if the daemon is running and has collected data"
+                }),
+                ApiError::ConfigurationError(_details) => json!({
+                    "type": "configuration",
+                    "suggestion": "Check your configuration file and restart the daemon"
+                }),
+                ApiError::InternalError(_details) => json!({
+                    "type": "internal",
+                    "suggestion": "This is a bug, please report it with logs"
+                }),
+                ApiError::NotFoundError(_details) => json!({
+                    "type": "not_found",
+                    "suggestion": "Check the resource identifier and try again"
+                }),
+                ApiError::ServiceUnavailableError(_details) => json!({
+                    "type": "service_unavailable",
+                    "suggestion": "Check if the daemon is running and try again later"
+                }),
+            }
+        });
+        
+        (status_code, Json(error_response))
+    }
+}
+
+/// Преобразуем ApiError в Result для использования в обработчиках
+impl From<ApiError> for Result<Json<Value>, StatusCode> {
+    fn from(error: ApiError) -> Self {
+        let (_status_code, _json_response) = error.to_json_response();
+        Err(_status_code)
+    }
+}
+
+/// Хелпер для graceful degradation - возвращает ответ с информацией о недоступности данных
+fn graceful_degradation_response(resource_name: &str, suggestion: &str) -> Json<Value> {
+    Json(json!({
+        "status": "degraded",
+        "message": format!("{} not available - graceful degradation", resource_name),
+        "resource": resource_name,
+        "available": false,
+        "suggestion": suggestion,
+        "timestamp": Utc::now().to_rfc3339(),
+        "fallback_data": null
+    }))
+}
+
+/// Хелпер для проверки доступности основных компонентов
+fn check_component_availability(state: &ApiState) -> Value {
+    json!({
+        "daemon_stats_available": state.daemon_stats.is_some(),
+        "system_metrics_available": state.system_metrics.is_some(),
+        "processes_available": state.processes.is_some(),
+        "app_groups_available": state.app_groups.is_some(),
+        "config_available": state.config.is_some(),
+        "pattern_database_available": state.pattern_database.is_some(),
+        "notification_manager_available": state.notification_manager.is_some(),
+        "log_storage_available": state.log_storage.is_some(),
+        "cache_available": state.cache.is_some()
+    })
+}
 ///
 /// # Примеры использования
 ///
@@ -3270,13 +3456,12 @@ mod tests {
         let value: Value = json.0;
         assert_eq!(value["status"], "error");
         assert_eq!(value["error"], "invalid_input");
-        assert!(value["message"]
-            .as_str()
-            .unwrap()
-            .contains("Invalid PID value"));
-        // Check that details are included
-        assert!(value["details"]["field"].as_str().unwrap() == "pid");
-        assert!(value["details"]["constraint"].as_str().unwrap() == "must be > 0");
+        assert!(value["message"].as_str().unwrap().contains("Invalid PID value"));
+        assert!(value["timestamp"].is_string());
+        assert!(value["details"].is_object());
+        assert_eq!(value["details"]["type"].as_str(), Some("validation"));
+        assert_eq!(value["details"]["field"].as_str(), Some("pid"));
+        assert_eq!(value["details"]["constraint"].as_str(), Some("must be > 0"));
     }
 
     #[tokio::test]
@@ -5319,5 +5504,203 @@ max_candidates: 200
         assert_eq!(log["fields"]["user_id"], 123);
         assert_eq!(log["fields"]["action"], "login");
         assert_eq!(log["fields"]["status"], "success");
+    }
+
+    #[tokio::test]
+    async fn test_api_error_handling_validation() {
+        // Тест: проверка обработки ошибок валидации
+        let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+        let handle = server.start().await.expect("Сервер должен запуститься");
+        let port = handle.port();
+
+        let client = reqwest::Client::new();
+
+        // Тестируем неверный PID (отрицательный)
+        let url = format!("http://127.0.0.1:{}/api/processes/-1", port);
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
+
+        // Должен вернуть 400 Bad Request
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+        let body = response.text().await.expect("Ответ должен содержать текст");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+        // Проверяем структуру ответа об ошибке
+        assert_eq!(json["status"].as_str(), Some("error"));
+        assert!(json["error"].is_string());
+        assert!(json["message"].is_string());
+        assert!(json["timestamp"].is_string());
+        assert!(json["details"].is_object());
+        assert_eq!(json["details"]["type"].as_str(), Some("validation"));
+
+        // Останавливаем сервер
+        handle
+            .shutdown()
+            .await
+            .expect("Сервер должен корректно остановиться");
+    }
+
+    #[tokio::test]
+    async fn test_api_error_handling_not_found() {
+        // Тест: проверка обработки ошибок "не найдено"
+        let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+        let handle = server.start().await.expect("Сервер должен запуститься");
+        let port = handle.port();
+
+        let client = reqwest::Client::new();
+
+        // Тестируем несуществующий процесс (но с валидным PID)
+        let url = format!("http://127.0.0.1:{}/api/processes/999999", port);
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
+
+        // Должен вернуть 404 Not Found
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+
+        let body = response.text().await.expect("Ответ должен содержать текст");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+        // Проверяем структуру ответа об ошибке
+        assert_eq!(json["status"].as_str(), Some("error"));
+        assert!(json["error"].is_string());
+        assert!(json["message"].is_string());
+        assert!(json["timestamp"].is_string());
+        assert!(json["details"].is_object());
+        assert_eq!(json["details"]["type"].as_str(), Some("not_found"));
+
+        // Останавливаем сервер
+        handle
+            .shutdown()
+            .await
+            .expect("Сервер должен корректно остановиться");
+    }
+
+    #[tokio::test]
+    async fn test_api_graceful_degradation() {
+        // Тест: проверка graceful degradation при недоступности данных
+        let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+        let handle = server.start().await.expect("Сервер должен запуститься");
+        let port = handle.port();
+
+        let client = reqwest::Client::new();
+
+        // Тестируем endpoint, который требует данных процессов (их нет)
+        let url = format!("http://127.0.0.1:{}/api/processes", port);
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
+
+        // Должен вернуть 200 OK, но с статусом degraded
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+
+        let body = response.text().await.expect("Ответ должен содержать текст");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+        // Проверяем структуру ответа с graceful degradation
+        assert_eq!(json["status"].as_str(), Some("degraded"));
+        assert!(json["message"].is_string());
+        assert!(json["suggestion"].is_string());
+        assert!(json["component_status"].is_object());
+        assert!(json["timestamp"].is_string());
+
+        // Проверяем, что компоненты помечены как недоступные
+        let component_status = &json["component_status"];
+        assert_eq!(component_status["processes_available"].as_bool(), Some(false));
+
+        // Останавливаем сервер
+        handle
+            .shutdown()
+            .await
+            .expect("Сервер должен корректно остановиться");
+    }
+
+    #[tokio::test]
+    async fn test_api_health_detailed_with_degradation() {
+        // Тест: проверка детального health endpoint с информацией о degradation
+        let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+        let handle = server.start().await.expect("Сервер должен запуститься");
+        let port = handle.port();
+
+        let client = reqwest::Client::new();
+        let url = format!("http://127.0.0.1:{}/api/health", port);
+
+        let response = client
+            .get(&url)
+            .send()
+            .await
+            .expect("Запрос должен выполниться");
+
+        assert!(response.status().is_success());
+
+        let body = response.text().await.expect("Ответ должен содержать текст");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+
+        // Проверяем, что ответ содержит информацию о компонентах
+        assert!(json["status"].as_str() == Some("ok"));
+        assert!(json["components"].is_object());
+        assert!(json["overall_status"].is_string());
+        assert!(json["suggestions"].is_string());
+
+        // Проверяем, что все компоненты помечены как недоступные (так как сервер пустой)
+        let components = &json["components"];
+        assert_eq!(components["daemon_stats_available"].as_bool(), Some(false));
+        assert_eq!(components["system_metrics_available"].as_bool(), Some(false));
+        assert_eq!(components["processes_available"].as_bool(), Some(false));
+
+        // Проверяем общий статус
+        assert_eq!(json["overall_status"].as_str(), Some("degraded"));
+
+        // Останавливаем сервер
+        handle
+            .shutdown()
+            .await
+            .expect("Сервер должен корректно остановиться");
+    }
+
+    #[tokio::test]
+    async fn test_api_error_types() {
+        // Тест: проверка разных типов ошибок API
+        let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
+        let handle = server.start().await.expect("Сервер должен запуститься");
+        let port = handle.port();
+
+        let client = reqwest::Client::new();
+
+        // 1. Тестируем ошибку валидации (неверный PID)
+        let url = format!("http://127.0.0.1:{}/api/processes/0", port);
+        let response = client.get(&url).send().await.expect("Запрос должен выполниться");
+        assert_eq!(response.status(), reqwest::StatusCode::BAD_REQUEST);
+
+        // 2. Тестируем ошибку "не найдено" (валидный но несуществующий PID)
+        let url = format!("http://127.0.0.1:{}/api/processes/123456", port);
+        let response = client.get(&url).send().await.expect("Запрос должен выполниться");
+        assert_eq!(response.status(), reqwest::StatusCode::NOT_FOUND);
+
+        // 3. Тестируем graceful degradation (данные недоступны)
+        let url = format!("http://127.0.0.1:{}/api/metrics", port);
+        let response = client.get(&url).send().await.expect("Запрос должен выполниться");
+        assert_eq!(response.status(), reqwest::StatusCode::OK);
+        let body = response.text().await.expect("Ответ должен содержать текст");
+        let json: serde_json::Value = serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
+        assert_eq!(json["status"].as_str(), Some("degraded"));
+
+        // Останавливаем сервер
+        handle
+            .shutdown()
+            .await
+            .expect("Сервер должен корректно остановиться");
     }
 }
