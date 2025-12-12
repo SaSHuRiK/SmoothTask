@@ -1365,4 +1365,256 @@ mod tests {
         // Проверяем, что функция не падает и возвращает результат
         // total_cmp для f32 может работать не так, как ожидается, поэтому просто проверяем, что результат есть
     }
+
+    // Дополнительные тесты для ST-374: улучшение покрытия
+
+    #[test]
+    fn select_focused_window_handles_large_number_of_windows() {
+        // Тест проверяет производительность и корректность при большом количестве окон
+        let mut windows = Vec::new();
+        
+        // Добавляем много background окон
+        for i in 0..100 {
+            windows.push(WindowInfo::new(
+                Some(format!("app{}", i)),
+                Some(format!("Background {}", i)),
+                None,
+                WindowState::Background,
+                None,
+                0.9,
+            ));
+        }
+        
+        // Добавляем одно focused окно
+        windows.push(WindowInfo::new(
+            Some("focused_app".to_string()),
+            Some("Focused Window".to_string()),
+            None,
+            WindowState::Focused,
+            None,
+            0.8,
+        ));
+        
+        let selected = select_focused_window(&windows);
+        assert!(selected.is_some());
+        assert_eq!(selected.unwrap().state, WindowState::Focused);
+    }
+
+    #[test]
+    fn get_window_info_by_pid_handles_large_pid_values() {
+        // Тест проверяет корректную работу с большими значениями PID
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Window 1".to_string()),
+                None,
+                WindowState::Focused,
+                Some(u32::MAX), // максимальное значение PID
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Window 2".to_string()),
+                None,
+                WindowState::Background,
+                Some(u32::MAX - 1), // почти максимальное значение
+                0.8,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        
+        // Должны корректно найти окно с максимальным PID
+        let window = get_window_info_by_pid(&introspector, u32::MAX).unwrap();
+        assert!(window.is_some());
+        assert_eq!(window.unwrap().pid, Some(u32::MAX));
+        
+        // Должны корректно найти окно с почти максимальным PID
+        let window = get_window_info_by_pid(&introspector, u32::MAX - 1).unwrap();
+        assert!(window.is_some());
+        assert_eq!(window.unwrap().pid, Some(u32::MAX - 1));
+    }
+
+    #[test]
+    fn build_pid_to_window_map_handles_large_number_of_windows() {
+        // Тест проверяет производительность и корректность при большом количестве окон
+        let mut windows = Vec::new();
+        
+        // Добавляем много окон с разными PID
+        for i in 0..50 {
+            windows.push(WindowInfo::new(
+                Some(format!("app{}", i)),
+                Some(format!("Window {}", i)),
+                None,
+                WindowState::Background,
+                Some(i as u32),
+                0.9,
+            ));
+        }
+        
+        let introspector = StaticWindowIntrospector::new(windows);
+        let map = build_pid_to_window_map(&introspector).unwrap();
+        
+        // Должны получить маппинг для всех окон
+        assert_eq!(map.len(), 50);
+        
+        // Проверяем несколько значений
+        assert!(map.contains_key(&0));
+        assert!(map.contains_key(&25));
+        assert!(map.contains_key(&49));
+    }
+
+    #[test]
+    fn build_pid_to_window_map_handles_duplicate_pids_with_same_confidence() {
+        // Тест проверяет поведение при дубликатах PID с одинаковым confidence
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Window 1".to_string()),
+                None,
+                WindowState::Focused,
+                Some(100),
+                0.7, // одинаковый confidence
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Window 2".to_string()),
+                None,
+                WindowState::Background,
+                Some(100), // тот же PID
+                0.7, // одинаковый confidence
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let map = build_pid_to_window_map(&introspector).unwrap();
+        
+        // Должен быть только один запись для PID 100
+        assert_eq!(map.len(), 1);
+        assert!(map.contains_key(&100));
+        
+        // При одинаковом confidence должно быть выбрано первое окно (поведение entry API)
+        let window = map.get(&100).unwrap();
+        assert_eq!(window.app_id, Some("app1".to_string()));
+    }
+
+    #[test]
+    fn window_info_new_handles_extreme_confidence_values() {
+        // Тест проверяет корректное клэмпинг confidence при экстремальных значениях
+        let info1 = WindowInfo::new(None, None, None, WindowState::Focused, Some(1), f32::INFINITY);
+        assert!((info1.pid_confidence - 1.0).abs() < f32::EPSILON);
+        
+        let info2 = WindowInfo::new(None, None, None, WindowState::Focused, Some(1), f32::NEG_INFINITY);
+        assert!((info2.pid_confidence - 0.0).abs() < f32::EPSILON);
+        
+        let info3 = WindowInfo::new(None, None, None, WindowState::Focused, Some(1), f32::MIN);
+        assert!((info3.pid_confidence - 0.0).abs() < f32::EPSILON);
+        
+        let info4 = WindowInfo::new(None, None, None, WindowState::Focused, Some(1), f32::MAX);
+        assert!((info4.pid_confidence - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn select_focused_window_handles_mixed_states_with_various_confidence() {
+        // Тест проверяет сложный сценарий с разными состояниями и confidence
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Fullscreen Low Conf".to_string()),
+                None,
+                WindowState::Fullscreen,
+                Some(100), // добавляем PID, чтобы confidence не обнулился
+                0.3, // низкий confidence, но fullscreen
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Fullscreen High Conf".to_string()),
+                None,
+                WindowState::Fullscreen,
+                Some(200), // добавляем PID, чтобы confidence не обнулился
+                0.9, // высокий confidence, fullscreen
+            ),
+            WindowInfo::new(
+                Some("app3".to_string()),
+                Some("Focused High Conf".to_string()),
+                None,
+                WindowState::Focused,
+                Some(300), // добавляем PID, чтобы confidence не обнулился
+                0.95, // очень высокий confidence, но focused
+            ),
+        ];
+        
+        let selected = select_focused_window(&windows);
+        assert!(selected.is_some());
+        let selected = selected.unwrap();
+        
+        // Должен быть выбран fullscreen с наибольшим confidence
+        assert_eq!(selected.state, WindowState::Fullscreen);
+        assert_eq!(selected.title, Some("Fullscreen High Conf".to_string()));
+        // Проверяем, что confidence больше, чем у других fullscreen окон (0.3)
+        assert!(selected.pid_confidence > 0.5);
+    }
+
+    #[test]
+    fn get_window_info_by_pid_with_zero_pid() {
+        // Тест проверяет корректную работу с PID = 0
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Window with PID 0".to_string()),
+                None,
+                WindowState::Focused,
+                Some(0), // PID = 0
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Window with PID 1".to_string()),
+                None,
+                WindowState::Background,
+                Some(1),
+                0.8,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        
+        // Должны корректно найти окно с PID = 0
+        let window = get_window_info_by_pid(&introspector, 0).unwrap();
+        assert!(window.is_some());
+        let window = window.unwrap();
+        assert_eq!(window.pid, Some(0));
+        assert_eq!(window.title, Some("Window with PID 0".to_string()));
+    }
+
+    #[test]
+    fn build_pid_to_window_map_with_zero_pid() {
+        // Тест проверяет корректную работу с PID = 0 в маппинге
+        let windows = vec![
+            WindowInfo::new(
+                Some("app1".to_string()),
+                Some("Window with PID 0".to_string()),
+                None,
+                WindowState::Focused,
+                Some(0), // PID = 0
+                0.9,
+            ),
+            WindowInfo::new(
+                Some("app2".to_string()),
+                Some("Window with PID 1".to_string()),
+                None,
+                WindowState::Background,
+                Some(1),
+                0.8,
+            ),
+        ];
+        let introspector = StaticWindowIntrospector::new(windows);
+        let map = build_pid_to_window_map(&introspector).unwrap();
+        
+        // Должны получить маппинг, включающий PID = 0
+        assert_eq!(map.len(), 2);
+        assert!(map.contains_key(&0));
+        assert!(map.contains_key(&1));
+        
+        // Проверяем, что окно с PID = 0 корректно сохранено
+        let window = map.get(&0).unwrap();
+        assert_eq!(window.title, Some("Window with PID 0".to_string()));
+    }
 }

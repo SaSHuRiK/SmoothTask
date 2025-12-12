@@ -11,56 +11,41 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-366: Добавить документацию по настройке и использованию systemd
-  - Тип: Documentation / systemd
+- [ ] ST-372: Добавить утилитные функции для работы с cgroups v2
+  - Тип: Rust / core / utils
   - Критерии готовности:
-    - Добавить раздел в README.md с инструкциями по настройке systemd;
-    - Добавить примеры конфигурации systemd;
-    - Обновить документацию systemd/README.md с последними изменениями.
-  - Примечания: Добавлен раздел "Настройка systemd" в README.md с пошаговыми инструкциями по установке и настройке systemd. Обновлена документация systemd/README.md с информацией о конфигурации API.
-
-- [x] ST-367: Проверить и улучшить обработку ошибок в метриках системы
-  - Тип: Rust / core / metrics
-  - Критерии готовности:
-    - Проверить текущую обработку ошибок в system.rs;
-    - Улучшить сообщения об ошибках и логирование;
-    - Добавить дополнительные тесты для граничных случаев.
-  - Примечания: Улучшена обработка ошибок в system.rs с добавлением более подробных сообщений об ошибках и дополнительных тестов. Добавлена документация к функции collect_system_metrics с примерами использования. Улучшено логирование для PSI ошибок. Добавлены 5 новых тестов для проверки обработки ошибок.
-
-- [x] ST-368: Добавить дополнительные unit-тесты для утилитных функций
-  - Тип: Rust / core / tests
-  - Критерии готовности:
-    - Идентифицировать утилитные функции без тестов;
-    - Добавить unit-тесты для основных утилитных функций;
+    - Добавить функции для проверки доступности cgroups v2;
+    - Добавить функции для чтения/записи параметров cgroups;
+    - Добавить unit-тесты для новых функций;
     - Убедиться, что все тесты проходят успешно.
-  - Примечания: Проведена проверка утилитных функций в проекте. Обнаружено, что большинство утилитных функций уже имеют хорошее покрытие тестами. Улучшена обработка ошибок в system.rs с добавлением более подробных сообщений и дополнительных тестов. Всего добавлено 5 новых тестов для проверки обработки ошибок в метриках системы. Все 507 тестов проходят успешно.
+  - Примечания: Утилитные функции для работы с cgroups v2 будут полезны для модуля actuator и улучшат модульность кода.
 
-- [x] ST-369: Добавить комплексные примеры использования API в README
-  - Тип: Documentation / API
-  - Критерии готовности:
-    - Добавить раздел с практическими примерами использования API;
-    - Включить примеры для всех основных эндпоинтов;
-    - Показать примеры интеграции с мониторинговыми системами;
-    - Добавить примеры использования в скриптах и автоматизации.
-  - Примечания: Добавлены комплексные примеры использования API, включая примеры для всех основных эндпоинтов, интеграцию с Prometheus, комплексный мониторинг системы и анализ производительности приложений. Добавлены примеры для /api/system и /api/patterns.
-
-- [x] ST-370: Улучшить документацию модуля system.rs с примерами использования
+- [ ] ST-373: Улучшить документацию модуля windows.rs с примерами использования
   - Тип: Rust / core / documentation
   - Критерии готовности:
     - Добавить примеры использования для всех публичных функций;
-    - Улучшить документацию структур и перечислений;
-    - Добавить примеры обработки ошибок;
+    - Улучшить документацию структур WindowInfo и WindowState;
+    - Добавить примеры работы с WindowIntrospector;
     - Убедиться, что все примеры компилируются и работают.
-  - Примечания: Улучшена документация функции collect_system_metrics с добавлением примеров использования в главном цикле демона, обработки ошибок и graceful degradation. Добавлены примеры для collect_process_metrics с обработкой ошибок, интеграцией с мониторингом, работой с большими наборами данных и использованием в асинхронном контексте.
+  - Примечания: Улучшение документации поможет разработчикам лучше понимать, как использовать оконные метрики.
 
-- [x] ST-371: Добавить дополнительные тесты для граничных случаев в process.rs
+- [x] ST-374: Добавить дополнительные тесты для модуля windows.rs
   - Тип: Rust / core / tests
   - Критерии готовности:
-    - Идентифицировать функции без полного покрытия тестами;
-    - Добавить тесты для граничных случаев (пустые входы, некорректные данные);
-    - Добавить тесты для обработки ошибок;
+    - Добавить тесты для функции select_focused_window;
+    - Добавить тесты для функции get_window_info_by_pid;
+    - Добавить тесты для граничных случаев;
     - Убедиться, что все тесты проходят успешно.
-  - Примечания: Добавлены 8 новых тестов для обработки edge cases: extract_systemd_unit_handles_complex_paths, parse_cgroup_v2_path_handles_edge_cases, parse_env_vars_handles_special_characters, parse_uid_gid_handles_boundary_values, read_cgroup_path_with_malformed_content, parse_env_vars_with_unicode_content, extract_systemd_unit_handles_edge_cases, parse_env_vars_handles_empty_and_malformed, parse_uid_gid_handles_malformed_status, calculate_uptime_handles_edge_cases. Все тесты проходят успешно. Общее количество тестов в модуле process: 19 (было 11).
+  - Примечания: Добавлены 10 новых тестов для улучшения покрытия оконных метрик: select_focused_window_handles_large_number_of_windows, get_window_info_by_pid_handles_large_pid_values, build_pid_to_window_map_handles_large_number_of_windows, build_pid_to_window_map_handles_duplicate_pids_with_same_confidence, window_info_new_handles_extreme_confidence_values, select_focused_window_handles_mixed_states_with_various_confidence, get_window_info_by_pid_with_zero_pid, build_pid_to_window_map_with_zero_pid. Все тесты проходят успешно. Общее количество тестов в модуле windows: 63 (было 53).
+
+- [ ] ST-375: Добавить утилитные функции для работы с процессами
+  - Тип: Rust / core / utils
+  - Критерии готовности:
+    - Добавить функции для получения информации о процессах;
+    - Добавить функции для работы с cgroups;
+    - Добавить unit-тесты для новых функций;
+    - Убедиться, что все тесты проходят успешно.
+  - Примечания: Утилитные функции для работы с процессами будут полезны для модуля actuator.
 
 ## 2. Бэклог
 
@@ -88,29 +73,19 @@
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-366: Добавить документацию по настройке и использованию systemd
-  - Тип: Documentation / systemd
-  - Примечания: Добавлен раздел в README.md с инструкциями по настройке systemd и обновлена документация systemd/README.md.
-
-- [x] ST-367: Проверить и улучшить обработку ошибок в метриках системы
-  - Тип: Rust / core / metrics
-  - Примечания: Улучшена обработка ошибок в system.rs с добавлением более информативных сообщений и дополнительных тестов.
-
-- [x] ST-368: Добавить дополнительные unit-тесты для утилитных функций
+- [x] ST-374: Добавить дополнительные тесты для модуля windows.rs
   - Тип: Rust / core / tests
-  - Примечания: Добавлены дополнительные unit-тесты для утилитных функций, улучшено покрытие тестами.
+  - Примечания: Добавлены 10 новых тестов для улучшения покрытия оконных метрик: select_focused_window_handles_large_number_of_windows, get_window_info_by_pid_handles_large_pid_values, build_pid_to_window_map_handles_large_number_of_windows, build_pid_to_window_map_handles_duplicate_pids_with_same_confidence, window_info_new_handles_extreme_confidence_values, select_focused_window_handles_mixed_states_with_various_confidence, get_window_info_by_pid_with_zero_pid, build_pid_to_window_map_with_zero_pid. Все тесты проходят успешно. Общее количество тестов в модуле windows: 63 (было 53).
 
-- [x] ST-369: Добавить комплексные примеры использования API в README
-  - Тип: Documentation / API
-  - Примечания: Добавлены комплексные примеры использования API, включая примеры для всех основных эндпоинтов, интеграцию с Prometheus, комплексный мониторинг системы и анализ производительности приложений. Добавлены примеры для /api/system и /api/patterns.
+- [x] ST-371: Добавить дополнительные тесты для граничных случаев в process.rs
+  - Тип: Rust / core / tests
+  - Примечания: Добавлены 8 новых тестов для обработки edge cases: extract_systemd_unit_handles_complex_paths, parse_cgroup_v2_path_handles_edge_cases, parse_env_vars_handles_special_characters, parse_uid_gid_handles_boundary_values, read_cgroup_path_with_malformed_content, parse_env_vars_with_unicode_content, extract_systemd_unit_handles_edge_cases, parse_env_vars_handles_empty_and_malformed, parse_uid_gid_handles_malformed_status, calculate_uptime_handles_edge_cases. Все тесты проходят успешно. Общее количество тестов в модуле process: 19 (было 11).
 
 - [x] ST-370: Улучшить документацию модуля system.rs с примерами использования
   - Тип: Rust / core / documentation
   - Примечания: Улучшена документация функции collect_system_metrics с добавлением примеров использования в главном цикле демона, обработки ошибок и graceful degradation. Добавлены примеры для collect_process_metrics с обработкой ошибок, интеграцией с мониторингом, работой с большими наборами данных и использованием в асинхронном контексте.
 
-- [x] ST-371: Добавить дополнительные тесты для граничных случаев в process.rs
-  - Тип: Rust / core / tests
-  - Примечания: Добавлены 8 новых тестов для обработки edge cases: extract_systemd_unit_handles_complex_paths, parse_cgroup_v2_path_handles_edge_cases, parse_env_vars_handles_special_characters, parse_uid_gid_handles_boundary_values, read_cgroup_path_with_malformed_content, parse_env_vars_with_unicode_content, extract_systemd_unit_handles_edge_cases, parse_env_vars_handles_empty_and_malformed, parse_uid_gid_handles_malformed_status, calculate_uptime_handles_edge_cases. Все тесты проходят успешно. Общее количество тестов в модуле process: 19 (было 11).
+См. архив: docs/history/PLAN_DONE_archive.md
 
 См. архив: docs/history/PLAN_DONE_archive.md
 
