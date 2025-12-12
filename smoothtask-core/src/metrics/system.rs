@@ -3397,9 +3397,9 @@ SwapFree:        4096000 kB
         let metrics = result.unwrap();
 
         // Проверяем, что основные метрики собраны корректно
-        assert!(metrics.cpu_times.user >= 0);
         assert!(metrics.memory.mem_total_kb > 0);
         assert!(metrics.load_avg.one >= 0.0);
+        // Удаляем проверку для unsigned типа (всегда >= 0)
     }
 
     #[test]
@@ -3425,10 +3425,9 @@ SwapFree:        4096000 kB
 
         // Метрики должны быть сопоставимы (хотя и могут немного отличаться из-за времени сбора)
         // Проверяем, что основные структуры корректны
-        assert!(parallel_metrics.cpu_times.user >= 0);
-        assert!(sequential_metrics.cpu_times.user >= 0);
         assert!(parallel_metrics.memory.mem_total_kb > 0);
         assert!(sequential_metrics.memory.mem_total_kb > 0);
+        // Удаляем проверки для unsigned типов (всегда >= 0)
     }
 
     #[test]

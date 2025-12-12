@@ -14,7 +14,6 @@ use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherC
 use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
 use smoothtask_core::config::config_struct::MLClassifierConfig;
 use smoothtask_core::logging::snapshots::ProcessRecord;
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Arc;
 use tempfile::{tempdir, TempDir};

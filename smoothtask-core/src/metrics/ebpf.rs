@@ -1888,10 +1888,8 @@ mod tests {
         let metrics = metrics.unwrap();
         // Проверяем, что метрики имеют разумные значения
         assert!(metrics.cpu_usage >= 0.0);
-        assert!(metrics.memory_usage >= 0);
-        assert!(metrics.syscall_count >= 0);
-        assert!(metrics.network_packets >= 0);
-        assert!(metrics.network_bytes >= 0);
+        // Удаляем проверки для unsigned типов, так как они всегда >= 0
+        assert!(metrics.syscall_count > 0 || metrics.memory_usage > 0); // Хотя бы одна метрика должна быть ненулевой
     }
 
     #[test]
@@ -1919,8 +1917,8 @@ mod tests {
         assert!(collector.initialize().is_ok());
 
         // Тестируем получение статистики инициализации
-        let (success, errors) = collector.get_initialization_stats();
-        assert!(success > 0 || errors >= 0); // Хотя бы одна попытка должна быть
+        let (success, _errors) = collector.get_initialization_stats();
+        assert!(success > 0); // Должна быть хотя бы одна успешная загрузка
 
         // Тестируем graceful degradation
         // Даже если некоторые программы не загрузились, коллектор должен работать
@@ -1980,10 +1978,8 @@ mod tests {
 
         // Проверяем, что метрики имеют разумные значения по умолчанию
         assert!(metrics.cpu_usage >= 0.0);
-        assert!(metrics.memory_usage >= 0);
-        assert!(metrics.syscall_count >= 0);
-        assert!(metrics.network_packets >= 0);
-        assert!(metrics.network_bytes >= 0);
+        // Удаляем проверки для unsigned типов, так как они всегда >= 0
+        assert!(metrics.memory_usage > 0 || metrics.syscall_count > 0); // Хотя бы одна метрика должна быть ненулевой
     }
 
     #[test]

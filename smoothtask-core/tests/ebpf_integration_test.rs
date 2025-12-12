@@ -30,7 +30,7 @@ fn test_ebpf_basic_functionality() {
 #[test]
 fn test_ebpf_config_options() {
     // Тестируем различные конфигурации
-    let mut config = EbpfConfig {
+    let config = EbpfConfig {
         enable_cpu_metrics: false,
         enable_memory_metrics: true,
         ..Default::default()
@@ -158,7 +158,7 @@ fn test_ebpf_multiple_initializations() {
 #[test]
 fn test_ebpf_custom_interval() {
     // Тестируем кастомный интервал сбора
-    let mut config = EbpfConfig {
+    let config = EbpfConfig {
         collection_interval: Duration::from_secs(5),
         ..Default::default()
     };
@@ -187,7 +187,7 @@ fn test_ebpf_syscall_monitoring_disabled() {
 #[test]
 fn test_ebpf_network_monitoring() {
     // Тестируем поддержку мониторинга сетевой активности
-    let mut config = EbpfConfig {
+    let config = EbpfConfig {
         enable_network_monitoring: true,
         ..Default::default()
     };
@@ -224,7 +224,7 @@ fn test_ebpf_network_monitoring() {
 #[test]
 fn test_ebpf_filesystem_monitoring() {
     // Тестируем поддержку мониторинга файловой системы
-    let mut config = EbpfConfig {
+    let config = EbpfConfig {
         enable_filesystem_monitoring: true,
         ..Default::default()
     };
@@ -314,7 +314,7 @@ fn test_ebpf_comprehensive_integration() {
     assert!(collector.validate_config().is_ok());
 
     // Тестируем статистику инициализации
-    let (success_count, error_count) = collector.get_initialization_stats();
+    let (_success_count, _error_count) = collector.get_initialization_stats();
     #[cfg(feature = "ebpf")]
     {
         // Должно быть как минимум 5 успешных загрузок (все кроме GPU)
@@ -347,7 +347,7 @@ fn test_ebpf_comprehensive_integration() {
 
     if let Some(network_details) = metrics.network_details {
         assert!(!network_details.is_empty());
-        for detail in network_details {
+        for _detail in network_details {
             // packets_sent, packets_received, bytes_sent, bytes_received всегда >= 0 (unsigned types)
         }
     }
@@ -355,7 +355,7 @@ fn test_ebpf_comprehensive_integration() {
     // Проверяем детализированную статистику файловой системы
     if let Some(filesystem_details) = metrics.filesystem_details {
         assert!(!filesystem_details.is_empty());
-        for detail in filesystem_details {
+        for _detail in filesystem_details {
             // read_count, write_count, open_count, close_count, bytes_read, bytes_written всегда >= 0 (unsigned types)
         }
     }
