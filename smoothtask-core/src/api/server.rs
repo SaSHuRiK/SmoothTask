@@ -1388,7 +1388,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_config_handler_with_config() {
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1412,6 +1412,12 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -1438,7 +1444,7 @@ mod tests {
 
     #[test]
     fn test_api_state_with_all_and_config() {
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -1462,6 +1468,12 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -1524,7 +1536,7 @@ mod tests {
 
     #[test]
     fn test_api_server_with_all_and_config() {
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8083".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -1549,6 +1561,12 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -2051,7 +2069,7 @@ apps:
 
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config() {
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let addr: SocketAddr = "127.0.0.1:8085".parse().unwrap();
         let config = Config {
@@ -2077,6 +2095,12 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -2110,7 +2134,7 @@ apps:
     #[test]
     fn test_api_server_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let addr: SocketAddr = "127.0.0.1:8086".parse().unwrap();
         let config = Config {
             polling_interval_ms: 1000,
@@ -2135,6 +2159,12 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -2163,7 +2193,7 @@ apps:
 
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config() {
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         use crate::logging::snapshots::ResponsivenessMetrics;
         let config = Config {
             polling_interval_ms: 1000,
@@ -2188,6 +2218,12 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -2221,7 +2257,7 @@ apps:
     #[test]
     fn test_api_state_with_all_and_responsiveness_and_config_and_patterns() {
         use crate::classify::rules::PatternDatabase;
-        use crate::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+        use crate::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
         let config = Config {
             polling_interval_ms: 1000,
             max_candidates: 150,
@@ -2245,6 +2281,12 @@ apps:
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,

@@ -39,6 +39,9 @@ axum = { version = "0.7", features = ["json"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors"] }
 
+# Сжатие логов
+flate2 = { version = "1.0", features = ["zlib"] }
+
 [dev-dependencies]
 tempfile = "3"
 criterion = "0.5"

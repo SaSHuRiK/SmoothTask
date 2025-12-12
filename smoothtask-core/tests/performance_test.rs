@@ -88,7 +88,7 @@ fn test_window_introspector_performance() {
 
 #[test]
 fn test_config_creation_performance() {
-    use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+    use smoothtask_core::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
     
     let start = Instant::now();
     
@@ -112,6 +112,12 @@ fn test_config_creation_performance() {
                 background_percentile: 0.3,
                 sched_latency_p99_threshold_ms: 20.0,
                 ui_loop_p95_threshold_ms: 16.67,
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             paths: Paths {
                 snapshot_db_path: "/var/log/smoothtask/snapshots.db".to_string(),

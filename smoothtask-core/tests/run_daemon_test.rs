@@ -7,7 +7,7 @@
 //! - работа с snapshot logger
 //! - один полный цикл сбора снапшота (с моками)
 
-use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::run_daemon;
 use std::time::Duration;
 use tempfile::TempDir;
@@ -33,6 +33,12 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             background_percentile: 0.1,
             sched_latency_p99_threshold_ms: 10.0,
             ui_loop_p95_threshold_ms: 16.67,
+        },
+        logging: LoggingConfig {
+            log_max_size_bytes: 10_485_760,
+            log_max_rotated_files: 5,
+            log_compression_enabled: true,
+            log_rotation_interval_sec: 0,
         },
         paths: Paths {
             snapshot_db_path,

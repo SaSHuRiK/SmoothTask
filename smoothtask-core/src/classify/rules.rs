@@ -9,6 +9,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 
+use crate::classify::ml_classifier::{MLClassifier, StubMLClassifier};
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
 /// Категория паттернов (browser, ide, terminal, batch, и т.д.).
@@ -362,10 +363,12 @@ impl PatternDatabase {
 ///
 /// * `process` - процесс для классификации (будет изменён in-place)
 /// * `pattern_db` - база данных паттернов
+/// * `ml_classifier` - опциональный ML-классификатор для дополнительной классификации
 /// * `desktop_id` - desktop ID процесса (опционально, из window_info или systemd_unit)
 pub fn classify_process(
     process: &mut ProcessRecord,
     pattern_db: &PatternDatabase,
+    ml_classifier: Option<&dyn MLClassifier>,
     desktop_id: Option<&str>,
 ) {
     // Извлекаем desktop_id из systemd_unit, если не передан явно
@@ -384,11 +387,6 @@ pub fn classify_process(
         process.cgroup_path.as_deref(),
     );
 
-    if matches.is_empty() {
-        // Процесс не классифицирован
-        return;
-    }
-
     // Собираем все теги из совпадающих паттернов
     let mut all_tags = HashSet::new();
     for (_, pattern) in &matches {
@@ -398,11 +396,28 @@ pub fn classify_process(
     }
 
     // Выбираем process_type из первой категории (можно улучшить логику выбора)
-    if let Some((category, _)) = matches.first() {
-        process.process_type = Some(category.0.clone());
+    let mut process_type = matches.first().map(|(category, _)| category.0.clone());
+
+    // Применяем ML-классификацию, если доступен
+    if let Some(classifier) = ml_classifier {
+        let ml_result = classifier.classify(process);
+        
+        // Объединяем результаты паттерн-классификации и ML-классификации
+        if let Some(ml_type) = ml_result.process_type {
+            // Если ML уверен в предсказании, используем его тип
+            if ml_result.confidence > 0.7 {
+                process_type = Some(ml_type);
+            }
+        }
+        
+        // Добавляем теги из ML-классификации
+        for tag in ml_result.tags {
+            all_tags.insert(tag);
+        }
     }
 
-    // Заполняем теги (уникальные, отсортированные)
+    // Заполняем результаты
+    process.process_type = process_type;
     process.tags = all_tags.into_iter().collect();
     process.tags.sort();
 }
@@ -466,10 +481,11 @@ pub fn classify_all(
     processes: &mut [ProcessRecord],
     app_groups: &mut [AppGroupRecord],
     pattern_db: &PatternDatabase,
+    ml_classifier: Option<&dyn MLClassifier>,
 ) {
     // Классифицируем все процессы
     for process in processes.iter_mut() {
-        classify_process(process, pattern_db, None);
+        classify_process(process, pattern_db, ml_classifier, None);
     }
 
     // Классифицируем все группы (агрегируем теги из процессов)
@@ -834,7 +850,8 @@ apps:
             teacher_score: None,
         };
 
-        classify_process(&mut process, &db, None);
+        // Тест без ML-классификатора
+        classify_process(&mut process, &db, None, None);
 
         assert_eq!(process.process_type, Some("browser".to_string()));
         assert!(process.tags.contains(&"browser".to_string()));
@@ -902,7 +919,7 @@ apps:
             teacher_score: None,
         };
 
-        classify_process(&mut process, &db, None);
+        classify_process(&mut process, &db, None, None);
 
         assert_eq!(process.process_type, None);
         assert!(process.tags.is_empty());
@@ -1110,7 +1127,8 @@ apps:
             priority_class: None,
         }];
 
-        classify_all(&mut processes, &mut app_groups, &db);
+        // Тест без ML-классификатора
+        classify_all(&mut processes, &mut app_groups, &db, None);
 
         // Процесс должен быть классифицирован
         assert_eq!(processes[0].process_type, Some("browser".to_string()));
@@ -1119,5 +1137,152 @@ apps:
         // Группа должна иметь агрегированные теги
         assert!(!app_groups[0].tags.is_empty());
         assert!(app_groups[0].tags.contains(&"browser".to_string()));
+    }
+
+    #[test]
+    fn classify_process_with_ml_classifier() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        create_test_pattern_file(
+            patterns_dir,
+            "browsers.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let ml_classifier = StubMLClassifier::new();
+
+        let mut process = ProcessRecord {
+            pid: 1000,
+            ppid: 1,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("firefox".to_string()),
+            cmdline: None,
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "R".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: Some(0.5), // Высокий CPU для ML-классификации
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: None,
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: Vec::new(),
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        // Классификация с ML-классификатором
+        classify_process(&mut process, &db, Some(&ml_classifier), None);
+
+        // Должны быть теги и от паттернов, и от ML
+        assert!(process.tags.contains(&"browser".to_string())); // от паттернов
+        assert!(process.tags.contains(&"high_cpu".to_string())); // от ML
+        
+        // Тип должен быть от паттернов (так как ML уверенность < 0.7 для cpu_intensive)
+        assert_eq!(process.process_type, Some("browser".to_string()));
+    }
+
+    #[test]
+    fn classify_process_ml_overrides_pattern() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        create_test_pattern_file(
+            patterns_dir,
+            "browsers.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let ml_classifier = StubMLClassifier::new();
+
+        let mut process = ProcessRecord {
+            pid: 1000,
+            ppid: 1,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("firefox".to_string()),
+            cmdline: None,
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "R".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: None,
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: true, // Аудио клиент для ML-классификации с высокой уверенностью
+            has_active_stream: false,
+            process_type: None,
+            tags: Vec::new(),
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        // Классификация с ML-классификатором
+        classify_process(&mut process, &db, Some(&ml_classifier), None);
+
+        // Должны быть теги и от паттернов, и от ML
+        assert!(process.tags.contains(&"browser".to_string())); // от паттернов
+        assert!(process.tags.contains(&"audio".to_string())); // от ML
+        assert!(process.tags.contains(&"realtime".to_string())); // от ML
+        
+        // Тип должен быть от ML (так как уверенность > 0.7 для audio)
+        assert_eq!(process.process_type, Some("audio".to_string()));
     }
 }

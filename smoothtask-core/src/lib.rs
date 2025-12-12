@@ -772,7 +772,7 @@ pub async fn run_daemon(
         let mut app_groups = ProcessGrouper::group_processes(&processes);
 
         // Классификация процессов и групп
-        classify_all(&mut processes, &mut app_groups, &pattern_db);
+        classify_all(&mut processes, &mut app_groups, &pattern_db, None);
 
         // Обновляем app_group_id в процессах на основе группировки
         for process in &mut processes {

@@ -514,6 +514,7 @@ mod tests {
     use chrono::Utc;
 
     fn create_test_config() -> Config {
+        use crate::config::LoggingConfig;
         Config {
             polling_interval_ms: 500,
             max_candidates: 150,
@@ -538,6 +539,12 @@ mod tests {
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: None,
             },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+            },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
                 process_metrics_cache_interval: 1,
@@ -546,6 +553,7 @@ mod tests {
     }
 
     fn create_hybrid_config() -> Config {
+        use crate::config::LoggingConfig;
         Config {
             polling_interval_ms: 500,
             max_candidates: 150,
@@ -569,6 +577,12 @@ mod tests {
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: None,
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,

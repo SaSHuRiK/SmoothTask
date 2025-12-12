@@ -4,9 +4,11 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, Transaction};
 use serde::{Deserialize, Serialize};
+use std::fs;
 use std::path::Path;
 
 use crate::config::Thresholds;
+use crate::logging::rotation::{get_log_file_size, LogRotator};
 use crate::metrics::system::SystemMetrics;
 
 /// Идентификатор снапшота (timestamp в миллисекундах).
@@ -373,6 +375,8 @@ pub struct Snapshot {
 /// Менеджер для записи снапшотов в SQLite.
 pub struct SnapshotLogger {
     conn: Connection,
+    /// Ротатор логов для управления ротацией файлов логов
+    log_rotator: Option<LogRotator>,
 }
 
 impl SnapshotLogger {
@@ -381,7 +385,57 @@ impl SnapshotLogger {
         let conn = Connection::open(db_path.as_ref())
             .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
 
-        let logger = SnapshotLogger { conn };
+        let logger = SnapshotLogger { conn, log_rotator: None };
+        logger.init_schema()?;
+        Ok(logger)
+    }
+
+    /// Создать новый логгер с конфигурацией ротации логов.
+    ///
+    /// # Аргументы
+    ///
+    /// * `db_path` - путь к файлу базы данных SQLite
+    /// * `logging_config` - конфигурация логирования для настройки ротации логов
+    ///
+    /// # Возвращает
+    ///
+    /// Новый экземпляр SnapshotLogger с настроенным ротатором логов
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::logging::snapshots::SnapshotLogger;
+    /// use smoothtask_core::config::LoggingConfig;
+    ///
+    /// let logging_config = LoggingConfig {
+    ///     log_max_size_bytes: 10_485_760,
+    ///     log_max_rotated_files: 5,
+    ///     log_compression_enabled: true,
+    ///     log_rotation_interval_sec: 3600,
+    /// };
+    ///
+    /// let logger = SnapshotLogger::new_with_logging("snapshots.db", &logging_config)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn new_with_logging<P: AsRef<Path>>(
+        db_path: P,
+        logging_config: &crate::config::LoggingConfig,
+    ) -> Result<Self> {
+        let conn = Connection::open(db_path.as_ref())
+            .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
+
+        let log_rotator = if logging_config.log_max_size_bytes > 0 || logging_config.log_rotation_interval_sec > 0 {
+            Some(LogRotator::new(
+                logging_config.log_max_size_bytes,
+                logging_config.log_max_rotated_files,
+                logging_config.log_compression_enabled,
+                logging_config.log_rotation_interval_sec,
+            ))
+        } else {
+            None
+        };
+
+        let logger = SnapshotLogger { conn, log_rotator };
         logger.init_schema()?;
         Ok(logger)
     }
@@ -520,6 +574,52 @@ impl SnapshotLogger {
         Self::insert_processes(&tx, snapshot)?;
         Self::insert_app_groups(&tx, snapshot)?;
         tx.commit()?;
+        
+        // Выполняем ротацию лога после записи снапшота
+        self.rotate_log_if_needed()?;
+        
+        Ok(())
+    }
+
+    /// Выполняет ротацию лога, если это необходимо.
+    ///
+    /// Проверяет текущий размер файла базы данных и выполняет ротацию,
+    /// если размер превышает настроенный лимит.
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<()>` - Ok, если ротация выполнена успешно или не требуется, иначе ошибка
+    ///
+    /// # Примеры
+    ///
+    /// ```rust
+    /// use smoothtask_core::logging::snapshots::SnapshotLogger;
+    /// use smoothtask_core::config::LoggingConfig;
+    ///
+    /// let logging_config = LoggingConfig {
+    ///     log_max_size_bytes: 10_485_760,
+    ///     log_max_rotated_files: 5,
+    ///     log_compression_enabled: true,
+    ///     log_rotation_interval_sec: 3600,
+    /// };
+    ///
+    /// let mut logger = SnapshotLogger::new_with_logging("snapshots.db", &logging_config)?;
+    /// logger.rotate_log_if_needed()?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    pub fn rotate_log_if_needed(&mut self) -> Result<()> {
+        if let Some(rotator) = &mut self.log_rotator {
+            // Получаем путь к файлу базы данных
+            let db_path_str = self.conn.path().unwrap_or("snapshots.db");
+            let db_path = Path::new(db_path_str);
+            
+            // Получаем текущий размер файла
+            let current_size = get_log_file_size(db_path)?;
+            
+            // Выполняем ротацию, если необходимо
+            rotator.rotate_log(db_path)?;
+        }
+        
         Ok(())
     }
 
@@ -1124,5 +1224,103 @@ mod tests {
             responsiveness.bad_responsiveness,
             "should detect bad responsiveness with custom UI latency threshold"
         );
+    }
+
+    #[test]
+    fn test_snapshot_logger_with_logging_config() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let db_path = temp_dir.path().join("test_snapshots.db");
+
+        let logging_config = crate::config::LoggingConfig {
+            log_max_size_bytes: 10_485_760,
+            log_max_rotated_files: 3,
+            log_compression_enabled: false,
+            log_rotation_interval_sec: 0,
+        };
+
+        let logger = SnapshotLogger::new_with_logging(&db_path, &logging_config)
+            .expect("logger with logging config created");
+
+        // Проверяем, что логгер создан и имеет ротатор
+        assert!(logger.log_rotator.is_some(), "Logger should have a log rotator");
+    }
+
+    #[test]
+    fn test_snapshot_logger_without_logging_config() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let db_path = temp_dir.path().join("test_snapshots.db");
+
+        let logger = SnapshotLogger::new(&db_path)
+            .expect("logger without logging config created");
+
+        // Проверяем, что логгер создан без ротатора
+        assert!(logger.log_rotator.is_none(), "Logger should not have a log rotator");
+    }
+
+    #[test]
+    fn test_snapshot_logger_rotate_log_if_needed() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let db_path = temp_dir.path().join("test_snapshots.db");
+
+        let logging_config = crate::config::LoggingConfig {
+            log_max_size_bytes: 100, // Очень маленький лимит для теста
+            log_max_rotated_files: 3,
+            log_compression_enabled: false,
+            log_rotation_interval_sec: 0,
+        };
+
+        let mut logger = SnapshotLogger::new_with_logging(&db_path, &logging_config)
+            .expect("logger with small size limit created");
+
+        // Записываем один снапшот, чтобы проверить, что логгер работает с конфигурацией ротации
+        let mut snapshot = create_test_snapshot();
+        snapshot.snapshot_id = 1000;
+        logger.log_snapshot(&snapshot).expect("snapshot logged");
+
+        // Проверяем, что логгер имеет ротатор
+        assert!(logger.log_rotator.is_some(), "Logger should have a log rotator");
+        
+        // Проверяем, что конфигурация ротации правильная
+        if let Some(rotator) = &logger.log_rotator {
+            let (max_size, max_files, compression, interval) = rotator.get_config();
+            assert_eq!(max_size, 100);
+            assert_eq!(max_files, 3);
+            assert!(!compression);
+            assert_eq!(interval, 0);
+        }
+    }
+
+    #[test]
+    fn test_snapshot_logger_rotate_log_disabled() {
+        let temp_dir = tempfile::tempdir().expect("temp dir");
+        let db_path = temp_dir.path().join("test_snapshots.db");
+
+        let logging_config = crate::config::LoggingConfig {
+            log_max_size_bytes: 0, // Ротация отключена
+            log_max_rotated_files: 3,
+            log_compression_enabled: false,
+            log_rotation_interval_sec: 0,
+        };
+
+        let mut logger = SnapshotLogger::new_with_logging(&db_path, &logging_config)
+            .expect("logger with disabled rotation created");
+
+        // Записываем несколько снапшотов с разными ID
+        for i in 0..5 {
+            let mut snapshot = create_test_snapshot();
+            snapshot.snapshot_id = 2000 + i; // Уникальные ID для каждого снапшота
+            logger.log_snapshot(&snapshot).expect("snapshot logged");
+        }
+
+        // Проверяем, что ротация не выполнена (только один файл БД)
+        let db_files: Vec<_> = fs::read_dir(temp_dir.path())
+            .expect("read dir")
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.path().extension().map_or(false, |ext| ext == "db")
+            })
+            .collect();
+
+        assert_eq!(db_files.len(), 1, "Should have only one DB file when rotation is disabled");
     }
 }

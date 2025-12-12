@@ -3,6 +3,128 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 
+/// Конфигурация логирования для системы.
+///
+/// Определяет параметры ротации логов, сжатия и другие настройки логирования.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct LoggingConfig {
+    /// Максимальный размер файла лога в байтах перед ротацией.
+    ///
+    /// Если файл лога достигает или превышает этот размер, происходит ротация.
+    /// Значение 0 означает отключение ротации по размеру.
+    ///
+    /// По умолчанию: 10_485_760 байт (10 MiB).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 0
+    /// - Значение должно быть <= 1_073_741_824 (1 GiB) для предотвращения чрезмерного использования диска
+    /// - Рекомендуемые значения: 1 MiB (1_048_576), 5 MiB (5_242_880), 10 MiB (10_485_760)
+    #[serde(default = "default_log_max_size_bytes")]
+    pub log_max_size_bytes: u64,
+
+    /// Максимальное количество сохраняемых ротированных логов.
+    ///
+    /// Определяет, сколько ротированных логов будет сохранено перед удалением самых старых.
+    /// Значение 0 означает отключение ограничения (все ротированные логи сохраняются).
+    ///
+    /// По умолчанию: 5.
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 0
+    /// - Значение должно быть <= 100 для предотвращения чрезмерного использования диска
+    /// - Рекомендуемые значения: 3, 5, 10
+    #[serde(default = "default_log_max_rotated_files")]
+    pub log_max_rotated_files: u32,
+
+    /// Включить сжатие ротированных логов.
+    ///
+    /// Если `true`, ротированные логи будут сжаты с использованием gzip.
+    /// Это позволяет сэкономить дисковое пространство, но требует дополнительных ресурсов CPU.
+    ///
+    /// По умолчанию: `true`.
+    ///
+    /// # Примечания
+    ///
+    /// - Сжатие применяется только к ротированным логам, а не к текущему активному логу
+    /// - Сжатые логи имеют расширение .gz
+    /// - Требует наличия библиотеки сжатия (flate2)
+    #[serde(default = "default_log_compression_enabled")]
+    pub log_compression_enabled: bool,
+
+    /// Интервал ротации логов по времени в секундах.
+    ///
+    /// Если указано значение > 0, логи будут ротироваться через указанные интервалы времени,
+    /// независимо от размера файла. Это полезно для создания регулярных снапшотов логов.
+    ///
+    /// Значение 0 означает отключение ротации по времени.
+    ///
+    /// По умолчанию: 0 (отключено).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 0
+    /// - Значение должно быть <= 86400 (24 часа) для предотвращения чрезмерных интервалов
+    /// - Рекомендуемые значения: 3600 (1 час), 10800 (3 часа), 21600 (6 часов), 43200 (12 часов)
+    /// - Если указано как ротация по размеру, так и по времени, будет использоваться то условие,
+    ///   которое наступит первым
+    #[serde(default = "default_log_rotation_interval_sec")]
+    pub log_rotation_interval_sec: u64,
+}
+
+/// Возвращает дефолтное значение для `log_max_size_bytes`.
+///
+/// По умолчанию используется значение 10_485_760 байт (10 MiB).
+/// Это разумный компромисс между частотой ротации и использованием дискового пространства.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_max_size_bytes")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_max_size_bytes() -> u64 {
+    10_485_760 // 10 MiB
+}
+
+/// Возвращает дефолтное значение для `log_max_rotated_files`.
+///
+/// По умолчанию используется значение 5. Это позволяет сохранить несколько ротированных логов
+/// для отладки, не занимая слишком много дискового пространства.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_max_rotated_files")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_max_rotated_files() -> u32 {
+    5
+}
+
+/// Возвращает дефолтное значение для `log_compression_enabled`.
+///
+/// По умолчанию сжатие включено (`true`), так как это позволяет значительно сэкономить
+/// дисковое пространство при минимальном влиянии на производительность.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_compression_enabled")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_compression_enabled() -> bool {
+    true
+}
+
+/// Возвращает дефолтное значение для `log_rotation_interval_sec`.
+///
+/// По умолчанию ротация по времени отключена (0 секунд).
+/// Это позволяет использовать только ротацию по размеру или отключить ротацию полностью.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_rotation_interval_sec")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_rotation_interval_sec() -> u64 {
+    0
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub polling_interval_ms: u64,
@@ -21,6 +143,15 @@ pub struct Config {
 
     pub thresholds: Thresholds,
     pub paths: Paths,
+    /// Конфигурация логирования для системы.
+    ///
+    /// Определяет параметры ротации логов, сжатия и другие настройки логирования.
+    /// Эти параметры применяются как к текстовым логам (tracing), так и к логам снапшотов.
+    ///
+    /// По умолчанию: используется дефолтная конфигурация с ротацией по размеру (10 MiB),
+    /// сохранением 5 ротированных файлов, включенным сжатием и отключенной ротацией по времени.
+    #[serde(default = "default_logging_config")]
+    pub logging: LoggingConfig,
     /// Интервалы кэширования для оптимизации производительности.
     ///
     /// Определяет, как часто обновляются кэши системных и процессных метрик.
@@ -236,6 +367,23 @@ pub(crate) fn default_cache_intervals() -> CacheIntervals {
     }
 }
 
+/// Возвращает дефолтное значение для `logging`.
+///
+/// Создаёт структуру LoggingConfig с дефолтными значениями для всех параметров логирования.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_logging_config")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_logging_config() -> LoggingConfig {
+    LoggingConfig {
+        log_max_size_bytes: default_log_max_size_bytes(),
+        log_max_rotated_files: default_log_max_rotated_files(),
+        log_compression_enabled: default_log_compression_enabled(),
+        log_rotation_interval_sec: default_log_rotation_interval_sec(),
+    }
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Paths {
     pub snapshot_db_path: String,
@@ -354,6 +502,7 @@ impl Config {
         self.thresholds.validate()?;
         self.paths.validate()?;
         self.cache_intervals.validate()?;
+        self.logging.validate()?;
 
         Ok(())
     }
@@ -498,6 +647,42 @@ impl CacheIntervals {
             "cache_intervals.process_metrics_cache_interval must be <= 100 to prevent excessive caching (got {})",
             self.process_metrics_cache_interval
         );
+
+        Ok(())
+    }
+}
+
+impl LoggingConfig {
+    fn validate(&self) -> Result<()> {
+        // Валидация log_max_size_bytes
+        ensure!(
+            self.log_max_size_bytes <= 1_073_741_824,
+            "logging.log_max_size_bytes must be <= 1_073_741_824 (1 GiB) to prevent excessive disk usage (got {})",
+            self.log_max_size_bytes
+        );
+
+        // Валидация log_max_rotated_files
+        ensure!(
+            self.log_max_rotated_files <= 100,
+            "logging.log_max_rotated_files must be <= 100 to prevent excessive disk usage (got {})",
+            self.log_max_rotated_files
+        );
+
+        // Валидация log_rotation_interval_sec
+        ensure!(
+            self.log_rotation_interval_sec <= 86400,
+            "logging.log_rotation_interval_sec must be <= 86400 (24 hours) to prevent excessive rotation intervals (got {})",
+            self.log_rotation_interval_sec
+        );
+
+        // Логическая валидация: если ротация по времени включена, интервал должен быть > 0
+        if self.log_rotation_interval_sec > 0 {
+            ensure!(
+                self.log_rotation_interval_sec >= 60,
+                "logging.log_rotation_interval_sec must be >= 60 seconds when time-based rotation is enabled (got {})",
+                self.log_rotation_interval_sec
+            );
+        }
 
         Ok(())
     }

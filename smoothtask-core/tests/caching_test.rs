@@ -4,7 +4,7 @@
 //! Кэширование позволяет снизить нагрузку на систему за счёт повторного
 //! использования ранее собранных метрик.
 
-use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::{CacheIntervals, Config, LoggingConfig, Paths, PolicyMode, Thresholds};
 use smoothtask_core::metrics::system::{collect_system_metrics, CpuTimes, LoadAvg, MemoryInfo, ProcPaths, SystemMetrics, NetworkMetrics, DiskMetrics};
 use smoothtask_core::metrics::process::collect_process_metrics;
 use std::sync::{Arc, Mutex};
@@ -68,6 +68,12 @@ fn test_config_includes_cache_intervals() {
             background_percentile: 50.0,
             sched_latency_p99_threshold_ms: 10.0,
             ui_loop_p95_threshold_ms: 16.67,
+        },
+        logging: LoggingConfig {
+            log_max_size_bytes: 10_485_760,
+            log_max_rotated_files: 5,
+            log_compression_enabled: true,
+            log_rotation_interval_sec: 0,
         },
         paths: Paths {
             snapshot_db_path: "/tmp/test.db".to_string(),
@@ -397,6 +403,12 @@ fn test_cache_configuration_integration() {
             background_percentile: 50.0,
             sched_latency_p99_threshold_ms: 10.0,
             ui_loop_p95_threshold_ms: 16.67,
+        },
+        logging: LoggingConfig {
+            log_max_size_bytes: 10_485_760,
+            log_max_rotated_files: 5,
+            log_compression_enabled: true,
+            log_rotation_interval_sec: 0,
         },
         paths: Paths {
             snapshot_db_path: "/var/lib/smoothtask/snapshots.db".to_string(),
