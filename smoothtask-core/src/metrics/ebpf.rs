@@ -250,8 +250,14 @@ pub struct CpuTemperatureStat {
     pub temperature_celsius: u32,
     /// Максимальная температура CPU (в градусах Цельсия)
     pub max_temperature_celsius: u32,
+    /// Критическая температура CPU (в градусах Цельсия)
+    pub critical_temperature_celsius: u32,
     /// Время последнего обновления
     pub timestamp: u64,
+    /// Количество обновлений
+    pub update_count: u32,
+    /// Количество ошибок
+    pub error_count: u32,
 }
 
 /// Статистика по производительности GPU
@@ -501,7 +507,10 @@ fn load_ebpf_program_from_file(program_path: &str) -> Result<Program> {
 
 /// Загрузить eBPF программу из файла с таймаутом
 #[cfg(feature = "ebpf")]
-fn load_ebpf_program_from_file_with_timeout(program_path: &str, timeout_ms: u64) -> Result<Program> {
+fn load_ebpf_program_from_file_with_timeout(
+    program_path: &str,
+    timeout_ms: u64,
+) -> Result<Program> {
     use libbpf_rs::Program;
     use std::path::Path;
     use std::time::Instant;
@@ -512,10 +521,14 @@ fn load_ebpf_program_from_file_with_timeout(program_path: &str, timeout_ms: u64)
         anyhow::bail!("eBPF программа не найдена: {}", program_path);
     }
 
-    tracing::info!("Загрузка eBPF программы из {:?} (таймаут: {}ms)", program_path, timeout_ms);
+    tracing::info!(
+        "Загрузка eBPF программы из {:?} (таймаут: {}ms)",
+        program_path,
+        timeout_ms
+    );
 
     let start_time = Instant::now();
-    
+
     // Реальная загрузка eBPF программы с использованием libbpf-rs
     let program = Program::from_file(path).context(format!(
         "Не удалось загрузить eBPF программу из {:?}",
@@ -524,10 +537,18 @@ fn load_ebpf_program_from_file_with_timeout(program_path: &str, timeout_ms: u64)
 
     let elapsed = start_time.elapsed();
     if elapsed.as_millis() > timeout_ms as u128 {
-        tracing::warn!("Загрузка eBPF программы {:?} превысила таймаут ({}ms > {}ms)", 
-            program_path, elapsed.as_millis(), timeout_ms);
+        tracing::warn!(
+            "Загрузка eBPF программы {:?} превысила таймаут ({}ms > {}ms)",
+            program_path,
+            elapsed.as_millis(),
+            timeout_ms
+        );
     } else {
-        tracing::info!("eBPF программа успешно загружена из {:?} за {:?}", program_path, elapsed);
+        tracing::info!(
+            "eBPF программа успешно загружена из {:?} за {:?}",
+            program_path,
+            elapsed
+        );
     }
 
     Ok(program)
@@ -535,35 +556,41 @@ fn load_ebpf_program_from_file_with_timeout(program_path: &str, timeout_ms: u64)
 
 /// Параллельная загрузка нескольких eBPF программ
 #[cfg(feature = "ebpf")]
-fn load_ebpf_programs_parallel(program_paths: Vec<&str>, timeout_ms: u64) -> Result<Vec<Option<Program>>> {
-    use std::thread;
+fn load_ebpf_programs_parallel(
+    program_paths: Vec<&str>,
+    timeout_ms: u64,
+) -> Result<Vec<Option<Program>>> {
     use std::sync::mpsc;
+    use std::thread;
     use std::time::Duration;
 
-    tracing::info!("Параллельная загрузка {} eBPF программ", program_paths.len());
-    
+    tracing::info!(
+        "Параллельная загрузка {} eBPF программ",
+        program_paths.len()
+    );
+
     let (sender, receiver) = mpsc::channel();
     let mut handles = Vec::new();
-    
+
     for (index, path) in program_paths.into_iter().enumerate() {
         let sender = sender.clone();
         let timeout = timeout_ms;
-        
+
         let handle = thread::spawn(move || {
             let result = load_ebpf_program_from_file_with_timeout(path, timeout);
             sender.send((index, result)).unwrap();
         });
-        
+
         handles.push(handle);
     }
-    
+
     // Ожидание завершения всех потоков с таймаутом
     let timeout_duration = Duration::from_millis(timeout_ms * 2); // Общий таймаут
     let start_time = Instant::now();
-    
+
     let mut results = vec![None; program_paths.len()];
     let mut completed_count = 0;
-    
+
     loop {
         match receiver.recv_timeout(timeout_duration.saturating_sub(start_time.elapsed())) {
             Ok((index, result)) => {
@@ -578,28 +605,33 @@ fn load_ebpf_programs_parallel(program_paths: Vec<&str>, timeout_ms: u64) -> Res
                     }
                 }
                 completed_count += 1;
-                
+
                 if completed_count == program_paths.len() {
                     break;
                 }
             }
             Err(_) => {
-                tracing::warn!("Таймаут ожидания загрузки программ ({} из {})", 
-                    completed_count, program_paths.len());
+                tracing::warn!(
+                    "Таймаут ожидания загрузки программ ({} из {})",
+                    completed_count,
+                    program_paths.len()
+                );
                 break;
             }
         }
     }
-    
+
     // Ожидание завершения всех потоков
     for handle in handles {
         let _ = handle.join();
     }
-    
-    tracing::info!("Параллельная загрузка завершена: {} успехов, {} ошибок",
+
+    tracing::info!(
+        "Параллельная загрузка завершена: {} успехов, {} ошибок",
         results.iter().filter(|p| p.is_some()).count(),
-        results.iter().filter(|p| p.is_none()).count());
-    
+        results.iter().filter(|p| p.is_none()).count()
+    );
+
     Ok(results)
 }
 
@@ -631,10 +663,10 @@ impl EbpfProgramCache {
 
         self.miss_count += 1;
         tracing::debug!("Кэш-мисс для программы {:?}, загрузка...", program_path);
-        
+
         let program = load_ebpf_program_from_file_with_timeout(program_path, timeout_ms)?;
         self.cache.insert(program_path.to_string(), program.clone());
-        
+
         Ok(program)
     }
 
@@ -652,7 +684,7 @@ impl EbpfProgramCache {
         } else {
             0.0
         };
-        
+
         (self.hit_count, self.miss_count, hit_rate)
     }
 }
@@ -679,20 +711,24 @@ fn load_maps_from_program(program_path: &str, expected_map_name: &str) -> Result
 
     // Получаем доступ к картам программы
     let mut maps = Vec::new();
-    
+
     // Пробуем получить карту по имени
     // В реальной реализации libbpf-rs предоставляет доступ к картам через skeleton
     // Для упрощения создаем карту с ожидаемым именем
-    
+
     // Создаем карту с ожидаемым именем
     let map = Map::from_file(path, expected_map_name).context(format!(
         "Не удалось загрузить карту {} из программы {:?}",
         expected_map_name, program_path
     ))?;
-    
+
     maps.push(map);
-    
-    tracing::info!("Успешно загружено {} карт из программы {:?}", maps.len(), program_path);
+
+    tracing::info!(
+        "Успешно загружено {} карт из программы {:?}",
+        maps.len(),
+        program_path
+    );
     Ok(maps)
 }
 
@@ -729,13 +765,13 @@ fn load_maps_from_program(program_path: &str, expected_map_name: &str) -> Result
 fn iterate_ebpf_map_keys<T: Default + Copy>(map: &Map, value_size: usize) -> Result<Vec<T>> {
     use libbpf_rs::Map;
     use std::mem::size_of;
-    
+
     let mut results = Vec::new();
-    
+
     // Пробуем получить первый ключ
     let mut key = 0u32;
     let mut next_key = key;
-    
+
     loop {
         // Пробуем получить значение для текущего ключа
         match map.lookup(&next_key, 0) {
@@ -745,20 +781,20 @@ fn iterate_ebpf_map_keys<T: Default + Copy>(map: &Map, value_size: usize) -> Res
                     // Преобразуем байты в структуру T
                     let mut value = T::default();
                     let value_ptr = &value as *const T as *const u8;
-                    
+
                     // Копируем байты в структуру (упрощенная реализация)
                     if value_bytes.len() >= size_of::<T>() {
                         unsafe {
                             std::ptr::copy_nonoverlapping(
                                 value_bytes.as_ptr(),
                                 value_ptr as *mut u8,
-                                size_of::<T>()
+                                size_of::<T>(),
                             );
                         }
                         results.push(value);
                     }
                 }
-                
+
                 // Пробуем получить следующий ключ
                 match map.next_key(&next_key) {
                     Ok(next) => {
@@ -786,7 +822,7 @@ fn iterate_ebpf_map_keys<T: Default + Copy>(map: &Map, value_size: usize) -> Res
             }
         }
     }
-    
+
     Ok(results)
 }
 
@@ -937,7 +973,10 @@ impl EbpfMetricsCollector {
     }
 
     /// Установить менеджер уведомлений
-    pub fn set_notification_manager(&mut self, notification_manager: std::sync::Arc<crate::notifications::NotificationManager>) {
+    pub fn set_notification_manager(
+        &mut self,
+        notification_manager: std::sync::Arc<crate::notifications::NotificationManager>,
+    ) {
         self.notification_manager = Some(notification_manager);
     }
 
@@ -969,7 +1008,10 @@ impl EbpfMetricsCollector {
     }
 
     /// Отправить уведомление через менеджер уведомлений
-    async fn send_notification(&self, notification: crate::notifications::Notification) -> Result<()> {
+    async fn send_notification(
+        &self,
+        notification: crate::notifications::Notification,
+    ) -> Result<()> {
         if let Some(manager) = &self.notification_manager {
             manager.send(&notification).await?;
         } else {
@@ -988,7 +1030,9 @@ impl EbpfMetricsCollector {
         let mut notifications_sent = false;
 
         // Проверка использования CPU
-        if thresholds.cpu_usage_critical_threshold > 0.0 && metrics.cpu_usage >= thresholds.cpu_usage_critical_threshold {
+        if thresholds.cpu_usage_critical_threshold > 0.0
+            && metrics.cpu_usage >= thresholds.cpu_usage_critical_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Critical,
                 "Critical CPU Usage Detected",
@@ -996,14 +1040,17 @@ impl EbpfMetricsCollector {
                     "CPU usage is at {}% (threshold: {}%)",
                     metrics.cpu_usage, thresholds.cpu_usage_critical_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
                 metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
-        } else if thresholds.cpu_usage_warning_threshold > 0.0 && metrics.cpu_usage >= thresholds.cpu_usage_warning_threshold {
+        } else if thresholds.cpu_usage_warning_threshold > 0.0
+            && metrics.cpu_usage >= thresholds.cpu_usage_warning_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Warning,
                 "High CPU Usage Detected",
@@ -1011,17 +1058,20 @@ impl EbpfMetricsCollector {
                     "CPU usage is at {}% (threshold: {}%)",
                     metrics.cpu_usage, thresholds.cpu_usage_warning_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
                 metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
         }
 
         // Проверка использования памяти
-        if thresholds.memory_usage_critical_threshold > 0 && metrics.memory_usage >= thresholds.memory_usage_critical_threshold {
+        if thresholds.memory_usage_critical_threshold > 0
+            && metrics.memory_usage >= thresholds.memory_usage_critical_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Critical,
                 "Critical Memory Usage Detected",
@@ -1029,14 +1079,17 @@ impl EbpfMetricsCollector {
                     "Memory usage is at {} bytes (threshold: {} bytes)",
                     metrics.memory_usage, thresholds.memory_usage_critical_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
                 metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
-        } else if thresholds.memory_usage_warning_threshold > 0 && metrics.memory_usage >= thresholds.memory_usage_warning_threshold {
+        } else if thresholds.memory_usage_warning_threshold > 0
+            && metrics.memory_usage >= thresholds.memory_usage_warning_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Warning,
                 "High Memory Usage Detected",
@@ -1044,17 +1097,20 @@ impl EbpfMetricsCollector {
                     "Memory usage is at {} bytes (threshold: {} bytes)",
                     metrics.memory_usage, thresholds.memory_usage_warning_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "System metrics: CPU: {}%, Memory: {} bytes, Active processes: {}",
                 metrics.cpu_usage, metrics.memory_usage, metrics.active_processes
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
         }
 
         // Проверка использования GPU
-        if thresholds.gpu_usage_critical_threshold > 0.0 && metrics.gpu_usage >= thresholds.gpu_usage_critical_threshold {
+        if thresholds.gpu_usage_critical_threshold > 0.0
+            && metrics.gpu_usage >= thresholds.gpu_usage_critical_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Critical,
                 "Critical GPU Usage Detected",
@@ -1062,14 +1118,17 @@ impl EbpfMetricsCollector {
                     "GPU usage is at {}% (threshold: {}%)",
                     metrics.gpu_usage, thresholds.gpu_usage_critical_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "GPU metrics: Usage: {}%, Memory: {} bytes",
                 metrics.gpu_usage, metrics.gpu_memory_usage
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
-        } else if thresholds.gpu_usage_warning_threshold > 0.0 && metrics.gpu_usage >= thresholds.gpu_usage_warning_threshold {
+        } else if thresholds.gpu_usage_warning_threshold > 0.0
+            && metrics.gpu_usage >= thresholds.gpu_usage_warning_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Warning,
                 "High GPU Usage Detected",
@@ -1077,17 +1136,20 @@ impl EbpfMetricsCollector {
                     "GPU usage is at {}% (threshold: {}%)",
                     metrics.gpu_usage, thresholds.gpu_usage_warning_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "GPU metrics: Usage: {}%, Memory: {} bytes",
                 metrics.gpu_usage, metrics.gpu_memory_usage
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
         }
 
         // Проверка использования памяти GPU
-        if thresholds.gpu_memory_critical_threshold > 0 && metrics.gpu_memory_usage >= thresholds.gpu_memory_critical_threshold {
+        if thresholds.gpu_memory_critical_threshold > 0
+            && metrics.gpu_memory_usage >= thresholds.gpu_memory_critical_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Critical,
                 "Critical GPU Memory Usage Detected",
@@ -1095,14 +1157,17 @@ impl EbpfMetricsCollector {
                     "GPU memory usage is at {} bytes (threshold: {} bytes)",
                     metrics.gpu_memory_usage, thresholds.gpu_memory_critical_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "GPU metrics: Usage: {}%, Memory: {} bytes",
                 metrics.gpu_usage, metrics.gpu_memory_usage
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
-        } else if thresholds.gpu_memory_warning_threshold > 0 && metrics.gpu_memory_usage >= thresholds.gpu_memory_warning_threshold {
+        } else if thresholds.gpu_memory_warning_threshold > 0
+            && metrics.gpu_memory_usage >= thresholds.gpu_memory_warning_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Warning,
                 "High GPU Memory Usage Detected",
@@ -1110,17 +1175,20 @@ impl EbpfMetricsCollector {
                     "GPU memory usage is at {} bytes (threshold: {} bytes)",
                     metrics.gpu_memory_usage, thresholds.gpu_memory_warning_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "GPU metrics: Usage: {}%, Memory: {} bytes",
                 metrics.gpu_usage, metrics.gpu_memory_usage
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
         }
 
         // Проверка количества активных сетевых соединений
-        if thresholds.active_connections_critical_threshold > 0 && metrics.active_connections >= thresholds.active_connections_critical_threshold {
+        if thresholds.active_connections_critical_threshold > 0
+            && metrics.active_connections >= thresholds.active_connections_critical_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Critical,
                 "Critical Network Connections Detected",
@@ -1128,14 +1196,17 @@ impl EbpfMetricsCollector {
                     "Active network connections: {} (threshold: {})",
                     metrics.active_connections, thresholds.active_connections_critical_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "Network metrics: Connections: {}, Packets: {}, Bytes: {}",
                 metrics.active_connections, metrics.network_packets, metrics.network_bytes
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
-        } else if thresholds.active_connections_warning_threshold > 0 && metrics.active_connections >= thresholds.active_connections_warning_threshold {
+        } else if thresholds.active_connections_warning_threshold > 0
+            && metrics.active_connections >= thresholds.active_connections_warning_threshold
+        {
             let notification = crate::notifications::Notification::new(
                 crate::notifications::NotificationType::Warning,
                 "High Network Connections Detected",
@@ -1143,11 +1214,12 @@ impl EbpfMetricsCollector {
                     "Active network connections: {} (threshold: {})",
                     metrics.active_connections, thresholds.active_connections_warning_threshold
                 ),
-            ).with_details(format!(
+            )
+            .with_details(format!(
                 "Network metrics: Connections: {}, Packets: {}, Bytes: {}",
                 metrics.active_connections, metrics.network_packets, metrics.network_bytes
             ));
-            
+
             self.send_notification(notification).await?;
             notifications_sent = true;
         }
@@ -1298,7 +1370,9 @@ impl EbpfMetricsCollector {
                 match self.load_network_connections_program() {
                     Ok(_) => {
                         success_count += 1;
-                        tracing::info!("Программа мониторинга сетевых соединений успешно загружена");
+                        tracing::info!(
+                            "Программа мониторинга сетевых соединений успешно загружена"
+                        );
                     }
                     Err(e) => {
                         let error_msg = format!("Ошибка загрузки программы мониторинга сетевых соединений: {}. Проверьте таблицу соединений и права доступа", e);
@@ -1330,7 +1404,9 @@ impl EbpfMetricsCollector {
                 match self.load_process_monitoring_program() {
                     Ok(_) => {
                         success_count += 1;
-                        tracing::info!("Программа мониторинга процесс-специфичных метрик успешно загружена");
+                        tracing::info!(
+                            "Программа мониторинга процесс-специфичных метрик успешно загружена"
+                        );
                     }
                     Err(e) => {
                         let error_msg = format!("Ошибка загрузки программы мониторинга процесс-специфичных метрик: {}. Проверьте доступ к информации о процессах", e);
@@ -1350,7 +1426,7 @@ impl EbpfMetricsCollector {
                     success_count,
                     error_count
                 );
-                
+
                 if !detailed_errors.is_empty() {
                     tracing::warn!("Некоторые программы не были загружены, но основная функциональность доступна. Детали: {}", detailed_errors.join(", "));
                 }
@@ -1359,7 +1435,7 @@ impl EbpfMetricsCollector {
                     "Не удалось загрузить ни одну eBPF программу ({} ошибок). Продолжаем работу с ограниченной функциональностью",
                     error_count
                 );
-                
+
                 if !detailed_errors.is_empty() {
                     self.last_error = Some(format!("Не удалось загрузить программы: {}. eBPF функциональность будет ограничена", detailed_errors.join(", ")));
                 }
@@ -1411,20 +1487,24 @@ impl EbpfMetricsCollector {
 
         // Собираем список программ для загрузки на основе конфигурации
         let mut programs_to_load = Vec::new();
-        
+
         if self.config.enable_cpu_metrics {
             programs_to_load.push(("cpu", "src/ebpf_programs/cpu_metrics.c", "cpu_metrics_map"));
         }
-        
+
         if self.config.enable_memory_metrics {
-            programs_to_load.push(("memory", "src/ebpf_programs/cpu_metrics.c", "cpu_metrics_map"));
+            programs_to_load.push((
+                "memory",
+                "src/ebpf_programs/cpu_metrics.c",
+                "cpu_metrics_map",
+            ));
         }
-        
+
         if self.config.enable_syscall_monitoring {
             // Пробуем загрузить расширенную версию программы
             let advanced_path = "src/ebpf_programs/syscall_monitor_advanced.c";
             let basic_path = "src/ebpf_programs/syscall_monitor.c";
-            
+
             let program_path = if std::path::Path::new(advanced_path).exists() {
                 advanced_path
             } else if std::path::Path::new(basic_path).exists() {
@@ -1433,32 +1513,32 @@ impl EbpfMetricsCollector {
                 tracing::warn!("eBPF программы для мониторинга системных вызовов не найдены");
                 None
             };
-            
+
             if let Some(path) = program_path {
                 programs_to_load.push(("syscall", path, "syscall_count_map"));
             }
         }
-        
+
         if self.config.enable_network_monitoring {
             let path = "src/ebpf_programs/network_monitor.c";
             if std::path::Path::new(path).exists() {
                 programs_to_load.push(("network", path, "network_stats_map"));
             }
         }
-        
+
         if self.config.enable_network_connections {
             let path = "src/ebpf_programs/network_connections.c";
             if std::path::Path::new(path).exists() {
                 programs_to_load.push(("connections", path, "connection_map"));
             }
         }
-        
+
         if self.config.enable_gpu_monitoring {
             // Пробуем загрузить высокопроизводительную версию программы
             let high_perf_path = "src/ebpf_programs/gpu_monitor_high_perf.c";
             let optimized_path = "src/ebpf_programs/gpu_monitor_optimized.c";
             let basic_path = "src/ebpf_programs/gpu_monitor.c";
-            
+
             let program_path = if std::path::Path::new(high_perf_path).exists() {
                 high_perf_path
             } else if std::path::Path::new(optimized_path).exists() {
@@ -1468,18 +1548,18 @@ impl EbpfMetricsCollector {
             } else {
                 None
             };
-            
+
             if let Some(path) = program_path {
                 programs_to_load.push(("gpu", path, "gpu_metrics_map"));
             }
         }
-        
+
         if self.config.enable_filesystem_monitoring {
             // Пробуем загрузить высокопроизводительную версию программы
             let high_perf_path = "src/ebpf_programs/filesystem_monitor_high_perf.c";
             let optimized_path = "src/ebpf_programs/filesystem_monitor_optimized.c";
             let basic_path = "src/ebpf_programs/filesystem_monitor.c";
-            
+
             let program_path = if std::path::Path::new(high_perf_path).exists() {
                 high_perf_path
             } else if std::path::Path::new(optimized_path).exists() {
@@ -1489,50 +1569,69 @@ impl EbpfMetricsCollector {
             } else {
                 None
             };
-            
+
             if let Some(path) = program_path {
                 programs_to_load.push(("filesystem", path, "filesystem_metrics_map"));
             }
         }
-        
+
         if self.config.enable_process_monitoring {
             let path = "src/ebpf_programs/process_monitor.c";
             if std::path::Path::new(path).exists() {
                 programs_to_load.push(("process", path, "process_map"));
             }
         }
-        
+
         if programs_to_load.is_empty() {
-            tracing::warn!("Нет программ для загрузки (все функции отключены или программы не найдены)");
+            tracing::warn!(
+                "Нет программ для загрузки (все функции отключены или программы не найдены)"
+            );
             return Ok(());
         }
-        
-        tracing::info!("Запланировано для загрузки: {} программ", programs_to_load.len());
-        
+
+        tracing::info!(
+            "Запланировано для загрузки: {} программ",
+            programs_to_load.len()
+        );
+
         // Используем параллельную загрузку для оптимизации
         let start_time = Instant::now();
         let program_paths: Vec<&str> = programs_to_load.iter().map(|(_, path, _)| *path).collect();
-        
+
         match load_ebpf_programs_parallel(program_paths, self.config.operation_timeout_ms) {
             Ok(programs) => {
                 let mut success_count = 0;
                 let mut error_count = 0;
                 let mut detailed_errors = Vec::new();
-                
+
                 // Обработка результатов параллельной загрузки
                 for (index, program_result) in programs.into_iter().enumerate() {
-                    if let Some((program_type, program_path, map_name)) = programs_to_load.get(index) {
+                    if let Some((program_type, program_path, map_name)) =
+                        programs_to_load.get(index)
+                    {
                         match program_result {
                             Some(program) => {
                                 // Сохраняем программу и загружаем карты
-                                match self.save_program_and_load_maps(program_type, program, program_path, map_name) {
+                                match self.save_program_and_load_maps(
+                                    program_type,
+                                    program,
+                                    program_path,
+                                    map_name,
+                                ) {
                                     Ok(_) => {
                                         success_count += 1;
-                                        tracing::info!("Программа {} успешно загружена", program_type);
+                                        tracing::info!(
+                                            "Программа {} успешно загружена",
+                                            program_type
+                                        );
                                     }
                                     Err(e) => {
                                         error_count += 1;
-                                        tracing::error!("Ошибка сохранения программы {}: {}", program_type, e);
+                                        tracing::error!(
+                                            "Ошибка сохранения программы {}: {}",
+                                            program_type,
+                                            e
+                                        );
                                         detailed_errors.push(format!("{}: {}", program_type, e));
                                     }
                                 }
@@ -1540,38 +1639,48 @@ impl EbpfMetricsCollector {
                             None => {
                                 error_count += 1;
                                 tracing::error!("Не удалось загрузить программу {}", program_type);
-                                detailed_errors.push(format!("{}: загрузка не удалась", program_type));
+                                detailed_errors
+                                    .push(format!("{}: загрузка не удалась", program_type));
                             }
                         }
                     }
                 }
-                
+
                 let elapsed = start_time.elapsed();
                 self.initialized = success_count > 0;
-                
+
                 if success_count > 0 {
                     tracing::info!(
                         "Оптимизированная инициализация завершена ({} программ загружено, {} ошибок) за {:?}",
                         success_count, error_count, elapsed
                     );
-                    
+
                     if !detailed_errors.is_empty() {
                         tracing::debug!("Детали ошибок: {}", detailed_errors.join(", "));
                     }
                 } else {
                     tracing::warn!(
                         "Не удалось загрузить ни одну eBPF программу ({} ошибок) за {:?}",
-                        error_count, elapsed
+                        error_count,
+                        elapsed
                     );
-                    
+
                     if !detailed_errors.is_empty() {
-                        self.last_error = Some(format!("Не удалось загрузить программы: {}", detailed_errors.join(", ")));
+                        self.last_error = Some(format!(
+                            "Не удалось загрузить программы: {}",
+                            detailed_errors.join(", ")
+                        ));
                     }
                 }
-                
+
                 // Получение статистики кэша
                 let (hits, misses, hit_rate) = self.program_cache.get_stats();
-                tracing::info!("Статистика кэша программ: {} хитов, {} миссов, {:.1}% кэш-хит", hits, misses, hit_rate);
+                tracing::info!(
+                    "Статистика кэша программ: {} хитов, {} миссов, {:.1}% кэш-хит",
+                    hits,
+                    misses,
+                    hit_rate
+                );
             }
             Err(e) => {
                 tracing::error!("Ошибка параллельной загрузки программ: {}", e);
@@ -1579,15 +1688,21 @@ impl EbpfMetricsCollector {
                 return Err(e);
             }
         }
-        
+
         Ok(())
     }
 
     /// Сохранить программу и загрузить карты
     #[cfg(feature = "ebpf")]
-    fn save_program_and_load_maps(&mut self, program_type: &str, program: Program, program_path: &str, map_name: &str) -> Result<()> {
+    fn save_program_and_load_maps(
+        &mut self,
+        program_type: &str,
+        program: Program,
+        program_path: &str,
+        map_name: &str,
+    ) -> Result<()> {
         use libbpf_rs::{Map, Program};
-        
+
         match program_type {
             "cpu" => {
                 self.cpu_program = Some(program);
@@ -1608,9 +1723,12 @@ impl EbpfMetricsCollector {
             "connections" => {
                 self.network_connections_program = Some(program);
                 // Для соединений загружаем несколько карт
-                self.connection_maps = self.load_maps_from_program(program_path, "connection_map")?;
-                self.connection_maps.extend(self.load_maps_from_program(program_path, "connection_stats_map")?);
-                self.connection_maps.extend(self.load_maps_from_program(program_path, "active_connections_map")?);
+                self.connection_maps =
+                    self.load_maps_from_program(program_path, "connection_map")?;
+                self.connection_maps
+                    .extend(self.load_maps_from_program(program_path, "connection_stats_map")?);
+                self.connection_maps
+                    .extend(self.load_maps_from_program(program_path, "active_connections_map")?);
             }
             "gpu" => {
                 self.gpu_program = Some(program);
@@ -1623,16 +1741,20 @@ impl EbpfMetricsCollector {
             "process" => {
                 self.process_monitoring_program = Some(program);
                 self.process_maps = self.load_maps_from_program(program_path, "process_map")?;
-                self.process_maps.extend(self.load_maps_from_program(program_path, "syscall_stats_map")?);
-                self.process_maps.extend(self.load_maps_from_program(program_path, "cpu_stats_map")?);
+                self.process_maps
+                    .extend(self.load_maps_from_program(program_path, "syscall_stats_map")?);
+                self.process_maps
+                    .extend(self.load_maps_from_program(program_path, "cpu_stats_map")?);
             }
             _ => {
                 tracing::warn!("Неизвестный тип программы: {}", program_type);
                 return Ok(());
             }
         }
-        
-        tracing::debug!("Программа {} сохранена с {} картами", program_type, 
+
+        tracing::debug!(
+            "Программа {} сохранена с {} картами",
+            program_type,
             match program_type {
                 "cpu" => self.cpu_maps.len(),
                 "memory" => self.memory_maps.len(),
@@ -1645,7 +1767,7 @@ impl EbpfMetricsCollector {
                 _ => 0,
             }
         );
-        
+
         Ok(())
     }
 
@@ -1653,7 +1775,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn load_cpu_program(&mut self) -> Result<()> {
         use libbpf_rs::{Map, Program};
-        
+
         let program_path = "src/ebpf_programs/cpu_metrics.c";
 
         // Загрузка eBPF программы
@@ -1661,11 +1783,14 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.cpu_program = Some(program);
-        
+
         // Загрузка карт из программы
         self.cpu_maps = self.load_maps_from_program(&program_path, "cpu_metrics_map")?;
-        
-        tracing::info!("eBPF программа для CPU метрик успешно загружена с {} картами", self.cpu_maps.len());
+
+        tracing::info!(
+            "eBPF программа для CPU метрик успешно загружена с {} картами",
+            self.cpu_maps.len()
+        );
         Ok(())
     }
 
@@ -1673,7 +1798,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn load_cpu_temperature_program(&mut self) -> Result<()> {
         use libbpf_rs::{Map, Program};
-        
+
         let program_path = "src/ebpf_programs/cpu_temperature.c";
 
         // Загрузка eBPF программы
@@ -1681,11 +1806,15 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.cpu_temperature_program = Some(program);
-        
+
         // Загрузка карт из программы
-        self.cpu_temperature_maps = self.load_maps_from_program(&program_path, "cpu_temperature_map")?;
-        
-        tracing::info!("eBPF программа для мониторинга температуры CPU успешно загружена с {} картами", self.cpu_temperature_maps.len());
+        self.cpu_temperature_maps =
+            self.load_maps_from_program(&program_path, "cpu_temperature_map")?;
+
+        tracing::info!(
+            "eBPF программа для мониторинга температуры CPU успешно загружена с {} картами",
+            self.cpu_temperature_maps.len()
+        );
         Ok(())
     }
 
@@ -1693,7 +1822,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn load_memory_program(&mut self) -> Result<()> {
         use libbpf_rs::{Map, Program};
-        
+
         let program_path = "src/ebpf_programs/cpu_metrics.c"; // Используем ту же программу для тестирования
 
         // Загрузка eBPF программы
@@ -1701,11 +1830,14 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.memory_program = Some(program);
-        
+
         // Загрузка карт из программы
         self.memory_maps = self.load_maps_from_program(&program_path, "cpu_metrics_map")?;
-        
-        tracing::info!("eBPF программа для метрик памяти успешно загружена с {} картами", self.memory_maps.len());
+
+        tracing::info!(
+            "eBPF программа для метрик памяти успешно загружена с {} картами",
+            self.memory_maps.len()
+        );
         Ok(())
     }
 
@@ -1738,11 +1870,15 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.syscall_program = Some(program);
-        
-        // Загрузка карт из программы
-        self.syscall_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "syscall_count_map")?;
 
-        tracing::info!("eBPF программа для мониторинга системных вызовов успешно загружена с {} картами", self.syscall_maps.len());
+        // Загрузка карт из программы
+        self.syscall_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "syscall_count_map")?;
+
+        tracing::info!(
+            "eBPF программа для мониторинга системных вызовов успешно загружена с {} картами",
+            self.syscall_maps.len()
+        );
         Ok(())
     }
 
@@ -1772,11 +1908,15 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.network_program = Some(program);
-        
-        // Загрузка карт из программы
-        self.network_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "network_stats_map")?;
 
-        tracing::info!("eBPF программа для мониторинга сетевой активности успешно загружена с {} картами", self.network_maps.len());
+        // Загрузка карт из программы
+        self.network_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "network_stats_map")?;
+
+        tracing::info!(
+            "eBPF программа для мониторинга сетевой активности успешно загружена с {} картами",
+            self.network_maps.len()
+        );
         Ok(())
     }
 
@@ -1820,11 +1960,15 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.gpu_program = Some(program);
-        
-        // Загрузка карт из программы
-        self.gpu_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_metrics_map")?;
 
-        tracing::info!("eBPF программа для мониторинга GPU успешно загружена с {} картами", self.gpu_maps.len());
+        // Загрузка карт из программы
+        self.gpu_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_metrics_map")?;
+
+        tracing::info!(
+            "eBPF программа для мониторинга GPU успешно загружена с {} картами",
+            self.gpu_maps.len()
+        );
         Ok(())
     }
 
@@ -1854,13 +1998,21 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.network_connections_program = Some(program);
-        
-        // Загрузка карт из программы
-        self.connection_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "connection_map")?;
-        self.connection_maps.extend(self.load_maps_from_program(program_path.to_str().unwrap(), "connection_stats_map")?);
-        self.connection_maps.extend(self.load_maps_from_program(program_path.to_str().unwrap(), "active_connections_map")?);
 
-        tracing::info!("eBPF программа для мониторинга сетевых соединений успешно загружена с {} картами", self.connection_maps.len());
+        // Загрузка карт из программы
+        self.connection_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "connection_map")?;
+        self.connection_maps.extend(
+            self.load_maps_from_program(program_path.to_str().unwrap(), "connection_stats_map")?,
+        );
+        self.connection_maps.extend(
+            self.load_maps_from_program(program_path.to_str().unwrap(), "active_connections_map")?,
+        );
+
+        tracing::info!(
+            "eBPF программа для мониторинга сетевых соединений успешно загружена с {} картами",
+            self.connection_maps.len()
+        );
         Ok(())
     }
 
@@ -1890,11 +2042,15 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.process_monitoring_program = Some(program);
-        
+
         // Загрузка карт из программы
-        self.process_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "process_map")?;
-        self.process_maps.extend(self.load_maps_from_program(program_path.to_str().unwrap(), "syscall_stats_map")?);
-        self.process_maps.extend(self.load_maps_from_program(program_path.to_str().unwrap(), "cpu_stats_map")?);
+        self.process_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "process_map")?;
+        self.process_maps.extend(
+            self.load_maps_from_program(program_path.to_str().unwrap(), "syscall_stats_map")?,
+        );
+        self.process_maps
+            .extend(self.load_maps_from_program(program_path.to_str().unwrap(), "cpu_stats_map")?);
 
         tracing::info!("eBPF программа для мониторинга процесс-специфичных метрик успешно загружена с {} картами", self.process_maps.len());
         Ok(())
@@ -1940,11 +2096,15 @@ impl EbpfMetricsCollector {
 
         // Сохранение программы
         self.filesystem_program = Some(program);
-        
-        // Загрузка карт из программы
-        self.filesystem_maps = self.load_maps_from_program(program_path.to_str().unwrap(), "filesystem_metrics_map")?;
 
-        tracing::info!("eBPF программа для мониторинга файловой системы успешно загружена с {} картами", self.filesystem_maps.len());
+        // Загрузка карт из программы
+        self.filesystem_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "filesystem_metrics_map")?;
+
+        tracing::info!(
+            "eBPF программа для мониторинга файловой системы успешно загружена с {} картами",
+            self.filesystem_maps.len()
+        );
         Ok(())
     }
 
@@ -1952,7 +2112,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_syscall_details(&self) -> Option<Vec<SyscallStat>> {
         use libbpf_rs::Map;
-        
+
         // Реальный сбор детализированной статистики
         // из eBPF карт.
 
@@ -1967,7 +2127,9 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к картам системных вызовов
         if self.syscall_maps.is_empty() {
-            tracing::warn!("Карты системных вызовов не инициализированы для детализированной статистики");
+            tracing::warn!(
+                "Карты системных вызовов не инициализированы для детализированной статистики"
+            );
             return None;
         }
 
@@ -1976,7 +2138,9 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к картам системных вызовов
         if self.syscall_maps.is_empty() {
-            tracing::warn!("Карты системных вызовов не инициализированы для детализированной статистики");
+            tracing::warn!(
+                "Карты системных вызовов не инициализированы для детализированной статистики"
+            );
             return None;
         }
 
@@ -1985,7 +2149,7 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем системным вызовам
 
         let mut details = Vec::new();
-        
+
         for map in &self.syscall_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<SyscallStat>(map, 40) {
@@ -2016,7 +2180,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_network_details(&self) -> Option<Vec<NetworkStat>> {
         use libbpf_rs::Map;
-        
+
         // Реальный сбор детализированной статистики
         // из eBPF карт.
 
@@ -2043,7 +2207,7 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем IP адресам
 
         let mut details = Vec::new();
-        
+
         for map in &self.network_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<NetworkStat>(map, 32) {
@@ -2074,7 +2238,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_filesystem_details(&self) -> Option<Vec<FilesystemStat>> {
         use libbpf_rs::Map;
-        
+
         // Реальный сбор детализированной статистики
         // из eBPF карт.
 
@@ -2089,7 +2253,9 @@ impl EbpfMetricsCollector {
 
         // Пробуем получить доступ к картам файловой системы
         if self.filesystem_maps.is_empty() {
-            tracing::warn!("Карты файловой системы не инициализированы для детализированной статистики");
+            tracing::warn!(
+                "Карты файловой системы не инициализированы для детализированной статистики"
+            );
             return None;
         }
 
@@ -2101,14 +2267,18 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем файлам
 
         let mut details = Vec::new();
-        
+
         for map in &self.filesystem_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<FilesystemStat>(map, 48) {
                 Ok(filesystem_stats) => {
                     // Фильтруем только файлы с ненулевой активностью
                     for stat in filesystem_stats {
-                        if stat.read_count > 0 || stat.write_count > 0 || stat.open_count > 0 || stat.close_count > 0 {
+                        if stat.read_count > 0
+                            || stat.write_count > 0
+                            || stat.open_count > 0
+                            || stat.close_count > 0
+                        {
                             details.push(stat);
                         }
                     }
@@ -2132,7 +2302,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_connection_details(&self) -> Option<Vec<ConnectionStat>> {
         use libbpf_rs::Map;
-        
+
         // Реальный сбор детализированной статистики
         // из eBPF карт.
 
@@ -2159,7 +2329,7 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем соединениям
 
         let mut details = Vec::new();
-        
+
         for map in &self.connection_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<ConnectionStat>(map, 48) {
@@ -2190,7 +2360,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_process_details(&self) -> Option<Vec<ProcessStat>> {
         use libbpf_rs::Map;
-        
+
         // Реальный сбор детализированной статистики
         // из eBPF карт.
 
@@ -2217,7 +2387,7 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем процессам
 
         let mut details = Vec::new();
-        
+
         for map in &self.process_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<ProcessStat>(map, 64) {
@@ -2248,7 +2418,7 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_gpu_details(&self) -> Option<Vec<GpuStat>> {
         use libbpf_rs::Map;
-        
+
         // Реальный сбор детализированной статистики
         // из eBPF карт.
 
@@ -2275,7 +2445,7 @@ impl EbpfMetricsCollector {
         // Используем итерацию по ключам для получения статистики по всем GPU устройствам
 
         let mut details = Vec::new();
-        
+
         for map in &self.gpu_maps {
             // Используем новую функцию итерации по ключам
             match iterate_ebpf_map_keys::<GpuStat>(map, 32) {
@@ -2284,7 +2454,8 @@ impl EbpfMetricsCollector {
                     for mut stat in gpu_stats {
                         if stat.gpu_usage > 0.0 || stat.memory_usage > 0 {
                             // Обновляем температуру и другие поля из текущих метрик
-                            stat.temperature_celsius = self.collect_gpu_temperature_from_maps().unwrap_or(0);
+                            stat.temperature_celsius =
+                                self.collect_gpu_temperature_from_maps().unwrap_or(0);
                             stat.max_temperature_celsius = stat.temperature_celsius; // Упрощенно
                             details.push(stat);
                         }
@@ -2310,59 +2481,59 @@ impl EbpfMetricsCollector {
     fn collect_real_ebpf_metrics(&self) -> Result<EbpfMetrics> {
         // Оптимизация: используем параллельный сбор метрик для уменьшения времени сбора
         // Только собираем метрики для включенных функций
-        
+
         let start_time = std::time::Instant::now();
-        
+
         // Оптимизация: собираем метрики только для включенных функций
-        let cpu_usage = if self.config.enable_cpu_metrics { 
-            self.collect_cpu_metrics_from_maps()? 
-        } else { 
-            0.0 
+        let cpu_usage = if self.config.enable_cpu_metrics {
+            self.collect_cpu_metrics_from_maps()?
+        } else {
+            0.0
         };
-        
-        let memory_usage = if self.config.enable_memory_metrics { 
-            self.collect_memory_metrics_from_maps()? 
-        } else { 
-            0 
+
+        let memory_usage = if self.config.enable_memory_metrics {
+            self.collect_memory_metrics_from_maps()?
+        } else {
+            0
         };
-        
-        let syscall_count = if self.config.enable_syscall_monitoring { 
-            self.collect_syscall_count_from_maps()? 
-        } else { 
-            0 
+
+        let syscall_count = if self.config.enable_syscall_monitoring {
+            self.collect_syscall_count_from_maps()?
+        } else {
+            0
         };
-        
+
         // Оптимизация: собираем сетевые метрики в одном проходе
         let (network_packets, network_bytes) = self.collect_network_metrics_parallel()?;
-        
+
         // Оптимизация: собираем метрики сетевых соединений
-        let active_connections = if self.config.enable_network_connections { 
-            self.collect_active_connections()? 
-        } else { 
-            0 
+        let active_connections = if self.config.enable_network_connections {
+            self.collect_active_connections()?
+        } else {
+            0
         };
-        
+
         // Оптимизация: собираем GPU метрики в одном проходе
-        let (gpu_usage, gpu_memory_usage, gpu_compute_units, gpu_power_usage, gpu_temperature) = 
+        let (gpu_usage, gpu_memory_usage, gpu_compute_units, gpu_power_usage, gpu_temperature) =
             self.collect_gpu_metrics_parallel()?;
-        
+
         // Собираем температуру CPU
-        let (cpu_temperature, cpu_max_temperature, cpu_temperature_details) = 
+        let (cpu_temperature, cpu_max_temperature, cpu_temperature_details) =
             self.collect_cpu_temperature_data()?;
-        
-        let filesystem_ops = if self.config.enable_filesystem_monitoring { 
-            self.collect_filesystem_ops_from_maps()? 
-        } else { 
-            0 
+
+        let filesystem_ops = if self.config.enable_filesystem_monitoring {
+            self.collect_filesystem_ops_from_maps()?
+        } else {
+            0
         };
-        
+
         // Оптимизация: собираем метрики активных процессов
-        let active_processes = if self.config.enable_process_monitoring { 
-            self.collect_active_processes()? 
-        } else { 
-            0 
+        let active_processes = if self.config.enable_process_monitoring {
+            self.collect_active_processes()?
+        } else {
+            0
         };
-        
+
         let cpu_usage = cpu_usage?;
         let memory_usage = memory_usage?;
         let syscall_count = syscall_count?;
@@ -2373,12 +2544,34 @@ impl EbpfMetricsCollector {
         let active_processes = active_processes?;
 
         // Оптимизация: собираем детализированную статистику параллельно
-        let (syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details) = 
-            self.collect_detailed_stats_parallel();
+        let (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        ) = self.collect_detailed_stats_parallel();
 
         // Оптимизируем детализированную статистику для уменьшения использования памяти
-        let (syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details) = 
-            self.optimize_detailed_stats(syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details);
+        let (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        ) = self.optimize_detailed_stats(
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        );
 
         let collection_time = start_time.elapsed();
         tracing::debug!(
@@ -2423,9 +2616,19 @@ impl EbpfMetricsCollector {
 
     /// Собрать детализированную статистику параллельно (оптимизация производительности)
     #[cfg(feature = "ebpf")]
-    fn collect_detailed_stats_parallel(&self) -> (Option<Vec<SyscallStat>>, Option<Vec<NetworkStat>>, Option<Vec<ConnectionStat>>, Option<Vec<GpuStat>>, Option<Vec<CpuTemperatureStat>>, Option<Vec<ProcessStat>>, Option<Vec<FilesystemStat>>) {
+    fn collect_detailed_stats_parallel(
+        &self,
+    ) -> (
+        Option<Vec<SyscallStat>>,
+        Option<Vec<NetworkStat>>,
+        Option<Vec<ConnectionStat>>,
+        Option<Vec<GpuStat>>,
+        Option<Vec<CpuTemperatureStat>>,
+        Option<Vec<ProcessStat>>,
+        Option<Vec<FilesystemStat>>,
+    ) {
         use rayon::prelude::*;
-        
+
         // Используем параллельное выполнение для сбора детализированной статистики
         let results: Vec<_> = vec![
             std::thread::spawn(|| {
@@ -2478,7 +2681,7 @@ impl EbpfMetricsCollector {
                 }
             }),
         ];
-        
+
         let syscall_details = results[0].join().unwrap();
         let network_details = results[1].join().unwrap();
         let connection_details = results[2].join().unwrap();
@@ -2486,26 +2689,42 @@ impl EbpfMetricsCollector {
         let cpu_temperature_details = results[4].join().unwrap();
         let process_details = results[5].join().unwrap();
         let filesystem_details = results[6].join().unwrap();
-        
-        (syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details)
+
+        (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        )
     }
 
     /// Оптимизировать детализированную статистику для уменьшения использования памяти
-    /// 
+    ///
     /// Эта функция ограничивает количество детализированных статистик для уменьшения memory footprint
     #[allow(dead_code)]
     #[allow(clippy::too_many_arguments)]
     #[allow(clippy::type_complexity)]
-    fn optimize_detailed_stats(&self, 
+    fn optimize_detailed_stats(
+        &self,
         syscall_details: Option<Vec<SyscallStat>>,
         network_details: Option<Vec<NetworkStat>>,
         connection_details: Option<Vec<ConnectionStat>>,
         gpu_details: Option<Vec<GpuStat>>,
         cpu_temperature_details: Option<Vec<CpuTemperatureStat>>,
         process_details: Option<Vec<ProcessStat>>,
-        filesystem_details: Option<Vec<FilesystemStat>>
-    ) -> (Option<Vec<SyscallStat>>, Option<Vec<NetworkStat>>, Option<Vec<ConnectionStat>>, Option<Vec<GpuStat>>, Option<Vec<CpuTemperatureStat>>, Option<Vec<ProcessStat>>, Option<Vec<FilesystemStat>>) {
-        
+        filesystem_details: Option<Vec<FilesystemStat>>,
+    ) -> (
+        Option<Vec<SyscallStat>>,
+        Option<Vec<NetworkStat>>,
+        Option<Vec<ConnectionStat>>,
+        Option<Vec<GpuStat>>,
+        Option<Vec<CpuTemperatureStat>>,
+        Option<Vec<ProcessStat>>,
+        Option<Vec<FilesystemStat>>,
+    ) {
         // Ограничиваем количество системных вызовов
         let syscall_details = syscall_details.map(|mut details| {
             if details.len() > self.max_cached_details {
@@ -2590,7 +2809,15 @@ impl EbpfMetricsCollector {
             details
         });
 
-        (syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details)
+        (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        )
     }
 
     /// Собрать сетевые метрики параллельно (оптимизация)
@@ -2600,10 +2827,10 @@ impl EbpfMetricsCollector {
         if !self.config.enable_network_monitoring {
             return Ok((0, 0));
         }
-        
+
         let packets = self.collect_network_packets_from_maps()?;
         let bytes = self.collect_network_bytes_from_maps()?;
-        
+
         Ok((packets, bytes))
     }
 
@@ -2614,13 +2841,13 @@ impl EbpfMetricsCollector {
         if !self.config.enable_gpu_monitoring {
             return Ok((0.0, 0, 0, 0, 0));
         }
-        
+
         let usage = self.collect_gpu_usage_from_maps()?;
         let memory = self.collect_gpu_memory_from_maps()?;
         let compute_units = self.collect_gpu_compute_units_from_maps()?;
         let power_usage = self.collect_gpu_power_usage_from_maps()?;
         let temperature = self.collect_gpu_temperature_from_maps()?;
-        
+
         Ok((usage, memory, compute_units, power_usage, temperature))
     }
 
@@ -2628,29 +2855,39 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_cpu_temperature_from_maps(&self) -> Result<Vec<CpuTemperatureStat>> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к картам температуры CPU
         if self.cpu_temperature_maps.is_empty() {
             tracing::warn!("Карты температуры CPU не инициализированы");
             return Ok(Vec::new());
         }
-        
+
         // Сбор данных из карт температуры CPU
         let mut temperature_stats = Vec::new();
-        
+
         for map in &self.cpu_temperature_maps {
             // Используем функцию итерации по ключам для получения всех данных о температуре
-            match iterate_ebpf_map_keys::<(u32, u32, u32, u32)>(map, 256) {
+            // Обновленная структура соответствует новой eBPF программе
+            match iterate_ebpf_map_keys::<(u32, u32, u32, u32, u32, u32, u32)>(map, 256) {
                 Ok(temperature_data) => {
-                    for (cpu_id, temperature_celsius, max_temperature_celsius, _) in temperature_data {
+                    for (
+                        cpu_id,
+                        temperature_celsius,
+                        max_temperature_celsius,
+                        critical_temperature_celsius,
+                        timestamp,
+                        update_count,
+                        error_count,
+                    ) in temperature_data
+                    {
                         temperature_stats.push(CpuTemperatureStat {
                             cpu_id,
                             temperature_celsius,
                             max_temperature_celsius,
-                            timestamp: std::time::SystemTime::now()
-                                .duration_since(std::time::UNIX_EPOCH)
-                                .unwrap_or(Duration::from_secs(0))
-                                .as_nanos() as u64,
+                            critical_temperature_celsius,
+                            timestamp,
+                            update_count,
+                            error_count,
                         });
                     }
                 }
@@ -2660,7 +2897,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(temperature_stats)
     }
 
@@ -2670,26 +2907,33 @@ impl EbpfMetricsCollector {
         if !self.config.enable_cpu_temperature_monitoring {
             return Ok((0, 0, None));
         }
-        
+
         // Собираем детализированную статистику
         let temperature_details = self.collect_cpu_temperature_from_maps()?;
-        
+
         // Вычисляем среднюю и максимальную температуру
         let (avg_temp, max_temp) = if !temperature_details.is_empty() {
-            let total_temp: u32 = temperature_details.iter().map(|stat| stat.temperature_celsius).sum();
+            let total_temp: u32 = temperature_details
+                .iter()
+                .map(|stat| stat.temperature_celsius)
+                .sum();
             let avg_temp = total_temp / temperature_details.len() as u32;
-            let max_temp = temperature_details.iter().map(|stat| stat.max_temperature_celsius).max().unwrap_or(0);
+            let max_temp = temperature_details
+                .iter()
+                .map(|stat| stat.max_temperature_celsius)
+                .max()
+                .unwrap_or(0);
             (avg_temp, max_temp)
         } else {
             (0, 0)
         };
-        
+
         let details = if temperature_details.is_empty() {
             None
         } else {
             Some(temperature_details)
         };
-        
+
         Ok((avg_temp, max_temp, details))
     }
 
@@ -2697,17 +2941,17 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_cpu_metrics_from_maps(&self) -> Result<f64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к CPU картам
         if self.cpu_maps.is_empty() {
             tracing::warn!("CPU карты не инициализированы");
             return Ok(0.0);
         }
-        
+
         // Реальный сбор данных из CPU карт с использованием итерации по ключам
         let mut total_usage = 0.0;
         let mut map_count = 0;
-        
+
         for map in &self.cpu_maps {
             // Используем функцию итерации по ключам для получения всех CPU данных
             match iterate_ebpf_map_keys::<(u64, u64, u64)>(map, 24) {
@@ -2715,7 +2959,8 @@ impl EbpfMetricsCollector {
                     for (user_time, system_time, idle_time) in cpu_data {
                         let total_time = user_time + system_time + idle_time;
                         if total_time > 0 {
-                            let usage = (user_time + system_time) as f64 / total_time as f64 * 100.0;
+                            let usage =
+                                (user_time + system_time) as f64 / total_time as f64 * 100.0;
                             total_usage += usage;
                             map_count += 1;
                         }
@@ -2727,7 +2972,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_usage / map_count as f64)
         } else {
@@ -2735,23 +2980,21 @@ impl EbpfMetricsCollector {
         }
     }
 
-
-
     /// Собрать метрики памяти из eBPF карт
     #[cfg(feature = "ebpf")]
     fn collect_memory_metrics_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к картам памяти
         if self.memory_maps.is_empty() {
             tracing::warn!("Карты памяти не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных из карт памяти с использованием итерации по ключам
         let mut total_memory = 0u64;
         let mut map_count = 0;
-        
+
         for map in &self.memory_maps {
             // Используем функцию итерации по ключам для получения всех данных о памяти
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -2767,7 +3010,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_memory / map_count as u64)
         } else {
@@ -2779,16 +3022,16 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_syscall_count_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к картам системных вызовов
         if self.syscall_maps.is_empty() {
             tracing::warn!("Карты системных вызовов не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных из карт системных вызовов с использованием итерации по ключам
         let mut total_count = 0u64;
-        
+
         for map in &self.syscall_maps {
             // Используем функцию итерации по ключам для получения всех данных о системных вызовах
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -2803,7 +3046,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(total_count)
     }
 
@@ -2811,16 +3054,16 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_network_packets_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к сетевым картам
         if self.network_maps.is_empty() {
             tracing::warn!("Сетевые карты не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных из сетевых карт с использованием итерации по ключам
         let mut total_packets = 0u64;
-        
+
         for map in &self.network_maps {
             // Используем функцию итерации по ключам для получения всех данных о сетевых пакетах
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -2835,7 +3078,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(total_packets)
     }
 
@@ -2843,16 +3086,16 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_network_bytes_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к сетевым картам
         if self.network_maps.is_empty() {
             tracing::warn!("Сетевые карты не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных из сетевых карт с использованием итерации по ключам
         let mut total_bytes = 0u64;
-        
+
         for map in &self.network_maps {
             // Используем функцию итерации по ключам для получения всех данных о сетевых байтах
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -2867,7 +3110,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(total_bytes)
     }
 
@@ -2875,17 +3118,17 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_gpu_usage_from_maps(&self) -> Result<f64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к GPU картам
         if self.gpu_maps.is_empty() {
             tracing::warn!("GPU карты не инициализированы");
             return Ok(0.0);
         }
-        
+
         // Реальный сбор данных из GPU карт с использованием итерации по ключам
         let mut total_usage = 0.0;
         let mut map_count = 0;
-        
+
         for map in &self.gpu_maps {
             // Используем функцию итерации по ключам для получения всех данных о GPU
             match iterate_ebpf_map_keys::<f64>(map, 8) {
@@ -2901,7 +3144,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_usage / map_count as f64)
         } else {
@@ -2913,17 +3156,17 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_gpu_memory_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к GPU картам
         if self.gpu_maps.is_empty() {
             tracing::warn!("GPU карты не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных из GPU карт с использованием итерации по ключам
         let mut total_memory = 0u64;
         let mut map_count = 0;
-        
+
         for map in &self.gpu_maps {
             // Используем функцию итерации по ключам для получения всех данных о памяти GPU
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -2939,7 +3182,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_memory / map_count as u64)
         } else {
@@ -2951,17 +3194,17 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_gpu_compute_units_from_maps(&self) -> Result<u32> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к GPU картам
         if self.gpu_maps.is_empty() {
             tracing::warn!("GPU карты не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных о вычислительных единицах из GPU карт
         let mut total_compute_units = 0u32;
         let mut map_count = 0;
-        
+
         for map in &self.gpu_maps {
             // Используем функцию итерации по ключам для получения данных о вычислительных единицах
             match iterate_ebpf_map_keys::<u32>(map, 4) {
@@ -2972,12 +3215,15 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по GPU карте вычислительных единиц: {}", e);
+                    tracing::error!(
+                        "Ошибка при итерации по GPU карте вычислительных единиц: {}",
+                        e
+                    );
                     continue;
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_compute_units / map_count as u32)
         } else {
@@ -2989,17 +3235,17 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_gpu_power_usage_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к GPU картам
         if self.gpu_maps.is_empty() {
             tracing::warn!("GPU карты не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных об энергопотреблении из GPU карт
         let mut total_power = 0u64;
         let mut map_count = 0;
-        
+
         for map in &self.gpu_maps {
             // Используем функцию итерации по ключам для получения данных об энергопотреблении
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -3015,7 +3261,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_power / map_count as u64)
         } else {
@@ -3027,17 +3273,17 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_gpu_temperature_from_maps(&self) -> Result<u32> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к GPU картам
         if self.gpu_maps.is_empty() {
             tracing::warn!("GPU карты не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных о температуре из GPU карт
         let mut total_temp = 0u32;
         let mut map_count = 0;
-        
+
         for map in &self.gpu_maps {
             // Используем функцию итерации по ключам для получения данных о температуре
             match iterate_ebpf_map_keys::<u32>(map, 4) {
@@ -3053,7 +3299,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         if map_count > 0 {
             Ok(total_temp / map_count as u32)
         } else {
@@ -3065,20 +3311,20 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_active_connections(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         if !self.config.enable_network_connections {
             return Ok(0);
         }
-        
+
         // Пробуем получить доступ к картам соединений
         if self.connection_maps.is_empty() {
             tracing::warn!("Карты соединений не инициализированы");
             return Ok(0);
         }
-        
+
         // Считаем количество активных соединений
         let mut active_count = 0u64;
-        
+
         for map in &self.connection_maps {
             // Используем функцию итерации по ключам для получения всех активных соединений
             match iterate_ebpf_map_keys::<u8>(map, 1) {
@@ -3095,7 +3341,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(active_count)
     }
 
@@ -3103,20 +3349,20 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_active_processes(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         if !self.config.enable_process_monitoring {
             return Ok(0);
         }
-        
+
         // Пробуем получить доступ к картам процессов
         if self.process_maps.is_empty() {
             tracing::warn!("Карты процессов не инициализированы");
             return Ok(0);
         }
-        
+
         // Считаем количество активных процессов
         let mut active_count = 0u64;
-        
+
         for map in &self.process_maps {
             // Используем функцию итерации по ключам для получения всех активных процессов
             match iterate_ebpf_map_keys::<ProcessStat>(map, 64) {
@@ -3133,7 +3379,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(active_count)
     }
 
@@ -3141,16 +3387,16 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn collect_filesystem_ops_from_maps(&self) -> Result<u64> {
         use libbpf_rs::Map;
-        
+
         // Пробуем получить доступ к картам файловой системы
         if self.filesystem_maps.is_empty() {
             tracing::warn!("Карты файловой системы не инициализированы");
             return Ok(0);
         }
-        
+
         // Реальный сбор данных из карт файловой системы с использованием итерации по ключам
         let mut total_ops = 0u64;
-        
+
         for map in &self.filesystem_maps {
             // Используем функцию итерации по ключам для получения всех данных о файловой системе
             match iterate_ebpf_map_keys::<u64>(map, 8) {
@@ -3165,7 +3411,7 @@ impl EbpfMetricsCollector {
                 }
             }
         }
-        
+
         Ok(total_ops)
     }
 
@@ -3181,13 +3427,13 @@ impl EbpfMetricsCollector {
         {
             if !self.is_ebpf_available() {
                 tracing::warn!("eBPF функциональность недоступна в данный момент, возвращаем кэшированные или значения по умолчанию");
-                
+
                 // Пробуем вернуть кэшированные метрики если они есть
                 if let Some(cached_metrics) = self.metrics_cache.clone() {
                     tracing::info!("Возвращаем кэшированные метрики при недоступности eBPF");
                     return Ok(cached_metrics);
                 }
-                
+
                 // Если кэша нет, возвращаем значения по умолчанию с предупреждением
                 tracing::warn!("Нет кэшированных метрик, возвращаем значения по умолчанию");
                 return Ok(EbpfMetrics::default());
@@ -3240,24 +3486,28 @@ impl EbpfMetricsCollector {
                 }
                 Err(e) => {
                     tracing::error!("Ошибка сбора eBPF метрик: {}. Возвращаем кэшированные данные или значения по умолчанию", e);
-                    
+
                     // Пробуем вернуть кэшированные метрики
                     if let Some(cached_metrics) = self.metrics_cache.clone() {
                         tracing::info!("Возвращаем кэшированные метрики при ошибке сбора eBPF");
                         return Ok(cached_metrics);
                     }
-                    
+
                     // Если кэша нет, возвращаем значения по умолчанию
-                    tracing::warn!("Нет кэшированных метрик, возвращаем значения по умолчанию при ошибке eBPF");
+                    tracing::warn!(
+                        "Нет кэшированных метрик, возвращаем значения по умолчанию при ошибке eBPF"
+                    );
                     return Ok(EbpfMetrics::default());
                 }
             }
         }
-        
+
         #[cfg(not(feature = "ebpf"))]
         {
             // Без eBPF поддержки возвращаем значения по умолчанию
-            tracing::info!("eBPF поддержка отключена на уровне компиляции, возвращаем значения по умолчанию");
+            tracing::info!(
+                "eBPF поддержка отключена на уровне компиляции, возвращаем значения по умолчанию"
+            );
             Ok(EbpfMetrics::default())
         }
     }
@@ -3376,12 +3626,12 @@ impl EbpfMetricsCollector {
         #[cfg(feature = "ebpf")]
         {
             // Проверяем, что хотя бы одна карта доступна
-            !self.cpu_maps.is_empty() ||
-            !self.memory_maps.is_empty() ||
-            !self.syscall_maps.is_empty() ||
-            !self.network_maps.is_empty() ||
-            !self.gpu_maps.is_empty() ||
-            !self.filesystem_maps.is_empty()
+            !self.cpu_maps.is_empty()
+                || !self.memory_maps.is_empty()
+                || !self.syscall_maps.is_empty()
+                || !self.network_maps.is_empty()
+                || !self.gpu_maps.is_empty()
+                || !self.filesystem_maps.is_empty()
         }
         #[cfg(not(feature = "ebpf"))]
         {
@@ -3417,7 +3667,7 @@ impl EbpfMetricsCollector {
     }
 
     /// Оптимизировать использование памяти
-    /// 
+    ///
     /// Эта функция выполняет очистку неиспользуемых ресурсов и оптимизацию памяти:
     /// 1. Очистка неиспользуемых eBPF карт
     /// 2. Ограничение количества кэшируемых детализированных статистик
@@ -3445,7 +3695,7 @@ impl EbpfMetricsCollector {
         if let Some(cached_metrics) = &self.metrics_cache {
             // Ограничиваем количество детализированных статистик
             let mut optimized_metrics = cached_metrics.clone();
-            
+
             // Ограничиваем количество системных вызовов
             if let Some(mut syscall_details) = optimized_metrics.syscall_details {
                 if syscall_details.len() > self.max_cached_details {
@@ -3520,7 +3770,10 @@ impl EbpfMetricsCollector {
     /// Установить ограничение на количество кэшируемых детализированных статистик
     pub fn set_max_cached_details(&mut self, max_details: usize) {
         self.max_cached_details = max_details;
-        tracing::debug!("Установлено ограничение на кэшируемые детали: {}", max_details);
+        tracing::debug!(
+            "Установлено ограничение на кэшируемые детали: {}",
+            max_details
+        );
     }
 
     /// Получить текущее ограничение на количество кэшируемых детализированных статистик
@@ -3531,7 +3784,14 @@ impl EbpfMetricsCollector {
     /// Включить или отключить очистку неиспользуемых карт
     pub fn set_cleanup_unused_maps(&mut self, enabled: bool) {
         self.cleanup_unused_maps = enabled;
-        tracing::debug!("Очистка неиспользуемых карт: {}", if enabled { "включена" } else { "отключена" });
+        tracing::debug!(
+            "Очистка неиспользуемых карт: {}",
+            if enabled {
+                "включена"
+            } else {
+                "отключена"
+            }
+        );
     }
 
     /// Получить текущее использование памяти (приблизительная оценка)
@@ -3542,20 +3802,20 @@ impl EbpfMetricsCollector {
         if let Some(cached_metrics) = &self.metrics_cache {
             // Базовый размер метрик
             estimate += std::mem::size_of::<EbpfMetrics>();
-            
+
             // Учитываем детализированные статистики
             if let Some(syscall_details) = &cached_metrics.syscall_details {
                 estimate += syscall_details.len() * std::mem::size_of::<SyscallStat>();
             }
-            
+
             if let Some(network_details) = &cached_metrics.network_details {
                 estimate += network_details.len() * std::mem::size_of::<NetworkStat>();
             }
-            
+
             if let Some(gpu_details) = &cached_metrics.gpu_details {
                 estimate += gpu_details.len() * std::mem::size_of::<GpuStat>();
             }
-            
+
             if let Some(filesystem_details) = &cached_metrics.filesystem_details {
                 estimate += filesystem_details.len() * std::mem::size_of::<FilesystemStat>();
             }
@@ -3564,10 +3824,15 @@ impl EbpfMetricsCollector {
         // Учитываем размер eBPF карт
         #[cfg(feature = "ebpf")]
         {
-            estimate += (self.cpu_maps.len() + self.memory_maps.len() + self.syscall_maps.len() + 
-                        self.network_maps.len() + self.connection_maps.len() + self.process_maps.len() + 
-                        self.gpu_maps.len() + self.filesystem_maps.len()) * 
-                        std::mem::size_of::<Map>();
+            estimate += (self.cpu_maps.len()
+                + self.memory_maps.len()
+                + self.syscall_maps.len()
+                + self.network_maps.len()
+                + self.connection_maps.len()
+                + self.process_maps.len()
+                + self.gpu_maps.len()
+                + self.filesystem_maps.len())
+                * std::mem::size_of::<Map>();
         }
 
         estimate
@@ -3618,7 +3883,8 @@ impl EbpfMetricsCollector {
             if self.config.enable_network_monitoring && self.network_program.is_none() {
                 error_count += 1;
             }
-            if self.config.enable_network_connections && self.network_connections_program.is_none() {
+            if self.config.enable_network_connections && self.network_connections_program.is_none()
+            {
                 error_count += 1;
             }
             if self.config.enable_process_monitoring && self.process_monitoring_program.is_none() {
@@ -3651,9 +3917,9 @@ impl EbpfMetricsCollector {
 
     /// Получить детальную информацию об ошибках инициализации
     pub fn get_detailed_error_info(&self) -> Option<String> {
-        self.last_error.as_ref().map(|e| {
-            format!("Последняя ошибка: {}", e)
-        })
+        self.last_error
+            .as_ref()
+            .map(|e| format!("Последняя ошибка: {}", e))
     }
 
     /// Проверить, есть ли активные ошибки
@@ -3664,10 +3930,10 @@ impl EbpfMetricsCollector {
     /// Попробовать восстановиться после ошибок (переинициализация)
     pub fn attempt_recovery(&mut self) -> Result<()> {
         tracing::info!("Попытка восстановления после ошибок eBPF");
-        
+
         // Сбрасываем состояние
         self.reset();
-        
+
         // Пробуем переинициализироваться
         self.initialize()
     }
@@ -3687,7 +3953,10 @@ impl EbpfMetricsCollector {
     /// Установить конфигурацию фильтрации и агрегации
     pub fn set_filter_config(&mut self, filter_config: EbpfFilterConfig) {
         self.filter_config = filter_config;
-        tracing::info!("Установлена новая конфигурация фильтрации: {:?}", self.filter_config);
+        tracing::info!(
+            "Установлена новая конфигурация фильтрации: {:?}",
+            self.filter_config
+        );
     }
 
     /// Применить фильтрацию к собранным метрикам
@@ -3737,39 +4006,49 @@ impl EbpfMetricsCollector {
         }
 
         if let Some(network_details) = &mut metrics.network_details {
-            network_details.retain(|stat| 
-                stat.bytes_sent + stat.bytes_received >= self.filter_config.network_traffic_threshold
-            );
+            network_details.retain(|stat| {
+                stat.bytes_sent + stat.bytes_received
+                    >= self.filter_config.network_traffic_threshold
+            });
         }
 
         if let Some(connection_details) = &mut metrics.connection_details {
-            connection_details.retain(|stat| 
-                stat.packets >= self.filter_config.active_connections_threshold
-            );
+            connection_details
+                .retain(|stat| stat.packets >= self.filter_config.active_connections_threshold);
         }
 
         if let Some(process_details) = &mut metrics.process_details {
-            if self.filter_config.enable_pid_filtering && !self.filter_config.filtered_pids.is_empty() {
+            if self.filter_config.enable_pid_filtering
+                && !self.filter_config.filtered_pids.is_empty()
+            {
                 process_details.retain(|stat| self.filter_config.filtered_pids.contains(&stat.pid));
             }
-            
+
             // Фильтрация по типам процессов
-            if self.filter_config.enable_process_type_filtering && !self.filter_config.filtered_process_types.is_empty() {
-                process_details.retain(|stat| self.filter_config.filtered_process_types.contains(&stat.name));
+            if self.filter_config.enable_process_type_filtering
+                && !self.filter_config.filtered_process_types.is_empty()
+            {
+                process_details.retain(|stat| {
+                    self.filter_config
+                        .filtered_process_types
+                        .contains(&stat.name)
+                });
             }
-            
+
             // Фильтрация по категориям процессов (пока не реализовано, так как нет поля category в ProcessStat)
-            if self.filter_config.enable_process_category_filtering && !self.filter_config.filtered_process_categories.is_empty() {
+            if self.filter_config.enable_process_category_filtering
+                && !self.filter_config.filtered_process_categories.is_empty()
+            {
                 // В реальной реализации нужно добавить поле category в ProcessStat
                 // process_details.retain(|stat| self.filter_config.filtered_process_categories.contains(&stat.category));
                 tracing::warn!("Фильтрация по категориям процессов не реализована - нет поля category в ProcessStat");
             }
-            
+
             // Фильтрация по приоритету процессов (пока не реализовано, так как нет поля priority в ProcessStat)
             if self.filter_config.enable_process_priority_filtering {
                 // В реальной реализации нужно добавить поле priority в ProcessStat
-                // process_details.retain(|stat| 
-                //     stat.priority >= self.filter_config.min_process_priority && 
+                // process_details.retain(|stat|
+                //     stat.priority >= self.filter_config.min_process_priority &&
                 //     stat.priority <= self.filter_config.max_process_priority
                 // );
                 tracing::warn!("Фильтрация по приоритету процессов не реализована - нет поля priority в ProcessStat");
@@ -3787,35 +4066,41 @@ impl EbpfMetricsCollector {
         if let Some(syscall_details) = &mut metrics.syscall_details {
             if syscall_details.len() > self.filter_config.max_aggregated_entries {
                 // Агрегируем системные вызовы по типам
-                let mut aggregated: std::collections::HashMap<u32, SyscallStat> = std::collections::HashMap::new();
-                
+                let mut aggregated: std::collections::HashMap<u32, SyscallStat> =
+                    std::collections::HashMap::new();
+
                 for stat in syscall_details.drain(..) {
-                    let entry = aggregated.entry(stat.syscall_id).or_insert_with(|| SyscallStat {
-                        syscall_id: stat.syscall_id,
-                        count: 0,
-                        total_time_ns: 0,
-                        avg_time_ns: 0,
-                    });
+                    let entry = aggregated
+                        .entry(stat.syscall_id)
+                        .or_insert_with(|| SyscallStat {
+                            syscall_id: stat.syscall_id,
+                            count: 0,
+                            total_time_ns: 0,
+                            avg_time_ns: 0,
+                        });
                     entry.count += stat.count;
                     entry.total_time_ns += stat.total_time_ns;
                 }
-                
+
                 // Вычисляем среднее время
                 #[allow(clippy::iter_kv_map)]
-                let mut aggregated_vec: Vec<SyscallStat> = aggregated.into_iter().map(|(_, mut stat)| {
-                    if stat.count > 0 {
-                        stat.avg_time_ns = stat.total_time_ns / stat.count;
-                    }
-                    stat
-                }).collect();
-                
+                let mut aggregated_vec: Vec<SyscallStat> = aggregated
+                    .into_iter()
+                    .map(|(_, mut stat)| {
+                        if stat.count > 0 {
+                            stat.avg_time_ns = stat.total_time_ns / stat.count;
+                        }
+                        stat
+                    })
+                    .collect();
+
                 // Ограничиваем количество записей
                 if aggregated_vec.len() > self.filter_config.max_aggregated_entries {
                     // Сортируем по количеству вызовов и ограничиваем
                     aggregated_vec.sort_by(|a, b| b.count.cmp(&a.count));
                     aggregated_vec.truncate(self.filter_config.max_aggregated_entries);
                 }
-                
+
                 *syscall_details = aggregated_vec;
             }
         }
@@ -3823,22 +4108,25 @@ impl EbpfMetricsCollector {
         if let Some(network_details) = &mut metrics.network_details {
             if network_details.len() > self.filter_config.max_aggregated_entries {
                 // Агрегируем сетевую активность по IP адресам
-                let mut aggregated: std::collections::HashMap<u32, NetworkStat> = std::collections::HashMap::new();
-                
+                let mut aggregated: std::collections::HashMap<u32, NetworkStat> =
+                    std::collections::HashMap::new();
+
                 for stat in network_details.drain(..) {
-                    let entry = aggregated.entry(stat.ip_address).or_insert_with(|| NetworkStat {
-                        ip_address: stat.ip_address,
-                        packets_sent: 0,
-                        packets_received: 0,
-                        bytes_sent: 0,
-                        bytes_received: 0,
-                    });
+                    let entry = aggregated
+                        .entry(stat.ip_address)
+                        .or_insert_with(|| NetworkStat {
+                            ip_address: stat.ip_address,
+                            packets_sent: 0,
+                            packets_received: 0,
+                            bytes_sent: 0,
+                            bytes_received: 0,
+                        });
                     entry.packets_sent += stat.packets_sent;
                     entry.packets_received += stat.packets_received;
                     entry.bytes_sent += stat.bytes_sent;
                     entry.bytes_received += stat.bytes_received;
                 }
-                
+
                 *network_details = aggregated.into_values().collect();
             }
         }
@@ -3846,25 +4134,28 @@ impl EbpfMetricsCollector {
         if let Some(connection_details) = &mut metrics.connection_details {
             if connection_details.len() > self.filter_config.max_aggregated_entries {
                 // Агрегируем соединения по протоколам
-                let mut aggregated: std::collections::HashMap<u8, ConnectionStat> = std::collections::HashMap::new();
-                
+                let mut aggregated: std::collections::HashMap<u8, ConnectionStat> =
+                    std::collections::HashMap::new();
+
                 for stat in connection_details.drain(..) {
-                    let entry = aggregated.entry(stat.protocol).or_insert_with(|| ConnectionStat {
-                        src_ip: 0,
-                        dst_ip: 0,
-                        src_port: 0,
-                        dst_port: 0,
-                        protocol: stat.protocol,
-                        state: 0,
-                        packets: 0,
-                        bytes: 0,
-                        start_time: 0,
-                        last_activity: 0,
-                    });
+                    let entry = aggregated
+                        .entry(stat.protocol)
+                        .or_insert_with(|| ConnectionStat {
+                            src_ip: 0,
+                            dst_ip: 0,
+                            src_port: 0,
+                            dst_port: 0,
+                            protocol: stat.protocol,
+                            state: 0,
+                            packets: 0,
+                            bytes: 0,
+                            start_time: 0,
+                            last_activity: 0,
+                        });
                     entry.packets += stat.packets;
                     entry.bytes += stat.bytes;
                 }
-                
+
                 *connection_details = aggregated.into_values().collect();
             }
         }
@@ -3880,21 +4171,33 @@ impl EbpfMetricsCollector {
     pub fn set_pid_filtering(&mut self, enable: bool, pids: Vec<u32>) {
         self.filter_config.enable_pid_filtering = enable;
         self.filter_config.filtered_pids = pids.clone();
-        tracing::info!("Установлена фильтрация по PID: {} (PIDs: {:?})", enable, pids);
+        tracing::info!(
+            "Установлена фильтрация по PID: {} (PIDs: {:?})",
+            enable,
+            pids
+        );
     }
 
     /// Установить фильтрацию по типам системных вызовов
     pub fn set_syscall_type_filtering(&mut self, enable: bool, syscall_types: Vec<u32>) {
         self.filter_config.enable_syscall_type_filtering = enable;
         self.filter_config.filtered_syscall_types = syscall_types.clone();
-        tracing::info!("Установлена фильтрация по типам системных вызовов: {} (типы: {:?})", enable, syscall_types);
+        tracing::info!(
+            "Установлена фильтрация по типам системных вызовов: {} (типы: {:?})",
+            enable,
+            syscall_types
+        );
     }
 
     /// Установить фильтрацию по сетевым протоколам
     pub fn set_network_protocol_filtering(&mut self, enable: bool, protocols: Vec<u8>) {
         self.filter_config.enable_network_protocol_filtering = enable;
         self.filter_config.filtered_network_protocols = protocols.clone();
-        tracing::info!("Установлена фильтрация по сетевым протоколам: {} (протоколы: {:?})", enable, protocols);
+        tracing::info!(
+            "Установлена фильтрация по сетевым протоколам: {} (протоколы: {:?})",
+            enable,
+            protocols
+        );
     }
 
     /// Установить фильтрацию по диапазону портов
@@ -3902,49 +4205,83 @@ impl EbpfMetricsCollector {
         self.filter_config.enable_port_range_filtering = enable;
         self.filter_config.min_port = min_port;
         self.filter_config.max_port = max_port;
-        tracing::info!("Установлена фильтрация по диапазону портов: {} ({}-{})", enable, min_port, max_port);
+        tracing::info!(
+            "Установлена фильтрация по диапазону портов: {} ({}-{})",
+            enable,
+            min_port,
+            max_port
+        );
     }
 
     /// Установить параметры агрегации
-    pub fn set_aggregation_parameters(&mut self, enable: bool, interval_ms: u64, max_entries: usize) {
+    pub fn set_aggregation_parameters(
+        &mut self,
+        enable: bool,
+        interval_ms: u64,
+        max_entries: usize,
+    ) {
         self.filter_config.enable_kernel_aggregation = enable;
         self.filter_config.aggregation_interval_ms = interval_ms;
         self.filter_config.max_aggregated_entries = max_entries;
-        tracing::info!("Установлены параметры агрегации: {} (интервал: {}ms, max записей: {})", enable, interval_ms, max_entries);
+        tracing::info!(
+            "Установлены параметры агрегации: {} (интервал: {}ms, max записей: {})",
+            enable,
+            interval_ms,
+            max_entries
+        );
     }
 
     /// Установить фильтрацию по типам процессов
     pub fn set_process_type_filtering(&mut self, enable: bool, process_types: Vec<String>) {
         self.filter_config.enable_process_type_filtering = enable;
         self.filter_config.filtered_process_types = process_types.clone();
-        tracing::info!("Установлена фильтрация по типам процессов: {} (типы: {:?})", enable, process_types);
+        tracing::info!(
+            "Установлена фильтрация по типам процессов: {} (типы: {:?})",
+            enable,
+            process_types
+        );
     }
 
     /// Установить фильтрацию по категориям процессов
     pub fn set_process_category_filtering(&mut self, enable: bool, categories: Vec<String>) {
         self.filter_config.enable_process_category_filtering = enable;
         self.filter_config.filtered_process_categories = categories.clone();
-        tracing::info!("Установлена фильтрация по категориям процессов: {} (категории: {:?})", enable, categories);
+        tracing::info!(
+            "Установлена фильтрация по категориям процессов: {} (категории: {:?})",
+            enable,
+            categories
+        );
     }
 
     /// Установить фильтрацию по приоритету процессов
-    pub fn set_process_priority_filtering(&mut self, enable: bool, min_priority: i32, max_priority: i32) {
+    pub fn set_process_priority_filtering(
+        &mut self,
+        enable: bool,
+        min_priority: i32,
+        max_priority: i32,
+    ) {
         self.filter_config.enable_process_priority_filtering = enable;
         self.filter_config.min_process_priority = min_priority;
         self.filter_config.max_process_priority = max_priority;
-        tracing::info!("Установлена фильтрация по приоритету процессов: {} ({}-{})", enable, min_priority, max_priority);
+        tracing::info!(
+            "Установлена фильтрация по приоритету процессов: {} ({}-{})",
+            enable,
+            min_priority,
+            max_priority
+        );
     }
 
     /// Установить пороги фильтрации
     #[allow(clippy::too_many_arguments)]
-    pub fn set_filtering_thresholds(&mut self, 
+    pub fn set_filtering_thresholds(
+        &mut self,
         cpu_threshold: f64,
         memory_threshold: u64,
         syscall_threshold: u64,
         network_threshold: u64,
         connections_threshold: u64,
         gpu_threshold: f64,
-        gpu_memory_threshold: u64
+        gpu_memory_threshold: u64,
     ) {
         self.filter_config.cpu_usage_threshold = cpu_threshold;
         self.filter_config.memory_usage_threshold = memory_threshold;
@@ -3961,10 +4298,10 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     pub fn optimize_ebpf_memory_usage(&mut self) -> Result<()> {
         tracing::info!("Оптимизация использования памяти в eBPF картах");
-        
+
         let mut total_memory_saved = 0usize;
         let mut maps_optimized = 0usize;
-        
+
         // Оптимизация CPU карт
         if self.config.enable_cpu_metrics {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.cpu_maps)? {
@@ -3972,7 +4309,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация карт памяти
         if self.config.enable_memory_metrics {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.memory_maps)? {
@@ -3980,7 +4317,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация карт системных вызовов
         if self.config.enable_syscall_monitoring {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.syscall_maps)? {
@@ -3988,7 +4325,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация сетевых карт
         if self.config.enable_network_monitoring {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.network_maps)? {
@@ -3996,7 +4333,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация карт соединений
         if self.config.enable_network_connections {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.connection_maps)? {
@@ -4004,7 +4341,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация карт процессов
         if self.config.enable_process_monitoring {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.process_maps)? {
@@ -4012,7 +4349,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация GPU карт
         if self.config.enable_gpu_monitoring {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.gpu_maps)? {
@@ -4020,7 +4357,7 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
+
         // Оптимизация карт файловой системы
         if self.config.enable_filesystem_monitoring {
             if let Some(memory_saved) = self.optimize_map_memory(&mut self.filesystem_maps)? {
@@ -4028,48 +4365,62 @@ impl EbpfMetricsCollector {
                 maps_optimized += 1;
             }
         }
-        
-        tracing::info!("Оптимизация памяти завершена: {} карт оптимизировано, {} байт сохранено", maps_optimized, total_memory_saved);
-        
+
+        tracing::info!(
+            "Оптимизация памяти завершена: {} карт оптимизировано, {} байт сохранено",
+            maps_optimized,
+            total_memory_saved
+        );
+
         Ok(())
     }
 
     /// Оптимизировать обработку eBPF событий в реальном времени
-    /// 
+    ///
     /// Эта функция улучшает производительность обработки eBPF событий для снижения задержек
     #[cfg(feature = "ebpf")]
     pub fn optimize_real_time_event_processing(&mut self) -> Result<()> {
         tracing::info!("Оптимизация обработки eBPF событий в реальном времени");
-        
+
         // Оптимизация 1: Уменьшение размера batches для более быстрой обработки
         if self.config.batch_size > 50 {
             let old_batch_size = self.config.batch_size;
             self.config.batch_size = 50;
-            tracing::info!("Уменьшен размер batches с {} до {} для более быстрой обработки", old_batch_size, self.config.batch_size);
+            tracing::info!(
+                "Уменьшен размер batches с {} до {} для более быстрой обработки",
+                old_batch_size,
+                self.config.batch_size
+            );
         }
-        
+
         // Оптимизация 2: Отключение агрессивного кэширования для реального времени
         if self.config.enable_aggressive_caching {
             self.config.enable_aggressive_caching = false;
             tracing::info!("Отключено агрессивное кэширование для обработки в реальном времени");
         }
-        
+
         // Оптимизация 3: Уменьшение интервала агрессивного кэширования
         if self.config.aggressive_cache_interval_ms > 1000 {
             let old_interval = self.config.aggressive_cache_interval_ms;
             self.config.aggressive_cache_interval_ms = 1000;
-            tracing::info!("Уменьшен интервал агрессивного кэширования с {}ms до {}ms", old_interval, self.config.aggressive_cache_interval_ms);
+            tracing::info!(
+                "Уменьшен интервал агрессивного кэширования с {}ms до {}ms",
+                old_interval,
+                self.config.aggressive_cache_interval_ms
+            );
         }
-        
+
         // Оптимизация 4: Увеличение приоритета сбора метрик
         // В реальной реализации это можно сделать через nice/ionice
-        tracing::info!("Для дальнейшей оптимизации рассмотрите увеличение приоритета процесса сбора метрик");
-        
+        tracing::info!(
+            "Для дальнейшей оптимизации рассмотрите увеличение приоритета процесса сбора метрик"
+        );
+
         // Оптимизация 5: Оптимизация памяти для реального времени
         self.optimize_ebpf_memory_usage()?;
-        
+
         tracing::info!("Оптимизация обработки событий в реальном времени завершена");
-        
+
         Ok(())
     }
 
@@ -4079,17 +4430,17 @@ impl EbpfMetricsCollector {
         if maps.is_empty() {
             return Ok(None);
         }
-        
+
         let mut total_memory_saved = 0usize;
-        
+
         for map in maps.iter_mut() {
             // Получаем текущий размер карты
             let map_info = map.info()?;
             let current_size = map_info.max_entries as usize * map_info.value_size as usize;
-            
+
             // Анализируем использование карты
             let (used_entries, total_entries) = self.analyze_map_usage(map)?;
-            
+
             if used_entries == 0 {
                 // Карта пустая, можно очистить
                 self.clear_map_entries(map)?;
@@ -4101,14 +4452,15 @@ impl EbpfMetricsCollector {
                 if new_size < total_entries {
                     // В реальной реализации здесь нужно было бы пересоздать карту с новым размером
                     // Для упрощения просто отмечаем потенциальную экономию
-                    let potential_saving = (total_entries - new_size) * map_info.value_size as usize;
+                    let potential_saving =
+                        (total_entries - new_size) * map_info.value_size as usize;
                     total_memory_saved += potential_saving;
                     tracing::debug!("Карта может быть уменьшена с {} до {} записей, потенциальная экономия {} байт",
                         total_entries, new_size, potential_saving);
                 }
             }
         }
-        
+
         if total_memory_saved > 0 {
             Ok(Some(total_memory_saved))
         } else {
@@ -4121,11 +4473,11 @@ impl EbpfMetricsCollector {
     fn analyze_map_usage(&self, map: &Map) -> Result<(usize, usize)> {
         let map_info = map.info()?;
         let total_entries = map_info.max_entries as usize;
-        
+
         // Пробуем получить первый ключ
         let mut key = 0u32;
         let mut used_entries = 0usize;
-        
+
         loop {
             // Пробуем получить значение для текущего ключа
             match map.lookup(&key, 0) {
@@ -4136,7 +4488,7 @@ impl EbpfMetricsCollector {
                     // Ключ не найден
                 }
             }
-            
+
             // Пробуем получить следующий ключ
             match map.next_key(&key) {
                 Ok(next) => {
@@ -4149,7 +4501,7 @@ impl EbpfMetricsCollector {
                 Err(_) => break, // Нет больше ключей
             }
         }
-        
+
         Ok((used_entries, total_entries))
     }
 
@@ -4157,11 +4509,11 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     fn clear_map_entries(&self, map: &Map) -> Result<()> {
         let mut key = 0u32;
-        
+
         loop {
             // Пробуем удалить текущий ключ
             let _ = map.delete(&key);
-            
+
             // Пробуем получить следующий ключ
             match map.next_key(&key) {
                 Ok(next) => {
@@ -4174,7 +4526,7 @@ impl EbpfMetricsCollector {
                 Err(_) => break, // Нет больше ключей
             }
         }
-        
+
         Ok(())
     }
 
@@ -4182,13 +4534,16 @@ impl EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     pub fn optimize_program_cache(&mut self) -> (usize, usize, f64) {
         let (hits, misses, hit_rate) = self.program_cache.get_stats();
-        
+
         // Если кэш-хит ниже 50%, очищаем кэш для экономии памяти
         if hit_rate < 50.0 {
             self.program_cache.clear();
-            tracing::info!("Очистка кэша программ из-за низкого кэш-хита ({:.1}%)", hit_rate);
+            tracing::info!(
+                "Очистка кэша программ из-за низкого кэш-хита ({:.1}%)",
+                hit_rate
+            );
         }
-        
+
         (hits, misses, hit_rate)
     }
 
@@ -4196,7 +4551,6 @@ impl EbpfMetricsCollector {
     pub fn get_config(&self) -> EbpfConfig {
         self.config.clone()
     }
-
 }
 
 #[cfg(test)]
@@ -4564,27 +4918,27 @@ mod tests {
 
         // Устанавливаем ограничение на количество кэшируемых деталей
         collector.set_max_cached_details(100);
-        
+
         // Собираем метрики
         let metrics = collector.collect_metrics().unwrap();
-        
+
         // Проверяем, что оптимизация памяти работает
         assert!(metrics.cpu_usage >= 0.0);
         assert!(metrics.memory_usage >= 0);
-        
+
         // Проверяем, что детализированные статистики ограничены
         if let Some(syscall_details) = metrics.syscall_details {
             assert!(syscall_details.len() <= 100);
         }
-        
+
         if let Some(network_details) = metrics.network_details {
             assert!(network_details.len() <= 100);
         }
-        
+
         if let Some(gpu_details) = metrics.gpu_details {
             assert!(gpu_details.len() <= 100);
         }
-        
+
         if let Some(filesystem_details) = metrics.filesystem_details {
             assert!(filesystem_details.len() <= 100);
         }
@@ -4602,12 +4956,12 @@ mod tests {
 
         // Собираем метрики, чтобы заполнить кэш
         let _metrics = collector.collect_metrics().unwrap();
-        
+
         // Проверяем, что оценка использования памяти возвращает разумное значение
         let memory_usage = collector.get_memory_usage_estimate();
         // Memory usage может быть 0 если кэш пустой, поэтому проверяем что он не отрицательный
         assert!(memory_usage >= 0);
-        
+
         // Проверяем, что оценка не превышает разумных пределов
         assert!(memory_usage < 1000000); // 1MB - разумный предел для теста
     }
@@ -4621,12 +4975,12 @@ mod tests {
 
         // Включаем очистку неиспользуемых карт
         collector.set_cleanup_unused_maps(true);
-        
+
         // Собираем метрики несколько раз для триггера очистки
         for _ in 0..15 {
             let _metrics = collector.collect_metrics().unwrap();
         }
-        
+
         // Проверяем, что очистка памяти работает
         assert!(collector.cleanup_counter < 10); // Счетчик должен быть сброшен
     }
@@ -4645,21 +4999,21 @@ mod tests {
 
         // Устанавливаем ограничение на количество кэшируемых деталей
         collector.set_max_cached_details(50);
-        
+
         // Собираем метрики несколько раз
         let metrics1 = collector.collect_metrics().unwrap();
         let metrics2 = collector.collect_metrics().unwrap();
         let _metrics3 = collector.collect_metrics().unwrap();
-        
+
         // Проверяем, что метрики кэшируются корректно
         assert_eq!(metrics1.cpu_usage, metrics2.cpu_usage);
         assert_eq!(metrics1.memory_usage, metrics2.memory_usage);
-        
+
         // После достижения batch_size кэш должен сброситься
         let _metrics4 = collector.collect_metrics().unwrap();
         let _metrics5 = collector.collect_metrics().unwrap();
         let metrics6 = collector.collect_metrics().unwrap();
-        
+
         // Проверяем, что кэш сбросился и метрики могут отличаться
         // (в тестовой реализации они будут одинаковыми, но в реальной - могут отличаться)
         assert!(metrics1.cpu_usage >= 0.0);
@@ -4675,12 +5029,12 @@ mod tests {
 
         // Отключаем очистку неиспользуемых карт
         collector.set_cleanup_unused_maps(false);
-        
+
         // Собираем метрики несколько раз
         for _ in 0..20 {
             let _metrics = collector.collect_metrics().unwrap();
         }
-        
+
         // Проверяем, что очистка памяти не выполнялась
         // Когда очистка отключена, счетчик не должен увеличиваться
         assert_eq!(collector.cleanup_counter, 0); // Счетчик должен остаться 0
@@ -4702,23 +5056,23 @@ mod tests {
 
         // Устанавливаем очень маленькое ограничение для теста
         collector.set_max_cached_details(5);
-        
+
         // Собираем метрики
         let metrics = collector.collect_metrics().unwrap();
-        
+
         // Проверяем, что детализированные статистики ограничены
         if let Some(syscall_details) = metrics.syscall_details {
             assert!(syscall_details.len() <= 5);
         }
-        
+
         if let Some(network_details) = metrics.network_details {
             assert!(network_details.len() <= 5);
         }
-        
+
         if let Some(gpu_details) = metrics.gpu_details {
             assert!(gpu_details.len() <= 5);
         }
-        
+
         if let Some(filesystem_details) = metrics.filesystem_details {
             assert!(filesystem_details.len() <= 5);
         }
@@ -5286,7 +5640,7 @@ mod tests {
         // Сбор метрик должен работать даже с пустыми картами
         let metrics = collector.collect_metrics();
         assert!(metrics.is_ok());
-        
+
         let metrics = metrics.unwrap();
         // Проверяем, что метрики имеют разумные значения
         assert!(metrics.cpu_usage >= 0.0);
@@ -5313,7 +5667,7 @@ mod tests {
         // Сбор метрик должен работать даже с пустыми картами
         let metrics = collector.collect_metrics();
         assert!(metrics.is_ok());
-        
+
         let metrics = metrics.unwrap();
         // Проверяем, что метрики имеют разумные значения по умолчанию
         assert!(metrics.cpu_usage >= 0.0);
@@ -5336,7 +5690,7 @@ mod tests {
         {
             // Карты должны быть доступны после инициализации
             assert!(collector.check_maps_availability());
-            
+
             // Проверяем информацию о картах
             let maps_info = collector.get_maps_info();
             assert!(maps_info.contains("CPU maps:"));
@@ -5346,7 +5700,7 @@ mod tests {
         {
             // Без eBPF поддержки карты не должны быть доступны
             assert!(!collector.check_maps_availability());
-            
+
             // Проверяем информацию о картах
             let maps_info = collector.get_maps_info();
             assert_eq!(maps_info, "eBPF support disabled");
@@ -5384,7 +5738,7 @@ mod tests {
         // Сбор метрик должен работать после повторной инициализации
         let metrics2 = collector.collect_metrics();
         assert!(metrics2.is_ok());
-        
+
         // Метрики должны быть похожи (в тестовой реализации они должны быть одинаковыми)
         let metrics1 = metrics1.unwrap();
         let metrics2 = metrics2.unwrap();
@@ -5398,19 +5752,19 @@ mod tests {
         #[cfg(feature = "ebpf")]
         {
             use libbpf_rs::Map;
-            
+
             // Создаем тестовую карту (в реальности это будет mock)
             // Для теста просто проверяем, что функция компилируется и работает
-            
+
             // В реальном тесте нужно создать mock карту
             // Здесь просто проверяем, что функция существует и может быть вызвана
-            
+
             // Тестируем с разными типами данных
             let result1: Result<Vec<SyscallStat>> = Ok(Vec::new());
             let result2: Result<Vec<NetworkStat>> = Ok(Vec::new());
             let result3: Result<Vec<GpuStat>> = Ok(Vec::new());
             let result4: Result<Vec<FilesystemStat>> = Ok(Vec::new());
-            
+
             // Проверяем, что результаты могут быть обработаны
             assert!(result1.is_ok());
             assert!(result2.is_ok());
@@ -5480,11 +5834,11 @@ mod tests {
         // Сбор метрик должен работать с параллельным сбором детализированной статистики
         let metrics = collector.collect_metrics();
         assert!(metrics.is_ok());
-        
+
         let metrics = metrics.unwrap();
         // Проверяем, что метрики имеют разумные значения
         assert!(metrics.cpu_usage >= 0.0);
-        
+
         // В тестовой реализации детализированная статистика должна быть доступна
         // (даже если пустая)
         assert!(metrics.syscall_details.is_some() || true); // Может быть None в зависимости от конфигурации
@@ -5504,7 +5858,7 @@ mod tests {
 
         // Проверяем метод восстановления
         assert!(collector.attempt_recovery().is_ok());
-        
+
         // После восстановления коллектор должен быть инициализирован
         #[cfg(feature = "ebpf")]
         {
@@ -5528,14 +5882,14 @@ mod tests {
 
         // Первый вызов должен собрать реальные метрики
         let metrics1 = collector.collect_metrics().unwrap();
-        
+
         // Второй вызов должен использовать агрессивное кэширование
         let metrics2 = collector.collect_metrics().unwrap();
-        
+
         // Метрики должны быть одинаковыми (кэшированы)
         assert_eq!(metrics1.cpu_usage, metrics2.cpu_usage);
         assert_eq!(metrics1.memory_usage, metrics2.memory_usage);
-        
+
         // Проверяем, что кэш работает корректно (может быть None в зависимости от конфигурации)
         assert!(collector.metrics_cache.is_some() || collector.metrics_cache.is_none());
     }
@@ -5556,7 +5910,7 @@ mod tests {
 
             // Сбор детализированной статистики должен использовать новую функцию итерации
             let metrics = collector.collect_metrics().unwrap();
-            
+
             // Проверяем, что детализированная статистика доступна
             if let Some(details) = metrics.syscall_details {
                 // В реальном сценарии здесь будут данные
@@ -5587,7 +5941,7 @@ mod tests {
 
             // Сбор метрик должен использовать реальные данные из карт
             let metrics = collector.collect_metrics().unwrap();
-            
+
             // Проверяем, что метрики имеют разумные значения
             assert!(metrics.cpu_usage >= 0.0);
             assert!(metrics.memory_usage >= 0);
@@ -5597,7 +5951,7 @@ mod tests {
             assert!(metrics.gpu_usage >= 0.0);
             assert!(metrics.gpu_memory_usage >= 0);
             assert!(metrics.filesystem_ops >= 0);
-            
+
             // Проверяем, что детализированная статистика доступна
             // (может быть None в зависимости от конфигурации и доступности данных)
             let _ = metrics.syscall_details;
@@ -5614,14 +5968,14 @@ mod tests {
         {
             let config = EbpfConfig::default();
             let mut collector = EbpfMetricsCollector::new(config);
-            
+
             // Инициализация должна пройти успешно даже если карты пустые
             assert!(collector.initialize().is_ok());
-            
+
             // Сбор метрик должен работать даже с пустыми картами
             let metrics = collector.collect_metrics();
             assert!(metrics.is_ok());
-            
+
             let metrics = metrics.unwrap();
             // Проверяем, что метрики имеют значения по умолчанию
             assert!(metrics.cpu_usage >= 0.0);
@@ -5643,7 +5997,10 @@ mod tests {
 
         // Тестируем методы получения информации об ошибках
         assert!(collector.get_last_error().is_some() || collector.get_last_error().is_none());
-        assert!(collector.get_detailed_error_info().is_some() || collector.get_detailed_error_info().is_none());
+        assert!(
+            collector.get_detailed_error_info().is_some()
+                || collector.get_detailed_error_info().is_none()
+        );
         assert!(collector.has_errors() || !collector.has_errors());
 
         // Тестируем статистику инициализации
@@ -5653,7 +6010,7 @@ mod tests {
 
         // Тестируем проверку доступности карт
         assert!(collector.check_maps_availability() || !collector.check_maps_availability());
-        
+
         // Тестируем получение информации о картах
         let maps_info = collector.get_maps_info();
         assert!(!maps_info.is_empty());
@@ -5688,18 +6045,18 @@ mod tests {
         assert!(collector.initialize().is_ok());
 
         let metrics = collector.collect_metrics().unwrap();
-        
+
         // Проверяем новые поля в метриках
         assert_eq!(metrics.active_connections, 0); // По умолчанию 0
-        assert_eq!(metrics.active_processes, 0);   // По умолчанию 0
+        assert_eq!(metrics.active_processes, 0); // По умолчанию 0
         assert!(metrics.connection_details.is_none()); // Детали соединений отключены
-        assert!(metrics.process_details.is_none());   // Детали процессов отключены
+        assert!(metrics.process_details.is_none()); // Детали процессов отключены
     }
 
     #[test]
     fn test_ebpf_config_default_values() {
         let config = EbpfConfig::default();
-        
+
         // Проверяем новые поля конфигурации
         assert!(!config.enable_network_connections);
         assert!(!config.enable_process_monitoring);
@@ -5710,7 +6067,7 @@ mod tests {
     #[test]
     fn test_ebpf_metrics_struct_default() {
         let metrics = EbpfMetrics::default();
-        
+
         // Проверяем новые поля в структуре метрик
         assert_eq!(metrics.active_connections, 0);
         assert_eq!(metrics.active_processes, 0);
@@ -5747,11 +6104,11 @@ mod tests {
         assert!(collector.initialize().is_ok());
 
         let metrics = collector.collect_metrics().unwrap();
-        
+
         // Проверяем, что новые метрики работают
         assert_eq!(metrics.cpu_usage, 0.0); // Должно быть 0, так как отключено в конфиге
         assert_eq!(metrics.memory_usage, 0); // Должно быть 0, так как отключено в конфиге
-        
+
         // В тестовой реализации новые метрики должны быть 0
         assert_eq!(metrics.active_connections, 0);
         assert_eq!(metrics.active_processes, 0);
@@ -5786,31 +6143,40 @@ mod tests {
         assert!(collector.initialize().is_ok());
 
         let (success_count, error_count) = collector.get_initialization_stats();
-        
+
         // Должно быть хотя бы некоторые успешные загрузки
         // В тестовой среде новые программы могут не загрузиться, если файлы не существуют
         assert!(success_count >= 0); // Хотя бы нет ошибок загрузки
-        // Ошибки могут быть, если новые программы не найдены
-        // Это нормально для тестовой среды
-        println!("Статистика инициализации: {} успешных, {} ошибок", success_count, error_count);
+                                     // Ошибки могут быть, если новые программы не найдены
+                                     // Это нормально для тестовой среды
+        println!(
+            "Статистика инициализации: {} успешных, {} ошибок",
+            success_count, error_count
+        );
     }
 }
 
 #[cfg(test)]
 mod ebpf_notification_tests {
     use super::*;
-    use crate::notifications::{NotificationManager};
     use crate::logging::log_storage::SharedLogStorage;
+    use crate::notifications::NotificationManager;
     use std::sync::Arc;
 
     #[tokio::test]
     async fn test_ebpf_notification_thresholds_default() {
         let thresholds = EbpfNotificationThresholds::default();
-        
+
         assert_eq!(thresholds.cpu_usage_warning_threshold, 80.0);
         assert_eq!(thresholds.cpu_usage_critical_threshold, 95.0);
-        assert_eq!(thresholds.memory_usage_warning_threshold, 8 * 1024 * 1024 * 1024);
-        assert_eq!(thresholds.memory_usage_critical_threshold, 12 * 1024 * 1024 * 1024);
+        assert_eq!(
+            thresholds.memory_usage_warning_threshold,
+            8 * 1024 * 1024 * 1024
+        );
+        assert_eq!(
+            thresholds.memory_usage_critical_threshold,
+            12 * 1024 * 1024 * 1024
+        );
         assert_eq!(thresholds.syscall_rate_warning_threshold, 10000);
         assert_eq!(thresholds.syscall_rate_critical_threshold, 50000);
     }
@@ -5818,23 +6184,27 @@ mod ebpf_notification_tests {
     #[tokio::test]
     async fn test_ebpf_config_with_notifications() {
         let config = EbpfConfig::default();
-        
+
         assert!(config.enable_notifications);
-        assert_eq!(config.notification_thresholds.cpu_usage_warning_threshold, 80.0);
+        assert_eq!(
+            config.notification_thresholds.cpu_usage_warning_threshold,
+            80.0
+        );
     }
 
     #[tokio::test]
     async fn test_ebpf_collector_notification_integration() {
         use crate::logging::log_storage::SharedLogStorage;
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(10));
-        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
-        
+        let notification_manager =
+            NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
         let collector = EbpfMetricsCollector::new_with_notifications(
             EbpfConfig::default(),
-            Arc::new(notification_manager)
+            Arc::new(notification_manager),
         );
-        
+
         assert!(collector.notification_manager.is_some());
         assert_eq!(collector.notification_cooldown_seconds, 60);
     }
@@ -5842,85 +6212,111 @@ mod ebpf_notification_tests {
     #[tokio::test]
     async fn test_ebpf_notification_cooldown() {
         use crate::logging::log_storage::SharedLogStorage;
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(10));
-        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
-        
+        let notification_manager =
+            NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
         let mut collector = EbpfMetricsCollector::new_with_notifications(
             EbpfConfig::default(),
-            Arc::new(notification_manager)
+            Arc::new(notification_manager),
         );
-        
+
         // Устанавливаем короткий кулдаун для тестирования
         collector.set_notification_cooldown(1);
-        
+
         // Создаем метрики, которые должны вызвать уведомление
         let mut metrics = EbpfMetrics::default();
         metrics.cpu_usage = 96.0; // Выше критического порога
-        
+
         // Первое уведомление должно быть отправлено
         let result = collector.check_thresholds_and_notify(&metrics).await;
         assert!(result.is_ok());
-        
+
         // Второе уведомление не должно быть отправлено из-за кулдауна
         let result = collector.check_thresholds_and_notify(&metrics).await;
         assert!(result.is_ok());
-        
+
         // Проверяем, что только одно уведомление было залоггировано
         let all_entries = log_storage.get_all_entries().await;
         let critical_entries: Vec<_> = all_entries
             .iter()
             .filter(|e| e.level == crate::logging::log_storage::LogLevel::Error)
             .collect();
-        
-        assert_eq!(critical_entries.len(), 1, "Expected 1 critical notification due to cooldown");
+
+        assert_eq!(
+            critical_entries.len(),
+            1,
+            "Expected 1 critical notification due to cooldown"
+        );
     }
 
     #[tokio::test]
     async fn test_ebpf_threshold_notifications() {
         use crate::logging::log_storage::SharedLogStorage;
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(20));
-        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
-        
+        let notification_manager =
+            NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
         let mut collector = EbpfMetricsCollector::new_with_notifications(
             EbpfConfig::default(),
-            Arc::new(notification_manager)
+            Arc::new(notification_manager),
         );
-        
+
         // Устанавливаем очень короткий кулдаун для тестирования
         collector.set_notification_cooldown(0);
-        
+
         // Тестируем CPU уведомления
         let mut cpu_metrics = EbpfMetrics::default();
         cpu_metrics.cpu_usage = 85.0; // Между предупреждением и критическим
-        
-        collector.check_thresholds_and_notify(&cpu_metrics).await.unwrap();
-        
+
+        collector
+            .check_thresholds_and_notify(&cpu_metrics)
+            .await
+            .unwrap();
+
         let mut critical_cpu_metrics = EbpfMetrics::default();
         critical_cpu_metrics.cpu_usage = 96.0; // Критический уровень
-        
-        collector.check_thresholds_and_notify(&critical_cpu_metrics).await.unwrap();
-        
+
+        collector
+            .check_thresholds_and_notify(&critical_cpu_metrics)
+            .await
+            .unwrap();
+
         // Тестируем уведомления о памяти
         let mut memory_metrics = EbpfMetrics::default();
         memory_metrics.memory_usage = 9 * 1024 * 1024 * 1024; // Между предупреждением и критическим
-        
-        collector.check_thresholds_and_notify(&memory_metrics).await.unwrap();
-        
+
+        collector
+            .check_thresholds_and_notify(&memory_metrics)
+            .await
+            .unwrap();
+
         let mut critical_memory_metrics = EbpfMetrics::default();
         critical_memory_metrics.memory_usage = 13 * 1024 * 1024 * 1024; // Критический уровень
-        
-        collector.check_thresholds_and_notify(&critical_memory_metrics).await.unwrap();
-        
+
+        collector
+            .check_thresholds_and_notify(&critical_memory_metrics)
+            .await
+            .unwrap();
+
         // Проверяем, что уведомления были залоггированы
         let all_entries = log_storage.get_all_entries().await;
-        assert!(all_entries.len() >= 4, "Expected at least 4 notifications, got {}", all_entries.len());
-        
+        assert!(
+            all_entries.len() >= 4,
+            "Expected at least 4 notifications, got {}",
+            all_entries.len()
+        );
+
         // Проверяем типы уведомлений
-        let has_warnings = all_entries.iter().any(|e| e.level == crate::logging::log_storage::LogLevel::Warn);
-        let has_errors = all_entries.iter().any(|e| e.level == crate::logging::log_storage::LogLevel::Error);
-        
+        let has_warnings = all_entries
+            .iter()
+            .any(|e| e.level == crate::logging::log_storage::LogLevel::Warn);
+        let has_errors = all_entries
+            .iter()
+            .any(|e| e.level == crate::logging::log_storage::LogLevel::Error);
+
         assert!(has_warnings, "Expected warning notifications");
         assert!(has_errors, "Expected critical notifications");
     }
@@ -5929,61 +6325,80 @@ mod ebpf_notification_tests {
     async fn test_ebpf_notification_disabled() {
         let mut config = EbpfConfig::default();
         config.enable_notifications = false;
-        
+
         let log_storage = Arc::new(SharedLogStorage::new(10));
-        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
-        
-        let mut collector = EbpfMetricsCollector::new_with_notifications(
-            config,
-            Arc::new(notification_manager)
-        );
-        
+        let notification_manager =
+            NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
+        let mut collector =
+            EbpfMetricsCollector::new_with_notifications(config, Arc::new(notification_manager));
+
         // Создаем метрики, которые должны вызвать уведомление
         let mut metrics = EbpfMetrics::default();
         metrics.cpu_usage = 96.0; // Выше критического порога
-        
+
         // Уведомление не должно быть отправлено
-        collector.check_thresholds_and_notify(&metrics).await.unwrap();
-        
+        collector
+            .check_thresholds_and_notify(&metrics)
+            .await
+            .unwrap();
+
         // Проверяем, что уведомления не было
         let all_entries = log_storage.get_all_entries().await;
-        assert_eq!(all_entries.len(), 0, "No notifications should be sent when disabled");
+        assert_eq!(
+            all_entries.len(),
+            0,
+            "No notifications should be sent when disabled"
+        );
     }
 
     #[tokio::test]
     async fn test_ebpf_custom_thresholds() {
         let mut config = EbpfConfig::default();
-        
+
         // Настраиваем пользовательские пороги
         config.notification_thresholds.cpu_usage_warning_threshold = 70.0;
         config.notification_thresholds.cpu_usage_critical_threshold = 85.0;
-        config.notification_thresholds.memory_usage_warning_threshold = 4 * 1024 * 1024 * 1024;
-        config.notification_thresholds.memory_usage_critical_threshold = 6 * 1024 * 1024 * 1024;
-        
+        config
+            .notification_thresholds
+            .memory_usage_warning_threshold = 4 * 1024 * 1024 * 1024;
+        config
+            .notification_thresholds
+            .memory_usage_critical_threshold = 6 * 1024 * 1024 * 1024;
+
         let log_storage = Arc::new(SharedLogStorage::new(10));
-        let notification_manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
-        
-        let mut collector = EbpfMetricsCollector::new_with_notifications(
-            config,
-            Arc::new(notification_manager)
-        );
-        
+        let notification_manager =
+            NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
+        let mut collector =
+            EbpfMetricsCollector::new_with_notifications(config, Arc::new(notification_manager));
+
         collector.set_notification_cooldown(0);
-        
+
         // Тестируем пользовательские пороги
         let mut metrics = EbpfMetrics::default();
         metrics.cpu_usage = 75.0; // Между новыми порогами
-        
-        collector.check_thresholds_and_notify(&metrics).await.unwrap();
-        
+
+        collector
+            .check_thresholds_and_notify(&metrics)
+            .await
+            .unwrap();
+
         let mut critical_metrics = EbpfMetrics::default();
         critical_metrics.cpu_usage = 86.0; // Выше нового критического порога
-        
-        collector.check_thresholds_and_notify(&critical_metrics).await.unwrap();
-        
+
+        collector
+            .check_thresholds_and_notify(&critical_metrics)
+            .await
+            .unwrap();
+
         // Проверяем, что уведомления были отправлены с новыми порогами
         let all_entries = log_storage.get_all_entries().await;
-        assert!(all_entries.len() >= 2, "Expected notifications with custom thresholds, got {}", all_entries.len());
+        assert!(
+            all_entries.len() >= 2,
+            "Expected notifications with custom thresholds, got {}",
+            all_entries.len()
+        );
     }
 }
 
@@ -5994,7 +6409,7 @@ mod ebpf_filtering_tests {
     #[test]
     fn test_filter_config_default() {
         let filter_config = EbpfFilterConfig::default();
-        
+
         assert!(!filter_config.enable_kernel_filtering);
         assert_eq!(filter_config.cpu_usage_threshold, 1.0);
         assert_eq!(filter_config.memory_usage_threshold, 1024 * 1024);
@@ -6023,12 +6438,18 @@ mod ebpf_filtering_tests {
         filter_config.enable_kernel_filtering = true;
         filter_config.cpu_usage_threshold = 5.0;
         filter_config.filtered_pids = vec![100, 200, 300];
-        
+
         let serialized = serde_json::to_string(&filter_config).unwrap();
         let deserialized: EbpfFilterConfig = serde_json::from_str(&serialized).unwrap();
-        
-        assert_eq!(filter_config.enable_kernel_filtering, deserialized.enable_kernel_filtering);
-        assert_eq!(filter_config.cpu_usage_threshold, deserialized.cpu_usage_threshold);
+
+        assert_eq!(
+            filter_config.enable_kernel_filtering,
+            deserialized.enable_kernel_filtering
+        );
+        assert_eq!(
+            filter_config.cpu_usage_threshold,
+            deserialized.cpu_usage_threshold
+        );
         assert_eq!(filter_config.filtered_pids, deserialized.filtered_pids);
     }
 
@@ -6036,13 +6457,13 @@ mod ebpf_filtering_tests {
     fn test_set_filter_config() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         let mut filter_config = EbpfFilterConfig::default();
         filter_config.enable_kernel_filtering = true;
         filter_config.cpu_usage_threshold = 10.0;
-        
+
         collector.set_filter_config(filter_config.clone());
-        
+
         // Проверяем, что конфигурация установлена
         assert!(collector.filter_config.enable_kernel_filtering);
         assert_eq!(collector.filter_config.cpu_usage_threshold, 10.0);
@@ -6052,7 +6473,7 @@ mod ebpf_filtering_tests {
     fn test_apply_filtering() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Настраиваем фильтрацию
         let mut filter_config = EbpfFilterConfig::default();
         filter_config.enable_kernel_filtering = true;
@@ -6060,24 +6481,24 @@ mod ebpf_filtering_tests {
         filter_config.memory_usage_threshold = 1024;
         filter_config.syscall_count_threshold = 50;
         filter_config.network_traffic_threshold = 500; // Уменьшаем порог для теста
-        
+
         collector.set_filter_config(filter_config);
-        
+
         // Создаем тестовые метрики
         let mut metrics = EbpfMetrics::default();
         metrics.cpu_usage = 3.0; // Ниже порога
         metrics.memory_usage = 512; // Ниже порога
         metrics.syscall_count = 25; // Ниже порога
         metrics.network_bytes = 1000; // Выше порога
-        
+
         // Применяем фильтрацию
         collector.apply_filtering(&mut metrics);
-        
+
         // Проверяем, что значения ниже порога обнулены
         assert_eq!(metrics.cpu_usage, 0.0);
         assert_eq!(metrics.memory_usage, 0);
         assert_eq!(metrics.syscall_count, 0);
-        
+
         // Проверяем, что значения выше порога сохранены
         assert_eq!(metrics.network_bytes, 1000);
     }
@@ -6086,17 +6507,17 @@ mod ebpf_filtering_tests {
     fn test_apply_aggregation() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Настраиваем агрегацию
         let mut filter_config = EbpfFilterConfig::default();
         filter_config.enable_kernel_aggregation = true;
         filter_config.max_aggregated_entries = 2; // Ограничиваем до 2 записей
-        
+
         collector.set_filter_config(filter_config);
-        
+
         // Создаем тестовые метрики с детализированной статистикой
         let mut metrics = EbpfMetrics::default();
-        
+
         // Системные вызовы
         let mut syscall_details = Vec::new();
         syscall_details.push(SyscallStat {
@@ -6117,16 +6538,16 @@ mod ebpf_filtering_tests {
             total_time_ns: 250,
             avg_time_ns: 10,
         });
-        
+
         metrics.syscall_details = Some(syscall_details);
-        
+
         // Применяем агрегацию
         collector.apply_aggregation(&mut metrics);
-        
+
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.syscall_details {
             assert_eq!(details.len(), 2); // Должно быть ограничено до 2 записей
-            
+
             // Проверяем, что записи отсортированы по количеству вызовов
             assert_eq!(details[0].syscall_id, 1); // Наибольшее количество
             assert_eq!(details[1].syscall_id, 2); // Второе по количеству
@@ -6139,20 +6560,20 @@ mod ebpf_filtering_tests {
     fn test_apply_filtering_and_aggregation() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Настраиваем фильтрацию и агрегацию
         let mut filter_config = EbpfFilterConfig::default();
         filter_config.enable_kernel_filtering = true;
         filter_config.enable_kernel_aggregation = true;
         filter_config.cpu_usage_threshold = 5.0;
         filter_config.max_aggregated_entries = 1;
-        
+
         collector.set_filter_config(filter_config);
-        
+
         // Создаем тестовые метрики
         let mut metrics = EbpfMetrics::default();
         metrics.cpu_usage = 3.0; // Ниже порога
-        
+
         // Детализированная статистика
         let mut syscall_details = Vec::new();
         syscall_details.push(SyscallStat {
@@ -6167,15 +6588,15 @@ mod ebpf_filtering_tests {
             total_time_ns: 500,
             avg_time_ns: 10,
         });
-        
+
         metrics.syscall_details = Some(syscall_details);
-        
+
         // Применяем фильтрацию и агрегацию
         collector.apply_filtering_and_aggregation(&mut metrics);
-        
+
         // Проверяем фильтрацию
         assert_eq!(metrics.cpu_usage, 0.0);
-        
+
         // Проверяем агрегацию
         // Поскольку у нас разные syscall_id, агрегация не объединяет их
         // Но агрегация ограничивает количество записей до max_aggregated_entries (1)
@@ -6192,15 +6613,15 @@ mod ebpf_filtering_tests {
     fn test_pid_filtering() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Настраиваем фильтрацию по PID
         collector.set_pid_filtering(true, vec![100, 200]);
         // Включаем фильтрацию на уровне ядра
         collector.filter_config.enable_kernel_filtering = true;
-        
+
         // Создаем тестовые метрики
         let mut metrics = EbpfMetrics::default();
-        
+
         let mut process_details = Vec::new();
         process_details.push(ProcessStat {
             pid: 100,
@@ -6238,12 +6659,12 @@ mod ebpf_filtering_tests {
             last_activity: 0,
             name: "process3".to_string(),
         });
-        
+
         metrics.process_details = Some(process_details);
-        
+
         // Применяем фильтрацию
         collector.apply_filtering(&mut metrics);
-        
+
         // Проверяем, что остались только процессы с PID 100 и 200
         if let Some(details) = metrics.process_details {
             assert_eq!(details.len(), 2);
@@ -6259,18 +6680,18 @@ mod ebpf_filtering_tests {
     fn test_set_filtering_thresholds() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Устанавливаем пороги фильтрации
         collector.set_filtering_thresholds(
-            10.0,    // CPU
-            2048,    // Memory
-            100,     // Syscalls
-            2048,    // Network
-            10,      // Connections
-            5.0,     // GPU
-            1024     // GPU Memory
+            10.0, // CPU
+            2048, // Memory
+            100,  // Syscalls
+            2048, // Network
+            10,   // Connections
+            5.0,  // GPU
+            1024, // GPU Memory
         );
-        
+
         // Проверяем, что пороги установлены
         assert_eq!(collector.filter_config.cpu_usage_threshold, 10.0);
         assert_eq!(collector.filter_config.memory_usage_threshold, 2048);
@@ -6285,10 +6706,10 @@ mod ebpf_filtering_tests {
     fn test_set_aggregation_parameters() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Устанавливаем параметры агрегации
         collector.set_aggregation_parameters(true, 500, 500);
-        
+
         // Проверяем, что параметры установлены
         assert!(collector.filter_config.enable_kernel_aggregation);
         assert_eq!(collector.filter_config.aggregation_interval_ms, 500);
@@ -6304,13 +6725,13 @@ mod ebpf_memory_optimization_tests {
     fn test_optimize_detailed_stats() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Устанавливаем ограничение на количество детализированных статистик
         collector.set_max_cached_details(2);
-        
+
         // Создаем тестовые метрики с большим количеством детализированной статистики
         let mut metrics = EbpfMetrics::default();
-        
+
         // Системные вызовы
         let mut syscall_details = Vec::new();
         for i in 0..5 {
@@ -6321,9 +6742,9 @@ mod ebpf_memory_optimization_tests {
                 avg_time_ns: 10,
             });
         }
-        
+
         metrics.syscall_details = Some(syscall_details);
-        
+
         // Сетевая активность
         let mut network_details = Vec::new();
         for i in 0..5 {
@@ -6335,21 +6756,28 @@ mod ebpf_memory_optimization_tests {
                 bytes_received: (5 - i) as u64 * 100,
             });
         }
-        
+
         metrics.network_details = Some(network_details);
-        
+
         // Применяем оптимизацию
-        let (syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details) = 
-            collector.optimize_detailed_stats(
-                metrics.syscall_details.take(),
-                metrics.network_details.take(),
-                metrics.connection_details.take(),
-                metrics.gpu_details.take(),
-                metrics.cpu_temperature_details.take(),
-                metrics.process_details.take(),
-                metrics.filesystem_details.take()
-            );
-        
+        let (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        ) = collector.optimize_detailed_stats(
+            metrics.syscall_details.take(),
+            metrics.network_details.take(),
+            metrics.connection_details.take(),
+            metrics.gpu_details.take(),
+            metrics.cpu_temperature_details.take(),
+            metrics.process_details.take(),
+            metrics.filesystem_details.take(),
+        );
+
         metrics.syscall_details = syscall_details;
         metrics.network_details = network_details;
         metrics.connection_details = connection_details;
@@ -6357,7 +6785,7 @@ mod ebpf_memory_optimization_tests {
         metrics.cpu_temperature_details = cpu_temperature_details;
         metrics.process_details = process_details;
         metrics.filesystem_details = filesystem_details;
-        
+
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.syscall_details {
             assert_eq!(details.len(), 2); // Должно быть ограничено до 2 записей
@@ -6366,7 +6794,7 @@ mod ebpf_memory_optimization_tests {
         } else {
             panic!("Детализированная статистика системных вызовов должна быть сохранена");
         }
-        
+
         if let Some(details) = metrics.network_details {
             assert_eq!(details.len(), 2); // Должно быть ограничено до 2 записей
             assert_eq!(details[0].ip_address, 0); // Наибольшее количество байт
@@ -6380,10 +6808,10 @@ mod ebpf_memory_optimization_tests {
     fn test_set_max_cached_details() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Устанавливаем ограничение
         collector.set_max_cached_details(100);
-        
+
         // Проверяем, что ограничение установлено
         assert_eq!(collector.get_max_cached_details(), 100);
     }
@@ -6393,13 +6821,13 @@ mod ebpf_memory_optimization_tests {
     fn test_optimize_program_cache() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Инициализируем коллектор для заполнения кэша
         let _ = collector.initialize();
-        
+
         // Оптимизируем кэш программ
         let (hits, misses, hit_rate) = collector.optimize_program_cache();
-        
+
         // Проверяем, что статистика возвращена
         assert!(hits >= 0);
         assert!(misses >= 0);
@@ -6410,13 +6838,13 @@ mod ebpf_memory_optimization_tests {
     fn test_memory_optimization_integration() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Устанавливаем ограничение на количество детализированных статистик
         collector.set_max_cached_details(3);
-        
+
         // Создаем тестовые метрики с большим количеством детализированной статистики
         let mut metrics = EbpfMetrics::default();
-        
+
         // Процессы
         let mut process_details = Vec::new();
         for i in 0..5 {
@@ -6433,9 +6861,9 @@ mod ebpf_memory_optimization_tests {
                 name: format!("process{}", i),
             });
         }
-        
+
         metrics.process_details = Some(process_details);
-        
+
         // GPU статистика
         let mut gpu_details = Vec::new();
         for i in 0..5 {
@@ -6449,21 +6877,28 @@ mod ebpf_memory_optimization_tests {
                 max_temperature_celsius: 80,
             });
         }
-        
+
         metrics.gpu_details = Some(gpu_details);
-        
+
         // Применяем оптимизацию
-        let (syscall_details, network_details, connection_details, gpu_details, cpu_temperature_details, process_details, filesystem_details) = 
-            collector.optimize_detailed_stats(
-                metrics.syscall_details.take(),
-                metrics.network_details.take(),
-                metrics.connection_details.take(),
-                metrics.gpu_details.take(),
-                metrics.cpu_temperature_details.take(),
-                metrics.process_details.take(),
-                metrics.filesystem_details.take()
-            );
-        
+        let (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        ) = collector.optimize_detailed_stats(
+            metrics.syscall_details.take(),
+            metrics.network_details.take(),
+            metrics.connection_details.take(),
+            metrics.gpu_details.take(),
+            metrics.cpu_temperature_details.take(),
+            metrics.process_details.take(),
+            metrics.filesystem_details.take(),
+        );
+
         metrics.syscall_details = syscall_details;
         metrics.network_details = network_details;
         metrics.connection_details = connection_details;
@@ -6471,7 +6906,7 @@ mod ebpf_memory_optimization_tests {
         metrics.cpu_temperature_details = cpu_temperature_details;
         metrics.process_details = process_details;
         metrics.filesystem_details = filesystem_details;
-        
+
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.process_details {
             assert_eq!(details.len(), 3); // Должно быть ограничено до 3 записей
@@ -6481,7 +6916,7 @@ mod ebpf_memory_optimization_tests {
         } else {
             panic!("Детализированная статистика процессов должна быть сохранена");
         }
-        
+
         if let Some(details) = metrics.gpu_details {
             assert_eq!(details.len(), 3); // Должно быть ограничено до 3 записей
             assert_eq!(details[0].gpu_id, 0); // Наибольшее использование GPU
@@ -6492,5 +6927,125 @@ mod ebpf_memory_optimization_tests {
         }
     }
 
+    /// Тест для проверки оптимизации памяти eBPF карт
+    #[test]
+    #[cfg(feature = "ebpf")]
+    fn test_optimize_ebpf_memory_usage() {
+        let config = EbpfConfig::default();
+        let mut collector = EbpfMetricsCollector::new(config);
 
+        // Инициализируем коллектор
+        let _ = collector.initialize();
+
+        // Вызываем оптимизацию памяти
+        let result = collector.optimize_ebpf_memory_usage();
+
+        // Проверяем, что функция выполнилась успешно
+        assert!(result.is_ok(), "Оптимизация памяти должна выполниться успешно");
+    }
+
+    /// Тест для проверки установки и получения ограничения на кэшируемые детали
+    #[test]
+    fn test_max_cached_details_management() {
+        let config = EbpfConfig::default();
+        let mut collector = EbpfMetricsCollector::new(config);
+
+        // Устанавливаем ограничение
+        collector.set_max_cached_details(50);
+
+        // Проверяем, что ограничение установлено
+        assert_eq!(collector.get_max_cached_details(), 50);
+
+        // Изменяем ограничение
+        collector.set_max_cached_details(100);
+
+        // Проверяем, что ограничение изменено
+        assert_eq!(collector.get_max_cached_details(), 100);
+    }
+
+    /// Тест для проверки оптимизации детализированной статистики с различными типами данных
+    #[test]
+    fn test_optimize_detailed_stats_comprehensive() {
+        let config = EbpfConfig::default();
+        let mut collector = EbpfMetricsCollector::new(config);
+
+        // Устанавливаем небольшое ограничение для тестирования
+        collector.set_max_cached_details(2);
+
+        // Создаем тестовые данные с большим количеством записей
+        let mut syscall_details = Vec::new();
+        for i in 0..5 {
+            syscall_details.push(SyscallStat {
+                syscall_id: i as u32,
+                count: (5 - i) as u64 * 100, // Убывающая последовательность
+                total_time_ns: 1000,
+                avg_time_ns: 10,
+            });
+        }
+
+        let mut network_details = Vec::new();
+        for i in 0..5 {
+            network_details.push(NetworkStat {
+                ip_address: i as u32,
+                packets_sent: (5 - i) as u64 * 100,
+                packets_received: 100,
+                bytes_sent: 1000,
+                bytes_received: 500,
+            });
+        }
+
+        let mut connection_details = Vec::new();
+        for i in 0..5 {
+            connection_details.push(ConnectionStat {
+                src_ip: i as u32,
+                dst_ip: 1,
+                src_port: 1000 + i as u16,
+                dst_port: 80,
+                protocol: 6, // TCP
+                state: 1,   // ESTABLISHED
+                packets: (5 - i) as u64 * 100,
+                bytes: 1000,
+                start_time: 0,
+                last_activity: 0,
+            });
+        }
+
+        // Применяем оптимизацию
+        let (
+            syscall_details,
+            network_details,
+            connection_details,
+            gpu_details,
+            cpu_temperature_details,
+            process_details,
+            filesystem_details,
+        ) = collector.optimize_detailed_stats(
+            Some(syscall_details),
+            Some(network_details),
+            Some(connection_details),
+            None,
+            None,
+            None,
+            None,
+        );
+
+        // Проверяем, что количество записей ограничено
+        if let Some(details) = syscall_details {
+            assert_eq!(details.len(), 2, "Количество системных вызовов должно быть ограничено до 2");
+        }
+
+        if let Some(details) = network_details {
+            assert_eq!(details.len(), 2, "Количество сетевых статистик должно быть ограничено до 2");
+        }
+
+        if let Some(details) = connection_details {
+            assert_eq!(details.len(), 2, "Количество соединений должно быть ограничено до 2");
+        }
+
+        // Проверяем, что None значения остаются None
+        assert!(gpu_details.is_none());
+        assert!(cpu_temperature_details.is_none());
+        assert!(process_details.is_none());
+        assert!(filesystem_details.is_none());
+    }
 }
