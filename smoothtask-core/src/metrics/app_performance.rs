@@ -1061,21 +1061,37 @@ mod tests {
         
         // Первая точка данных
         let mut metrics1 = HashMap::new();
-        let mut app_metrics1 = AppPerformanceMetrics::default();
-        app_metrics1.app_group_id = "test_group".to_string();
-        app_metrics1.total_cpu_usage = 30.0;
-        app_metrics1.total_memory_mb = 500;
-        app_metrics1.total_io_bytes_per_sec = 5_000_000;
+        let app_metrics1 = AppPerformanceMetrics {
+            app_group_id: "test_group".to_string(),
+            app_group_name: String::new(),
+            process_count: 0,
+            total_cpu_usage: 30.0,
+            average_cpu_usage: 0.0,
+            peak_cpu_usage: 0.0,
+            total_memory_mb: 500,
+            average_memory_mb: 0.0,
+            total_io_bytes_per_sec: 5_000_000,
+            total_context_switches: 0,
+            ..Default::default()
+        };
         metrics1.insert("test_group".to_string(), app_metrics1);
         history.push(metrics1);
         
         // Вторая точка данных (увеличение метрик)
         let mut metrics2 = HashMap::new();
-        let mut app_metrics2 = AppPerformanceMetrics::default();
-        app_metrics2.app_group_id = "test_group".to_string();
-        app_metrics2.total_cpu_usage = 40.0;
-        app_metrics2.total_memory_mb = 600;
-        app_metrics2.total_io_bytes_per_sec = 6_000_000;
+        let app_metrics2 = AppPerformanceMetrics {
+            app_group_id: "test_group".to_string(),
+            app_group_name: String::new(),
+            process_count: 0,
+            total_cpu_usage: 40.0,
+            average_cpu_usage: 0.0,
+            peak_cpu_usage: 0.0,
+            total_memory_mb: 600,
+            average_memory_mb: 0.0,
+            total_io_bytes_per_sec: 6_000_000,
+            total_context_switches: 0,
+            ..Default::default()
+        };
         metrics2.insert("test_group".to_string(), app_metrics2);
         history.push(metrics2);
         
