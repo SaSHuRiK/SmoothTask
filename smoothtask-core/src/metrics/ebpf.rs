@@ -256,6 +256,23 @@ impl Default for EbpfFilterConfig {
     }
 }
 
+/// Структура для хранения статуса eBPF системы
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EbpfStatus {
+    /// Флаг инициализации eBPF
+    pub initialized: bool,
+    /// Последняя ошибка (если есть)
+    pub last_error: Option<String>,
+    /// Включено ли кэширование
+    pub cache_enabled: bool,
+    /// Есть ли кэшированные метрики
+    pub has_cached_metrics: bool,
+    /// Включено ли агрессивное кэширование
+    pub aggressive_caching_enabled: bool,
+    /// Включен ли высокопроизводительный режим
+    pub high_performance_mode: bool,
+}
+
 /// Статистика по температуре CPU
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct CpuTemperatureStat {
@@ -653,15 +670,15 @@ fn load_ebpf_program_from_file(program_path: &str) -> Result<Program> {
 
     let path = Path::new(program_path);
     if !path.exists() {
-        tracing::warn!("eBPF программа не найдена: {:?}", program_path);
-        anyhow::bail!("eBPF программа не найдена: {}", program_path);
+        tracing::error!("eBPF программа не найдена: {:?}. Проверьте путь к файлу и наличие программы", program_path);
+        anyhow::bail!("eBPF программа не найдена: {}. Убедитесь, что файл существует и путь корректен. Требуемые программы должны быть в директории src/ebpf_programs/", program_path);
     }
 
     tracing::info!("Загрузка eBPF программы из {:?}", program_path);
 
     // Реальная загрузка eBPF программы с использованием libbpf-rs
     let program = Program::from_file(path).context(format!(
-        "Не удалось загрузить eBPF программу из {:?}",
+        "Не удалось загрузить eBPF программу из {:?}. Это может быть вызвано: 1) Несовместимостью версии ядра (требуется Linux 5.4+), 2) Отсутствием необходимых прав (CAP_BPF или root), 3) Повреждением файла программы",
         program_path
     ))?;
 
@@ -1555,7 +1572,7 @@ impl EbpfMetricsCollector {
                         tracing::info!("CPU программа успешно загружена");
                     }
                     Err(e) => {
-                        let error_msg = format!("Ошибка загрузки CPU программы: {}. Это может быть вызвано отсутствием файла программы, несовместимостью версии ядра или недостаточными правами", e);
+                        let error_msg = format!("Ошибка загрузки CPU программы: {}. Это может быть вызвано: 1) Отсутствием файла src/ebpf_programs/cpu_metrics.c, 2) Несовместимостью версии ядра (требуется Linux 5.4+), 3) Отсутствием прав CAP_BPF или root, 4) Повреждением файла программы. Попробуйте пересобрать программы с помощью make build-ebpf", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("CPU: {}", e));
                         error_count += 1;
@@ -1571,7 +1588,7 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа памяти успешно загружена");
                     }
                     Err(e) => {
-                        let error_msg = format!("Ошибка загрузки программы памяти: {}. Проверьте доступность памяти и права доступа", e);
+                        let error_msg = format!("Ошибка загрузки программы памяти: {}. Это может быть вызвано: 1) Отсутствием файла src/ebpf_programs/memory_metrics.c, 2) Недостаточными правами для доступа к памяти (CAP_SYS_ADMIN), 3) Проблемами с доступом к /proc/meminfo, 4) Несовместимостью версии ядра. Проверьте права доступа и попробуйте запустить с sudo", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("Memory: {}", e));
                         error_count += 1;
@@ -1587,7 +1604,7 @@ impl EbpfMetricsCollector {
                         tracing::info!("Программа мониторинга системных вызовов успешно загружена");
                     }
                     Err(e) => {
-                        let error_msg = format!("Ошибка загрузки программы мониторинга системных вызовов: {}. Требуются права CAP_SYS_ADMIN или root", e);
+                        let error_msg = format!("Ошибка загрузки программы мониторинга системных вызовов: {}. Это может быть вызвано: 1) Отсутствием файла src/ebpf_programs/syscall_monitor.c, 2) Недостаточными правами (требуется CAP_SYS_ADMIN или root), 3) Несовместимостью версии ядра, 4) Конфликтом с другими eBPF программами. Попробуйте запустить с sudo или отключить другие eBPF инструменты", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("Syscall: {}", e));
                         error_count += 1;
@@ -4540,7 +4557,7 @@ impl EbpfMetricsCollector {
 
         #[cfg(feature = "ebpf")]
         {
-            // Сбор реальных метрик из eBPF программ с обработкой ошибок
+            // Сбор реальных метрик из eBPF программ с улучшенной обработкой ошибок
             match self.collect_real_ebpf_metrics() {
                 Ok(metrics) => {
                     // Кэшируем метрики если включено кэширование
@@ -4548,20 +4565,37 @@ impl EbpfMetricsCollector {
                         self.metrics_cache = Some(metrics.clone());
                         self.batch_counter = 1;
                     }
+                    return Ok(metrics);
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка сбора eBPF метрик: {}. Возвращаем кэшированные данные или значения по умолчанию", e);
+                    tracing::error!("Ошибка сбора eBPF метрик: {}. Активируем стратегию graceful degradation", e);
 
-                    // Пробуем вернуть кэшированные метрики
+                    // Улучшенная стратегия graceful degradation:
+                    // 1. Пробуем вернуть кэшированные метрики
+                    // 2. Если кэша нет, пытаемся собрать частичные метрики
+                    // 3. Если ничего не получилось, возвращаем значения по умолчанию с предупреждением
+
                     if let Some(cached_metrics) = self.metrics_cache.clone() {
-                        tracing::info!("Возвращаем кэшированные метрики при ошибке сбора eBPF");
+                        tracing::info!("Возвращаем кэшированные метрики при ошибке сбора eBPF. Кэш все еще актуален");
                         return Ok(cached_metrics);
                     }
 
-                    // Если кэша нет, возвращаем значения по умолчанию
+                    // Пробуем собрать частичные метрики
+                    tracing::info!("Попытка сбора частичных метрик после основной ошибки");
+                    if let Ok(partial_metrics) = self.collect_partial_metrics() {
+                        tracing::warn!("Возвращаем частичные метрики. Некоторые данные могут быть устаревшими или отсутствовать");
+                        return Ok(partial_metrics);
+                    }
+
+                    // Если ничего не получилось, возвращаем значения по умолчанию
                     tracing::warn!(
-                        "Нет кэшированных метрик, возвращаем значения по умолчанию при ошибке eBPF"
+                        "Нет кэшированных метрик и частичный сбор не удался. Возвращаем значения по умолчанию. eBPF функциональность временно недоступна: {}",
+                        e
                     );
+                    
+                    // Логируем ошибку в систему мониторинга
+                    self.log_ebpf_error(&e);
+                    
                     return Ok(EbpfMetrics::default());
                 }
             }
@@ -4574,6 +4608,126 @@ impl EbpfMetricsCollector {
                 "eBPF поддержка отключена на уровне компиляции, возвращаем значения по умолчанию"
             );
             Ok(EbpfMetrics::default())
+        }
+    }
+
+    /// Собрать частичные метрики при ошибках основного сбора
+    /// Эта функция пытается собрать хотя бы часть данных, даже если основные eBPF программы не работают
+    #[cfg(feature = "ebpf")]
+    fn collect_partial_metrics(&self) -> Result<EbpfMetrics> {
+        let mut metrics = EbpfMetrics::default();
+        let mut success_count = 0;
+        let mut error_count = 0;
+
+        // Пробуем собрать CPU метрики
+        if let Ok(cpu_usage) = self.collect_cpu_metrics_fallback() {
+            metrics.cpu_usage = cpu_usage;
+            success_count += 1;
+        } else {
+            error_count += 1;
+        }
+
+        // Пробуем собрать метрики памяти
+        if let Ok(memory_usage) = self.collect_memory_metrics_fallback() {
+            metrics.memory_usage = memory_usage;
+            success_count += 1;
+        } else {
+            error_count += 1;
+        }
+
+        // Пробуем собрать базовую информацию о процессах
+        if let Ok(active_processes) = self.collect_process_count_fallback() {
+            metrics.active_processes = active_processes;
+            success_count += 1;
+        } else {
+            error_count += 1;
+        }
+
+        tracing::info!(
+            "Частичный сбор метрик завершен: {} успехов, {} ошибок",
+            success_count,
+            error_count
+        );
+
+        if success_count > 0 {
+            Ok(metrics)
+        } else {
+            tracing::warn!("Частичный сбор метрик не дал результатов");
+            Err(anyhow::anyhow!("Частичный сбор метрик не удался"))
+        }
+    }
+
+    /// Собрать CPU метрики с использованием резервного метода (без eBPF)
+    #[cfg(feature = "ebpf")]
+    fn collect_cpu_metrics_fallback(&self) -> Result<f64> {
+        // Попробуем прочитать CPU метрики из /proc/stat
+        if let Ok(cpu_stats) = crate::metrics::system::read_cpu_stats() {
+            if let Some(usage) = cpu_stats.overall_usage {
+                tracing::debug!("CPU метрики получены из резервного источника: {}%", usage);
+                return Ok(usage);
+            }
+        }
+        
+        tracing::warn!("Не удалось получить CPU метрики из резервного источника");
+        Err(anyhow::anyhow!("Резервный сбор CPU метрик не удался"))
+    }
+
+    /// Собрать метрики памяти с использованием резервного метода (без eBPF)
+    #[cfg(feature = "ebpf")]
+    fn collect_memory_metrics_fallback(&self) -> Result<u64> {
+        // Попробуем прочитать метрики памяти из /proc/meminfo
+        if let Ok(mem_info) = crate::metrics::system::read_meminfo() {
+            let total_memory = mem_info.total;
+            let free_memory = mem_info.free;
+            let used_memory = total_memory - free_memory;
+            
+            tracing::debug!("Метрики памяти получены из резервного источника: {} bytes", used_memory);
+            return Ok(used_memory);
+        }
+        
+        tracing::warn!("Не удалось получить метрики памяти из резервного источника");
+        Err(anyhow::anyhow!("Резервный сбор метрик памяти не удался"))
+    }
+
+    /// Собрать количество активных процессов с использованием резервного метода
+    #[cfg(feature = "ebpf")]
+    fn collect_process_count_fallback(&self) -> Result<u64> {
+        // Попробуем получить количество процессов из /proc
+        if let Ok(process_count) = crate::metrics::process::count_processes() {
+            tracing::debug!("Количество процессов получено из резервного источника: {}", process_count);
+            return Ok(process_count as u64);
+        }
+        
+        tracing::warn!("Не удалось получить количество процессов из резервного источника");
+        Err(anyhow::anyhow!("Резервный сбор количества процессов не удался"))
+    }
+
+    /// Логировать ошибку eBPF в систему мониторинга
+    fn log_ebpf_error(&self, error: &anyhow::Error) {
+        tracing::error!("eBPF ошибка зафиксирована в системе мониторинга: {}", error);
+        
+        // Если есть менеджер уведомлений, отправляем уведомление
+        if self.config.enable_notifications {
+            if let Some(notification_manager) = &self.notification_manager {
+                let notification = crate::notifications::Notification::new(
+                    crate::notifications::NotificationType::Critical,
+                    "eBPF Error Detected",
+                    format!("eBPF monitoring encountered an error: {}", error),
+                ).with_details(format!(
+                    "eBPF functionality is degraded. Some metrics may be unavailable or stale. Error: {}",
+                    error
+                ));
+                
+                // Клонируем менеджер уведомлений для асинхронной задачи
+                let notification_manager_clone = notification_manager.clone();
+                
+                // Асинхронная отправка уведомления
+                tokio::spawn(async move {
+                    if let Err(e) = notification_manager_clone.send(&notification).await {
+                        tracing::error!("Не удалось отправить уведомление об ошибке eBPF: {}", e);
+                    }
+                });
+            }
         }
     }
 
@@ -4665,6 +4819,18 @@ impl EbpfMetricsCollector {
     /// Получить последнюю ошибку инициализации
     pub fn get_last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
+    }
+
+    /// Получить детальную информацию о состоянии eBPF
+    pub fn get_ebpf_status(&self) -> EbpfStatus {
+        EbpfStatus {
+            initialized: self.initialized,
+            last_error: self.last_error.clone(),
+            cache_enabled: self.config.enable_caching,
+            has_cached_metrics: self.metrics_cache.is_some(),
+            aggressive_caching_enabled: self.config.enable_aggressive_caching,
+            high_performance_mode: self.config.enable_high_performance_mode,
+        }
     }
 
     /// Проверить, что конфигурация корректна
@@ -7267,6 +7433,44 @@ mod tests {
             "Статистика инициализации: {} успешных, {} ошибок",
             success_count, error_count
         );
+    }
+
+    #[test]
+    fn test_ebpf_error_handling_and_graceful_degradation() {
+        let config = EbpfConfig::default();
+        let mut collector = EbpfMetricsCollector::new(config);
+        
+        // Инициализация должна пройти успешно даже если eBPF не поддерживается
+        assert!(collector.initialize().is_ok());
+        
+        // Сбор метрик должен вернуть значения по умолчанию если eBPF не доступен
+        let metrics = collector.collect_metrics().unwrap();
+        assert_eq!(metrics.cpu_usage, 0.0);
+        assert_eq!(metrics.memory_usage, 0);
+        
+        // Проверяем, что статус корректно отображает состояние
+        let status = collector.get_ebpf_status();
+        assert!(status.cache_enabled);
+        assert!(!status.has_cached_metrics); // Кэш пуст после создания
+    }
+
+    #[test]
+    fn test_ebpf_status_structure() {
+        let status = EbpfStatus {
+            initialized: true,
+            last_error: Some("Test error".to_string()),
+            cache_enabled: true,
+            has_cached_metrics: false,
+            aggressive_caching_enabled: false,
+            high_performance_mode: true,
+        };
+        
+        assert!(status.initialized);
+        assert_eq!(status.last_error, Some("Test error".to_string()));
+        assert!(status.cache_enabled);
+        assert!(!status.has_cached_metrics);
+        assert!(!status.aggressive_caching_enabled);
+        assert!(status.high_performance_mode);
     }
 }
 
