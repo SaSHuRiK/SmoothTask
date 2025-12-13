@@ -405,7 +405,7 @@ pub struct ProcessGpuStat {
 }
 
 /// Статистика по использованию сети процессами
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct ProcessNetworkStat {
     /// Идентификатор процесса
     pub pid: u32,
@@ -427,24 +427,10 @@ pub struct ProcessNetworkStat {
     pub total_network_operations: u64,
 }
 
-impl Default for ProcessNetworkStat {
-    fn default() -> Self {
-        Self {
-            pid: 0,
-            tgid: 0,
-            packets_sent: 0,
-            packets_received: 0,
-            bytes_sent: 0,
-            bytes_received: 0,
-            last_update_ns: 0,
-            name: String::new(),
-            total_network_operations: 0,
-        }
-    }
-}
+
 
 /// Статистика по использованию диска процессами
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct ProcessDiskStat {
     /// Идентификатор процесса
     pub pid: u32,
@@ -466,21 +452,7 @@ pub struct ProcessDiskStat {
     pub total_io_operations: u64,
 }
 
-impl Default for ProcessDiskStat {
-    fn default() -> Self {
-        Self {
-            pid: 0,
-            tgid: 0,
-            bytes_read: 0,
-            bytes_written: 0,
-            read_operations: 0,
-            write_operations: 0,
-            last_update_ns: 0,
-            name: String::new(),
-            total_io_operations: 0,
-        }
-    }
-}
+
 
 /// Структура для хранения eBPF метрик
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]

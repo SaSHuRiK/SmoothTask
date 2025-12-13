@@ -272,6 +272,7 @@ impl ApiPerformanceMetrics {
 /// Каждый метод `with_*` принимает `Option<T>` и возвращает `Self`, что позволяет
 /// использовать цепочку вызовов (builder pattern).
 #[allow(dead_code)]
+#[derive(Default)]
 pub struct ApiStateBuilder {
     daemon_stats: Option<Arc<RwLock<crate::DaemonStats>>>,
     system_metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
@@ -290,26 +291,7 @@ pub struct ApiStateBuilder {
     metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
 }
 
-impl Default for ApiStateBuilder {
-    fn default() -> Self {
-        Self {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: None,
-            cache: None,
-            log_storage: None,
-            performance_metrics: None,
-            metrics_collector: None,
-            metrics: None,
-        }
-    }
-}
+
 
 impl ApiStateBuilder {
     /// Создаёт новый пустой ApiStateBuilder.

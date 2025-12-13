@@ -101,9 +101,113 @@
     - smoothtask-core/tests/api_integration_test.rs: Тесты для API endpoint температуры CPU
   - Результаты: Полная реализация мониторинга температуры процессора через eBPF с поддержкой детализированной статистики по каждому CPU ядру, API endpoint для мониторинга и комплексными тестами
 
+- [x] ST-647: Исправить предупреждения clippy: derivable_impls для ApiStateBuilder
+  - Тип: Rust / core / api
+  - Примечания: Заменить ручную реализацию Default на derive макрос
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Заменить impl Default для ApiStateBuilder на #[derive(Default)]
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Добавлен #[derive(Default)] и удалена ручная реализация
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-648: Исправить предупреждения clippy: derivable_impls для ProcessNetworkStat
+  - Тип: Rust / core / metrics
+  - Примечания: Заменить ручную реализацию Default на derive макрос
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Заменить impl Default для ProcessNetworkStat на #[derive(Default)]
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлен #[derive(Default)] и удалена ручная реализация
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-649: Исправить предупреждения clippy: derivable_impls для ProcessDiskStat
+  - Тип: Rust / core / metrics
+  - Примечания: Заменить ручную реализацию Default на derive макрос
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Заменить impl Default для ProcessDiskStat на #[derive(Default)]
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлен #[derive(Default)] и удалена ручная реализация
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-650: Исправить предупреждения clippy: useless_format в gpu.rs
+  - Тип: Rust / core / metrics
+  - Примечания: Заменить format! на .to_string() для статических строк
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~10 минут
+  - Критерии готовности:
+    - ✅ Заменить 2 случая format! на .to_string() в gpu.rs
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/gpu.rs: Заменены format! на .to_string() для статических строк
+  - Результаты: Успешная компиляция без предупреждений clippy
+
 ## 2. Бэклог
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-650: Исправить предупреждения clippy: useless_format в gpu.rs
+  - Тип: Rust / core / metrics
+  - Примечания: Заменить format! на .to_string() для статических строк
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~10 минут
+  - Критерии готовности:
+    - ✅ Заменить 2 случая format! на .to_string() в gpu.rs
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/gpu.rs: Заменены format! на .to_string() для статических строк
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-649: Исправить предупреждения clippy: derivable_impls для ProcessDiskStat
+  - Тип: Rust / core / metrics
+  - Примечания: Заменить ручную реализацию Default на derive макрос
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Заменить impl Default для ProcessDiskStat на #[derive(Default)]
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлен #[derive(Default)] и удалена ручная реализация
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-648: Исправить предупреждения clippy: derivable_impls для ProcessNetworkStat
+  - Тип: Rust / core / metrics
+  - Примечания: Заменить ручную реализацию Default на derive макрос
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Заменить impl Default для ProcessNetworkStat на #[derive(Default)]
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Добавлен #[derive(Default)] и удалена ручная реализация
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-647: Исправить предупреждения clippy: derivable_impls для ApiStateBuilder
+  - Тип: Rust / core / api
+  - Примечания: Заменить ручную реализацию Default на derive макрос
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Заменить impl Default для ApiStateBuilder на #[derive(Default)]
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Добавлен #[derive(Default)] и удалена ручная реализация
+  - Результаты: Успешная компиляция без предупреждений clippy
 
 - [x] ST-646: Исправить предупреждения компилятора в ebpf_integration_test.rs (unused mut и useless comparisons)
   - Тип: Rust / core / tests
