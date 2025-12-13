@@ -141,13 +141,15 @@ impl LogRotator {
 
         let metadata = fs::metadata(log_path).with_context(|| {
             format!(
-                "Не удалось получить метаданные файла лога {}: проверьте, что файл существует и доступен для чтения",
-                log_path.display()
+                "Не удалось получить метаданные файла лога {}: проверьте, что файл существует и доступен для чтения. Ошибка: {}",
+                log_path.display(),
+                std::io::Error::last_os_error()
             )
         })?;
 
         // Проверяем, что это файл, а не директория
         if !metadata.is_file() {
+            tracing::warn!("Путь {} не является файлом, пропускаем ротацию", log_path.display());
             return Ok(()); // Не файл, пропускаем ротацию
         }
 
@@ -167,9 +169,10 @@ impl LogRotator {
         // Перемещаем текущий файл в ротированный
         fs::rename(log_path, &rotated_path).with_context(|| {
             format!(
-                "Не удалось переместить файл лога {} в {}: проверьте права доступа",
+                "Не удалось переместить файл лога {} в {}: проверьте права доступа. Ошибка: {}",
                 log_path.display(),
-                rotated_path.display()
+                rotated_path.display(),
+                std::io::Error::last_os_error()
             )
         })?;
 
@@ -229,15 +232,17 @@ impl LogRotator {
 
         let input_file = fs::File::open(file_path).with_context(|| {
             format!(
-                "Не удалось открыть файл {} для сжатия: проверьте права доступа",
-                file_path.display()
+                "Не удалось открыть файл {} для сжатия: проверьте права доступа. Ошибка: {}",
+                file_path.display(),
+                std::io::Error::last_os_error()
             )
         })?;
 
         let output_file = fs::File::create(&compressed_path).with_context(|| {
             format!(
-                "Не удалось создать сжатый файл {}: проверьте права доступа",
-                compressed_path.display()
+                "Не удалось создать сжатый файл {}: проверьте права доступа. Ошибка: {}",
+                compressed_path.display(),
+                std::io::Error::last_os_error()
             )
         })?;
 
@@ -246,14 +251,15 @@ impl LogRotator {
 
         std::io::copy(&mut reader, &mut encoder).with_context(|| {
             format!(
-                "Не удалось сжать файл {}: ошибка сжатия",
-                file_path.display()
+                "Не удалось сжать файл {}: ошибка сжатия. Размер исходного файла: {} байт",
+                file_path.display(),
+                reader.buffer().len()
             )
         })?;
 
         encoder.finish().with_context(|| {
             format!(
-                "Не удалось завершить сжатие файла {}: ошибка завершения",
+                "Не удалось завершить сжатие файла {}: ошибка завершения. Попробуйте увеличить доступное дисковое пространство",
                 file_path.display()
             )
         })?;
@@ -261,8 +267,9 @@ impl LogRotator {
         // Удаляем оригинальный файл после успешного сжатия
         fs::remove_file(file_path).with_context(|| {
             format!(
-                "Не удалось удалить оригинальный файл {} после сжатия: проверьте права доступа",
-                file_path.display()
+                "Не удалось удалить оригинальный файл {} после сжатия: проверьте права доступа. Ошибка: {}",
+                file_path.display(),
+                std::io::Error::last_os_error()
             )
         })?;
 
@@ -321,8 +328,9 @@ impl LogRotator {
             for (file_path, _) in rotated_files.into_iter().take(files_to_delete) {
                 fs::remove_file(&file_path).with_context(|| {
                     format!(
-                        "Не удалось удалить старый файл лога {}: проверьте права доступа",
-                        file_path.display()
+                        "Не удалось удалить старый файл лога {}: проверьте права доступа. Ошибка: {}",
+                        file_path.display(),
+                        std::io::Error::last_os_error()
                     )
                 })?;
             }
@@ -668,5 +676,48 @@ mod tests {
         assert_eq!(max_files, 10);
         assert!(compression);
         assert_eq!(interval, 3600);
+    }
+
+    #[test]
+    fn test_rotation_error_handling() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_path = temp_dir.path().join("test.log");
+
+        // Создаём тестовый файл лога
+        let mut file = fs::File::create(&log_path).expect("create log file");
+        writeln!(file, "Test log entry").expect("write to log");
+        drop(file);
+
+        let mut rotator = LogRotator::new(100, 3, false, 0);
+
+        // Тестируем ротацию с несуществующим файлом (должно завершиться успешно)
+        let non_existent_path = temp_dir.path().join("non_existent.log");
+        let result = rotator.rotate_log(&non_existent_path);
+        assert!(result.is_ok(), "Rotation of non-existent file should succeed");
+
+        // Тестируем ротацию с директорией (должно завершиться успешно, без ошибок)
+        let result = rotator.rotate_log(temp_dir.path());
+        assert!(result.is_ok(), "Rotation of directory should succeed without errors");
+    }
+
+    #[test]
+    fn test_rotation_file_permissions() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_path = temp_dir.path().join("test.log");
+
+        // Создаём тестовый файл лога с достаточным размером для ротации
+        let mut file = fs::File::create(&log_path).expect("create log file");
+        for i in 0..200 {
+            writeln!(file, "Test log entry {}", i).expect("write to log");
+        }
+        drop(file);
+
+        let mut rotator = LogRotator::new(100, 3, false, 0);
+
+        // Выполняем ротацию
+        let result = rotator.rotate_log(&log_path);
+        
+        // Ротация должна завершиться успешно
+        assert!(result.is_ok(), "Rotation should succeed: {}", result.unwrap_err());
     }
 }

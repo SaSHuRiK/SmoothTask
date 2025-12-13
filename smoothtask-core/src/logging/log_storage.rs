@@ -413,9 +413,17 @@ impl std::io::Write for TracingLogWriter {
                         tokio::spawn(async move {
                             storage.add_entry(entry).await;
                         });
+                    } else {
+                        eprintln!("Не удалось разобрать сообщение tracing: недостаточно частей в метаданных (ожидалось >= 3, получено {})", parts.len());
                     }
+                } else {
+                    eprintln!("Не удалось разобрать сообщение tracing: не найдена открывающая скобка '['");
                 }
+            } else {
+                eprintln!("Не удалось разобрать сообщение tracing: не найден разделитель '] '");
             }
+        } else {
+            eprintln!("Не удалось декодировать сообщение tracing как UTF-8");
         }
         Ok(buf.len())
     }
@@ -692,5 +700,44 @@ mod tests {
         let metrics = storage.get_monitoring_metrics().await;
         assert_eq!(metrics["error_count"], 1);
         assert_eq!(metrics["warning_count"], 1);
+    }
+
+    #[test]
+    fn test_log_storage_error_context() {
+        let mut storage = LogStorage::new(100);
+        
+        // Test that error tracking works correctly with context
+        storage.add_entry(LogEntry::new(LogLevel::Error, "module1", "Critical error occurred"));
+        storage.add_entry(LogEntry::new(LogLevel::Error, "module2", "Another error"));
+        
+        assert_eq!(storage.error_count(), 2);
+        assert!(storage.last_error_time().is_some());
+        
+        // Test health status with multiple errors
+        assert_eq!(storage.get_health_status(), "critical");
+        
+        // Test monitoring metrics include error context
+        let metrics = storage.get_monitoring_metrics();
+        assert_eq!(metrics["error_count"], 2);
+        assert!(metrics["last_error_time"].is_string());
+    }
+
+    #[test]
+    fn test_log_storage_warning_threshold() {
+        let mut storage = LogStorage::new(100);
+        
+        // Add exactly 10 warnings (threshold is > 10 for warning status)
+        for i in 0..10 {
+            storage.add_entry(LogEntry::new(LogLevel::Warn, "test", format!("Warning {}", i)));
+        }
+        
+        // Should still be healthy with exactly 10 warnings
+        assert_eq!(storage.get_health_status(), "healthy");
+        
+        // Add one more warning to exceed threshold
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning 11"));
+        
+        // Should now be warning status
+        assert_eq!(storage.get_health_status(), "warning");
     }
 }

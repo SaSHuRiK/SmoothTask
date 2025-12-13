@@ -382,7 +382,7 @@ impl SnapshotLogger {
     /// Создать новый логгер и инициализировать схему БД.
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self> {
         let conn = Connection::open(db_path.as_ref())
-            .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
+            .with_context(|| format!("Не удалось открыть БД: {}. Ошибка: {}", db_path.as_ref().display(), std::io::Error::last_os_error()))?;
 
         let logger = SnapshotLogger {
             conn,
@@ -424,7 +424,7 @@ impl SnapshotLogger {
         logging_config: &crate::config::config_struct::LoggingConfig,
     ) -> Result<Self> {
         let conn = Connection::open(db_path.as_ref())
-            .with_context(|| format!("Не удалось открыть БД: {}", db_path.as_ref().display()))?;
+            .with_context(|| format!("Не удалось открыть БД: {}. Ошибка: {}", db_path.as_ref().display(), std::io::Error::last_os_error()))?;
 
         let log_rotator = if logging_config.log_max_size_bytes > 0
             || logging_config.log_rotation_interval_sec > 0
@@ -686,7 +686,7 @@ impl SnapshotLogger {
     fn insert_processes(tx: &Transaction, snapshot: &Snapshot) -> Result<()> {
         for proc in &snapshot.processes {
             let tags_json = serde_json::to_string(&proc.tags)
-                .context("Не удалось сериализовать tags процесса")?;
+                .context(format!("Не удалось сериализовать tags процесса (pid={}): {}", proc.pid, proc.tags.len()))?;
 
             tx.execute(
                 r"
@@ -756,9 +756,9 @@ impl SnapshotLogger {
     fn insert_app_groups(tx: &Transaction, snapshot: &Snapshot) -> Result<()> {
         for group in &snapshot.app_groups {
             let process_ids_json = serde_json::to_string(&group.process_ids)
-                .context("Не удалось сериализовать process_ids группы")?;
+                .context(format!("Не удалось сериализовать process_ids группы ({}): {}", group.app_group_id, group.process_ids.len()))?;
             let tags_json = serde_json::to_string(&group.tags)
-                .context("Не удалось сериализовать tags группы")?;
+                .context(format!("Не удалось сериализовать tags группы ({}): {}", group.app_group_id, group.tags.len()))?;
 
             tx.execute(
                 r"
