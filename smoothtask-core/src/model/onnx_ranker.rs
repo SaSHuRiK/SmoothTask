@@ -338,7 +338,9 @@ impl ONNXRanker {
         };
 
         // Выполняем инференс с использованием Mutex
-        let mut session_guard = self.session.lock().unwrap();
+        let mut session_guard = self.session.lock().map_err(|e| {
+            anyhow::anyhow!("Mutex poisoned: {}", e)
+        })?;
         let outputs = session_guard.run(inputs)?;
 
         // Извлекаем выходной тензор
