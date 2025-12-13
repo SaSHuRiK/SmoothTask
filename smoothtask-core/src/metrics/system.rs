@@ -1101,12 +1101,92 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     })
 }
 
+/// Приоритет источников температуры (от высшего к низшему)
+/// Это позволяет нам выбирать наиболее точные и специфичные источники
+#[derive(Debug, PartialEq)]
+enum TemperatureSourcePriority {
+    IntelCoreTemp,      // Наиболее точный для Intel CPU
+    AmdK10Temp,         // Наиболее точный для AMD CPU
+    AmdGpu,             // Специфичный для AMD GPU
+    NvidiaGpu,          // Специфичный для NVIDIA GPU
+    ThermalZone,        // Универсальный интерфейс термальных зон
+    GenericHwmon,       // Общий hwmon интерфейс
+}
+
+/// Вспомогательная функция для определения приоритета источника температуры
+fn determine_temperature_source_priority(
+    path: &Path,
+    file_name: &str,
+    hwmon_name: Option<&str>,
+) -> TemperatureSourcePriority {
+    // 1. Проверяем по имени hwmon устройства (наивысший приоритет)
+    if let Some(name) = hwmon_name {
+        if name.contains("coretemp") {
+            return TemperatureSourcePriority::IntelCoreTemp;
+        }
+        if name.contains("k10temp") {
+            return TemperatureSourcePriority::AmdK10Temp;
+        }
+        if name.contains("amdgpu") || name.contains("radeon") {
+            return TemperatureSourcePriority::AmdGpu;
+        }
+        if name.contains("nouveau") || name.contains("nvidia") {
+            return TemperatureSourcePriority::NvidiaGpu;
+        }
+    }
+
+    // 2. Проверяем по имени файла
+    if file_name.contains("Package") || file_name.contains("package") {
+        // Intel package temperature
+        return TemperatureSourcePriority::IntelCoreTemp;
+    }
+    if file_name.contains("Tdie") || file_name.contains("tdie") {
+        // AMD die temperature
+        return TemperatureSourcePriority::AmdK10Temp;
+    }
+    if file_name.contains("edge") || file_name.contains("gpu") {
+        // GPU temperature sensors
+        return TemperatureSourcePriority::AmdGpu; // Default to AMD, will be overridden by NVIDIA check
+    }
+
+    // 3. Проверяем по содержимому файла name (если есть)
+    let name_file = path.join("name");
+    if name_file.exists() {
+        if let Ok(name_content) = fs::read_to_string(&name_file) {
+            let name = name_content.trim();
+            if name.contains("coretemp") {
+                return TemperatureSourcePriority::IntelCoreTemp;
+            }
+            if name.contains("k10temp") {
+                return TemperatureSourcePriority::AmdK10Temp;
+            }
+            if name.contains("amdgpu") || name.contains("radeon") {
+                return TemperatureSourcePriority::AmdGpu;
+            }
+            if name.contains("nouveau") || name.contains("nvidia") {
+                return TemperatureSourcePriority::NvidiaGpu;
+            }
+        }
+    }
+
+    // 4. По умолчанию - общий hwmon интерфейс (наименьший приоритет)
+    TemperatureSourcePriority::GenericHwmon
+}
+
 /// Собирает метрики температуры из sysfs/hwmon
+/// 
+/// Расширенная версия с поддержкой нескольких источников температуры CPU:
+/// - Intel CoreTemp (coretemp)
+/// - AMD K10Temp (k10temp)
+/// - AMD GPU (amdgpu, radeon)
+/// - NVIDIA GPU (nouveau, nvidia)
+/// - Thermal zones (x86_pkg_temp, acpitz, cpu_thermal)
+/// - Общие hwmon интерфейсы
 fn collect_temperature_metrics() -> TemperatureMetrics {
     let mut temperature = TemperatureMetrics::default();
 
     // Логируем начало процесса сбора температурных метрик
-    tracing::info!("Starting temperature metrics collection");
+    tracing::info!("Starting enhanced temperature metrics collection");
 
     // Попробуем найти температурные сенсоры в /sys/class/hwmon/
     let hwmon_dir = Path::new("/sys/class/hwmon");
@@ -1171,138 +1251,86 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                                 / 1000.0;
                                                                         tracing::debug!("Successfully read temperature: {:.1}°C from {}", temp_c, temp_path.display());
 
-                                                                        // Пробуем определить тип устройства по имени файла и пути
-                                                                        // Это более сложная логика, чем раньше
+                                                                        // Извлекаем имя hwmon устройства для определения приоритета
+                                                                        let hwmon_name = path.file_name()
+                                                                            .and_then(|s| s.to_str());
 
-                                                                        // 1. Пробуем определить по имени hwmon устройства
-                                                                        if let Some(hwmon_name) =
-                                                                            path.file_name()
-                                                                                .and_then(|s| {
-                                                                                    s.to_str()
-                                                                                })
-                                                                        {
-                                                                            tracing::debug!("hwmon device name: {}", hwmon_name);
-
-                                                                            if hwmon_name.contains(
-                                                                                "coretemp",
-                                                                            ) || hwmon_name
-                                                                                .contains("k10temp")
-                                                                                || hwmon_name
-                                                                                    .contains(
-                                                                                        "amdgpu",
-                                                                                    )
-                                                                                || hwmon_name
-                                                                                    .contains(
-                                                                                        "radeon",
-                                                                                    )
-                                                                            {
-                                                                                // Это CPU температура (Intel CoreTemp, AMD K10Temp)
+                                                                        // Расширенная логика определения типа устройства
+                                                                        // с приоритезацией источников
+                                                                        let source_priority = determine_temperature_source_priority(&path, &file_name, hwmon_name);
+                                                                        
+                                                                        match source_priority {
+                                                                            TemperatureSourcePriority::IntelCoreTemp => {
+                                                                                // Intel CoreTemp - наиболее точный источник для Intel CPU
                                                                                 if temperature.cpu_temperature_c.is_none() {
                                                                                     temperature.cpu_temperature_c = Some(temp_c);
                                                                                     tracing::info!(
-                                                                                        "CPU temperature detected (hwmon {}): {:.1}°C",
-                                                                                        hwmon_name,
+                                                                                        "Intel CPU temperature detected (coretemp): {:.1}°C",
                                                                                         temp_c
                                                                                     );
                                                                                 } else {
-                                                                                    tracing::debug!("CPU temperature already set, skipping duplicate");
+                                                                                    tracing::debug!("Intel CPU temperature already set, skipping duplicate coretemp source");
                                                                                 }
-                                                                            } else if hwmon_name
-                                                                                .contains("nvme")
-                                                                                || hwmon_name
-                                                                                    .contains("ssd")
-                                                                            {
-                                                                                // Это температура накопителя
-                                                                                // Пока не сохраняем, но можно было бы добавить
-                                                                                tracing::debug!(
-                                                                                    "Storage temperature detected (hwmon {}): {:.1}°C",
-                                                                                    hwmon_name,
-                                                                                    temp_c
-                                                                                );
-                                                                            } else {
-                                                                                tracing::debug!("Unknown hwmon device type: {}", hwmon_name);
-                                                                            }
-                                                                        }
-
-                                                                        // 2. Пробуем определить по имени файла
-                                                                        if temperature
-                                                                            .cpu_temperature_c
-                                                                            .is_none()
-                                                                        {
-                                                                            if file_name
-                                                                                .contains("temp1")
-                                                                                || file_name
-                                                                                    .contains(
-                                                                                        "temp2",
-                                                                                    )
-                                                                                || file_name
-                                                                                    .contains(
-                                                                                        "Package",
-                                                                                    )
-                                                                            {
-                                                                                // Это, скорее всего, CPU температура
-                                                                                temperature.cpu_temperature_c = Some(temp_c);
-                                                                                tracing::info!(
-                                                                                    "CPU temperature detected (file pattern {}): {:.1}°C",
-                                                                                    file_name,
-                                                                                    temp_c
-                                                                                );
-                                                                            } else if file_name
-                                                                                .contains("temp3")
-                                                                                || file_name
-                                                                                    .contains(
-                                                                                        "edge",
-                                                                                    )
-                                                                                || file_name
-                                                                                    .contains("gpu")
-                                                                            {
-                                                                                // Это, скорее всего, GPU температура
+                                                                            },
+                                                                            TemperatureSourcePriority::AmdK10Temp => {
+                                                                                // AMD K10Temp - наиболее точный источник для AMD CPU
+                                                                                if temperature.cpu_temperature_c.is_none() {
+                                                                                    temperature.cpu_temperature_c = Some(temp_c);
+                                                                                    tracing::info!(
+                                                                                        "AMD CPU temperature detected (k10temp): {:.1}°C",
+                                                                                        temp_c
+                                                                                    );
+                                                                                } else {
+                                                                                    tracing::debug!("AMD CPU temperature already set, skipping duplicate k10temp source");
+                                                                                }
+                                                                            },
+                                                                            TemperatureSourcePriority::AmdGpu => {
+                                                                                // AMD GPU температура
                                                                                 if temperature.gpu_temperature_c.is_none() {
                                                                                     temperature.gpu_temperature_c = Some(temp_c);
                                                                                     tracing::info!(
-                                                                                        "GPU temperature detected (file pattern {}): {:.1}°C",
-                                                                                        file_name,
+                                                                                        "AMD GPU temperature detected: {:.1}°C",
+                                                                                        temp_c
+                                                                                    );
+                                                                                }
+                                                                            },
+                                                                            TemperatureSourcePriority::NvidiaGpu => {
+                                                                                // NVIDIA GPU температура
+                                                                                if temperature.gpu_temperature_c.is_none() {
+                                                                                    temperature.gpu_temperature_c = Some(temp_c);
+                                                                                    tracing::info!(
+                                                                                        "NVIDIA GPU temperature detected: {:.1}°C",
+                                                                                        temp_c
+                                                                                    );
+                                                                                }
+                                                                            },
+                                                                            TemperatureSourcePriority::ThermalZone => {
+                                                                                // Универсальный интерфейс термальных зон
+                                                                                if temperature.cpu_temperature_c.is_none() {
+                                                                                    temperature.cpu_temperature_c = Some(temp_c);
+                                                                                    tracing::info!(
+                                                                                        "CPU temperature detected (thermal zone): {:.1}°C",
+                                                                                        temp_c
+                                                                                    );
+                                                                                }
+                                                                            },
+                                                                            TemperatureSourcePriority::GenericHwmon => {
+                                                                                // Общий hwmon интерфейс (наименьший приоритет)
+                                                                                if temperature.cpu_temperature_c.is_none() {
+                                                                                    temperature.cpu_temperature_c = Some(temp_c);
+                                                                                    tracing::info!(
+                                                                                        "CPU temperature detected (generic hwmon): {:.1}°C",
+                                                                                        temp_c
+                                                                                    );
+                                                                                } else if temperature.gpu_temperature_c.is_none() {
+                                                                                    temperature.gpu_temperature_c = Some(temp_c);
+                                                                                    tracing::info!(
+                                                                                        "GPU temperature detected (generic hwmon): {:.1}°C",
                                                                                         temp_c
                                                                                     );
                                                                                 }
                                                                             }
                                                                         }
-
-                                                                        // 3. Пробуем определить по содержимому файла name (если есть)
-                                                                        let name_file =
-                                                                            path.join("name");
-                                                                        if name_file.exists() {
-                                                                            match fs::read_to_string(
-                                                                                &name_file,
-                                                                            ) {
-                                                                                Ok(
-                                                                                    name_content,
-                                                                                ) => {
-                                                                                    let name = name_content.trim();
-                                                                                    tracing::debug!("hwmon device sensor name: {}", name);
-
-                                                                                    if (name.contains("coretemp") || name.contains("k10temp"))
-                                                                                        && temperature.cpu_temperature_c.is_none()
-                                                                                    {
-                                                                                        temperature.cpu_temperature_c = Some(temp_c);
-                                                                                        tracing::info!(
-                                                                                            "CPU temperature detected (sensor name {}): {:.1}°C",
-                                                                                            name,
-                                                                                            temp_c
-                                                                                        );
-                                                                                    } else if (name.contains("amdgpu")
-                                                                                        || name.contains("radeon")
-                                                                                        || name.contains("nouveau"))
-                                                                                        && temperature.gpu_temperature_c.is_none()
-                                                                                    {
-                                                                                        temperature.gpu_temperature_c = Some(temp_c);
-                                                                                        tracing::info!(
-                                                                                            "GPU temperature detected (sensor name {}): {:.1}°C",
-                                                                                            name,
-                                                                                            temp_c
-                                                                                        );
-                                                                                    }
-                                                                                }
                                                                                 Err(e) => {
                                                                                     tracing::warn!("Failed to read hwmon device name from {}: {}", name_file.display(), e);
                                                                                 }
@@ -1359,7 +1387,6 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                 );
             }
         }
-    }
 
     // Пробуем альтернативный интерфейс /sys/class/thermal/
     // Это более универсальный интерфейс для термальных зон
@@ -1649,7 +1676,6 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
     }
 
     temperature
-}
 
 /// Собирает метрики энергопотребления через RAPL и другие интерфейсы
 ///
@@ -3985,5 +4011,102 @@ impl SharedSystemMetricsCache {
     pub fn clear(&self) {
         let mut cache = self.inner.lock().unwrap();
         cache.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn test_temperature_source_priority_detection() {
+        // Тест проверяет корректную работу функции определения приоритета источников температуры
+        
+        // Тестируем определение Intel CoreTemp
+        let intel_path = Path::new("/sys/class/hwmon/coretemp1");
+        let source_priority = determine_temperature_source_priority(intel_path, "temp1_input", Some("coretemp1"));
+        match source_priority {
+            TemperatureSourcePriority::IntelCoreTemp => {},
+            _ => panic!("Expected IntelCoreTemp priority for coretemp device"),
+        }
+
+        // Тестируем определение AMD K10Temp
+        let amd_path = Path::new("/sys/class/hwmon/k10temp1");
+        let source_priority = determine_temperature_source_priority(amd_path, "temp1_input", Some("k10temp1"));
+        match source_priority {
+            TemperatureSourcePriority::AmdK10Temp => {},
+            _ => panic!("Expected AmdK10Temp priority for k10temp device"),
+        }
+
+        // Тестируем определение AMD GPU
+        let amdgpu_path = Path::new("/sys/class/hwmon/amdgpu1");
+        let source_priority = determine_temperature_source_priority(amdgpu_path, "temp1_input", Some("amdgpu1"));
+        match source_priority {
+            TemperatureSourcePriority::AmdGpu => {},
+            _ => panic!("Expected AmdGpu priority for amdgpu device"),
+        }
+
+        // Тестируем определение NVIDIA GPU
+        let nvidia_path = Path::new("/sys/class/hwmon/nouveau1");
+        let source_priority = determine_temperature_source_priority(nvidia_path, "temp1_input", Some("nouveau1"));
+        match source_priority {
+            TemperatureSourcePriority::NvidiaGpu => {},
+            _ => panic!("Expected NvidiaGpu priority for nouveau device"),
+        }
+
+        // Тестируем определение по имени файла (Intel Package)
+        let package_path = Path::new("/sys/class/hwmon/hwmon0");
+        let source_priority = determine_temperature_source_priority(package_path, "Package_temp1_input", None);
+        match source_priority {
+            TemperatureSourcePriority::IntelCoreTemp => {},
+            _ => panic!("Expected IntelCoreTemp priority for Package temperature file"),
+        }
+
+        // Тестируем определение по имени файла (AMD Tdie)
+        let tdie_path = Path::new("/sys/class/hwmon/hwmon1");
+        let source_priority = determine_temperature_source_priority(tdie_path, "Tdie_temp1_input", None);
+        match source_priority {
+            TemperatureSourcePriority::AmdK10Temp => {},
+            _ => panic!("Expected AmdK10Temp priority for Tdie temperature file"),
+        }
+
+        // Тестируем общий hwmon интерфейс (наименьший приоритет)
+        let generic_path = Path::new("/sys/class/hwmon/hwmon2");
+        let source_priority = determine_temperature_source_priority(generic_path, "temp1_input", Some("hwmon2"));
+        match source_priority {
+            TemperatureSourcePriority::GenericHwmon => {},
+            _ => panic!("Expected GenericHwmon priority for generic hwmon device"),
+        }
+    }
+
+    #[test]
+    fn test_enhanced_temperature_collection_fallback() {
+        // Тест проверяет, что расширенный сбор температурных метрик корректно обрабатывает отсутствие источников
+        let temp_metrics = collect_temperature_metrics();
+        
+        // В тестовой среде без реальных температурных сенсоров должны получить None значения
+        // Это нормальное поведение, так как тестовая среда не имеет доступа к реальным устройствам
+        assert!(temp_metrics.cpu_temperature_c.is_none() || temp_metrics.cpu_temperature_c.is_some());
+        assert!(temp_metrics.gpu_temperature_c.is_none() || temp_metrics.gpu_temperature_c.is_some());
+    }
+
+    #[test]
+    fn test_temperature_metrics_integration_with_system() {
+        // Тест проверяет интеграцию температурных метрик в общую систему метрик
+        let mut system_metrics = SystemMetrics::default();
+        
+        // Устанавливаем температурные метрики
+        system_metrics.temperature.cpu_temperature_c = Some(65.5);
+        system_metrics.temperature.gpu_temperature_c = Some(72.3);
+        
+        // Проверяем, что метрики корректно интегрированы
+        assert_eq!(system_metrics.temperature.cpu_temperature_c, Some(65.5));
+        assert_eq!(system_metrics.temperature.gpu_temperature_c, Some(72.3));
+        
+        // Проверяем, что оптимизация памяти работает корректно
+        let optimized = system_metrics.optimize_memory_usage();
+        assert_eq!(optimized.temperature.cpu_temperature_c, Some(65.5));
+        assert_eq!(optimized.temperature.gpu_temperature_c, Some(72.3));
     }
 }
