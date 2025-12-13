@@ -1357,6 +1357,206 @@ fn validate_api_listen_addr(addr: &str) -> Result<()> {
     Ok(())
 }
 
+/// Реализация Default для MLClassifierConfig.
+impl Default for MLClassifierConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_ml_classifier_enabled(),
+            model_path: default_ml_classifier_model_path(),
+            confidence_threshold: default_ml_classifier_confidence_threshold(),
+            model_type: default_ml_classifier_model_type(),
+        }
+    }
+}
+
+/// Реализация Default для PatternAutoUpdateConfig.
+impl Default for PatternAutoUpdateConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_pattern_auto_update_enabled(),
+            interval_sec: default_pattern_auto_update_interval_sec(),
+            notify_on_update: default_pattern_auto_update_notify(),
+        }
+    }
+}
+
+/// Возвращает дефолтное значение для `psi_cpu_some_high`.
+pub(crate) fn default_psi_cpu_some_high() -> f32 {
+    0.6
+}
+
+/// Возвращает дефолтное значение для `psi_io_some_high`.
+pub(crate) fn default_psi_io_some_high() -> f32 {
+    0.4
+}
+
+/// Возвращает дефолтное значение для `user_idle_timeout_sec`.
+pub(crate) fn default_user_idle_timeout_sec() -> u64 {
+    120
+}
+
+/// Возвращает дефолтное значение для `interactive_build_grace_sec`.
+pub(crate) fn default_interactive_build_grace_sec() -> u64 {
+    10
+}
+
+/// Возвращает дефолтное значение для `noisy_neighbour_cpu_share`.
+pub(crate) fn default_noisy_neighbour_cpu_share() -> f32 {
+    0.7
+}
+
+/// Возвращает дефолтное значение для `crit_interactive_percentile`.
+pub(crate) fn default_crit_interactive_percentile() -> f32 {
+    0.9
+}
+
+/// Возвращает дефолтное значение для `interactive_percentile`.
+pub(crate) fn default_interactive_percentile() -> f32 {
+    0.6
+}
+
+/// Возвращает дефолтное значение для `normal_percentile`.
+pub(crate) fn default_normal_percentile() -> f32 {
+    0.3
+}
+
+/// Возвращает дефолтное значение для `background_percentile`.
+pub(crate) fn default_background_percentile() -> f32 {
+    0.1
+}
+
+/// Возвращает дефолтное значение для `sched_latency_p99_threshold_ms`.
+pub(crate) fn default_sched_latency_p99_threshold_ms() -> f64 {
+    20.0
+}
+
+/// Возвращает дефолтное значение для `ui_loop_p95_threshold_ms`.
+pub(crate) fn default_ui_loop_p95_threshold_ms() -> f64 {
+    16.67
+}
+
+/// Возвращает дефолтное значение для `snapshot_db_path`.
+pub(crate) fn default_snapshot_db_path() -> String {
+    "snapshots.db".to_string()
+}
+
+/// Возвращает дефолтное значение для `patterns_dir`.
+pub(crate) fn default_patterns_dir() -> String {
+    "patterns".to_string()
+}
+
+/// Возвращает дефолтное значение для `polling_interval_ms`.
+pub(crate) fn default_polling_interval_ms() -> u64 {
+    1000
+}
+
+/// Возвращает дефолтное значение для `max_candidates`.
+pub(crate) fn default_max_candidates() -> usize {
+    150
+}
+
+/// Возвращает дефолтное значение для `dry_run_default`.
+pub(crate) fn default_dry_run_default() -> bool {
+    false
+}
+
+/// Реализация Default для Thresholds.
+impl Default for Thresholds {
+    fn default() -> Self {
+        Self {
+            psi_cpu_some_high: default_psi_cpu_some_high(),
+            psi_io_some_high: default_psi_io_some_high(),
+            user_idle_timeout_sec: default_user_idle_timeout_sec(),
+            interactive_build_grace_sec: default_interactive_build_grace_sec(),
+            noisy_neighbour_cpu_share: default_noisy_neighbour_cpu_share(),
+            crit_interactive_percentile: default_crit_interactive_percentile(),
+            interactive_percentile: default_interactive_percentile(),
+            normal_percentile: default_normal_percentile(),
+            background_percentile: default_background_percentile(),
+            sched_latency_p99_threshold_ms: default_sched_latency_p99_threshold_ms(),
+            ui_loop_p95_threshold_ms: default_ui_loop_p95_threshold_ms(),
+        }
+    }
+}
+
+/// Реализация Default для Paths.
+impl Default for Paths {
+    fn default() -> Self {
+        Self {
+            snapshot_db_path: default_snapshot_db_path(),
+            patterns_dir: default_patterns_dir(),
+            api_listen_addr: default_api_listen_addr(),
+        }
+    }
+}
+
+/// Реализация Default для LoggingConfig.
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            log_max_size_bytes: default_log_max_size_bytes(),
+            log_max_rotated_files: default_log_max_rotated_files(),
+            log_compression_enabled: default_log_compression_enabled(),
+            log_rotation_interval_sec: default_log_rotation_interval_sec(),
+        }
+    }
+}
+
+/// Реализация Default для CacheIntervals.
+impl Default for CacheIntervals {
+    fn default() -> Self {
+        Self {
+            system_metrics_cache_interval: default_system_metrics_cache_interval(),
+            process_metrics_cache_interval: default_process_metrics_cache_interval(),
+        }
+    }
+}
+
+/// Реализация Default для NotificationConfig.
+impl Default for NotificationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_notifications_enabled(),
+            backend: default_notification_backend(),
+            app_name: default_notification_app_name(),
+            min_level: default_notification_min_level(),
+        }
+    }
+}
+
+/// Реализация Default для ModelConfig.
+impl Default for ModelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: default_model_enabled(),
+            model_path: default_model_path(),
+            model_type: default_model_type(),
+        }
+    }
+}
+
+/// Реализация Default для Config.
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            polling_interval_ms: default_polling_interval_ms(),
+            max_candidates: default_max_candidates(),
+            dry_run_default: default_dry_run_default(),
+            policy_mode: default_policy_mode(),
+            enable_snapshot_logging: default_enable_snapshot_logging(),
+            thresholds: Thresholds::default(),
+            paths: Paths::default(),
+            logging: LoggingConfig::default(),
+            cache_intervals: CacheIntervals::default(),
+            notifications: NotificationConfig::default(),
+            model: ModelConfig::default(),
+            ml_classifier: MLClassifierConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+            ebpf: EbpfConfig::default(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4836,205 +5036,5 @@ thresholds:
 
         let cfg = Config::load(file.path().to_str().unwrap()).expect("config loads");
         assert_eq!(cfg.paths.api_listen_addr, Some("127.0.0.1:1".to_string()));
-    }
-}
-
-/// Реализация Default для MLClassifierConfig.
-impl Default for MLClassifierConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_ml_classifier_enabled(),
-            model_path: default_ml_classifier_model_path(),
-            confidence_threshold: default_ml_classifier_confidence_threshold(),
-            model_type: default_ml_classifier_model_type(),
-        }
-    }
-}
-
-/// Реализация Default для PatternAutoUpdateConfig.
-impl Default for PatternAutoUpdateConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_pattern_auto_update_enabled(),
-            interval_sec: default_pattern_auto_update_interval_sec(),
-            notify_on_update: default_pattern_auto_update_notify(),
-        }
-    }
-}
-
-/// Возвращает дефолтное значение для `psi_cpu_some_high`.
-pub(crate) fn default_psi_cpu_some_high() -> f32 {
-    0.6
-}
-
-/// Возвращает дефолтное значение для `psi_io_some_high`.
-pub(crate) fn default_psi_io_some_high() -> f32 {
-    0.4
-}
-
-/// Возвращает дефолтное значение для `user_idle_timeout_sec`.
-pub(crate) fn default_user_idle_timeout_sec() -> u64 {
-    120
-}
-
-/// Возвращает дефолтное значение для `interactive_build_grace_sec`.
-pub(crate) fn default_interactive_build_grace_sec() -> u64 {
-    10
-}
-
-/// Возвращает дефолтное значение для `noisy_neighbour_cpu_share`.
-pub(crate) fn default_noisy_neighbour_cpu_share() -> f32 {
-    0.7
-}
-
-/// Возвращает дефолтное значение для `crit_interactive_percentile`.
-pub(crate) fn default_crit_interactive_percentile() -> f32 {
-    0.9
-}
-
-/// Возвращает дефолтное значение для `interactive_percentile`.
-pub(crate) fn default_interactive_percentile() -> f32 {
-    0.6
-}
-
-/// Возвращает дефолтное значение для `normal_percentile`.
-pub(crate) fn default_normal_percentile() -> f32 {
-    0.3
-}
-
-/// Возвращает дефолтное значение для `background_percentile`.
-pub(crate) fn default_background_percentile() -> f32 {
-    0.1
-}
-
-/// Возвращает дефолтное значение для `sched_latency_p99_threshold_ms`.
-pub(crate) fn default_sched_latency_p99_threshold_ms() -> f64 {
-    20.0
-}
-
-/// Возвращает дефолтное значение для `ui_loop_p95_threshold_ms`.
-pub(crate) fn default_ui_loop_p95_threshold_ms() -> f64 {
-    16.67
-}
-
-/// Возвращает дефолтное значение для `snapshot_db_path`.
-pub(crate) fn default_snapshot_db_path() -> String {
-    "snapshots.db".to_string()
-}
-
-/// Возвращает дефолтное значение для `patterns_dir`.
-pub(crate) fn default_patterns_dir() -> String {
-    "patterns".to_string()
-}
-
-/// Возвращает дефолтное значение для `polling_interval_ms`.
-pub(crate) fn default_polling_interval_ms() -> u64 {
-    1000
-}
-
-/// Возвращает дефолтное значение для `max_candidates`.
-pub(crate) fn default_max_candidates() -> usize {
-    150
-}
-
-/// Возвращает дефолтное значение для `dry_run_default`.
-pub(crate) fn default_dry_run_default() -> bool {
-    false
-}
-
-/// Реализация Default для Thresholds.
-impl Default for Thresholds {
-    fn default() -> Self {
-        Self {
-            psi_cpu_some_high: default_psi_cpu_some_high(),
-            psi_io_some_high: default_psi_io_some_high(),
-            user_idle_timeout_sec: default_user_idle_timeout_sec(),
-            interactive_build_grace_sec: default_interactive_build_grace_sec(),
-            noisy_neighbour_cpu_share: default_noisy_neighbour_cpu_share(),
-            crit_interactive_percentile: default_crit_interactive_percentile(),
-            interactive_percentile: default_interactive_percentile(),
-            normal_percentile: default_normal_percentile(),
-            background_percentile: default_background_percentile(),
-            sched_latency_p99_threshold_ms: default_sched_latency_p99_threshold_ms(),
-            ui_loop_p95_threshold_ms: default_ui_loop_p95_threshold_ms(),
-        }
-    }
-}
-
-/// Реализация Default для Paths.
-impl Default for Paths {
-    fn default() -> Self {
-        Self {
-            snapshot_db_path: default_snapshot_db_path(),
-            patterns_dir: default_patterns_dir(),
-            api_listen_addr: default_api_listen_addr(),
-        }
-    }
-}
-
-/// Реализация Default для LoggingConfig.
-impl Default for LoggingConfig {
-    fn default() -> Self {
-        Self {
-            log_max_size_bytes: default_log_max_size_bytes(),
-            log_max_rotated_files: default_log_max_rotated_files(),
-            log_compression_enabled: default_log_compression_enabled(),
-            log_rotation_interval_sec: default_log_rotation_interval_sec(),
-        }
-    }
-}
-
-/// Реализация Default для CacheIntervals.
-impl Default for CacheIntervals {
-    fn default() -> Self {
-        Self {
-            system_metrics_cache_interval: default_system_metrics_cache_interval(),
-            process_metrics_cache_interval: default_process_metrics_cache_interval(),
-        }
-    }
-}
-
-/// Реализация Default для NotificationConfig.
-impl Default for NotificationConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_notifications_enabled(),
-            backend: default_notification_backend(),
-            app_name: default_notification_app_name(),
-            min_level: default_notification_min_level(),
-        }
-    }
-}
-
-/// Реализация Default для ModelConfig.
-impl Default for ModelConfig {
-    fn default() -> Self {
-        Self {
-            enabled: default_model_enabled(),
-            model_path: default_model_path(),
-            model_type: default_model_type(),
-        }
-    }
-}
-
-/// Реализация Default для Config.
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            polling_interval_ms: default_polling_interval_ms(),
-            max_candidates: default_max_candidates(),
-            dry_run_default: default_dry_run_default(),
-            policy_mode: default_policy_mode(),
-            enable_snapshot_logging: default_enable_snapshot_logging(),
-            thresholds: Thresholds::default(),
-            paths: Paths::default(),
-            logging: LoggingConfig::default(),
-            cache_intervals: CacheIntervals::default(),
-            notifications: NotificationConfig::default(),
-            model: ModelConfig::default(),
-            ml_classifier: MLClassifierConfig::default(),
-            pattern_auto_update: PatternAutoUpdateConfig::default(),
-            ebpf: EbpfConfig::default(),
-        }
     }
 }

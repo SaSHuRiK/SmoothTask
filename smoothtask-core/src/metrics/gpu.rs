@@ -1207,7 +1207,9 @@ mod tests {
     fn test_gpu_utilization_values() {
         let mut utilization = GpuUtilization {
             gpu_util: 1.5, // Can be > 1.0
-            ..Default::default()
+            memory_util: 0.0,
+            encoder_util: None,
+            decoder_util: None,
         };
         assert!(utilization.gpu_util > 0.0);
 
@@ -1229,7 +1231,6 @@ mod tests {
             temperature_c: Some(65.5),
             hotspot_c: Some(70.0),
             memory_c: Some(60.0),
-            ..Default::default()
         };
 
         assert_eq!(temperature.temperature_c, Some(65.5));
@@ -1249,7 +1250,6 @@ mod tests {
             power_w: Some(120.0),
             power_limit_w: Some(200.0),
             power_cap_w: Some(180.0),
-            ..Default::default()
         };
 
         assert_eq!(power.power_w, Some(120.0));
@@ -1269,7 +1269,6 @@ mod tests {
             core_clock_mhz: Some(1500),
             memory_clock_mhz: Some(1750),
             shader_clock_mhz: Some(1600),
-            ..Default::default()
         };
 
         assert_eq!(clocks.core_clock_mhz, Some(1500));

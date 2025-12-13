@@ -794,13 +794,13 @@ pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetric
 
     // Третья группа задач
     let (temperature, power) =
-        rayon::join(|| collect_temperature_metrics(), || collect_power_metrics());
+        rayon::join(collect_temperature_metrics, collect_power_metrics);
 
     // Четвертая группа задач
-    let (network, disk) = rayon::join(|| collect_network_metrics(), || collect_disk_metrics());
+    let (network, disk) = rayon::join(collect_network_metrics, collect_disk_metrics);
 
     // Пятая группа задач
-    let (gpu, ebpf) = rayon::join(|| collect_gpu_metrics(), || collect_ebpf_metrics());
+    let (gpu, ebpf) = rayon::join(collect_gpu_metrics, collect_ebpf_metrics);
 
     let cpu_times = cpu_times_result??;
     let memory = memory_result??;
@@ -2969,7 +2969,6 @@ SwapFree:        4096000 kB
         let temp = TemperatureMetrics {
             cpu_temperature_c: Some(45.5),
             gpu_temperature_c: Some(60.2),
-            ..Default::default()
         };
 
         let json = serde_json::to_string(&temp).expect("Сериализация должна работать");
@@ -2990,7 +2989,6 @@ SwapFree:        4096000 kB
             system_power_w: Some(120.5),
             cpu_power_w: Some(80.3),
             gpu_power_w: Some(40.1),
-            ..Default::default()
         };
 
         let json = serde_json::to_string(&power).expect("Сериализация должна работать");
@@ -3159,13 +3157,11 @@ SwapFree:        4096000 kB
         let disk = collect_disk_metrics();
         // Проверяем, что структура корректно инициализирована
         // В реальной системе могут быть данные, в тестовой - пустые
-        assert_eq!(
-            disk.total_read_bytes >= disk.devices.iter().map(|dev| dev.read_bytes).sum::<u64>(),
-            true
+        assert!(
+            disk.total_read_bytes >= disk.devices.iter().map(|dev| dev.read_bytes).sum::<u64>()
         );
-        assert_eq!(
-            disk.total_write_bytes >= disk.devices.iter().map(|dev| dev.write_bytes).sum::<u64>(),
-            true
+        assert!(
+            disk.total_write_bytes >= disk.devices.iter().map(|dev| dev.write_bytes).sum::<u64>()
         );
     }
 
@@ -3452,11 +3448,13 @@ SwapFree:        4096000 kB
     #[test]
     fn test_power_metrics_integration() {
         // Тест проверяет, что PowerMetrics корректно интегрируется в SystemMetrics
-        let mut system_metrics = SystemMetrics::default();
-        system_metrics.power = PowerMetrics {
-            system_power_w: Some(100.5),
-            cpu_power_w: Some(50.2),
-            gpu_power_w: Some(75.8),
+        let system_metrics = SystemMetrics {
+            power: PowerMetrics {
+                system_power_w: Some(100.5),
+                cpu_power_w: Some(50.2),
+                gpu_power_w: Some(75.8),
+            },
+            ..Default::default()
         };
 
         assert_eq!(system_metrics.power.system_power_w, Some(100.5));
@@ -3467,10 +3465,12 @@ SwapFree:        4096000 kB
     #[test]
     fn test_temperature_metrics_integration() {
         // Тест проверяет, что TemperatureMetrics корректно интегрируется в SystemMetrics
-        let mut system_metrics = SystemMetrics::default();
-        system_metrics.temperature = TemperatureMetrics {
-            cpu_temperature_c: Some(65.5),
-            gpu_temperature_c: Some(72.3),
+        let system_metrics = SystemMetrics {
+            temperature: TemperatureMetrics {
+                cpu_temperature_c: Some(65.5),
+                gpu_temperature_c: Some(72.3),
+            },
+            ..Default::default()
         };
 
         assert_eq!(system_metrics.temperature.cpu_temperature_c, Some(65.5));
@@ -3595,9 +3595,9 @@ SwapFree:        4096000 kB
     fn test_power_metrics_precision() {
         // Тест проверяет точность хранения значений мощности
         let power = PowerMetrics {
-            system_power_w: Some(123.456789),
-            cpu_power_w: Some(0.123456),
-            gpu_power_w: Some(999.999999),
+            system_power_w: Some(123.456_79),
+            cpu_power_w: Some(0.123_46),
+            gpu_power_w: Some(999.999_99),
         };
 
         // Проверяем, что значения сохраняются с достаточной точностью

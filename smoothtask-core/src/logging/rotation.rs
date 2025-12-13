@@ -629,7 +629,6 @@ mod tests {
 
         // Записываем данные и проверяем размер
         let mut file = fs::OpenOptions::new()
-            .write(true)
             .append(true)
             .open(log_path)
             .expect("open file");

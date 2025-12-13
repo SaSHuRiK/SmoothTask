@@ -443,8 +443,8 @@ mod tests {
         // Тест проверяет, что функция возвращает bool
         let result = is_cgroup_v2_available();
         // Результат может быть true или false в зависимости от системы
-        // Упрощено согласно clippy: bool_comparison
-        assert!(result || !result);
+        // Это тавтология, но она проверяет, что функция возвращает допустимое булево значение
+        let _ = result;
     }
 
     #[test]
@@ -459,8 +459,8 @@ mod tests {
     fn test_is_controller_available_returns_bool() {
         // Тест проверяет, что функция возвращает bool
         let result = is_controller_available("cpu");
-        // Упрощено согласно clippy: bool_comparison
-        assert!(result || !result);
+        // Это тавтология, но она проверяет, что функция возвращает допустимое булево значение
+        let _ = result;
     }
 
     #[test]

@@ -6626,10 +6626,11 @@ mod tests {
 
         // В тестовой реализации детализированная статистика должна быть доступна
         // (даже если пустая)
-        assert!(metrics.syscall_details.is_some() || true); // Может быть None в зависимости от конфигурации
-        assert!(metrics.network_details.is_some() || true);
-        assert!(metrics.gpu_details.is_some() || true);
-        assert!(metrics.filesystem_details.is_some() || true);
+        // Эти утверждения всегда истинны, поэтому мы их удаляем
+        // assert!(metrics.syscall_details.is_some() || true);
+        // assert!(metrics.network_details.is_some() || true);
+        // assert!(metrics.gpu_details.is_some() || true);
+        // assert!(metrics.filesystem_details.is_some() || true);
     }
 
     #[test]
@@ -7024,8 +7025,10 @@ mod ebpf_notification_tests {
         collector.set_notification_cooldown(1);
 
         // Создаем метрики, которые должны вызвать уведомление
-        let mut metrics = EbpfMetrics::default();
-        metrics.cpu_usage = 96.0; // Выше критического порога
+        let metrics = EbpfMetrics {
+            cpu_usage: 96.0, // Выше критического порога
+            ..Default::default()
+        };
 
         // Первое уведомление должно быть отправлено
         let result = collector.check_thresholds_and_notify(&metrics).await;
@@ -7066,16 +7069,20 @@ mod ebpf_notification_tests {
         collector.set_notification_cooldown(0);
 
         // Тестируем CPU уведомления
-        let mut cpu_metrics = EbpfMetrics::default();
-        cpu_metrics.cpu_usage = 85.0; // Между предупреждением и критическим
+        let cpu_metrics = EbpfMetrics {
+            cpu_usage: 85.0, // Между предупреждением и критическим
+            ..Default::default()
+        };
 
         collector
             .check_thresholds_and_notify(&cpu_metrics)
             .await
             .unwrap();
 
-        let mut critical_cpu_metrics = EbpfMetrics::default();
-        critical_cpu_metrics.cpu_usage = 96.0; // Критический уровень
+        let critical_cpu_metrics = EbpfMetrics {
+            cpu_usage: 96.0, // Критический уровень
+            ..Default::default()
+        };
 
         collector
             .check_thresholds_and_notify(&critical_cpu_metrics)
@@ -7083,16 +7090,20 @@ mod ebpf_notification_tests {
             .unwrap();
 
         // Тестируем уведомления о памяти
-        let mut memory_metrics = EbpfMetrics::default();
-        memory_metrics.memory_usage = 9 * 1024 * 1024 * 1024; // Между предупреждением и критическим
+        let memory_metrics = EbpfMetrics {
+            memory_usage: 9 * 1024 * 1024 * 1024, // Между предупреждением и критическим
+            ..Default::default()
+        };
 
         collector
             .check_thresholds_and_notify(&memory_metrics)
             .await
             .unwrap();
 
-        let mut critical_memory_metrics = EbpfMetrics::default();
-        critical_memory_metrics.memory_usage = 13 * 1024 * 1024 * 1024; // Критический уровень
+        let critical_memory_metrics = EbpfMetrics {
+            memory_usage: 13 * 1024 * 1024 * 1024, // Критический уровень
+            ..Default::default()
+        };
 
         collector
             .check_thresholds_and_notify(&critical_memory_metrics)
@@ -7121,8 +7132,10 @@ mod ebpf_notification_tests {
 
     #[tokio::test]
     async fn test_ebpf_notification_disabled() {
-        let mut config = EbpfConfig::default();
-        config.enable_notifications = false;
+        let config = EbpfConfig {
+            enable_notifications: false,
+            ..Default::default()
+        };
 
         let log_storage = Arc::new(SharedLogStorage::new(10));
         let notification_manager =
@@ -7132,8 +7145,10 @@ mod ebpf_notification_tests {
             EbpfMetricsCollector::new_with_notifications(config, Arc::new(notification_manager));
 
         // Создаем метрики, которые должны вызвать уведомление
-        let mut metrics = EbpfMetrics::default();
-        metrics.cpu_usage = 96.0; // Выше критического порога
+        let metrics = EbpfMetrics {
+            cpu_usage: 96.0, // Выше критического порога
+            ..Default::default()
+        };
 
         // Уведомление не должно быть отправлено
         collector
@@ -7174,16 +7189,20 @@ mod ebpf_notification_tests {
         collector.set_notification_cooldown(0);
 
         // Тестируем пользовательские пороги
-        let mut metrics = EbpfMetrics::default();
-        metrics.cpu_usage = 75.0; // Между новыми порогами
+        let metrics = EbpfMetrics {
+            cpu_usage: 75.0, // Между новыми порогами
+            ..Default::default()
+        };
 
         collector
             .check_thresholds_and_notify(&metrics)
             .await
             .unwrap();
 
-        let mut critical_metrics = EbpfMetrics::default();
-        critical_metrics.cpu_usage = 86.0; // Выше нового критического порога
+        let critical_metrics = EbpfMetrics {
+            cpu_usage: 86.0, // Выше нового критического порога
+            ..Default::default()
+        };
 
         collector
             .check_thresholds_and_notify(&critical_metrics)
@@ -7232,10 +7251,12 @@ mod ebpf_filtering_tests {
 
     #[test]
     fn test_filter_config_serialization() {
-        let mut filter_config = EbpfFilterConfig::default();
-        filter_config.enable_kernel_filtering = true;
-        filter_config.cpu_usage_threshold = 5.0;
-        filter_config.filtered_pids = vec![100, 200, 300];
+        let filter_config = EbpfFilterConfig {
+            enable_kernel_filtering: true,
+            cpu_usage_threshold: 5.0,
+            filtered_pids: vec![100, 200, 300],
+            ..Default::default()
+        };
 
         let serialized = serde_json::to_string(&filter_config).unwrap();
         let deserialized: EbpfFilterConfig = serde_json::from_str(&serialized).unwrap();
@@ -7256,9 +7277,11 @@ mod ebpf_filtering_tests {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
 
-        let mut filter_config = EbpfFilterConfig::default();
-        filter_config.enable_kernel_filtering = true;
-        filter_config.cpu_usage_threshold = 10.0;
+        let filter_config = EbpfFilterConfig {
+            enable_kernel_filtering: true,
+            cpu_usage_threshold: 10.0,
+            ..Default::default()
+        };
 
         collector.set_filter_config(filter_config.clone());
 
@@ -7273,21 +7296,25 @@ mod ebpf_filtering_tests {
         let mut collector = EbpfMetricsCollector::new(config);
 
         // Настраиваем фильтрацию
-        let mut filter_config = EbpfFilterConfig::default();
-        filter_config.enable_kernel_filtering = true;
-        filter_config.cpu_usage_threshold = 5.0;
-        filter_config.memory_usage_threshold = 1024;
-        filter_config.syscall_count_threshold = 50;
-        filter_config.network_traffic_threshold = 500; // Уменьшаем порог для теста
+        let filter_config = EbpfFilterConfig {
+            enable_kernel_filtering: true,
+            cpu_usage_threshold: 5.0,
+            memory_usage_threshold: 1024,
+            syscall_count_threshold: 50,
+            network_traffic_threshold: 500, // Уменьшаем порог для теста
+            ..Default::default()
+        };
 
         collector.set_filter_config(filter_config);
 
         // Создаем тестовые метрики
-        let mut metrics = EbpfMetrics::default();
-        metrics.cpu_usage = 3.0; // Ниже порога
-        metrics.memory_usage = 512; // Ниже порога
-        metrics.syscall_count = 25; // Ниже порога
-        metrics.network_bytes = 1000; // Выше порога
+        let mut metrics = EbpfMetrics {
+            cpu_usage: 3.0, // Ниже порога
+            memory_usage: 512, // Ниже порога
+            syscall_count: 25, // Ниже порога
+            network_bytes: 1000, // Выше порога
+            ..Default::default()
+        };
 
         // Применяем фильтрацию
         collector.apply_filtering(&mut metrics);
@@ -7307,9 +7334,11 @@ mod ebpf_filtering_tests {
         let mut collector = EbpfMetricsCollector::new(config);
 
         // Настраиваем агрегацию
-        let mut filter_config = EbpfFilterConfig::default();
-        filter_config.enable_kernel_aggregation = true;
-        filter_config.max_aggregated_entries = 2; // Ограничиваем до 2 записей
+        let filter_config = EbpfFilterConfig {
+            enable_kernel_aggregation: true,
+            max_aggregated_entries: 2, // Ограничиваем до 2 записей
+            ..Default::default()
+        };
 
         collector.set_filter_config(filter_config);
 
@@ -7317,25 +7346,26 @@ mod ebpf_filtering_tests {
         let mut metrics = EbpfMetrics::default();
 
         // Системные вызовы
-        let mut syscall_details = Vec::new();
-        syscall_details.push(SyscallStat {
-            syscall_id: 1,
-            count: 100,
-            total_time_ns: 1000,
-            avg_time_ns: 10,
-        });
-        syscall_details.push(SyscallStat {
-            syscall_id: 2,
-            count: 50,
-            total_time_ns: 500,
-            avg_time_ns: 10,
-        });
-        syscall_details.push(SyscallStat {
-            syscall_id: 3,
-            count: 25,
-            total_time_ns: 250,
-            avg_time_ns: 10,
-        });
+        let syscall_details = vec![
+            SyscallStat {
+                syscall_id: 1,
+                count: 100,
+                total_time_ns: 1000,
+                avg_time_ns: 10,
+            },
+            SyscallStat {
+                syscall_id: 2,
+                count: 50,
+                total_time_ns: 500,
+                avg_time_ns: 10,
+            },
+            SyscallStat {
+                syscall_id: 3,
+                count: 25,
+                total_time_ns: 250,
+                avg_time_ns: 10,
+            },
+        ];
 
         metrics.syscall_details = Some(syscall_details);
 
@@ -7360,32 +7390,37 @@ mod ebpf_filtering_tests {
         let mut collector = EbpfMetricsCollector::new(config);
 
         // Настраиваем фильтрацию и агрегацию
-        let mut filter_config = EbpfFilterConfig::default();
-        filter_config.enable_kernel_filtering = true;
-        filter_config.enable_kernel_aggregation = true;
-        filter_config.cpu_usage_threshold = 5.0;
-        filter_config.max_aggregated_entries = 1;
+        let filter_config = EbpfFilterConfig {
+            enable_kernel_filtering: true,
+            enable_kernel_aggregation: true,
+            cpu_usage_threshold: 5.0,
+            max_aggregated_entries: 1,
+            ..Default::default()
+        };
 
         collector.set_filter_config(filter_config);
 
         // Создаем тестовые метрики
-        let mut metrics = EbpfMetrics::default();
-        metrics.cpu_usage = 3.0; // Ниже порога
+        let mut metrics = EbpfMetrics {
+            cpu_usage: 3.0, // Ниже порога
+            ..Default::default()
+        };
 
         // Детализированная статистика
-        let mut syscall_details = Vec::new();
-        syscall_details.push(SyscallStat {
-            syscall_id: 1,
-            count: 100,
-            total_time_ns: 1000,
-            avg_time_ns: 10,
-        });
-        syscall_details.push(SyscallStat {
-            syscall_id: 2,
-            count: 50,
-            total_time_ns: 500,
-            avg_time_ns: 10,
-        });
+        let syscall_details = vec![
+            SyscallStat {
+                syscall_id: 1,
+                count: 100,
+                total_time_ns: 1000,
+                avg_time_ns: 10,
+            },
+            SyscallStat {
+                syscall_id: 2,
+                count: 50,
+                total_time_ns: 500,
+                avg_time_ns: 10,
+            },
+        ];
 
         metrics.syscall_details = Some(syscall_details);
 
@@ -7420,43 +7455,44 @@ mod ebpf_filtering_tests {
         // Создаем тестовые метрики
         let mut metrics = EbpfMetrics::default();
 
-        let mut process_details = Vec::new();
-        process_details.push(ProcessStat {
-            pid: 100,
-            tgid: 100,
-            ppid: 1,
-            cpu_time: 1000,
-            memory_usage: 1024,
-            syscall_count: 10,
-            io_bytes: 100,
-            start_time: 0,
-            last_activity: 0,
-            name: "process1".to_string(),
-        });
-        process_details.push(ProcessStat {
-            pid: 200,
-            tgid: 200,
-            ppid: 1,
-            cpu_time: 2000,
-            memory_usage: 2048,
-            syscall_count: 20,
-            io_bytes: 200,
-            start_time: 0,
-            last_activity: 0,
-            name: "process2".to_string(),
-        });
-        process_details.push(ProcessStat {
-            pid: 300,
-            tgid: 300,
-            ppid: 1,
-            cpu_time: 3000,
-            memory_usage: 3072,
-            syscall_count: 30,
-            io_bytes: 300,
-            start_time: 0,
-            last_activity: 0,
-            name: "process3".to_string(),
-        });
+        let process_details = vec![
+            ProcessStat {
+                pid: 100,
+                tgid: 100,
+                ppid: 1,
+                cpu_time: 1000,
+                memory_usage: 1024,
+                syscall_count: 10,
+                io_bytes: 100,
+                start_time: 0,
+                last_activity: 0,
+                name: "process1".to_string(),
+            },
+            ProcessStat {
+                pid: 200,
+                tgid: 200,
+                ppid: 1,
+                cpu_time: 2000,
+                memory_usage: 2048,
+                syscall_count: 20,
+                io_bytes: 200,
+                start_time: 0,
+                last_activity: 0,
+                name: "process2".to_string(),
+            },
+            ProcessStat {
+                pid: 300,
+                tgid: 300,
+                ppid: 1,
+                cpu_time: 3000,
+                memory_usage: 3072,
+                syscall_count: 30,
+                io_bytes: 300,
+                start_time: 0,
+                last_activity: 0,
+                name: "process3".to_string(),
+            },
+        ];
 
         metrics.process_details = Some(process_details);
 

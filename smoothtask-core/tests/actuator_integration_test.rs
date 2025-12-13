@@ -124,7 +124,7 @@ fn create_test_app_group(app_group_id: &str, root_pid: i32) -> AppGroupRecord {
     }
 }
 
-fn create_test_policy_results() -> HashMap<String, PolicyResult> {
+fn create_test_policyresults() -> HashMap<String, PolicyResult> {
     let mut results = HashMap::new();
     results.insert(
         "app1".to_string(),
@@ -154,9 +154,9 @@ fn create_test_policy_results() -> HashMap<String, PolicyResult> {
 #[test]
 fn test_plan_priority_changes_for_different_classes() {
     let snapshot = create_test_snapshot();
-    let policy_results = create_test_policy_results();
+    let policyresults = create_test_policyresults();
 
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert_eq!(adjustments.len(), 3);
 
@@ -231,9 +231,9 @@ fn test_apply_priority_adjustments_handles_empty_list() {
 #[test]
 fn test_full_integration_plan_and_apply() {
     let snapshot = create_test_snapshot();
-    let policy_results = create_test_policy_results();
+    let policyresults = create_test_policyresults();
 
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
     assert!(!adjustments.is_empty());
 
     let mut hysteresis = HysteresisTracker::new();
@@ -253,8 +253,8 @@ fn test_plan_priority_changes_handles_processes_without_appgroup() {
         process.app_group_id = None;
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(adjustments.len() <= 2);
 }
@@ -263,9 +263,9 @@ fn test_plan_priority_changes_handles_processes_without_appgroup() {
 #[test]
 fn test_plan_priority_changes_handles_processes_without_policy() {
     let snapshot = create_test_snapshot();
-    let policy_results = HashMap::new();
+    let policyresults = HashMap::new();
 
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(adjustments.is_empty());
 }
@@ -308,8 +308,8 @@ fn test_plan_priority_changes_edge_cases() {
         responsiveness: ResponsivenessMetrics::default(),
     };
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&empty_snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&empty_snapshot, &policyresults);
 
     assert!(adjustments.is_empty());
 }
@@ -345,9 +345,9 @@ fn test_apply_priority_adjustments_with_hysteresis() {
 #[test]
 fn test_plan_priority_changes_priority_combinations() {
     let snapshot = create_test_snapshot();
-    let policy_results = create_test_policy_results();
+    let policyresults = create_test_policyresults();
 
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     for adj in &adjustments {
         let expected_params = adj.target_class.params();
@@ -417,8 +417,8 @@ fn test_plan_priority_changes_process_states() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -442,19 +442,17 @@ fn test_apply_priority_adjustments_priority_classes() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными AppGroup.
 #[test]
 fn test_plan_priority_changes_multiple_appgroups() {
     let snapshot = create_test_snapshot();
-    let policy_results = create_test_policy_results();
+    let policyresults = create_test_policyresults();
 
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     let app1_adjustments: Vec<_> = adjustments
         .iter()
@@ -519,8 +517,8 @@ fn test_plan_priority_changes_process_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -551,9 +549,7 @@ fn test_apply_priority_adjustments_application_scenarios() {
     hysteresis.cleanup(&[std::process::id() as i32]);
     let _result3 = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(true); // result1.applied is usize, always >= 0
     assert!(result2.skipped_hysteresis >= result1.skipped_hysteresis);
-    assert!(true); // _result3.applied is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными тегами.
@@ -569,8 +565,8 @@ fn test_plan_priority_changes_process_tags() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -594,10 +590,8 @@ fn test_apply_priority_adjustments_parameter_combinations() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными состояниями окон.
@@ -613,8 +607,8 @@ fn test_plan_priority_changes_window_states() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -673,9 +667,6 @@ fn test_apply_priority_adjustments_hysteresis_scenarios() {
     }];
     let _result3 = apply_priority_adjustments(&adjustments3, &mut tracker);
 
-    assert!(true); // _result1.applied is usize, always >= 0
-    assert!(true); // _result2.skipped_hysteresis is usize, always >= 0
-    assert!(true); // _result3.applied is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными типами.
@@ -691,8 +682,8 @@ fn test_plan_priority_changes_process_types() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -716,10 +707,8 @@ fn test_apply_priority_adjustments_priority_scenarios() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками аудио.
@@ -734,8 +723,8 @@ fn test_plan_priority_changes_audio_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -759,10 +748,8 @@ fn test_apply_priority_adjustments_cgroup_scenarios() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками ввода.
@@ -777,8 +764,8 @@ fn test_plan_priority_changes_input_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -802,10 +789,8 @@ fn test_apply_priority_adjustments_ionice_scenarios() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками планировщика.
@@ -820,8 +805,8 @@ fn test_plan_priority_changes_scheduler_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -845,10 +830,8 @@ fn test_apply_priority_adjustments_latency_nice_scenarios() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками памяти.
@@ -862,8 +845,8 @@ fn test_plan_priority_changes_memory_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -887,10 +870,8 @@ fn test_apply_priority_adjustments_nice_scenarios() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками IO.
@@ -904,8 +885,8 @@ fn test_plan_priority_changes_io_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -929,10 +910,8 @@ fn test_apply_priority_adjustments_process_state_scenarios() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками CPU.
@@ -946,8 +925,8 @@ fn test_plan_priority_changes_cpu_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -987,10 +966,8 @@ fn test_apply_priority_adjustments_appgroup_scenarios() {
     ];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками ответственности.
@@ -1008,8 +985,8 @@ fn test_plan_priority_changes_responsiveness_metrics() {
         responsiveness_score: None,
     };
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -1049,10 +1026,8 @@ fn test_apply_priority_adjustments_reason_scenarios() {
     ];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками системы.
@@ -1082,8 +1057,8 @@ fn test_plan_priority_changes_system_metrics() {
         time_since_last_input_ms: Some(1000),
     };
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -1123,10 +1098,8 @@ fn test_apply_priority_adjustments_comprehensive_scenarios() {
     ];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками и состояниями.
@@ -1153,8 +1126,8 @@ fn test_plan_priority_changes_comprehensive_metrics() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -1178,11 +1151,8 @@ fn test_apply_priority_adjustments_comprehensive_application() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
-    assert!(true); // skipped_hysteresis is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками и состояниями в различных сценариях.
@@ -1212,8 +1182,8 @@ fn test_plan_priority_changes_comprehensive_scenarios() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -1253,10 +1223,8 @@ fn test_apply_priority_adjustments_comprehensive_parameters() {
     ];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками, состояниями и параметрами в различных сценариях.
@@ -1290,8 +1258,8 @@ fn test_plan_priority_changes_comprehensive_integration() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -1345,10 +1313,8 @@ fn test_apply_priority_adjustments_comprehensive_integration() {
     ];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками, состояниями, параметрами, сценариями и интеграцией.
@@ -1383,8 +1349,8 @@ fn test_plan_priority_changes_comprehensive_full_integration() {
         }
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     assert!(!adjustments.is_empty());
 }
@@ -1466,10 +1432,8 @@ fn test_apply_priority_adjustments_comprehensive_full_integration() {
     ];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с некорректными метриками.
@@ -1489,8 +1453,8 @@ fn test_plan_priority_changes_handles_invalid_metrics() {
         process.io_read_bytes = Some(u64::MAX); // Максимальное значение IO
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     // Должны быть запланированы изменения независимо от некорректных метрик
     assert!(!adjustments.is_empty());
@@ -1515,13 +1479,11 @@ fn test_apply_priority_adjustments_handles_invalid_priorities() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
     // Функция должна корректно обработать некорректные приоритеты
     // В тестовом окружении без прав root, результат может быть ошибкой
     // Но функция не должна паниковать
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с отсутствующими метриками.
@@ -1548,8 +1510,8 @@ fn test_plan_priority_changes_handles_missing_metrics() {
         process.ionice_prio = None;
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     // Должны быть запланированы изменения независимо от отсутствующих метрик
     assert!(!adjustments.is_empty());
@@ -1574,13 +1536,11 @@ fn test_apply_priority_adjustments_handles_missing_priorities() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
     // Функция должна корректно обработать отсутствующие приоритеты
     // В тестовом окружении без прав root, результат может быть ошибкой
     // Но функция не должна паниковать
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с экстремальными значениями.
@@ -1602,8 +1562,8 @@ fn test_plan_priority_changes_handles_extreme_values() {
         process.involuntary_ctx = Some(u64::MAX);
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     // Должны быть запланированы изменения независимо от экстремальных значений
     assert!(!adjustments.is_empty());
@@ -1628,13 +1588,11 @@ fn test_apply_priority_adjustments_handles_extreme_priorities() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
     // Функция должна корректно обработать экстремальные приоритеты
     // В тестовом окружении без прав root, результат может быть ошибкой
     // Но функция не должна паниковать
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с нестандартными состояниями.
@@ -1658,8 +1616,8 @@ fn test_plan_priority_changes_handles_unusual_states() {
         process.env_has_wayland = true;
     }
 
-    let policy_results = create_test_policy_results();
-    let adjustments = plan_priority_changes(&snapshot, &policy_results);
+    let policyresults = create_test_policyresults();
+    let adjustments = plan_priority_changes(&snapshot, &policyresults);
 
     // Должны быть запланированы изменения независимо от нестандартных состояний
     assert!(!adjustments.is_empty());
@@ -1684,11 +1642,9 @@ fn test_apply_priority_adjustments_handles_unusual_parameters() {
     }];
 
     let mut hysteresis = HysteresisTracker::new();
-    let result = apply_priority_adjustments(&adjustments, &mut hysteresis);
+    let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
 
     // Функция должна корректно обработать нестандартные параметры
     // В тестовом окружении без прав root, результат может быть ошибкой
     // Но функция не должна паниковать
-    assert!(result.applied > 0 || result.applied == 0);
-    assert!(true); // errors is usize, always >= 0
 }

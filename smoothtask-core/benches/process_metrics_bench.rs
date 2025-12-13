@@ -109,16 +109,8 @@ fn benchmark_process_metrics_cache_limited_threads(c: &mut Criterion) {
         max_cached_processes: 5000,
         enable_parallel_processing: true,
         max_parallel_threads: Some(4), // Ограничиваем до 4 потоков
-        enable_process_name_caching: true,
-        enable_cmdline_caching: true,
-        enable_exe_caching: true,
-        enable_io_caching: true,
-        enable_memory_caching: true,
-        enable_cpu_caching: true,
-        enable_disk_caching: true,
-        enable_network_caching: true,
-        enable_energy_caching: true,
-        enable_gpu_caching: true,
+
+
     };
 
     c.bench_function("process_metrics_cache_limited_threads", |b| {

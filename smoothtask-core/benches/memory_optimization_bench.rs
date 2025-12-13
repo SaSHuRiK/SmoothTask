@@ -82,11 +82,11 @@ fn create_large_system_metrics_optimized() -> SystemMetrics {
 
 fn benchmark_memory_usage(c: &mut Criterion) {
     c.bench_function("create_large_system_metrics", |b| {
-        b.iter(|| create_large_system_metrics())
+        b.iter(create_large_system_metrics)
     });
 
     c.bench_function("create_large_system_metrics_optimized", |b| {
-        b.iter(|| create_large_system_metrics_optimized())
+        b.iter(create_large_system_metrics_optimized)
     });
 
     // Benchmark the optimization function itself

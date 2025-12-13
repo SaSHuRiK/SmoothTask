@@ -187,7 +187,6 @@ fn test_gpu_monitoring_with_detailed_stats() {
         }
         None => {
             // Это ожидаемое поведение в тестовой среде без реальных GPU данных
-            assert!(true);
         }
     }
 }

@@ -1899,7 +1899,7 @@ mod cache_tests {
         // чтобы гарантировать разные временные метки
         for i in 0..5 {
             let record = ProcessRecord {
-                pid: i as i32,
+                pid: i,
                 ppid: 0,
                 uid: 1000,
                 gid: 1000,
@@ -1958,7 +1958,7 @@ mod cache_tests {
         // Добавляем несколько записей
         for i in 0..5 {
             let record = ProcessRecord {
-                pid: i as i32,
+                pid: i,
                 ppid: 0,
                 uid: 1000,
                 gid: 1000,
