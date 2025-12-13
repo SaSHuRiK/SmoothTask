@@ -33,6 +33,7 @@ pub mod input;
 pub mod ml_performance;
 pub mod network;
 pub mod process;
+pub mod process_network;
 pub mod scheduling_latency;
 pub mod system;
 pub mod windows;

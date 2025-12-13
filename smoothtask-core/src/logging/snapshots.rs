@@ -357,6 +357,22 @@ pub struct ProcessRecord {
     pub power_w: Option<f32>,
     /// Время последнего измерения энергопотребления (timestamp)
     pub energy_timestamp: Option<u64>,
+    /// Сетевая активность: байты получено
+    pub network_rx_bytes: Option<u64>,
+    /// Сетевая активность: байты отправлено
+    pub network_tx_bytes: Option<u64>,
+    /// Сетевая активность: пакеты получено
+    pub network_rx_packets: Option<u64>,
+    /// Сетевая активность: пакеты отправлено
+    pub network_tx_packets: Option<u64>,
+    /// Сетевая активность: количество TCP соединений
+    pub network_tcp_connections: Option<u64>,
+    /// Сетевая активность: количество UDP соединений
+    pub network_udp_connections: Option<u64>,
+    /// Сетевая активность: время последнего обновления (наносекунды)
+    pub network_last_update_ns: Option<u64>,
+    /// Сетевая активность: источник данных (proc, ebpf, или none)
+    pub network_data_source: Option<String>,
 }
 
 impl Default for ProcessRecord {
@@ -408,6 +424,14 @@ impl Default for ProcessRecord {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         }
     }
 }
@@ -439,6 +463,20 @@ pub struct AppGroupRecord {
     pub total_energy_uj: Option<u64>,
     /// Общая мощность группы в ваттах (если доступно)
     pub total_power_w: Option<f32>,
+    /// Общая сетевая активность: байты получено
+    pub total_network_rx_bytes: Option<u64>,
+    /// Общая сетевая активность: байты отправлено
+    pub total_network_tx_bytes: Option<u64>,
+    /// Общая сетевая активность: пакеты получено
+    pub total_network_rx_packets: Option<u64>,
+    /// Общая сетевая активность: пакеты отправлено
+    pub total_network_tx_packets: Option<u64>,
+    /// Общая сетевая активность: количество TCP соединений
+    pub total_network_tcp_connections: Option<u64>,
+    /// Общая сетевая активность: количество UDP соединений
+    pub total_network_udp_connections: Option<u64>,
+    /// Общая сетевая активность: источник данных
+    pub network_data_source: Option<String>,
 }
 
 /// Полный снапшот системы.

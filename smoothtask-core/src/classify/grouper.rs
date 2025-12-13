@@ -192,6 +192,13 @@ impl ProcessGrouper {
                 priority_class: None, // будет заполнено позже в policy engine
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             });
         }
 

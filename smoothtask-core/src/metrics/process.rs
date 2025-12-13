@@ -1132,6 +1132,14 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         energy_uj,
         power_w,
         energy_timestamp,
+        network_rx_bytes: None,
+        network_tx_bytes: None,
+        network_rx_packets: None,
+        network_tx_packets: None,
+        network_tcp_connections: None,
+        network_udp_connections: None,
+        network_last_update_ns: None,
+        network_data_source: None,
     };
 
     Ok(Some(record))
