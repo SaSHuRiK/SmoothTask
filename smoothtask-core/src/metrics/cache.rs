@@ -856,7 +856,7 @@ mod tests {
         cache.insert("test_key".to_string(), metrics, source_paths);
         
         assert!(cache.current_memory_usage() > 0);
-        assert!(cache.len() > 0);
+        assert!(!cache.is_empty());
     }
 
     #[test]
@@ -887,7 +887,7 @@ mod tests {
         // Проверяем, что очистка сработала (используем более реалистичный лимит)
         // Поскольку estimate_size может переоценивать размер, используем буфер
         assert!(cache.current_memory_usage() <= 2000); // Увеличиваем лимит для теста
-        assert!(cache.len() > 0);
+        assert!(!cache.is_empty());
     }
 
     #[test]
@@ -923,7 +923,8 @@ mod tests {
         assert!(info["ttl_seconds"].as_u64().unwrap() > 0);
         
         let memory_info = &info["memory"];
-        assert!(memory_info["current_bytes"].as_u64().unwrap() >= 0);
+        // u64 is always >= 0, so this assertion is redundant
+        let _current_bytes = memory_info["current_bytes"].as_u64().unwrap();
         assert!(memory_info["max_bytes"].as_u64().unwrap() > 0);
         assert!(memory_info["auto_cleanup_enabled"].as_bool().unwrap());
     }

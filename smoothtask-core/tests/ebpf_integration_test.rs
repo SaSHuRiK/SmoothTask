@@ -7,7 +7,7 @@ use std::time::Duration;
 fn test_ebpf_basic_functionality() {
     // Тестируем базовую функциональность eBPF коллектора
     let config = EbpfConfig::default();
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
@@ -36,7 +36,7 @@ fn test_ebpf_config_options() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     let metrics = collector.collect_metrics().unwrap();
@@ -63,7 +63,7 @@ fn test_ebpf_performance_optimizations() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Тестируем кэширование
@@ -121,7 +121,7 @@ fn test_gpu_monitoring_functionality() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Инициализация должна пройти успешно даже если GPU программы не найдены
     assert!(collector.initialize().is_ok());
@@ -158,7 +158,7 @@ fn test_gpu_monitoring_with_detailed_stats() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
@@ -207,7 +207,7 @@ fn test_gpu_temperature_and_power_monitoring() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
@@ -249,7 +249,7 @@ fn test_system_metrics_temperature_integration() {
     };
     
     // Создаем коллектор eBPF метрик
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     
     // Инициализируем коллектор (в тестовой среде это может не удаться, но мы проверяем логику)
     let _init_result = collector.initialize();
@@ -295,7 +295,7 @@ fn test_system_metrics_temperature_integration() {
     
     // Проверяем, что коллектор правильно обрабатывает конфигурацию
     let config = collector.get_config();
-    assert_eq!(config.enable_cpu_temperature_monitoring, true,
+    assert!(config.enable_cpu_temperature_monitoring,
         "Конфигурация мониторинга температуры CPU должна быть включена");
 }
 
@@ -312,7 +312,7 @@ fn test_cpu_temperature_notification_thresholds() {
     };
     
     // Создаем коллектор eBPF метрик
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     
     // Проверяем, что пороги уведомлений для температуры CPU настроены корректно
     let config = collector.get_config();
@@ -355,7 +355,7 @@ fn test_gpu_comprehensive_monitoring() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
@@ -428,7 +428,7 @@ fn test_ebpf_feature_flag() {
 fn test_ebpf_multiple_initializations() {
     // Тестируем множественную инициализацию
     let config = EbpfConfig::default();
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Первая инициализация
     assert!(collector.initialize().is_ok());
@@ -546,7 +546,7 @@ fn test_real_time_event_processing_optimization() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Инициализация должна пройти успешно
     assert!(collector.initialize().is_ok());
@@ -589,7 +589,7 @@ fn test_ebpf_custom_interval() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Проверяем, что интервал установлен корректно (через публичный метод)
@@ -603,7 +603,7 @@ fn test_ebpf_syscall_monitoring_disabled() {
     let config = EbpfConfig::default();
     assert!(!config.enable_syscall_monitoring);
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Сбор метрик должен работать даже с отключенным мониторингом системных вызовов
@@ -618,7 +618,7 @@ fn test_ebpf_network_monitoring() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     let metrics = collector.collect_metrics().unwrap();
@@ -655,7 +655,7 @@ fn test_ebpf_filesystem_monitoring() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     let metrics = collector.collect_metrics().unwrap();
@@ -688,7 +688,7 @@ fn test_ebpf_filesystem_monitoring() {
 fn test_ebpf_initialization_statistics() {
     // Тестируем статистику инициализации eBPF
     let config = EbpfConfig::default();
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Проверяем статистику до инициализации
     let (success_before, error_before) = collector.get_initialization_stats();
@@ -727,7 +727,7 @@ fn test_ebpf_memory_optimization() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Тестируем оптимизацию памяти
@@ -759,7 +759,7 @@ fn test_ebpf_filtering_and_aggregation() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Тестируем установку фильтрации по идентификаторам процессов
@@ -800,7 +800,7 @@ fn test_ebpf_temperature_monitoring() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Тестируем сбор полных метрик с температурой
@@ -826,7 +826,7 @@ fn test_ebpf_comprehensive_integration() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Тестируем инициализацию
     assert!(collector.initialize().is_ok());
@@ -917,7 +917,7 @@ fn test_ebpf_performance_benchmark() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Измеряем время выполнения нескольких операций
@@ -1002,7 +1002,7 @@ fn test_cpu_temperature_error_handling() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
 
     // Даже если eBPF программы не загружены, сбор метрик не должен паниковать
     // В тестовой среде без реальной eBPF поддержки это нормальное поведение
@@ -1029,7 +1029,7 @@ fn test_cpu_temperature_performance() {
         ..Default::default()
     };
 
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());
 
     // Тестируем производительность

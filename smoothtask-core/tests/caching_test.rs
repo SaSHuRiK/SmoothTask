@@ -371,8 +371,7 @@ fn test_real_system_metrics_collection() {
 
     // В большинстве Linux систем этот вызов должен завершиться успешно
     // Если нет, это может быть ожидаемо в тестовых окружениях
-    if result.is_ok() {
-        let metrics = result.unwrap();
+    if let Ok(metrics) = result {
         // Проверяем, что метрики содержат разумные значения
         assert!(metrics.cpu_times.user > 0);
         assert!(metrics.memory.mem_total_kb > 0);
@@ -394,8 +393,7 @@ fn test_real_process_metrics_collection() {
     let result = collect_process_metrics(None);
 
     // В большинстве Linux систем этот вызов должен завершиться успешно
-    if result.is_ok() {
-        let processes = result.unwrap();
+    if let Ok(processes) = result {
         // Должен быть хотя бы один процесс (текущий процесс)
         assert!(!processes.is_empty());
 

@@ -967,8 +967,8 @@ mod tests {
     #[test]
     fn test_network_monitor_creation() {
         let monitor = NetworkMonitor::new();
-        assert!(matches!(monitor.config.enable_detailed_interfaces, true));
-        assert!(matches!(monitor.config.enable_protocol_monitoring, true));
+        assert!(monitor.config.enable_detailed_interfaces);
+        assert!(monitor.config.enable_protocol_monitoring);
     }
 
     #[test]
@@ -978,7 +978,7 @@ mod tests {
             ..Default::default()
         };
         let monitor = NetworkMonitor::with_config(config);
-        assert!(matches!(monitor.config.enable_detailed_interfaces, false));
+        assert!(!monitor.config.enable_detailed_interfaces);
     }
 
     #[test]
@@ -1004,13 +1004,17 @@ mod tests {
 
     #[test]
     fn test_network_traffic_deltas() {
-        let mut current = ComprehensiveNetworkStats::default();
-        current.total_rx_bytes = 1000;
-        current.total_tx_bytes = 2000;
+        let current = ComprehensiveNetworkStats {
+            total_rx_bytes: 1000,
+            total_tx_bytes: 2000,
+            ..Default::default()
+        };
 
-        let mut previous = ComprehensiveNetworkStats::default();
-        previous.total_rx_bytes = 500;
-        previous.total_tx_bytes = 1000;
+        let previous = ComprehensiveNetworkStats {
+            total_rx_bytes: 500,
+            total_tx_bytes: 1000,
+            ..Default::default()
+        };
 
         let monitor = NetworkMonitor::new();
         let deltas = monitor.calculate_traffic_deltas(&current, &previous);
@@ -1030,29 +1034,29 @@ mod tests {
 
     #[test]
     fn test_network_traffic_deltas_with_interfaces() {
-        let mut current = ComprehensiveNetworkStats::default();
-        current.total_rx_bytes = 1000;
-        current.total_tx_bytes = 2000;
-        
-        // Add interface data
-        current.interfaces.push(NetworkInterfaceStats {
-            name: "eth0".to_string(),
-            rx_bytes: 500,
-            tx_bytes: 1000,
+        let current = ComprehensiveNetworkStats {
+            total_rx_bytes: 1000,
+            total_tx_bytes: 2000,
+            interfaces: vec![NetworkInterfaceStats {
+                name: "eth0".to_string(),
+                rx_bytes: 500,
+                tx_bytes: 1000,
+                ..Default::default()
+            }],
             ..Default::default()
-        });
+        };
 
-        let mut previous = ComprehensiveNetworkStats::default();
-        previous.total_rx_bytes = 500;
-        previous.total_tx_bytes = 1000;
-        
-        // Add previous interface data
-        previous.interfaces.push(NetworkInterfaceStats {
-            name: "eth0".to_string(),
-            rx_bytes: 250,
-            tx_bytes: 500,
+        let previous = ComprehensiveNetworkStats {
+            total_rx_bytes: 500,
+            total_tx_bytes: 1000,
+            interfaces: vec![NetworkInterfaceStats {
+                name: "eth0".to_string(),
+                rx_bytes: 250,
+                tx_bytes: 500,
+                ..Default::default()
+            }],
             ..Default::default()
-        });
+        };
 
         let monitor = NetworkMonitor::new();
         let deltas = monitor.calculate_traffic_deltas(&current, &previous);
@@ -1083,41 +1087,45 @@ mod tests {
 
     #[test]
     fn test_network_traffic_deltas_multiple_interfaces() {
-        let mut current = ComprehensiveNetworkStats::default();
-        current.total_rx_bytes = 1500;
-        current.total_tx_bytes = 3000;
-        
-        // Add multiple interfaces
-        current.interfaces.push(NetworkInterfaceStats {
-            name: "eth0".to_string(),
-            rx_bytes: 500,
-            tx_bytes: 1000,
+        let current = ComprehensiveNetworkStats {
+            total_rx_bytes: 1500,
+            total_tx_bytes: 3000,
+            interfaces: vec![
+                NetworkInterfaceStats {
+                    name: "eth0".to_string(),
+                    rx_bytes: 500,
+                    tx_bytes: 1000,
+                    ..Default::default()
+                },
+                NetworkInterfaceStats {
+                    name: "wlan0".to_string(),
+                    rx_bytes: 1000,
+                    tx_bytes: 2000,
+                    ..Default::default()
+                }
+            ],
             ..Default::default()
-        });
-        current.interfaces.push(NetworkInterfaceStats {
-            name: "wlan0".to_string(),
-            rx_bytes: 1000,
-            tx_bytes: 2000,
-            ..Default::default()
-        });
+        };
 
-        let mut previous = ComprehensiveNetworkStats::default();
-        previous.total_rx_bytes = 750;
-        previous.total_tx_bytes = 1500;
-        
-        // Add previous interface data
-        previous.interfaces.push(NetworkInterfaceStats {
-            name: "eth0".to_string(),
-            rx_bytes: 250,
-            tx_bytes: 500,
+        let previous = ComprehensiveNetworkStats {
+            total_rx_bytes: 750,
+            total_tx_bytes: 1500,
+            interfaces: vec![
+                NetworkInterfaceStats {
+                    name: "eth0".to_string(),
+                    rx_bytes: 250,
+                    tx_bytes: 500,
+                    ..Default::default()
+                },
+                NetworkInterfaceStats {
+                    name: "wlan0".to_string(),
+                    rx_bytes: 500,
+                    tx_bytes: 1000,
+                    ..Default::default()
+                }
+            ],
             ..Default::default()
-        });
-        previous.interfaces.push(NetworkInterfaceStats {
-            name: "wlan0".to_string(),
-            rx_bytes: 500,
-            tx_bytes: 1000,
-            ..Default::default()
-        });
+        };
 
         let monitor = NetworkMonitor::new();
         let deltas = monitor.calculate_traffic_deltas(&current, &previous);
@@ -1139,17 +1147,19 @@ mod tests {
 
     #[test]
     fn test_network_interface_stats_with_data() {
-        let mut stats = NetworkInterfaceStats::default();
-        stats.name = "eth0".to_string();
-        stats.interface_type = NetworkInterfaceType::Ethernet;
-        stats.mac_address = Some("00:11:22:33:44:55".to_string());
-        stats.ip_addresses = vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))];
-        stats.speed_mbps = Some(1000);
-        stats.is_up = true;
-        stats.rx_bytes = 1024;
-        stats.tx_bytes = 2048;
-        stats.rx_packets = 100;
-        stats.tx_packets = 200;
+        let stats = NetworkInterfaceStats {
+            name: "eth0".to_string(),
+            interface_type: NetworkInterfaceType::Ethernet,
+            mac_address: Some("00:11:22:33:44:55".to_string()),
+            ip_addresses: vec![IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))],
+            speed_mbps: Some(1000),
+            is_up: true,
+            rx_bytes: 1024,
+            tx_bytes: 2048,
+            rx_packets: 100,
+            tx_packets: 200,
+            ..Default::default()
+        };
         
         assert_eq!(stats.name, "eth0");
         assert!(matches!(stats.interface_type, NetworkInterfaceType::Ethernet));
@@ -1187,12 +1197,14 @@ mod tests {
 
     #[test]
     fn test_network_quality_metrics_with_data() {
-        let mut metrics = NetworkQualityMetrics::default();
-        metrics.packet_loss = 0.1;
-        metrics.latency_ms = 50.5;
-        metrics.jitter_ms = 5.2;
-        metrics.bandwidth_utilization = 0.75;
-        metrics.stability_score = 0.95;
+        let metrics = NetworkQualityMetrics {
+            packet_loss: 0.1,
+            latency_ms: 50.5,
+            jitter_ms: 5.2,
+            bandwidth_utilization: 0.75,
+            stability_score: 0.95,
+            ..Default::default()
+        };
         
         assert_eq!(metrics.packet_loss, 0.1);
         assert_eq!(metrics.latency_ms, 50.5);
@@ -1203,13 +1215,15 @@ mod tests {
 
     #[test]
     fn test_port_usage_stats_with_data() {
-        let mut stats = PortUsageStats::default();
-        stats.port = 8080;
-        stats.protocol = "TCP".to_string();
-        stats.connection_count = 5;
-        stats.bytes_transmitted = 10240;
-        stats.bytes_received = 20480;
-        stats.processes = vec![1234, 5678];
+        let stats = PortUsageStats {
+            port: 8080,
+            protocol: "TCP".to_string(),
+            connection_count: 5,
+            bytes_transmitted: 10240,
+            bytes_received: 20480,
+            processes: vec![1234, 5678],
+            ..Default::default()
+        };
         
         assert_eq!(stats.port, 8080);
         assert_eq!(stats.protocol, "TCP");
@@ -1417,14 +1431,16 @@ mod tests {
     #[test]
     fn test_network_traffic_deltas_edge_cases() {
         // Test edge cases for traffic deltas
-        let mut current = ComprehensiveNetworkStats::default();
-        let mut previous = ComprehensiveNetworkStats::default();
-        
-        // Test with maximum values
-        current.total_rx_bytes = u64::MAX;
-        current.total_tx_bytes = u64::MAX;
-        previous.total_rx_bytes = u64::MAX;
-        previous.total_tx_bytes = u64::MAX;
+        let current = ComprehensiveNetworkStats {
+            total_rx_bytes: u64::MAX,
+            total_tx_bytes: u64::MAX,
+            ..Default::default()
+        };
+        let previous = ComprehensiveNetworkStats {
+            total_rx_bytes: u64::MAX,
+            total_tx_bytes: u64::MAX,
+            ..Default::default()
+        };
         
         let monitor = NetworkMonitor::new();
         let deltas = monitor.calculate_traffic_deltas(&current, &previous);
@@ -1434,12 +1450,18 @@ mod tests {
         assert_eq!(deltas.total_tx_bytes_delta, 0);
         
         // Test with zero values
-        current.total_rx_bytes = 0;
-        current.total_tx_bytes = 0;
-        previous.total_rx_bytes = 0;
-        previous.total_tx_bytes = 0;
+        let current_zero = ComprehensiveNetworkStats {
+            total_rx_bytes: 0,
+            total_tx_bytes: 0,
+            ..Default::default()
+        };
+        let previous_zero = ComprehensiveNetworkStats {
+            total_rx_bytes: 0,
+            total_tx_bytes: 0,
+            ..Default::default()
+        };
         
-        let deltas = monitor.calculate_traffic_deltas(&current, &previous);
+        let deltas = monitor.calculate_traffic_deltas(&current_zero, &previous_zero);
         assert_eq!(deltas.total_rx_bytes_delta, 0);
         assert_eq!(deltas.total_tx_bytes_delta, 0);
     }
@@ -1508,23 +1530,34 @@ mod tests {
     #[test]
     fn test_network_stats_serialization_edge_cases() {
         // Test serialization of edge case network stats
-        let mut stats = ComprehensiveNetworkStats::default();
-        
-        // Add interface with maximum values
-        stats.interfaces.push(NetworkInterfaceStats {
-            name: "eth0".to_string(),
-            rx_bytes: u64::MAX,
-            tx_bytes: u64::MAX,
-            rx_packets: u64::MAX,
-            tx_packets: u64::MAX,
+        let _stats = ComprehensiveNetworkStats {
+            interfaces: vec![NetworkInterfaceStats {
+                name: "eth0".to_string(),
+                rx_bytes: u64::MAX,
+                tx_bytes: u64::MAX,
+                rx_packets: u64::MAX,
+                tx_packets: u64::MAX,
+                ..Default::default()
+            }],
             ..Default::default()
-        });
+        };
         
         // Set maximum totals
-        stats.total_rx_bytes = u64::MAX;
-        stats.total_tx_bytes = u64::MAX;
-        stats.total_rx_packets = u64::MAX;
-        stats.total_tx_packets = u64::MAX;
+        let stats = ComprehensiveNetworkStats {
+            total_rx_bytes: u64::MAX,
+            total_tx_bytes: u64::MAX,
+            total_rx_packets: u64::MAX,
+            total_tx_packets: u64::MAX,
+            interfaces: vec![NetworkInterfaceStats {
+                name: "eth0".to_string(),
+                rx_bytes: u64::MAX,
+                tx_bytes: u64::MAX,
+                rx_packets: u64::MAX,
+                tx_packets: u64::MAX,
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
         
         let json = serde_json::to_string(&stats).expect("Serialization should work");
         let deserialized: ComprehensiveNetworkStats = serde_json::from_str(&json).expect("Deserialization should work");
@@ -1571,10 +1604,15 @@ mod tests {
     #[test]
     fn test_network_benchmark_results_serialization() {
         // Test NetworkBenchmarkResults serialization
-        let mut results = NetworkBenchmarkResults::default();
-        results.iterations = 10;
-        results.interface_collection_time = Duration::from_millis(100);
-        results.avg_interface_time = Duration::from_millis(10);
+        let results = NetworkBenchmarkResults {
+            iterations: 10,
+            interface_collection_time: Duration::from_millis(100),
+            protocol_collection_time: Duration::from_millis(50),
+            connection_collection_time: Duration::from_millis(75),
+            full_collection_time: Duration::from_millis(225),
+            avg_interface_time: Duration::from_millis(10),
+            ..Default::default()
+        };
         
         let json = serde_json::to_string(&results).expect("Serialization should work");
         let deserialized: NetworkBenchmarkResults = serde_json::from_str(&json).expect("Deserialization should work");
