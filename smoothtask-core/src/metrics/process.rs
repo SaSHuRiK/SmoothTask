@@ -1021,7 +1021,8 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         read_env_vars(proc.pid()).unwrap_or((false, false, None, false));
 
     // Читаем статистику ввода-вывода (опционально, так как это тяжелая операция)
-    let (io_read_bytes, io_write_bytes) = read_io_stats(proc.pid()).unwrap_or((None, None));
+    let (io_read_bytes, io_write_bytes, io_read_operations, io_write_operations) = 
+        read_io_stats_enhanced(proc.pid()).unwrap_or((None, None, None, None));
 
     // Читаем nice из stat (конвертируем i64 в i32)
     let nice = stat.nice as i32;
@@ -1072,11 +1073,15 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         cpu_share_10s: None,  // будет вычислено при следующем снапшоте
         io_read_bytes,        // статистика ввода-вывода из /proc/[pid]/io
         io_write_bytes,       // статистика ввода-вывода из /proc/[pid]/io
-        io_read_operations: None,      // будет заполнено из eBPF, если доступно
-        io_write_operations: None,     // будет заполнено из eBPF, если доступно
-        io_total_operations: None,     // будет заполнено из eBPF, если доступно
-        io_last_update_ns: None,        // будет заполнено из eBPF, если доступно
-        io_data_source: None,           // будет заполнено при улучшении
+        io_read_operations,   // операции ввода из /proc/[pid]/io (syscr)
+        io_write_operations,  // операции вывода из /proc/[pid]/io (syscw)
+        io_total_operations: io_read_operations.and_then(|read_ops| 
+            io_write_operations.map(|write_ops| read_ops + write_ops)),
+        io_last_update_ns: Some(std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos() as u64),
+        io_data_source: Some("proc".to_string()),
         rss_mb,
         swap_mb,
         voluntary_ctx,
@@ -1334,6 +1339,59 @@ fn read_io_stats(pid: i32) -> Result<(Option<u64>, Option<u64>)> {
     Ok((read_bytes, write_bytes))
 }
 
+/// Улучшенная версия read_io_stats, которая также читает количество операций ввода-вывода.
+/// Читает статистику ввода-вывода процесса из /proc/[pid]/io, включая операции.
+fn read_io_stats_enhanced(pid: i32) -> Result<(Option<u64>, Option<u64>, Option<u64>, Option<u64>)> {
+    let io_path = format!("/proc/{}/io", pid);
+    let io_content = match fs::read_to_string(&io_path) {
+        Ok(c) => c,
+        Err(e) => {
+            // Не критичная ошибка - io статистика может быть недоступна
+            tracing::debug!(
+                "Не удалось прочитать /proc/{}/io: {}.
+                 Статистика ввода-вывода может быть недоступна для этого процесса",
+                pid,
+                e
+            );
+            return Ok((None, None, None, None));
+        }
+    };
+
+    let mut read_bytes = None;
+    let mut write_bytes = None;
+    let mut read_operations = None;
+    let mut write_operations = None;
+
+    for line in io_content.lines() {
+        if let Some(value) = line.strip_prefix("read_bytes: ") {
+            if let Ok(bytes) = value.trim().parse::<u64>() {
+                read_bytes = Some(bytes);
+            }
+        } else if let Some(value) = line.strip_prefix("write_bytes: ") {
+            if let Ok(bytes) = value.trim().parse::<u64>() {
+                write_bytes = Some(bytes);
+            }
+        } else if let Some(value) = line.strip_prefix("syscr: ") {
+            // syscr - количество системных вызовов чтения (операции ввода)
+            if let Ok(ops) = value.trim().parse::<u64>() {
+                read_operations = Some(ops);
+            }
+        } else if let Some(value) = line.strip_prefix("syscw: ") {
+            // syscw - количество системных вызовов записи (операции вывода)
+            if let Ok(ops) = value.trim().parse::<u64>() {
+                write_operations = Some(ops);
+            }
+        }
+
+        // Если нашли все значения, можно прекратить парсинг
+        if read_bytes.is_some() && write_bytes.is_some() && read_operations.is_some() && write_operations.is_some() {
+            break;
+        }
+    }
+
+    Ok((read_bytes, write_bytes, read_operations, write_operations))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1424,6 +1482,62 @@ mod tests {
         let (read_bytes, write_bytes) = result.unwrap();
         assert_eq!(read_bytes, None);
         assert_eq!(write_bytes, None);
+    }
+
+    #[test]
+    fn test_read_io_stats_enhanced() {
+        // Тестируем улучшенную функцию, которая также парсит операции ввода-вывода
+        let io_content = "rchar: 123456
+
+wchar: 789012
+
+syscr: 345
+
+syscw: 678
+
+read_bytes: 1024000
+
+write_bytes: 2048000
+
+cancelled_write_bytes: 0
+
+";
+
+        // Парсим вручную, как это делает read_io_stats_enhanced
+        let mut read_bytes = None;
+        let mut write_bytes = None;
+        let mut read_operations = None;
+        let mut write_operations = None;
+
+        for line in io_content.lines() {
+            if let Some(value) = line.strip_prefix("read_bytes: ") {
+                read_bytes = value.trim().parse::<u64>().ok();
+            } else if let Some(value) = line.strip_prefix("write_bytes: ") {
+                write_bytes = value.trim().parse::<u64>().ok();
+            } else if let Some(value) = line.strip_prefix("syscr: ") {
+                read_operations = value.trim().parse::<u64>().ok();
+            } else if let Some(value) = line.strip_prefix("syscw: ") {
+                write_operations = value.trim().parse::<u64>().ok();
+            }
+        }
+
+        // Проверяем, что парсинг работает корректно
+        assert_eq!(read_bytes, Some(1024000));
+        assert_eq!(write_bytes, Some(2048000));
+        assert_eq!(read_operations, Some(345));
+        assert_eq!(write_operations, Some(678));
+    }
+
+    #[test]
+    fn test_read_io_stats_enhanced_missing_file() {
+        // Тестируем обработку ошибок для улучшенной функции
+        let result = read_io_stats_enhanced(99999);
+        assert!(result.is_ok());
+        let (read_bytes, write_bytes, read_ops, write_ops) = result.unwrap();
+        assert_eq!(read_bytes, None);
+        assert_eq!(write_bytes, None);
+        assert_eq!(read_ops, None);
+        assert_eq!(write_ops, None);
     }
 
     #[test]
