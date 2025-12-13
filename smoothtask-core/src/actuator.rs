@@ -1363,6 +1363,9 @@ mod tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         }
     }
 
@@ -1380,6 +1383,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }
     }
 

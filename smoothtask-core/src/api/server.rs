@@ -3998,6 +3998,9 @@ mod tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4039,6 +4042,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["gui".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
         let app_groups_arc = Arc::new(RwLock::new(app_groups));
         let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
@@ -4483,6 +4488,9 @@ mod tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4537,6 +4545,9 @@ mod tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4629,6 +4640,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["gui".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
         let app_groups_arc = Arc::new(RwLock::new(app_groups));
         let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
@@ -4657,6 +4670,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["gui".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
         let app_groups_arc = Arc::new(RwLock::new(app_groups));
         let state = ApiState::with_all(None, None, None, Some(app_groups_arc));

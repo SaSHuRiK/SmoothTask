@@ -714,6 +714,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["browser".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -770,6 +772,9 @@ mod tests {
             ionice_prio: Some(4),
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         let app_group = AppGroupRecord {
@@ -785,6 +790,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.processes = vec![system_process];
@@ -844,6 +851,9 @@ mod tests {
             ionice_prio: Some(4),
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         let app_group = AppGroupRecord {
@@ -859,6 +869,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["audio".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.processes = vec![audio_process];
@@ -892,6 +904,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["updater".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -924,6 +938,8 @@ mod tests {
             is_focused_group: false, // Не в фокусе
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -954,6 +970,8 @@ mod tests {
             is_focused_group: true, // В фокусе
             tags: vec!["game".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -984,6 +1002,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -1017,6 +1037,8 @@ mod tests {
                 is_focused_group: false, // Не в фокусе, чтобы не попасть под семантические правила
                 tags: vec![],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "normal-app-2".to_string(),
@@ -1031,6 +1053,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
         ];
 
@@ -1098,6 +1122,9 @@ mod tests {
             ionice_prio: Some(4),
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         let app_group = AppGroupRecord {
@@ -1113,6 +1140,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.processes = vec![system_process];
@@ -1148,6 +1177,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![app_group];
@@ -1185,6 +1216,8 @@ mod tests {
                 is_focused_group: true, // Фокусная группа -> высокий score
                 tags: vec![],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "medium_priority".to_string(),
@@ -1199,6 +1232,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "low_priority".to_string(),
@@ -1213,6 +1248,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
         ];
 
@@ -1285,6 +1322,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
 
         snapshot.app_groups = app_groups;
@@ -1322,6 +1361,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
 
         snapshot.app_groups = app_groups;
@@ -1356,6 +1397,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
 
         snapshot.app_groups = app_groups;
@@ -1420,6 +1463,9 @@ mod tests {
             ionice_prio: Some(4),
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         let app_group = AppGroupRecord {
@@ -1435,6 +1481,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["terminal".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.processes = vec![terminal_process];
@@ -1470,6 +1518,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["browser".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         // Группа 2: Системный процесс (должен быть Normal)
@@ -1486,6 +1536,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["system".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         // Группа 3: Updater с активным пользователем (должен быть Background)
@@ -1502,6 +1554,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["updater".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         // Группа 4: Обычный процесс без особых характеристик (должен быть Normal)
@@ -1518,6 +1572,8 @@ mod tests {
             is_focused_group: false,
             tags: vec!["background".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.app_groups = vec![
@@ -1567,6 +1623,9 @@ mod tests {
             ionice_prio: Some(4),
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         snapshot.processes = vec![system_process];
@@ -1627,6 +1686,9 @@ mod tests {
             ionice_prio: Some(4),
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         let app_group = AppGroupRecord {
@@ -1642,6 +1704,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["game".to_string()],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         snapshot.processes = vec![game_process];

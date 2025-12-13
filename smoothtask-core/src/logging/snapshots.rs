@@ -341,6 +341,12 @@ pub struct ProcessRecord {
     pub ionice_prio: Option<i32>,
     pub teacher_priority_class: Option<String>,
     pub teacher_score: Option<f64>,
+    /// Энергопотребление процесса в микроджоулях (если доступно)
+    pub energy_uj: Option<u64>,
+    /// Мгновенная мощность процесса в ваттах (если доступно)
+    pub power_w: Option<f32>,
+    /// Время последнего измерения энергопотребления (timestamp)
+    pub energy_timestamp: Option<u64>,
 }
 
 /// Запись о группе приложений в снапшоте.
@@ -358,6 +364,10 @@ pub struct AppGroupRecord {
     pub is_focused_group: bool,
     pub tags: Vec<String>,
     pub priority_class: Option<String>,
+    /// Общее энергопотребление группы в микроджоулях (если доступно)
+    pub total_energy_uj: Option<u64>,
+    /// Общая мощность группы в ваттах (если доступно)
+    pub total_power_w: Option<f32>,
 }
 
 /// Полный снапшот системы.
@@ -864,6 +874,9 @@ mod tests {
                 ionice_prio: Some(4),
                 teacher_priority_class: Some("INTERACTIVE".to_string()),
                 teacher_score: Some(0.75),
+                energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
+                power_w: Some(0.5), // 0.5 ватта
+                energy_timestamp: Some(1234567890),
             }],
             app_groups: vec![AppGroupRecord {
                 app_group_id: "test-app".to_string(),
@@ -878,6 +891,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["terminal".to_string()],
                 priority_class: Some("INTERACTIVE".to_string()),
+                total_energy_uj: Some(2000000), // 2000000 микроджоулей = 2 джоуля
+                total_power_w: Some(1.0), // 1 ватт
             }],
             responsiveness: ResponsivenessMetrics {
                 sched_latency_p95_ms: Some(5.0),
@@ -889,6 +904,142 @@ mod tests {
                 responsiveness_score: Some(0.9),
             },
         }
+    }
+
+    #[test]
+    fn test_energy_fields_serialization() {
+        // Тест проверяет сериализацию и десериализацию новых полей энергопотребления
+        let process = ProcessRecord {
+            pid: 1234,
+            ppid: 1,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("/usr/bin/test".to_string()),
+            cmdline: Some("test --flag".to_string()),
+            cgroup_path: Some("/user.slice/user-1000.slice".to_string()),
+            systemd_unit: None,
+            app_group_id: Some("test-app".to_string()),
+            state: "R".to_string(),
+            start_time: 1000000,
+            uptime_sec: 3600,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: Some(0.1),
+            cpu_share_10s: Some(0.08),
+            io_read_bytes: Some(1024 * 1024),
+            io_write_bytes: Some(512 * 1024),
+            rss_mb: Some(100),
+            swap_mb: None,
+            voluntary_ctx: Some(1000),
+            involuntary_ctx: Some(50),
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: Some("cli_interactive".to_string()),
+            tags: vec!["terminal".to_string()],
+            nice: 0,
+            ionice_class: Some(2),
+            ionice_prio: Some(4),
+            teacher_priority_class: Some("INTERACTIVE".to_string()),
+            teacher_score: Some(0.75),
+            energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
+            power_w: Some(0.5), // 0.5 ватта
+            energy_timestamp: Some(1234567890),
+        };
+
+        // Тестируем сериализацию
+        let serialized = serde_json::to_string(&process).unwrap();
+        let deserialized: ProcessRecord = serde_json::from_str(&serialized).unwrap();
+
+        // Проверяем, что поля энергопотребления правильно сериализуются и десериализуются
+        assert_eq!(deserialized.energy_uj, Some(1000000));
+        assert_eq!(deserialized.power_w, Some(0.5));
+        assert_eq!(deserialized.energy_timestamp, Some(1234567890));
+
+        // Тестируем AppGroupRecord
+        let app_group = AppGroupRecord {
+            app_group_id: "test-app".to_string(),
+            root_pid: 1234,
+            process_ids: vec![1234, 1235],
+            app_name: Some("test".to_string()),
+            total_cpu_share: Some(0.15),
+            total_io_read_bytes: Some(2 * 1024 * 1024),
+            total_io_write_bytes: Some(1024 * 1024),
+            total_rss_mb: Some(200),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec!["terminal".to_string()],
+            priority_class: Some("INTERACTIVE".to_string()),
+            total_energy_uj: Some(2000000), // 2000000 микроджоулей = 2 джоуля
+            total_power_w: Some(1.0), // 1 ватт
+        };
+
+        // Тестируем сериализацию AppGroupRecord
+        let serialized_group = serde_json::to_string(&app_group).unwrap();
+        let deserialized_group: AppGroupRecord = serde_json::from_str(&serialized_group).unwrap();
+
+        // Проверяем, что поля энергопотребления правильно сериализуются и десериализуются
+        assert_eq!(deserialized_group.total_energy_uj, Some(2000000));
+        assert_eq!(deserialized_group.total_power_w, Some(1.0));
+    }
+
+    #[test]
+    fn test_energy_fields_default_values() {
+        // Тест проверяет, что новые поля энергопотребления имеют правильные значения по умолчанию
+        let process = ProcessRecord {
+            pid: 1,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: None,
+            cmdline: None,
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 0,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: None,
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: vec![],
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
+        };
+
+        // Проверяем, что поля по умолчанию равны None
+        assert_eq!(process.energy_uj, None);
+        assert_eq!(process.power_w, None);
+        assert_eq!(process.energy_timestamp, None);
     }
 
     #[test]

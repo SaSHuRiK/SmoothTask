@@ -178,6 +178,8 @@ impl ProcessGrouper {
                 is_focused_group,
                 tags: tags_set.into_iter().collect(),
                 priority_class: None, // будет заполнено позже в policy engine
+                total_energy_uj: None,
+                total_power_w: None,
             });
         }
 

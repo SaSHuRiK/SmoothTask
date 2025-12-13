@@ -914,6 +914,9 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         ionice_prio,
         teacher_priority_class: None, // для обучения
         teacher_score: None,          // для обучения
+        energy_uj: None,
+        power_w: None,
+        energy_timestamp: None,
     };
 
     Ok(Some(record))
