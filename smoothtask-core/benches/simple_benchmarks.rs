@@ -4,7 +4,11 @@
 //! в SmoothTask, включая сбор метрик, обработку процессов и другие операции.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use smoothtask_core::config::{CacheIntervals, Config, Paths, PolicyMode, Thresholds};
+use smoothtask_core::config::config_struct::{
+    CacheIntervals, Config, LoggingConfig, MLClassifierConfig, ModelConfig, ModelType, 
+    NotificationConfig, PatternAutoUpdateConfig, Paths, PolicyMode, Thresholds,
+};
+use smoothtask_core::metrics::ebpf::EbpfConfig;
 use smoothtask_core::metrics::process::{collect_process_metrics, collect_process_metrics_legacy};
 use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
 use smoothtask_core::metrics::windows::{
@@ -100,7 +104,7 @@ fn benchmark_process_data_processing(c: &mut Criterion) {
     c.bench_function("process_data_processing", |b| {
         b.iter(|| {
             // Собираем метрики процессов
-            let processes = collect_process_metrics().unwrap_or_default();
+            let processes = collect_process_metrics(None).unwrap_or_default();
 
             // Фильтруем и обрабатываем данные
             let filtered: Vec<_> = processes

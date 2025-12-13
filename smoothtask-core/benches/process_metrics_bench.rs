@@ -3,7 +3,7 @@
 //! Эти бенчмарки помогают измерить производительность различных конфигураций
 //! сбора метрик процессов, включая кэширование и параллельную обработку.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion};
 use smoothtask_core::metrics::process::{
     clear_process_cache, collect_process_metrics, ProcessCacheConfig,
 };

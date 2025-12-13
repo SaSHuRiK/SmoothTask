@@ -1536,7 +1536,7 @@ curl http://127.0.0.1:8080/api/processes/disk
 
 ### GET /api/performance
 
-Получение информации о производительности API сервера и кэшировании.
+Получение информации о производительности API сервера.
 
 **Запрос:**
 ```bash
@@ -1553,49 +1553,21 @@ curl http://127.0.0.1:8080/api/performance
     "cache_misses": 300,
     "cache_hit_rate": 0.8,
     "average_processing_time_us": 1500,
-    "max_processing_time_us": 5000,
-    "min_processing_time_us": 100,
     "total_processing_time_us": 2250000,
-    "requests_per_second": 15.5,
-    "active_connections": 5,
-    "total_connections": 1000
+    "last_request_time": 123.45,
+    "requests_per_second": 15.5
   },
-  "cache_statistics": {
-    "current_entries": 500,
-    "max_entries": 1000,
-    "hit_rate": 0.8,
-    "evictions": 100,
-    "average_ttl_seconds": 300,
-    "memory_usage_bytes": 52428800
-  },
-  "system_load": {
-    "cpu_usage_percent": 45.2,
-    "memory_usage_percent": 65.8,
-    "average_load_1min": 1.2,
-    "average_load_5min": 1.5,
-    "average_load_15min": 1.8
-  },
-  "message": "Performance metrics retrieved successfully",
-  "component_status": {
-    "daemon_stats": true,
-    "system_metrics": true,
-    "processes": true,
-    "app_groups": true,
-    "config": true,
-    "pattern_database": true
-  },
-  "timestamp": "2025-01-01T12:00:00+00:00"
+  "cache_info": {
+    "enabled": true,
+    "ttl_seconds": null
+  }
 }
 ```
 
 **Поля ответа:**
 - `status` (string) - статус запроса (`ok`)
 - `performance_metrics` (object) - метрики производительности API сервера
-- `cache_statistics` (object) - статистика кэширования
-- `system_load` (object) - информация о загрузке системы
-- `message` (string) - сообщение о статусе запроса
-- `component_status` (object) - статус доступности основных компонентов
-- `timestamp` (string) - время генерации ответа в формате RFC3339
+- `cache_info` (object) - информация о кэшировании
 
 **Поля объекта performance_metrics:**
 - `total_requests` (u64) - общее количество запросов
@@ -1603,30 +1575,28 @@ curl http://127.0.0.1:8080/api/performance
 - `cache_misses` (u64) - количество кэш-промахов
 - `cache_hit_rate` (f32) - коэффициент попадания в кэш
 - `average_processing_time_us` (u64) - среднее время обработки запроса в микросекундах
-- `max_processing_time_us` (u64) - максимальное время обработки запроса в микросекундах
-- `min_processing_time_us` (u64) - минимальное время обработки запроса в микросекундах
 - `total_processing_time_us` (u64) - общее время обработки всех запросов в микросекундах
+- `last_request_time` (f64, optional) - время с последнего запроса в секундах
 - `requests_per_second` (f32) - количество запросов в секунду
-- `active_connections` (u32) - количество активных соединений
-- `total_connections` (u64) - общее количество соединений
 
-**Поля объекта cache_statistics:**
-- `current_entries` (u32) - текущее количество записей в кэше
-- `max_entries` (u32) - максимальное количество записей в кэше
-- `hit_rate` (f32) - коэффициент попадания в кэш
-- `evictions` (u64) - количество вытеснений из кэша
-- `average_ttl_seconds` (u64) - среднее время жизни записей в кэше в секундах
-- `memory_usage_bytes` (u64) - использование памяти кэшем в байтах
-
-**Поля объекта system_load:**
-- `cpu_usage_percent` (f32) - процент использования CPU
-- `memory_usage_percent` (f32) - процент использования памяти
-- `average_load_1min` (f32) - средняя нагрузка за 1 минуту
-- `average_load_5min` (f32) - средняя нагрузка за 5 минут
-- `average_load_15min` (f32) - средняя нагрузка за 15 минут
+**Поля объекта cache_info:**
+- `enabled` (bool) - включено ли кэширование
+- `ttl_seconds` (u64, optional) - время жизни кэша в секундах (может быть null)
 
 **Требования:**
 - Нет специальных требований, доступно всегда
+
+**Примеры использования:**
+
+Получение текущих метрик производительности:
+```bash
+curl -s http://127.0.0.1:8080/api/performance | jq
+```
+
+Мониторинг производительности API:
+```bash
+watch -n 1 'curl -s http://127.0.0.1:8080/api/performance | jq ".performance_metrics | {total_requests, cache_hit_rate, requests_per_second}"'
+```
 
 ---
 

@@ -4,7 +4,7 @@
 //! до и после оптимизаций.
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use smoothtask_core::metrics::ebpf::{EbpfConfig, EbpfMetricsCollector};
+use smoothtask_core::metrics::ebpf::{EbpfConfig, EbpfMetrics, EbpfMetricsCollector};
 use std::time::Duration;
 
 /// Бенчмарк для измерения времени инициализации eBPF коллектора
@@ -13,7 +13,7 @@ fn benchmark_ebpf_initialization(c: &mut Criterion) {
         b.iter(|| {
             let config = EbpfConfig::default();
             let mut collector = EbpfMetricsCollector::new(config);
-            black_box(collector.initialize());
+            let _ = black_box(collector.initialize());
         })
     });
 }
@@ -289,7 +289,7 @@ fn benchmark_ebpf_initialization_configs(c: &mut Criterion) {
         c.bench_function(&format!("ebpf_initialization_{}", name), |b| {
             b.iter(|| {
                 let mut collector = EbpfMetricsCollector::new(config.clone());
-                black_box(collector.initialize());
+                let _ = black_box(collector.initialize());
             })
         });
     }
