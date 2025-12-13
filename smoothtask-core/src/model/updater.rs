@@ -223,7 +223,7 @@ impl ModelUpdater {
         
         // Проверяем размер файла
         let content_length = response.content_length().unwrap_or(0);
-        if content_length != update_info.file_size as u64 {
+        if content_length != update_info.file_size {
             return Err(anyhow::anyhow!(
                 "Размер загруженного файла ({} байт) не совпадает с ожидаемым ({} байт)",
                 content_length,

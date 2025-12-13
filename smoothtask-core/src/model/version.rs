@@ -129,7 +129,7 @@ impl ModelVersion {
     pub fn validate(&self) -> bool {
         self.model_path.exists() && 
         self.model_path.is_file() &&
-        self.model_path.metadata().map_or(false, |m| m.len() > 0)
+        self.model_path.metadata().is_ok_and(|m| m.len() > 0)
     }
     
     /// Получить информацию о модели в читаемом формате.

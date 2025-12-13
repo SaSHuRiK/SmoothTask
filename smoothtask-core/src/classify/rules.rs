@@ -174,6 +174,15 @@ impl PatternUpdateResult {
 /// # Ok(())
 /// # }
 /// ```
+/// Тип для ключа кэша сопоставления паттернов.
+/// Представляет комбинацию идентификаторов процесса: исполняемый файл, desktop ID и путь cgroup.
+#[allow(clippy::type_complexity)]
+type PatternMatchKey = (Option<String>, Option<String>, Option<String>);
+
+/// Тип для результата сопоставления паттернов.
+/// Представляет список категорий и паттернов, соответствующих процессу.
+type PatternMatchResult = Vec<(PatternCategory, AppPattern)>;
+
 #[derive(Debug, Clone)]
 pub struct PatternDatabase {
     /// Маппинг категория -> список паттернов.
@@ -182,7 +191,7 @@ pub struct PatternDatabase {
     all_patterns: Vec<(PatternCategory, AppPattern)>,
     /// Кэш для результатов сопоставления паттернов.
     /// Ключ: (exe, desktop_id, cgroup_path), Значение: Vec<(PatternCategory, AppPattern)>
-    match_cache: LruCache<(Option<String>, Option<String>, Option<String>), Vec<(PatternCategory, AppPattern)>>,
+    match_cache: LruCache<PatternMatchKey, PatternMatchResult>,
 }
 
 impl Default for PatternDatabase {

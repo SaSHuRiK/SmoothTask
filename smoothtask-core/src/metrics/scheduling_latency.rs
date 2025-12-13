@@ -9,6 +9,11 @@ use std::thread;
 use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug, error, info, warn};
 
+/// Тип для кэша перцентилей
+/// Ключ: (pid, tid), Значение: (значение перцентиля, время кэширования)
+#[allow(clippy::type_complexity)]
+type PercentileCache = Arc<Mutex<BTreeMap<(u32, u32), (f64, SystemTime)>>>;
+
 /// Коллектор для хранения измерений scheduling latency и вычисления перцентилей.
 ///
 /// Хранит последние N измерений в скользящем окне и вычисляет перцентили P95 и P99.
@@ -20,7 +25,7 @@ pub struct LatencyCollector {
     /// Измерения latency в миллисекундах (скользящее окно)
     samples: Arc<Mutex<VecDeque<f64>>>,
     /// Кэш для часто используемых перцентилей (P95 и P99)
-    percentile_cache: Arc<Mutex<BTreeMap<(u32, u32), (f64, SystemTime)>>>,
+    percentile_cache: PercentileCache,
     /// Время жизни кэша в секундах
     cache_ttl_seconds: u64,
 }

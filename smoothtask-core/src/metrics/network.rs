@@ -58,6 +58,7 @@ pub struct NetworkInterfaceStats {
 
 /// Network interface type
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum NetworkInterfaceType {
     Ethernet,
     Wifi,
@@ -65,13 +66,8 @@ pub enum NetworkInterfaceType {
     Virtual,
     Tunnel,
     Bridge,
+    #[default]
     Unknown,
-}
-
-impl Default for NetworkInterfaceType {
-    fn default() -> Self {
-        NetworkInterfaceType::Unknown
-    }
 }
 
 impl Default for NetworkInterfaceStats {
@@ -295,9 +291,8 @@ pub struct NetworkMonitor {
     last_cache_update: SystemTime,
 }
 
-impl NetworkMonitor {
-    /// Create a new NetworkMonitor with default configuration
-    pub fn new() -> Self {
+impl Default for NetworkMonitor {
+    fn default() -> Self {
         Self {
             config: NetworkMonitorConfig::default(),
             previous_stats: None,
@@ -305,6 +300,13 @@ impl NetworkMonitor {
             cache_ttl: Duration::from_secs(5),
             last_cache_update: SystemTime::UNIX_EPOCH,
         }
+    }
+}
+
+impl NetworkMonitor {
+    /// Create a new NetworkMonitor with default configuration
+    pub fn new() -> Self {
+        Self::default()
     }
 
     /// Create a new NetworkMonitor with custom configuration
@@ -349,8 +351,10 @@ impl NetworkMonitor {
 
     /// Collect comprehensive network statistics
     pub fn collect_network_stats(&mut self) -> Result<ComprehensiveNetworkStats> {
-        let mut stats = ComprehensiveNetworkStats::default();
-        stats.timestamp = SystemTime::now();
+        let mut stats = ComprehensiveNetworkStats {
+            timestamp: SystemTime::now(),
+            ..Default::default()
+        };
 
         // Collect interface statistics with caching
         if self.config.enable_detailed_interfaces {
@@ -538,8 +542,7 @@ impl NetworkMonitor {
 
     /// Optimized IP address retrieval
     fn get_ip_addresses_optimized(&self, name: &str) -> Vec<IpAddr> {
-        let mut addresses = Vec::new();
-        addresses.reserve(4); // Most interfaces have 1-4 addresses
+        let mut addresses = Vec::with_capacity(4); // Most interfaces have 1-4 addresses
 
         // Try IPv4 with error handling
         let ipv4_path = format!("/sys/class/net/{}/inet4", name);
@@ -777,8 +780,10 @@ impl NetworkMonitor {
     pub fn benchmark_network_monitoring(&mut self, iterations: usize) -> Result<NetworkBenchmarkResults> {
         use std::time::Instant;
         
-        let mut results = NetworkBenchmarkResults::default();
-        results.iterations = iterations;
+        let mut results = NetworkBenchmarkResults {
+            iterations,
+            ..Default::default()
+        };
         
         // Clear cache for fair benchmarking
         self.clear_interface_cache();
@@ -899,7 +904,7 @@ pub struct NetworkTrafficDeltas {
 }
 
 /// Interface-specific traffic delta
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct NetworkInterfaceDelta {
     /// Interface name
     pub name: String,
@@ -911,18 +916,6 @@ pub struct NetworkInterfaceDelta {
     pub rx_packets_delta: u64,
     /// Packets transmitted delta
     pub tx_packets_delta: u64,
-}
-
-impl Default for NetworkInterfaceDelta {
-    fn default() -> Self {
-        Self {
-            name: String::new(),
-            rx_bytes_delta: 0,
-            tx_bytes_delta: 0,
-            rx_packets_delta: 0,
-            tx_packets_delta: 0,
-        }
-    }
 }
 
 /// Helper function to convert IP address from u32 to IpAddr
