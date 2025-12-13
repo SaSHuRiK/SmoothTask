@@ -58,6 +58,125 @@ metrics:
 - Настраивайте фильтрацию для уменьшения накладных расходов
 - Мониторьте использование памяти eBPF карт через `/api/stats`
 
+## Обработка ошибок
+
+API сервер использует унифицированную систему обработки ошибок с использованием различных HTTP статусов и структурированных JSON ответов.
+
+### Типы ошибок
+
+#### 1. Ошибки валидации (400 Bad Request)
+
+Возникают при некорректных входных данных:
+
+```json
+{
+  "status": "error",
+  "error": "invalid_input",
+  "message": "Invalid PID value: -1. PID must be a positive integer",
+  "timestamp": "2023-12-12T12:34:56.789Z",
+  "details": {
+    "type": "validation",
+    "field": "pid",
+    "constraint": "must be > 0"
+  }
+}
+```
+
+**Примеры:**
+- Недопустимый PID (<= 0 или слишком большой)
+- Пустой или слишком длинный идентификатор группы приложений
+- Некорректный формат параметров запроса
+
+#### 2. Ошибки "Не найдено" (404 Not Found)
+
+Возникают при запросе несуществующих ресурсов:
+
+```json
+{
+  "status": "error",
+  "error": "not_found",
+  "message": "Process with PID 12345 not found (available processes: 42)",
+  "timestamp": "2023-12-12T12:34:56.789Z",
+  "details": {
+    "type": "not_found",
+    "resource": "process",
+    "field": "pid",
+    "available_count": 42
+  }
+}
+```
+
+**Примеры:**
+- Процесс с указанным PID не найден
+- Группа приложений с указанным ID не существует
+- Запрошенный ресурс недоступен
+
+#### 3. Ошибки недоступности сервиса (503 Service Unavailable)
+
+Возникают когда демон не запущен или данные еще не собраны:
+
+```json
+{
+  "status": "error",
+  "error": "not_available",
+  "message": "Processes data not available - daemon may not be running or no processes collected yet",
+  "timestamp": "2023-12-12T12:34:56.789Z",
+  "details": {
+    "type": "not_available",
+    "resource": "processes"
+  }
+}
+```
+
+**Примеры:**
+- Демон не запущен
+- Данные еще не собраны
+- Компонент временно недоступен
+
+#### 4. Внутренние ошибки сервера (500 Internal Server Error)
+
+Возникают при внутренних сбоях:
+
+```json
+{
+  "status": "error",
+  "error": "internal_error",
+  "message": "Failed to access system metrics: permission denied",
+  "timestamp": "2023-12-12T12:34:56.789Z",
+  "details": {
+    "type": "internal_error",
+    "context": "system_metrics_collection"
+  }
+}
+```
+
+**Примеры:**
+- Ошибки доступа к системным ресурсам
+- Сбои при обработке данных
+- Внутренние исключения
+
+### Graceful Degradation
+
+Когда данные временно недоступны, API возвращает статус `"ok"` с пустыми данными вместо ошибки:
+
+```json
+{
+  "status": "ok",
+  "system_metrics": null,
+  "message": "System metrics not available (daemon may not be running or no metrics collected yet)"
+}
+```
+
+Это позволяет клиентам продолжать работу даже при временной недоступности данных.
+
+### Рекомендации по обработке ошибок
+
+1. **Проверяйте HTTP статус код** для определения типа ошибки
+2. **Анализируйте поле `error`** для точного определения проблемы
+3. **Используйте поле `details`** для получения дополнительной информации
+4. **Обрабатывайте graceful degradation** для временной недоступности данных
+5. **Логируйте ошибки** для отладки и мониторинга
+
 ## Endpoints
 
 ### GET /health
