@@ -1955,7 +1955,7 @@ fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
     }
 }
 
-fn read_file(path: &Path) -> Result<String> {
+pub fn read_file(path: &Path) -> Result<String> {
     fs::read_to_string(path).with_context(|| {
         format!(
             "Не удалось прочитать системный файл {}: проверьте, что файл существует и доступен для чтения. Ошибка может быть вызвана отсутствием прав доступа, отсутствием файла или проблемами с файловой системой",
@@ -1964,7 +1964,7 @@ fn read_file(path: &Path) -> Result<String> {
     })
 }
 
-fn parse_cpu_times(contents: &str) -> Result<CpuTimes> {
+pub fn parse_cpu_times(contents: &str) -> Result<CpuTimes> {
     let line = contents
         .lines()
         .find(|l| l.starts_with("cpu "))
@@ -2016,7 +2016,7 @@ fn parse_cpu_times(contents: &str) -> Result<CpuTimes> {
     })
 }
 
-fn parse_meminfo(contents: &str) -> Result<MemoryInfo> {
+pub fn parse_meminfo(contents: &str) -> Result<MemoryInfo> {
     let mut values: HashMap<&str, u64> = HashMap::new();
     for line in contents.lines() {
         let mut parts = line.split_whitespace();

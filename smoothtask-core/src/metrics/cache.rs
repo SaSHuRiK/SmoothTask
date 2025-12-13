@@ -123,17 +123,33 @@ impl MetricsCache {
     /// Опциональная ссылка на кэшированные метрики или `None`, если кэш пуст или устарел.
     pub fn get(&self, key: &str) -> Option<CachedMetrics> {
         if !self.config.enable_caching {
+            debug!("Кэширование отключено, возвращаем None для ключа: {}", key);
             return None;
         }
         
-        let mut cache = self.cache.lock().unwrap();
-        if let Some(cached) = cache.get(key) {
-            if !cached.is_expired(self.config.cache_ttl_seconds) {
-                return Some(cached.clone());
+        let cache = self.cache.lock();
+        match cache {
+            Ok(mut cache_guard) => {
+                if let Some(cached) = cache_guard.get(key) {
+                    if !cached.is_expired(self.config.cache_ttl_seconds) {
+                        debug!("Найдены актуальные кэшированные метрики для ключа: {}", key);
+                        return Some(cached.clone());
+                    } else {
+                        debug!("Кэш для ключа {} устарел (TTL: {}s), будет обновлён", key, self.config.cache_ttl_seconds);
+                    }
+                } else {
+                    debug!("Кэш для ключа {} не найден", key);
+                }
+                None
+            }
+            Err(poisoned) => {
+                // Восстанавливаемся от poisoned lock и очищаем кэш
+                let mut cache_guard = poisoned.into_inner();
+                cache_guard.clear();
+                tracing::error!("Mutex был poisoned, кэш очищен для восстановления. Ключ: {}", key);
+                None
             }
         }
-        
-        None
     }
     
     /// Сохранить метрики в кэше.
@@ -145,31 +161,59 @@ impl MetricsCache {
     /// * `source_paths` - пути к файлам, использованные для сбора метрик
     pub fn insert(&self, key: String, metrics: SystemMetrics, source_paths: HashMap<String, PathBuf>) {
         if !self.config.enable_caching {
+            debug!("Кэширование отключено, пропускаем сохранение в кэш для ключа: {}", key);
             return;
         }
         
         let cached = CachedMetrics::new(metrics, source_paths);
-        let mut cache = self.cache.lock().unwrap();
-        cache.put(key, cached);
+        let cache = self.cache.lock();
         
-        debug!("Сохранено в кэше: {} элементов", cache.len());
+        match cache {
+            Ok(mut cache_guard) => {
+                cache_guard.put(key, cached);
+                debug!("Сохранено в кэше: {} элементов", cache_guard.len());
+            }
+            Err(poisoned) => {
+                // Восстанавливаемся от poisoned lock и очищаем кэш
+                let mut cache_guard = poisoned.into_inner();
+                cache_guard.clear();
+                tracing::error!("Mutex был poisoned при вставке, кэш очищен для восстановления. Ключ: {}", key);
+            }
+        }
     }
     
     /// Очистить кэш.
     pub fn clear(&self) {
-        let mut cache = self.cache.lock().unwrap();
-        cache.clear();
-        debug!("Кэш очищен");
+        let cache = self.cache.lock();
+        match cache {
+            Ok(mut cache_guard) => {
+                cache_guard.clear();
+                debug!("Кэш очищен");
+            }
+            Err(poisoned) => {
+                // Восстанавливаемся от poisoned lock
+                drop(poisoned.into_inner());
+                tracing::error!("Mutex был poisoned при очистке кэша");
+            }
+        }
     }
     
     /// Получить текущий размер кэша.
     ///
     /// # Возвращает
     ///
-    /// Текущий размер кэша.
+    /// Текущий размер кэша или 0 в случае ошибки.
     pub fn len(&self) -> usize {
-        let cache = self.cache.lock().unwrap();
-        cache.len()
+        let cache = self.cache.lock();
+        match cache {
+            Ok(cache_guard) => cache_guard.len(),
+            Err(poisoned) => {
+                // Восстанавливаемся от poisoned lock
+                drop(poisoned.into_inner());
+                tracing::error!("Mutex был poisoned при получении размера кэша");
+                0
+            }
+        }
     }
     
     /// Проверить, пуст ли кэш.
@@ -230,7 +274,8 @@ impl OptimizedMetricsCollector {
         
         // Если кэш пуст или устарел, собираем новые метрики
         debug!("Собираем новые метрики для ключа: {}", cache_key);
-        let metrics = crate::metrics::system::collect_system_metrics(paths)?;
+        let metrics = crate::metrics::system::collect_system_metrics(paths)
+            .with_context(|| format!("Не удалось собрать системные метрики для кэширования (ключ: {})", cache_key))?;
         
         // Создаем карту путей
         let mut source_paths = HashMap::new();
@@ -238,7 +283,7 @@ impl OptimizedMetricsCollector {
         source_paths.insert("meminfo".to_string(), paths.meminfo.clone());
         source_paths.insert("loadavg".to_string(), paths.loadavg.clone());
         
-        // Сохраняем в кэше
+        // Пробуем сохранить в кэше (с graceful degradation, если не получится)
         self.cache.insert(cache_key.to_string(), metrics.clone(), source_paths);
         
         Ok(metrics)
@@ -268,10 +313,10 @@ impl OptimizedMetricsCollector {
         // Если кэш пуст или устарел, собираем новые метрики
         debug!("Собираем новые CPU метрики для ключа: {}", cache_key);
         let cpu_contents = crate::metrics::system::read_file(cpu_path.as_ref())
-            .with_context(|| format!("Не удалось прочитать CPU метрики из {}", cpu_path.as_ref().display()))?;
+            .with_context(|| format!("Не удалось прочитать CPU метрики из {} (ключ кэша: {})", cpu_path.as_ref().display(), cache_key))?;
         
         let cpu_times = crate::metrics::system::parse_cpu_times(&cpu_contents)
-            .with_context(|| "Не удалось разобрать CPU метрики")?;
+            .with_context(|| format!("Не удалось разобрать CPU метрики (ключ кэша: {})", cache_key))?;
         
         // Создаем карту путей
         let mut source_paths = HashMap::new();
@@ -283,7 +328,7 @@ impl OptimizedMetricsCollector {
             ..Default::default()
         };
         
-        // Сохраняем в кэше
+        // Пробуем сохранить в кэше (с graceful degradation, если не получится)
         self.cache.insert(cache_key.to_string(), metrics, source_paths);
         
         Ok(cpu_times)
@@ -313,10 +358,10 @@ impl OptimizedMetricsCollector {
         // Если кэш пуст или устарел, собираем новые метрики
         debug!("Собираем новые метрики памяти для ключа: {}", cache_key);
         let meminfo_contents = crate::metrics::system::read_file(meminfo_path.as_ref())
-            .with_context(|| format!("Не удалось прочитать информацию о памяти из {}", meminfo_path.as_ref().display()))?;
+            .with_context(|| format!("Не удалось прочитать информацию о памяти из {} (ключ кэша: {})", meminfo_path.as_ref().display(), cache_key))?;
         
         let memory_info = crate::metrics::system::parse_meminfo(&meminfo_contents)
-            .with_context(|| "Не удалось разобрать информацию о памяти")?;
+            .with_context(|| format!("Не удалось разобрать информацию о памяти (ключ кэша: {})", cache_key))?;
         
         // Создаем карту путей
         let mut source_paths = HashMap::new();
@@ -328,7 +373,7 @@ impl OptimizedMetricsCollector {
             ..Default::default()
         };
         
-        // Сохраняем в кэше
+        // Пробуем сохранить в кэше (с graceful degradation, если не получится)
         self.cache.insert(cache_key.to_string(), metrics, source_paths);
         
         Ok(memory_info)
@@ -487,5 +532,113 @@ mod tests {
         
         // Проверяем, что кэш не пуст
         assert_eq!(collector.cache.len(), 1);
+    }
+    
+    #[test]
+    fn test_cache_disabled_behavior() {
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 5,
+            enable_caching: false,
+        };
+        
+        let cache = MetricsCache::new(config);
+        
+        // При отключенном кэшировании get должен возвращать None
+        assert!(cache.get("test_key").is_none());
+        
+        // При отключенном кэшировании insert не должен ничего делать
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+        
+        cache.insert("test_key".to_string(), metrics, source_paths);
+        
+        // Кэш должен остаться пустым
+        assert_eq!(cache.len(), 0);
+    }
+    
+    #[test]
+    fn test_cache_expiration() {
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 1,
+            enable_caching: true,
+        };
+        
+        let cache = MetricsCache::new(config);
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+        
+        cache.insert("test_key".to_string(), metrics, source_paths);
+        
+        // Сразу после вставки кэш должен быть актуальным
+        assert!(cache.get("test_key").is_some());
+        
+        // Ждем 2 секунды (больше TTL)
+        std::thread::sleep(Duration::from_secs(2));
+        
+        // Кэш должен устареть
+        assert!(cache.get("test_key").is_none());
+    }
+    
+    #[test]
+    fn test_cache_error_context_in_collectors() {
+        let temp_dir = tempdir().unwrap();
+        let dir_path = temp_dir.path();
+        
+        // Создаём невалидный файл для тестирования обработки ошибок
+        let invalid_stat_file = dir_path.join("invalid_stat");
+        fs::write(&invalid_stat_file, "invalid content that cannot be parsed").unwrap();
+        
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 5,
+            enable_caching: true,
+        };
+        
+        let collector = OptimizedMetricsCollector::new(config);
+        
+        // Тестируем обработку ошибок при парсинге CPU метрик
+        let result = collector.collect_cpu_metrics_cached(&invalid_stat_file, "test_cpu_cache");
+        
+        // Должна быть ошибка с контекстом
+        assert!(result.is_err());
+        let error = result.unwrap_err();
+        let error_string = error.to_string();
+        
+        // Проверяем, что в ошибке есть контекст с ключом кэша
+        assert!(error_string.contains("test_cpu_cache"));
+        assert!(error_string.contains("CPU метрики"));
+    }
+    
+    #[test]
+    fn test_cache_graceful_degradation() {
+        let temp_dir = tempdir().unwrap();
+        let dir_path = temp_dir.path();
+        
+        // Создаём валидные тестовые файлы
+        let stat_file = dir_path.join("stat");
+        let stat_content = "cpu 100 20 50 200 10 5 5 0 0 0\ncpu0 50 10 25 100 5 2 2 0 0 0";
+        fs::write(&stat_file, stat_content).unwrap();
+        
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 5,
+            enable_caching: true,
+        };
+        
+        let collector = OptimizedMetricsCollector::new(config);
+        
+        // Даже если кэширование отключено, сбор метрик должен работать
+        let mut disabled_config = config.clone();
+        disabled_config.enable_caching = false;
+        let disabled_collector = OptimizedMetricsCollector::new(disabled_config);
+        
+        let result = disabled_collector.collect_cpu_metrics_cached(&stat_file, "test_disabled_cache");
+        assert!(result.is_ok());
+        let cpu_times = result.unwrap();
+        assert_eq!(cpu_times.user, 100);
     }
 }

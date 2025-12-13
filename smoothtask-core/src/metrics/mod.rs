@@ -26,6 +26,7 @@
 pub mod app_performance;
 pub mod audio;
 pub mod audio_pipewire;
+pub mod cache;
 pub mod ebpf;
 pub mod gpu;
 pub mod input;
