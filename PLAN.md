@@ -34,6 +34,40 @@
     - smoothtask-core/src/classify/rules.rs: Обновлены функции классификации для работы с Arc<Mutex<PatternDatabase>>
     - smoothtask-core/src/lib.rs: Интеграция PatternWatcher в основной цикл демона
 
+- [x] ST-755: Исправить ошибки компиляции после добавления I/O полей в ProcessRecord и AppGroupRecord
+  - Тип: Rust / core / bugfix
+  - Примечания: Исправление ошибок компиляции в тестах после добавления новых I/O полей
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~90 минут
+  - Критерии готовности:
+    - [x] Исправить ошибки в actuator.rs
+    - [x] Исправить ошибки в api/server.rs
+    - [x] Исправить ошибки в classify/grouper.rs
+    - [x] Исправить ошибки в classify/ml_classifier.rs
+    - [x] Исправить ошибки в classify/rules.rs
+    - [x] Исправить ошибки в policy/engine.rs
+    - [x] Исправить ошибки в model/features.rs
+    - [x] Исправить ошибки в metrics/process.rs
+    - [x] Исправить ошибки в metrics/app_performance.rs
+    - [x] Исправить ошибки в logging/snapshots.rs
+  - Ожидаемые результаты: Успешная компиляция всех модулей
+  - Результаты:
+    - Добавлены недостающие I/O поля (io_read_operations, io_write_operations, io_total_operations, io_last_update_ns, io_data_source) во все экземпляры ProcessRecord и AppGroupRecord
+    - Исправлены все ошибки компиляции E0063
+    - Успешная компиляция библиотеки smoothtask-core
+  - Изменённые файлы:
+    - smoothtask-core/src/actuator.rs: Исправлены тестовые данные
+    - smoothtask-core/src/api/server.rs: Исправлены тестовые данные
+    - smoothtask-core/src/classify/grouper.rs: Исправлены тестовые данные
+    - smoothtask-core/src/classify/ml_classifier.rs: Исправлены тестовые данные
+    - smoothtask-core/src/classify/rules.rs: Исправлены тестовые данные
+    - smoothtask-core/src/policy/engine.rs: Исправлены тестовые данные
+    - smoothtask-core/src/model/features.rs: Исправлены тестовые данные
+    - smoothtask-core/src/metrics/process.rs: Исправлены тестовые данные
+    - smoothtask-core/src/metrics/app_performance.rs: Исправлены тестовые данные
+    - smoothtask-core/src/logging/snapshots.rs: Исправлены тестовые данные
+
 ## 2. Бэклог
 
 - [ ] ST-740: Реализовать расширенный мониторинг энергопотребления процессов
@@ -102,6 +136,63 @@
   - Ожидаемые результаты: Более гибкая система управления конфигурацией
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-755: Исправить ошибки компиляции после добавления I/O полей в ProcessRecord и AppGroupRecord
+  - Тип: Rust / core / bugfix
+  - Примечания: Исправление ошибок компиляции в тестах после добавления новых I/O полей
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~90 минут
+  - Критерии готовности:
+    - [x] Исправить ошибки в actuator.rs
+    - [x] Исправить ошибки в api/server.rs
+    - [x] Исправить ошибки в classify/grouper.rs
+    - [x] Исправить ошибки в classify/ml_classifier.rs
+    - [x] Исправить ошибки в classify/rules.rs
+    - [x] Исправить ошибки в policy/engine.rs
+    - [x] Исправить ошибки в model/features.rs
+    - [x] Исправить ошибки в metrics/process.rs
+    - [x] Исправить ошибки в metrics/app_performance.rs
+    - [x] Исправить ошибки в logging/snapshots.rs
+  - Ожидаемые результаты: Успешная компиляция всех модулей
+  - Результаты:
+    - Добавлены недостающие I/O поля (io_read_operations, io_write_operations, io_total_operations, io_last_update_ns, io_data_source) во все экземпляры ProcessRecord и AppGroupRecord
+    - Исправлены все ошибки компиляции E0063
+    - Успешная компиляция библиотеки smoothtask-core
+  - Изменённые файлы:
+    - smoothtask-core/src/actuator.rs: Исправлены тестовые данные
+    - smoothtask-core/src/api/server.rs: Исправлены тестовые данные
+    - smoothtask-core/src/classify/grouper.rs: Исправлены тестовые данные
+    - smoothtask-core/src/classify/ml_classifier.rs: Исправлены тестовые данные
+    - smoothtask-core/src/classify/rules.rs: Исправлены тестовые данные
+    - smoothtask-core/src/policy/engine.rs: Исправлены тестовые данные
+    - smoothtask-core/src/model/features.rs: Исправлены тестовые данные
+    - smoothtask-core/src/metrics/process.rs: Исправлены тестовые данные
+    - smoothtask-core/src/metrics/app_performance.rs: Исправлены тестовые данные
+    - smoothtask-core/src/logging/snapshots.rs: Исправлены тестовые данные
+
+- [x] ST-754: Улучшить систему автоматического обновления конфигурации
+  - Тип: Rust / core / config / auto-update
+  - Примечания: Автоматическое обновление конфигурации и паттернов без перезапуска
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - [x] Реализовать механизм наблюдения за файлами конфигурации
+    - [x] Добавить горячую перезагрузку паттернов и политик
+    - [x] Реализовать уведомления об изменениях конфигурации
+    - [x] Добавить тесты для нового функционала
+  - Ожидаемые результаты: Более гибкая система управления конфигурацией
+  - Результаты:
+    - Реализован PatternWatcher для мониторинга изменений в директории с паттернами
+    - Добавлена поддержка автоматического обновления паттерн-базы
+    - Интегрирована система уведомлений об изменениях паттернов
+    - Добавлены тесты для нового функционала
+    - Обновлена документация и примеры конфигурации
+  - Изменённые файлы:
+    - smoothtask-core/src/classify/pattern_watcher.rs: Полная реализация PatternWatcher
+    - smoothtask-core/src/classify/rules.rs: Обновлены функции классификации для работы с Arc<Mutex<PatternDatabase>>
+    - smoothtask-core/src/lib.rs: Интеграция PatternWatcher в основной цикл демона
 
 - [x] ST-753: Реализовать расширенный мониторинг дискового ввода-вывода
   - Тип: Rust / core / metrics / io
