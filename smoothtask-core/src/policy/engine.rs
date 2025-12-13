@@ -1324,8 +1324,8 @@ mod tests {
         assert_eq!(results.len(), 1);
         let result = results.get("test-group").unwrap();
 
-        // Должен использовать ML-ранкер (StubRanker в данном случае из-за ошибки загрузки)
-        assert!(result.reason.contains("ml-ranker"));
+        // Когда модель не загружается, используется дефолтный приоритет (без ML-ранкера)
+        assert!(result.reason.contains("default: no rules matched"));
     }
 
     #[test]

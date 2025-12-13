@@ -791,9 +791,10 @@ mod tests {
         let classifier = create_ml_classifier(config);
         assert!(classifier.is_err());
 
-        // Должна быть ошибка о отсутствующем файле
+        // Должна быть ошибка о загрузке модели
         let err = classifier.unwrap_err();
-        assert!(err.to_string().contains("не найден"));
+        let err_str = err.to_string();
+        assert!(err_str.contains("Не удалось загрузить модель"));
     }
 
     #[test]

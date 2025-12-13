@@ -695,4 +695,126 @@ mod tests {
         let result = ONNXRanker::load(path);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn test_onnx_ranker_error_handling_in_rank() {
+        // Тест обработки ошибок в методе rank
+        // Создаём мок-ранкер, который всегда возвращает ошибку при преобразовании фич
+        struct ErrorMockRanker;
+
+        impl ErrorMockRanker {
+            fn new() -> Self {
+                Self
+            }
+        }
+
+        impl Ranker for ErrorMockRanker {
+            fn rank(
+                &self,
+                app_groups: &[AppGroupRecord],
+                _snapshot: &Snapshot,
+            ) -> HashMap<String, RankingResult> {
+                let mut results = HashMap::new();
+
+                for app_group in app_groups {
+                    // Всегда возвращаем дефолтный score 0.5 при "ошибке"
+                    results.insert(
+                        app_group.app_group_id.clone(),
+                        RankingResult {
+                            score: 0.5,
+                            rank: 1,
+                            percentile: 1.0,
+                        },
+                    );
+                }
+
+                results
+            }
+        }
+
+        let snapshot = create_test_snapshot();
+        let app_groups = vec![
+            AppGroupRecord {
+                app_group_id: "test-group".to_string(),
+                root_pid: 1000,
+                process_ids: vec![1000],
+                app_name: Some("test".to_string()),
+                total_cpu_share: Some(0.1),
+                total_io_read_bytes: None,
+                total_io_write_bytes: None,
+                total_rss_mb: Some(100),
+                has_gui_window: false,
+                is_focused_group: false,
+                tags: vec![],
+                priority_class: None,
+            },
+        ];
+
+        let ranker = ErrorMockRanker::new();
+        let results = ranker.rank(&app_groups, &snapshot);
+
+        // Должен быть результат с дефолтным score
+        assert_eq!(results.len(), 1);
+        let result = results.get("test-group").unwrap();
+        assert_eq!(result.score, 0.5);
+    }
+
+    #[test]
+    fn test_onnx_ranker_string_to_index_edge_cases() {
+        // Тест обработки крайних случаев в string_to_index
+        let ranker = MockRankerForStringToIndex::new();
+
+        // Тест пустой строки
+        let empty_index = ranker.string_to_index("");
+        assert!(empty_index >= 0 && empty_index < 1000);
+
+        // Тест очень длинной строки
+        let long_string = "a".repeat(1000);
+        let long_index = ranker.string_to_index(&long_string);
+        assert!(long_index >= 0 && long_index < 1000);
+
+        // Тест строки с специальными символами
+        let special_index = ranker.string_to_index("test!@#$%^&*()");
+        assert!(special_index >= 0 && special_index < 1000);
+
+        // Тест строки с unicode символами
+        let unicode_index = ranker.string_to_index("тест🚀");
+        assert!(unicode_index >= 0 && unicode_index < 1000);
+    }
+
+    #[test]
+    fn test_onnx_ranker_features_to_tensor_edge_cases() {
+        // Тест обработки крайних случаев в features_to_tensor
+        let ranker = MockRankerForFeaturesToTensor::new(10);
+
+        // Тест с пустыми векторами
+        let empty_features = FeatureVector {
+            numeric: vec![],
+            bool: vec![],
+            categorical: vec![],
+            cat_feature_indices: vec![],
+        };
+
+        let result = ranker.features_to_tensor(&empty_features);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("не совпадает с ожидаемым размером"));
+
+        // Тест с частично заполненными векторами
+        let partial_features = FeatureVector {
+            numeric: vec![1.0, 2.0],
+            bool: vec![1],
+            categorical: vec!["test".to_string()],
+            cat_feature_indices: vec![3],
+        };
+
+        let result = ranker.features_to_tensor(&partial_features);
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("не совпадает с ожидаемым размером"));
+    }
 }
