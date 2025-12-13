@@ -69,6 +69,8 @@ pub struct ApiCache {
     cached_process_energy_json: Option<(Value, Instant)>,
     /// Кэшированная версия данных об использовании памяти процессами (JSON)
     cached_process_memory_json: Option<(Value, Instant)>,
+    /// Кэшированная версия данных об использовании GPU процессами (JSON)
+    cached_process_gpu_json: Option<(Value, Instant)>,
     /// Время жизни кэша (в секундах)
     cache_ttl_seconds: u64,
 }
@@ -95,6 +97,7 @@ impl ApiCache {
         self.cached_config_json = None;
         self.cached_process_energy_json = None;
         self.cached_process_memory_json = None;
+        self.cached_process_gpu_json = None;
     }
 }
 
@@ -990,6 +993,11 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Получение статистики использования памяти процессами"
             },
             {
+                "path": "/api/processes/gpu",
+                "method": "GET",
+                "description": "Получение статистики использования GPU процессами"
+            },
+            {
                 "path": "/api/appgroups",
                 "method": "GET",
                 "description": "Получение списка последних групп приложений"
@@ -1669,6 +1677,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/processes/:pid", get(process_by_pid_handler))
         .route("/api/processes/energy", get(process_energy_handler))
         .route("/api/processes/memory", get(process_memory_handler))
+        .route("/api/processes/gpu", get(process_gpu_handler))
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
@@ -2014,6 +2023,92 @@ async fn process_memory_handler(State(state): State<ApiState>) -> Result<Json<Va
     cache_write.cached_process_memory_json = Some((result.clone(), Instant::now()));
 
     trace!("Cached process memory data (count: {})", result["count"]);
+    Ok(Json(result))
+}
+
+/// Обработчик для endpoint `/api/processes/gpu`.
+///
+/// Возвращает статистику использования GPU процессами (если доступны).
+async fn process_gpu_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+
+    if let Some((cached_json, cache_time)) = &cache_write.cached_process_gpu_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+
+            trace!("Cache hit for process_gpu_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+
+    // Пробуем получить данные из eBPF метрик
+    let mut result = json!({
+        "status": "degraded",
+        "process_gpu": null,
+        "count": 0,
+        "message": "Process GPU monitoring not available",
+        "suggestion": "Enable process GPU monitoring in configuration and ensure eBPF support",
+        "component_status": check_component_availability(&state),
+        "cache_info": {
+            "cached": false,
+            "ttl_seconds": cache_write.cache_ttl_seconds
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    });
+
+    // Пробуем получить доступ к eBPF метрикам
+    if let Some(metrics_arc) = &state.metrics {
+        let metrics = metrics_arc.read().await;
+        if let Some(ebpf_metrics) = &metrics.ebpf {
+            if let Some(process_gpu_details) = &ebpf_metrics.process_gpu_details {
+                if !process_gpu_details.is_empty() {
+                    // Успешно получили данные о использовании GPU процессами
+                    let total_gpu_time_ns: u64 = process_gpu_details.iter().map(|p| p.gpu_time_ns).sum();
+                    let total_memory_bytes: u64 = process_gpu_details.iter().map(|p| p.memory_usage_bytes).sum();
+                    let total_compute_units: u64 = process_gpu_details.iter().map(|p| p.compute_units_used).sum();
+
+                    result = json!({
+                        "status": "ok",
+                        "process_gpu": process_gpu_details,
+                        "count": process_gpu_details.len(),
+                        "total_gpu_time_ns": total_gpu_time_ns,
+                        "total_memory_bytes": total_memory_bytes,
+                        "total_compute_units": total_compute_units,
+                        "message": "Process GPU monitoring data retrieved successfully",
+                        "component_status": check_component_availability(&state),
+                        "cache_info": {
+                            "cached": false,
+                            "ttl_seconds": cache_write.cache_ttl_seconds
+                        },
+                        "timestamp": Utc::now().to_rfc3339()
+                    });
+                }
+            }
+        }
+    }
+
+    // Кэшируем результат
+    cache_write.cached_process_gpu_json = Some((result.clone(), Instant::now()));
+    trace!("Cached process GPU data (count: {})", result["count"]);
+
     Ok(Json(result))
 }
 
@@ -3500,6 +3595,7 @@ mod tests {
                 enable_filesystem_monitoring: false,
                 enable_process_monitoring: false,
                 enable_process_energy_monitoring: false,
+                enable_process_gpu_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -3605,6 +3701,7 @@ mod tests {
                 enable_filesystem_monitoring: false,
                 enable_process_monitoring: false,
                 enable_process_energy_monitoring: false,
+                enable_process_gpu_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -5463,6 +5560,7 @@ max_candidates: 200
         assert!(endpoint_paths.contains(&"/api/performance"));
         assert!(endpoint_paths.contains(&"/api/logs"));
         assert!(endpoint_paths.contains(&"/api/processes/memory"));
+        assert!(endpoint_paths.contains(&"/api/processes/gpu"));
     }
 
     #[tokio::test]
@@ -6377,8 +6475,7 @@ fn is_connection_active(last_activity: u64) -> bool {
 #[cfg(test)]
 mod test_process_energy_api {
     use super::*;
-    use crate::metrics::ebpf::{EbpfMetrics, ProcessEnergyStat};
-    use axum::http::StatusCode;
+    use crate::metrics::ebpf::{EbpfMetrics, ProcessEnergyStat, ProcessGpuStat};
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -6531,6 +6628,181 @@ mod test_process_energy_api {
 
         // Второй вызов - должен использовать кэш
         let response2 = process_energy_handler(State(state)).await;
+        assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
+
+        let json_response1 = response1.unwrap();
+        let json_response2 = response2.unwrap();
+
+        // Результаты должны быть идентичны
+        assert_eq!(
+            json_response1.0, json_response2.0,
+            "Результаты должны быть идентичны при использовании кэша"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_gpu_handler_with_no_metrics() {
+        // Тест проверяет, что обработчик корректно работает без доступных метрик
+        let state = ApiState {
+            metrics: None,
+            ..ApiState::default()
+        };
+
+        let response = process_gpu_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json_response.0.to_string()).unwrap();
+
+        assert_eq!(
+            value["status"].as_str().unwrap(),
+            "ok",
+            "Статус должен быть ok"
+        );
+        assert_eq!(
+            value["count"].as_u64().unwrap(),
+            0,
+            "Количество должно быть 0"
+        );
+        assert!(
+            value["process_gpu"].is_null(),
+            "Данные об использовании GPU должны быть null"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_gpu_handler_with_metrics() {
+        // Тест проверяет, что обработчик корректно работает с доступными метриками
+        let gpu_stats = vec![
+            ProcessGpuStat {
+                pid: 123,
+                tgid: 456,
+                gpu_time_ns: 1000000,
+                memory_usage_bytes: 1024,
+                compute_units_used: 1,
+                last_update_ns: 123456789,
+                gpu_id: 0,
+                temperature_celsius: 65,
+                name: "test_process".to_string(),
+                gpu_usage_percent: 5.5,
+            },
+            ProcessGpuStat {
+                pid: 789,
+                tgid: 101112,
+                gpu_time_ns: 2000000,
+                memory_usage_bytes: 2048,
+                compute_units_used: 2,
+                last_update_ns: 123456790,
+                gpu_id: 1,
+                temperature_celsius: 70,
+                name: "another_process".to_string(),
+                gpu_usage_percent: 10.2,
+            },
+        ];
+
+        let ebpf_metrics = EbpfMetrics {
+            process_gpu_details: Some(gpu_stats.clone()),
+            ..EbpfMetrics::default()
+        };
+
+        let system_metrics = crate::metrics::system::SystemMetrics {
+            ebpf: Some(ebpf_metrics),
+            ..crate::metrics::system::SystemMetrics::default()
+        };
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            ..ApiState::default()
+        };
+
+        let response = process_gpu_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let value: serde_json::Value = serde_json::from_str(&json_response.0.to_string()).unwrap();
+
+        assert_eq!(
+            value["status"].as_str().unwrap(),
+            "ok",
+            "Статус должен быть ok"
+        );
+        assert_eq!(
+            value["count"].as_u64().unwrap(),
+            2,
+            "Количество должно быть 2"
+        );
+        assert!(
+            value["process_gpu"].is_array(),
+            "Данные об использовании GPU должны быть массивом"
+        );
+        assert_eq!(
+            value["process_gpu"][0]["pid"].as_u64().unwrap(),
+            123,
+            "Первый процесс должен иметь PID 123"
+        );
+        assert_eq!(
+            value["process_gpu"][1]["pid"].as_u64().unwrap(),
+            789,
+            "Второй процесс должен иметь PID 789"
+        );
+        assert_eq!(
+            value["total_gpu_time_ns"].as_u64().unwrap(),
+            3000000,
+            "Общее время использования GPU должно быть 3000000 наносекунд"
+        );
+        assert_eq!(
+            value["total_memory_bytes"].as_u64().unwrap(),
+            3072,
+            "Общее использование памяти GPU должно быть 3072 байт"
+        );
+        assert_eq!(
+            value["total_compute_units"].as_u64().unwrap(),
+            3,
+            "Общее количество вычислительных единиц должно быть 3"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_gpu_handler_cache() {
+        // Тест проверяет, что обработчик корректно использует кэш
+        let gpu_stats = vec![ProcessGpuStat {
+            pid: 123,
+            tgid: 456,
+            gpu_time_ns: 1000000,
+            memory_usage_bytes: 1024,
+            compute_units_used: 1,
+            last_update_ns: 123456789,
+            gpu_id: 0,
+            temperature_celsius: 65,
+            name: "test_process".to_string(),
+            gpu_usage_percent: 5.5,
+        }];
+
+        let ebpf_metrics = EbpfMetrics {
+            process_gpu_details: Some(gpu_stats.clone()),
+            ..EbpfMetrics::default()
+        };
+
+        let system_metrics = crate::metrics::system::SystemMetrics {
+            ebpf: Some(ebpf_metrics),
+            ..crate::metrics::system::SystemMetrics::default()
+        };
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            cache: Some(Arc::new(RwLock::new(ApiCache {
+                cache_ttl_seconds: 60,
+                ..ApiCache::default()
+            }))),
+            ..ApiState::default()
+        };
+
+        // Первый вызов - кэш должен быть создан
+        let response1 = process_gpu_handler(State(state.clone())).await;
+        assert!(response1.is_ok(), "Первый вызов должен успешно выполниться");
+
+        // Второй вызов - должен использовать кэш
+        let response2 = process_gpu_handler(State(state)).await;
         assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
 
         let json_response1 = response1.unwrap();

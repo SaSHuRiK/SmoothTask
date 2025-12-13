@@ -99,6 +99,8 @@ pub struct EbpfConfig {
     pub enable_process_monitoring: bool,
     /// Включить мониторинг энергопотребления процессов
     pub enable_process_energy_monitoring: bool,
+    /// Включить мониторинг использования GPU процессами
+    pub enable_process_gpu_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
     /// Включить кэширование метрик для уменьшения накладных расходов
@@ -136,6 +138,7 @@ impl Default for EbpfConfig {
             enable_filesystem_monitoring: false,
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_gpu_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -370,6 +373,31 @@ pub struct ProcessEnergyStat {
     pub energy_w: f32,
 }
 
+/// Статистика по использованию GPU процессами
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessGpuStat {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Идентификатор потока
+    pub tgid: u32,
+    /// Время использования GPU в наносекундах
+    pub gpu_time_ns: u64,
+    /// Использование памяти GPU в байтах
+    pub memory_usage_bytes: u64,
+    /// Количество использованных вычислительных единиц
+    pub compute_units_used: u64,
+    /// Последнее обновление в наносекундах
+    pub last_update_ns: u64,
+    /// Идентификатор GPU устройства
+    pub gpu_id: u32,
+    /// Температура GPU во время использования
+    pub temperature_celsius: u32,
+    /// Имя процесса
+    pub name: String,
+    /// Время использования GPU в процентах (вычисленное)
+    pub gpu_usage_percent: f32,
+}
+
 /// Структура для хранения eBPF метрик
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EbpfMetrics {
@@ -421,6 +449,8 @@ pub struct EbpfMetrics {
     pub process_details: Option<Vec<ProcessStat>>,
     /// Детализированная статистика по энергопотреблению процессов (опционально)
     pub process_energy_details: Option<Vec<ProcessEnergyStat>>,
+    /// Детализированная статистика по использованию GPU процессами (опционально)
+    pub process_gpu_details: Option<Vec<ProcessGpuStat>>,
 }
 
 /// Конфигурация порогов для уведомлений eBPF
@@ -868,6 +898,8 @@ pub struct EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     process_energy_program: Option<Program>,
     #[cfg(feature = "ebpf")]
+    process_gpu_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
     gpu_program: Option<Program>,
     #[cfg(feature = "ebpf")]
     cpu_temperature_program: Option<Program>,
@@ -887,6 +919,8 @@ pub struct EbpfMetricsCollector {
     process_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     process_energy_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    process_gpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     gpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
@@ -942,6 +976,8 @@ impl EbpfMetricsCollector {
             #[cfg(feature = "ebpf")]
             process_energy_program: None,
             #[cfg(feature = "ebpf")]
+            process_gpu_program: None,
+            #[cfg(feature = "ebpf")]
             gpu_program: None,
             #[cfg(feature = "ebpf")]
             filesystem_program: None,
@@ -959,6 +995,8 @@ impl EbpfMetricsCollector {
             process_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             process_energy_maps: Vec::new(),
+            #[cfg(feature = "ebpf")]
+            process_gpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             gpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
@@ -1462,6 +1500,24 @@ impl EbpfMetricsCollector {
                         let error_msg = format!("Ошибка загрузки программы мониторинга энергопотребления процессов: {}. Проверьте доступ к энергетическим сенсорам и права доступа", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("ProcessEnergy: {}", e));
+                        error_count += 1;
+                        self.last_error = Some(error_msg);
+                    }
+                }
+            }
+
+            if self.config.enable_process_gpu_monitoring {
+                match self.load_process_gpu_program() {
+                    Ok(_) => {
+                        success_count += 1;
+                        tracing::info!(
+                            "Программа мониторинга использования GPU процессами успешно загружена"
+                        );
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Ошибка загрузки программы мониторинга использования GPU процессами: {}. Проверьте доступ к GPU устройствам и права доступа", e);
+                        tracing::error!("{}", error_msg);
+                        detailed_errors.push(format!("ProcessGPU: {}", e));
                         error_count += 1;
                         self.last_error = Some(error_msg);
                     }
@@ -2144,6 +2200,44 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга использования GPU процессами
+    #[cfg(feature = "ebpf")]
+    fn load_process_gpu_program(&mut self) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        use std::path::Path;
+
+        let program_path = Path::new("src/ebpf_programs/process_gpu.c");
+
+        if !program_path.exists() {
+            tracing::warn!(
+                "eBPF программа для мониторинга использования GPU процессами не найдена: {:?}",
+                program_path
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Загрузка eBPF программы для мониторинга использования GPU процессами: {:?}",
+            program_path
+        );
+
+        // Загрузка eBPF программы
+        let program = load_ebpf_program_from_file(program_path.to_str().unwrap())?;
+
+        // Сохранение программы
+        self.process_gpu_program = Some(program);
+
+        // Загрузка карт из программы
+        self.process_gpu_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "process_gpu_map")?;
+        self.process_gpu_maps.extend(
+            self.load_maps_from_program(program_path.to_str().unwrap(), "global_gpu_usage_map")?,
+        );
+
+        tracing::info!("eBPF программа для мониторинга использования GPU процессами успешно загружена с {} картами", self.process_gpu_maps.len());
+        Ok(())
+    }
+
     /// Загрузить eBPF программу для мониторинга файловой системы
     #[cfg(feature = "ebpf")]
     fn load_filesystem_program(&mut self) -> Result<()> {
@@ -2670,6 +2764,13 @@ impl EbpfMetricsCollector {
         let filesystem_ops = fs_metrics?;
         let active_processes = active_processes?;
 
+        // Собираем метрики использования GPU процессами
+        let process_gpu_details = if self.config.enable_process_gpu_monitoring {
+            self.collect_process_gpu_stats()?
+        } else {
+            None
+        };
+
         // Оптимизация: собираем детализированную статистику параллельно
         let (
             syscall_details,
@@ -2740,6 +2841,7 @@ impl EbpfMetricsCollector {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
         })
     }
 
@@ -2756,6 +2858,7 @@ impl EbpfMetricsCollector {
         Option<Vec<ProcessStat>>,
         Option<Vec<FilesystemStat>>,
         Option<Vec<ProcessEnergyStat>>,
+        Option<Vec<ProcessGpuStat>>,
     ) {
         use rayon::prelude::*;
 
@@ -2817,6 +2920,13 @@ impl EbpfMetricsCollector {
                     None
                 }
             }),
+            std::thread::spawn(|| {
+                if self.config.enable_process_gpu_monitoring {
+                    self.collect_process_gpu_stats()
+                } else {
+                    None
+                }
+            }),
         ];
 
         let syscall_details = results[0].join().unwrap();
@@ -2827,6 +2937,7 @@ impl EbpfMetricsCollector {
         let process_details = results[5].join().unwrap();
         let filesystem_details = results[6].join().unwrap();
         let process_energy_details = results[7].join().unwrap();
+        let process_gpu_details = results[8].join().unwrap();
 
         (
             syscall_details,
@@ -2837,6 +2948,7 @@ impl EbpfMetricsCollector {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
         )
     }
 
@@ -2856,6 +2968,7 @@ impl EbpfMetricsCollector {
         process_details: Option<Vec<ProcessStat>>,
         filesystem_details: Option<Vec<FilesystemStat>>,
         process_energy_details: Option<Vec<ProcessEnergyStat>>,
+        process_gpu_details: Option<Vec<ProcessGpuStat>>,
     ) -> (
         Option<Vec<SyscallStat>>,
         Option<Vec<NetworkStat>>,
@@ -2865,6 +2978,7 @@ impl EbpfMetricsCollector {
         Option<Vec<ProcessStat>>,
         Option<Vec<FilesystemStat>>,
         Option<Vec<ProcessEnergyStat>>,
+        Option<Vec<ProcessGpuStat>>,
     ) {
         // Ограничиваем количество системных вызовов
         let syscall_details = syscall_details.map(|mut details| {
@@ -2962,6 +3076,18 @@ impl EbpfMetricsCollector {
             details
         });
 
+        // Ограничиваем количество статистик использования GPU процессами
+        let process_gpu_details = process_gpu_details.map(|mut details| {
+            if details.len() > self.max_cached_details {
+                details.truncate(self.max_cached_details);
+                tracing::debug!(
+                    "Ограничено количество статистик использования GPU процессами до {}",
+                    self.max_cached_details
+                );
+            }
+            details
+        });
+
         (
             syscall_details,
             network_details,
@@ -2971,6 +3097,7 @@ impl EbpfMetricsCollector {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
         )
     }
 
@@ -3601,6 +3728,64 @@ impl EbpfMetricsCollector {
             Ok(None)
         } else {
             Ok(Some(energy_stats))
+        }
+    }
+
+    /// Собрать статистику по использованию GPU процессами
+    #[cfg(feature = "ebpf")]
+    fn collect_process_gpu_stats(&self) -> Result<Option<Vec<ProcessGpuStat>>> {
+        use libbpf_rs::Map;
+
+        if !self.config.enable_process_gpu_monitoring {
+            return Ok(None);
+        }
+
+        // Пробуем получить доступ к картам использования GPU процессами
+        if self.process_gpu_maps.is_empty() {
+            tracing::warn!("Карты использования GPU процессами не инициализированы");
+            return Ok(None);
+        }
+
+        let mut gpu_stats = Vec::new();
+
+        for map in &self.process_gpu_maps {
+            // Используем функцию итерации по ключам для получения всех записей использования GPU
+            match iterate_ebpf_map_keys::<ProcessGpuStat>(map, 10240) {
+                Ok(stats) => {
+                    for stat in stats {
+                        // Конвертируем время использования GPU в проценты (упрощенная конвертация)
+                        let gpu_usage_percent = if stat.last_update_ns > 0 {
+                            // Упрощенная конвертация: предполагаем 1 секунду интервала
+                            (stat.gpu_time_ns as f32 / 1_000_000.0).min(100.0)
+                        } else {
+                            0.0
+                        };
+
+                        gpu_stats.push(ProcessGpuStat {
+                            pid: stat.pid,
+                            tgid: stat.tgid,
+                            gpu_time_ns: stat.gpu_time_ns,
+                            memory_usage_bytes: stat.memory_usage_bytes,
+                            compute_units_used: stat.compute_units_used,
+                            last_update_ns: stat.last_update_ns,
+                            gpu_id: stat.gpu_id,
+                            temperature_celsius: stat.temperature_celsius,
+                            name: stat.name.clone(),
+                            gpu_usage_percent,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по карте использования GPU процессами: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        if gpu_stats.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(gpu_stats))
         }
     }
 
@@ -4950,6 +5135,7 @@ mod tests {
             enable_filesystem_monitoring: false,
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_gpu_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5017,6 +5203,7 @@ mod tests {
             process_details: None,
             filesystem_details: None,
             process_energy_details: None,
+            process_gpu_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5432,6 +5619,7 @@ mod tests {
             process_details: None,
             filesystem_details: None,
             process_energy_details: None,
+            process_gpu_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5607,6 +5795,7 @@ mod tests {
             process_details: None,
             filesystem_details: None,
             process_energy_details: None,
+            process_gpu_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -7465,6 +7654,169 @@ mod test_process_energy {
             assert_eq!(details.len(), 1, "Количество статистик энергопотребления должно быть ограничено до 1");
         } else {
             panic!("process_energy_details должно быть Some");
+        }
+    }
+
+    #[test]
+    fn test_process_gpu_stat_default() {
+        // Тест проверяет, что ProcessGpuStat корректно создается с значениями по умолчанию
+        let stat = ProcessGpuStat {
+            pid: 0,
+            tgid: 0,
+            gpu_time_ns: 0,
+            memory_usage_bytes: 0,
+            compute_units_used: 0,
+            last_update_ns: 0,
+            gpu_id: 0,
+            temperature_celsius: 0,
+            name: String::new(),
+            gpu_usage_percent: 0.0,
+        };
+
+        assert_eq!(stat.pid, 0);
+        assert_eq!(stat.tgid, 0);
+        assert_eq!(stat.gpu_time_ns, 0);
+        assert_eq!(stat.memory_usage_bytes, 0);
+        assert_eq!(stat.compute_units_used, 0);
+        assert_eq!(stat.last_update_ns, 0);
+        assert_eq!(stat.gpu_id, 0);
+        assert_eq!(stat.temperature_celsius, 0);
+        assert_eq!(stat.name, String::new());
+        assert_eq!(stat.gpu_usage_percent, 0.0);
+    }
+
+    #[test]
+    fn test_process_gpu_stat_with_values() {
+        // Тест проверяет, что ProcessGpuStat корректно хранит значения
+        let stat = ProcessGpuStat {
+            pid: 123,
+            tgid: 456,
+            gpu_time_ns: 1000000,
+            memory_usage_bytes: 1024 * 1024,
+            compute_units_used: 5,
+            last_update_ns: 1000000000,
+            gpu_id: 1,
+            temperature_celsius: 65,
+            name: "test_process".to_string(),
+            gpu_usage_percent: 75.5,
+        };
+
+        assert_eq!(stat.pid, 123);
+        assert_eq!(stat.tgid, 456);
+        assert_eq!(stat.gpu_time_ns, 1000000);
+        assert_eq!(stat.memory_usage_bytes, 1024 * 1024);
+        assert_eq!(stat.compute_units_used, 5);
+        assert_eq!(stat.last_update_ns, 1000000000);
+        assert_eq!(stat.gpu_id, 1);
+        assert_eq!(stat.temperature_celsius, 65);
+        assert_eq!(stat.name, "test_process");
+        assert_eq!(stat.gpu_usage_percent, 75.5);
+    }
+
+    #[test]
+    fn test_process_gpu_config() {
+        // Тест проверяет, что конфигурация process_gpu_monitoring корректно работает
+        let mut config = EbpfConfig::default();
+        assert!(!config.enable_process_gpu_monitoring, "По умолчанию должно быть отключено");
+
+        config.enable_process_gpu_monitoring = true;
+        assert!(config.enable_process_gpu_monitoring, "Должно включаться");
+    }
+
+    #[test]
+    fn test_ebpf_metrics_with_process_gpu() {
+        // Тест проверяет, что EbpfMetrics корректно хранит process_gpu_details
+        let mut metrics = EbpfMetrics::default();
+        assert!(metrics.process_gpu_details.is_none(), "По умолчанию должно быть None");
+
+        let gpu_stats = vec![
+            ProcessGpuStat {
+                pid: 1,
+                tgid: 1,
+                gpu_time_ns: 1000000,
+                memory_usage_bytes: 1024 * 1024,
+                compute_units_used: 1,
+                last_update_ns: 1000000000,
+                gpu_id: 0,
+                temperature_celsius: 60,
+                name: "test_process".to_string(),
+                gpu_usage_percent: 50.0,
+            },
+        ];
+
+        metrics.process_gpu_details = Some(gpu_stats.clone());
+        assert!(metrics.process_gpu_details.is_some(), "Должно быть Some");
+
+        if let Some(details) = &metrics.process_gpu_details {
+            assert_eq!(details.len(), 1);
+            assert_eq!(details[0].pid, 1);
+            assert_eq!(details[0].gpu_time_ns, 1000000);
+        }
+    }
+
+    #[test]
+    fn test_process_gpu_optimization() {
+        // Тест проверяет, что optimize_detailed_stats корректно обрабатывает process_gpu_details
+        let mut collector = EbpfMetricsCollector::new(EbpfConfig {
+            enable_process_gpu_monitoring: false,
+            ..Default::default()
+        });
+        collector.max_cached_details = 1;
+
+        let gpu_stats = vec![
+            ProcessGpuStat {
+                pid: 123,
+                tgid: 456,
+                gpu_time_ns: 1000000,
+                memory_usage_bytes: 1024 * 1024,
+                compute_units_used: 1,
+                last_update_ns: 1000000000,
+                gpu_id: 0,
+                temperature_celsius: 60,
+                name: "test_process".to_string(),
+                gpu_usage_percent: 50.0,
+            },
+            ProcessGpuStat {
+                pid: 789,
+                tgid: 101112,
+                gpu_time_ns: 2000000,
+                memory_usage_bytes: 2048 * 1024,
+                compute_units_used: 2,
+                last_update_ns: 1000000001,
+                gpu_id: 1,
+                temperature_celsius: 65,
+                name: "another_process".to_string(),
+                gpu_usage_percent: 75.0,
+            },
+        ];
+
+        let (
+            _syscall_details,
+            _network_details,
+            _connection_details,
+            _gpu_details,
+            _cpu_temperature_details,
+            _process_details,
+            _filesystem_details,
+            _process_energy_details,
+            process_gpu_details,
+        ) = collector.optimize_detailed_stats(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(gpu_stats),
+        );
+
+        if let Some(details) = process_gpu_details {
+            assert_eq!(details.len(), 1, "Количество статистик использования GPU должно быть ограничено до 1");
+            assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
+        } else {
+            panic!("process_gpu_details должно быть Some");
         }
     }
 }
