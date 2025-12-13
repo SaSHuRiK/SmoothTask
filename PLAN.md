@@ -11,6 +11,46 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-651: Исправить предупреждения clippy: assertions_on_constants в system.rs
+  - Тип: Rust / core / metrics
+  - Примечания: Удаление избыточных assert!(true) в тестах
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~10 минут
+  - Критерии готовности:
+    - ✅ Удаление 2 случаев assert!(true) в system.rs
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/system.rs: Удалены избыточные assert!(true)
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-652: Исправить предупреждения clippy: bool_comparison и bool_assert_comparison в cgroups.rs
+  - Тип: Rust / core / utils
+  - Примечания: Упрощение булевых сравнений в тестах
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~15 минут
+  - Критерии готовности:
+    - ✅ Упрощение 2 случаев bool_comparison (result == true || result == false)
+    - ✅ Упрощение 4 случаев bool_assert_comparison (assert_eq! с булевыми литералами)
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/utils/cgroups.rs: Упрощены булевые сравнения в тестах
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-653: Исправить предупреждения clippy: bool_assert_comparison в ebpf.rs
+  - Тип: Rust / core / metrics / eBPF
+  - Примечания: Упрощение булевых сравнений в тестах
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Упрощение 1 случая bool_assert_comparison (assert_eq! с булевым литералом)
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Упрощено булевое сравнение в тесте
+  - Результаты: Успешная компиляция без предупреждений clippy
+
 - [x] ST-642: Исправить предупреждения компилятора в ebpf.rs (unused variables)
   - Тип: Rust / core / metrics / eBPF
   - Примечания: Исправление unused переменных success и errors в функции collect_cpu_temperature_data
@@ -156,6 +196,46 @@
 ## 2. Бэклог
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-653: Исправить предупреждения clippy: bool_assert_comparison в ebpf.rs
+  - Тип: Rust / core / metrics / eBPF
+  - Примечания: Упрощение булевых сравнений в тестах
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~5 минут
+  - Критерии готовности:
+    - ✅ Упрощение 1 случая bool_assert_comparison (assert_eq! с булевым литералом)
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Упрощено булевое сравнение в тесте
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-652: Исправить предупреждения clippy: bool_comparison и bool_assert_comparison в cgroups.rs
+  - Тип: Rust / core / utils
+  - Примечания: Упрощение булевых сравнений в тестах
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~15 минут
+  - Критерии готовности:
+    - ✅ Упрощение 2 случаев bool_comparison (result == true || result == false)
+    - ✅ Упрощение 4 случаев bool_assert_comparison (assert_eq! с булевыми литералами)
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/utils/cgroups.rs: Упрощены булевые сравнения в тестах
+  - Результаты: Успешная компиляция без предупреждений clippy
+
+- [x] ST-651: Исправить предупреждения clippy: assertions_on_constants в system.rs
+  - Тип: Rust / core / metrics
+  - Примечания: Удаление избыточных assert!(true) в тестах
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~10 минут
+  - Критерии готовности:
+    - ✅ Удаление 2 случаев assert!(true) в system.rs
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/system.rs: Удалены избыточные assert!(true)
+  - Результаты: Успешная компиляция без предупреждений clippy
 
 - [x] ST-650: Исправить предупреждения clippy: useless_format в gpu.rs
   - Тип: Rust / core / metrics

@@ -443,7 +443,8 @@ mod tests {
         // Тест проверяет, что функция возвращает bool
         let result = is_cgroup_v2_available();
         // Результат может быть true или false в зависимости от системы
-        assert!(result == true || result == false);
+        // Упрощено согласно clippy: bool_comparison
+        assert!(result || !result);
     }
 
     #[test]
@@ -458,7 +459,8 @@ mod tests {
     fn test_is_controller_available_returns_bool() {
         // Тест проверяет, что функция возвращает bool
         let result = is_controller_available("cpu");
-        assert!(result == true || result == false);
+        // Упрощено согласно clippy: bool_comparison
+        assert!(result || !result);
     }
 
     #[test]
@@ -567,7 +569,7 @@ mod tests {
 
         let result = is_process_in_cgroup(1234, cgroup_path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -582,11 +584,11 @@ mod tests {
 
         let result = is_process_in_cgroup(1234, cgroup_path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), true);
+        assert!(result.unwrap());
 
         let result = is_process_in_cgroup(9999, cgroup_path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
     }
 
     #[test]
@@ -703,7 +705,7 @@ mod tests {
 
         let result = remove_cgroup_if_empty(cgroup_path);
         assert!(result.is_ok());
-        assert_eq!(result.unwrap(), false);
+        assert!(!result.unwrap());
 
         // Проверяем, что cgroup не был удалён
         assert!(cgroup_path.exists());

@@ -5355,7 +5355,7 @@ mod tests {
 
         #[cfg(not(target_os = "linux"))]
         {
-            assert_eq!(supported.unwrap(), false);
+            assert!(!supported.unwrap());
         }
     }
 
