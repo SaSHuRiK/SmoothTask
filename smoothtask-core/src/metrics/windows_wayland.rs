@@ -878,89 +878,7 @@ impl WaylandIntrospector {
 }
 
 impl WaylandIntrospector {
-    /// Обрабатывает события Wayland и собирает информацию об окнах
-    #[instrument(skip(self))]
-    fn process_events(&mut self) -> Result<()> {
-        debug!("Starting Wayland event processing");
 
-        // Создаём состояние для обработки событий
-        let mut state = WaylandState {
-            foreign_toplevel_manager: None,
-            windows: Vec::new(),
-            toplevels: HashMap::new(),
-            toplevel_to_window_index: HashMap::new(),
-            _initialized: false,
-        };
-
-        let _queue_handle = self.event_queue.handle();
-
-        // Обрабатываем события до тех пор, пока не получим все глобальные объекты
-        // или не найдём менеджер wlr-foreign-toplevel
-        let mut attempts = 0;
-        const MAX_ATTEMPTS: u32 = 10;
-
-        while attempts < MAX_ATTEMPTS {
-            debug!(
-                "Processing Wayland events (attempt {}/{})",
-                attempts + 1,
-                MAX_ATTEMPTS
-            );
-
-            // Обрабатываем все ожидающие события
-            self.event_queue
-                .dispatch_pending(&mut state)
-                .with_context(|| {
-                    format!(
-                        "Failed to dispatch Wayland events on attempt {}",
-                        attempts + 1
-                    )
-                })?;
-
-            // Если мы нашли менеджер и получили хотя бы одно окно, выходим
-            if state.foreign_toplevel_manager.is_some() && !state.windows.is_empty() {
-                info!("Successfully found wlr-foreign-toplevel-manager and received window data");
-                break;
-            }
-
-            attempts += 1;
-
-            // Ждём немного и пробуем снова
-            std::thread::sleep(std::time::Duration::from_millis(10));
-            self.connection
-                .flush()
-                .with_context(|| "Failed to flush Wayland connection")?;
-        }
-
-        // Проверяем, нашли ли мы менеджер
-        if state.foreign_toplevel_manager.is_none() {
-            error!(
-                "Failed to find wlr-foreign-toplevel-manager after {} attempts",
-                MAX_ATTEMPTS
-            );
-            anyhow::bail!(
-                "Failed to find wlr-foreign-toplevel-manager after {} attempts. This may indicate that the Wayland compositor does not support the wlr-foreign-toplevel-management protocol or the protocol is not available.",
-                MAX_ATTEMPTS
-            );
-        }
-
-        // Если у нас нет окон, добавляем временные данные для демонстрации
-        // В реальной реализации мы должны были получить события Toplevel
-        if state.windows.is_empty() {
-            warn!("No windows received from wlr-foreign-toplevel-manager, using fallback data");
-            let window_info = self.create_test_window_for_compositor();
-            debug!("Added fallback window to state");
-            state.windows.push(window_info);
-        }
-
-        // Обновляем список окон
-        self.windows = state.windows;
-        info!(
-            "Wayland event processing completed, found {} windows",
-            self.windows.len()
-        );
-
-        Ok(())
-    }
 
     /// Создаёт тестовое окно, специфичное для обнаруженного композитора
     fn create_test_window_for_compositor(&self) -> WindowInfo {
@@ -1891,12 +1809,12 @@ mod tests {
 
     #[test]
     fn test_wayland_introspector_process_events_error() {
-        // Тест проверяет обработку ошибок в методе process_events
+        // Тест проверяет обработку ошибок в методе process_events_improved
         // Создаём интроспектор (если возможно)
         match WaylandIntrospector::new() {
             Ok(mut introspector) => {
                 // Пробуем обработать события
-                match introspector.process_events() {
+                match introspector.process_events_improved() {
                     Ok(_) => {
                         // Если всё прошло успешно, это нормально
                     }
