@@ -1574,6 +1574,9 @@ apps:
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         // Тест без ML-классификатора
@@ -1643,6 +1646,9 @@ apps:
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         classify_process(&mut process, &mut db, None, None);
@@ -1711,6 +1717,9 @@ apps:
                 ionice_prio: None,
                 teacher_priority_class: None,
                 teacher_score: None,
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             },
             ProcessRecord {
                 pid: 1001,
@@ -1751,6 +1760,9 @@ apps:
                 ionice_prio: None,
                 teacher_priority_class: None,
                 teacher_score: None,
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             },
         ];
 
@@ -1767,6 +1779,8 @@ apps:
             is_focused_group: false,
             tags: Vec::new(),
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         classify_app_group(&mut app_group, &processes, &db);
@@ -1836,6 +1850,9 @@ apps:
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         }];
 
         let mut app_groups = vec![AppGroupRecord {
@@ -1851,6 +1868,8 @@ apps:
             is_focused_group: false,
             tags: Vec::new(),
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
 
         // Тест без ML-классификатора
@@ -1926,6 +1945,9 @@ apps:
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         // Классификация с ML-классификатором
@@ -2000,6 +2022,9 @@ apps:
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         // Классификация с ML-классификатором
@@ -2204,6 +2229,9 @@ apps:
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         // Классификация с пустой базой паттернов
@@ -2236,6 +2264,8 @@ apps:
             is_focused_group: false,
             tags: Vec::new(),
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         // Классификация группы без процессов
@@ -2318,6 +2348,9 @@ apps:
                 ionice_prio: None,
                 teacher_priority_class: None,
                 teacher_score: None,
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             },
             ProcessRecord {
                 pid: 1001,
@@ -2358,6 +2391,9 @@ apps:
                 ionice_prio: None,
                 teacher_priority_class: None,
                 teacher_score: None,
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             },
         ];
 
@@ -2374,6 +2410,8 @@ apps:
             is_focused_group: false,
             tags: Vec::new(),
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         // Классификация группы с разными типами процессов

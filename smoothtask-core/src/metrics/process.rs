@@ -1782,6 +1782,9 @@ Gid:    1000 1000 1000 1000
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
         
         cache.cache_record(test_record);
@@ -1975,6 +1978,9 @@ mod cache_tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         // Сохраняем запись в кэш
@@ -2037,6 +2043,9 @@ mod cache_tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         // Сохраняем запись в кэш
@@ -2113,6 +2122,9 @@ mod cache_tests {
                 ionice_prio: None,
                 teacher_priority_class: None,
                 teacher_score: None,
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             };
 
             cache.cache_record(record);
@@ -2172,6 +2184,9 @@ mod cache_tests {
                 ionice_prio: None,
                 teacher_priority_class: None,
                 teacher_score: None,
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             };
 
             cache.cache_record(record);
@@ -2228,6 +2243,9 @@ mod cache_tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         };
 
         cache.cache_record(record);

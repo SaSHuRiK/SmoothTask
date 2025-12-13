@@ -262,6 +262,8 @@ mod tests {
                 is_focused_group: true,
                 tags: vec!["browser".to_string()],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "background".to_string(),
@@ -276,6 +278,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["updater".to_string()],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             },
         ];
 

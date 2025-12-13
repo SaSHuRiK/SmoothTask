@@ -935,6 +935,9 @@ mod tests {
             ionice_prio: None,
             teacher_priority_class: None,
             teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
         }
     }
 

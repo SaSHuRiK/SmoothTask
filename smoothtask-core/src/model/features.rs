@@ -468,6 +468,9 @@ mod tests {
                 ionice_prio: Some(4),
                 teacher_priority_class: Some("INTERACTIVE".to_string()),
                 teacher_score: Some(0.75),
+                energy_uj: None,
+                power_w: None,
+                energy_timestamp: None,
             }],
             app_groups: vec![],
             responsiveness: ResponsivenessMetrics {
@@ -498,6 +501,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["browser".to_string(), "media".to_string()],
             priority_class: Some("INTERACTIVE".to_string()),
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -547,6 +552,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -582,6 +589,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["browser".to_string()],
             priority_class: Some("INTERACTIVE".to_string()),
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -622,6 +631,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -692,6 +703,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["browser".to_string()],
             priority_class: Some("INTERACTIVE".to_string()),
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -734,6 +747,8 @@ mod tests {
             is_focused_group: true,
             tags: vec!["browser".to_string()],
             priority_class: Some("INTERACTIVE".to_string()),
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -779,6 +794,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         };
 
         let features = build_features(&snapshot, &app_group);
