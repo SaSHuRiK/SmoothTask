@@ -1,0 +1,33 @@
+# Паттерны для обнаружения приложений в контейнерах
+# Используется для улучшенного обнаружения приложений внутри Docker, Podman, Flatpak и т.д.
+category: container
+apps:
+  - name: "docker-container"
+    label: "Docker Container"
+    exe_patterns: ["docker", "dockerd"]
+    tags: ["container", "sandbox"]
+  
+  - name: "podman-container"
+    label: "Podman Container"
+    exe_patterns: ["podman"]
+    tags: ["container", "sandbox"]
+  
+  - name: "flatpak-app"
+    label: "Flatpak Application"
+    exe_patterns: ["flatpak", "flatpak-run"]
+    tags: ["container", "sandbox", "flatpak"]
+  
+  - name: "snap-app"
+    label: "Snap Application"
+    exe_patterns: ["snap", "snap-run"]
+    tags: ["container", "sandbox", "snap"]
+  
+  - name: "firejail-app"
+    label: "Firejail Application"
+    exe_patterns: ["firejail"]
+    tags: ["container", "sandbox", "firejail"]
+  
+  - name: "bubblewrap-app"
+    label: "Bubblewrap Application"
+    exe_patterns: ["bwrap"]
+    tags: ["container", "sandbox", "bubblewrap"]

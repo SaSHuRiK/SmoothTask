@@ -785,6 +785,391 @@ impl PatternDatabase {
         false
     }
 
+    /// Улучшенный алгоритм обнаружения приложений с расширенными эвристиками.
+    /// 
+    /// Этот метод использует дополнительные эвристики для обнаружения приложений:
+    /// 1. Анализ аргументов командной строки
+    /// 2. Обнаружение контейнеров и sandbox
+    /// 3. Анализ пути исполняемого файла
+    /// 4. Обнаружение по системным сервисам
+    ///
+    /// # Аргументы
+    ///
+    /// * `process` - процесс для анализа
+    /// * `pattern_db` - база данных паттернов
+    /// * `desktop_id` - desktop ID процесса (опционально)
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    pub fn detect_application_enhanced(
+        &mut self,
+        process: &ProcessRecord,
+        desktop_id: Option<&str>,
+    ) -> Vec<(PatternCategory, AppPattern)> {
+        // Сначала пытаемся базовое сопоставление
+        let basic_matches = self.match_process(
+            process.exe.as_deref(),
+            desktop_id,
+            process.cgroup_path.as_deref(),
+        );
+
+        if !basic_matches.is_empty() {
+            // Конвертируем ссылки в owned данные
+            return basic_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+        }
+
+        // Если базовое сопоставление не сработало, применяем улучшенные эвристики
+        // Используем статические методы, которые не требуют mutable self
+        // Используем drop чтобы освободить mutable borrow перед вызовом статических методов
+        drop(basic_matches);
+        
+        // Получаем все паттерны из текущей базы
+        let all_patterns = self.all_patterns();
+        
+        // Используем статический метод, который не требует доступа к self
+        let enhanced_matches = Self::apply_enhanced_detection_no_self(
+            process,
+            desktop_id,
+            all_patterns,
+        );
+
+        enhanced_matches
+    }
+
+    /// Применяет улучшенные эвристики для обнаружения приложений без доступа к self.
+    ///
+    /// Этот метод использует загруженные паттерны напрямую.
+    ///
+    /// # Аргументы
+    ///
+    /// * `process` - процесс для анализа
+    /// * `desktop_id` - desktop ID процесса (опционально)
+    /// * `all_patterns` - список всех паттернов из текущей базы
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn apply_enhanced_detection_no_self(
+        process: &ProcessRecord,
+        _desktop_id: Option<&str>,
+        all_patterns: &[(PatternCategory, AppPattern)],
+    ) -> Vec<(PatternCategory, AppPattern)> {
+        // 1. Обнаружение контейнеров и sandbox
+        if let Some(exe) = &process.exe {
+            if Self::is_container_or_sandbox_process(exe) {
+                // Пытаемся обнаружить реальное приложение внутри контейнера
+                if let Some(cmdline) = &process.cmdline {
+                    let container_matches = Self::detect_container_application_static(cmdline, all_patterns);
+                    if !container_matches.is_empty() {
+                        // Конвертируем ссылки в owned данные
+                        return container_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+                    }
+                }
+            }
+        }
+
+        // 2. Анализ пути исполняемого файла
+        if let Some(exe) = &process.exe {
+            let path_matches = Self::detect_by_executable_path_static(exe, all_patterns);
+            if !path_matches.is_empty() {
+                // Конвертируем ссылки в owned данные
+                return path_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+            }
+        }
+
+        // 3. Обнаружение по системным сервисам
+        if let Some(systemd_unit) = &process.systemd_unit {
+            let service_matches = Self::detect_by_systemd_service_static(systemd_unit, all_patterns);
+            if !service_matches.is_empty() {
+                // Конвертируем ссылки в owned данные
+                return service_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+            }
+        }
+
+        // 4. Обнаружение по аргументам командной строки
+        if let Some(cmdline) = &process.cmdline {
+            let cmdline_matches = Self::detect_by_command_line_arguments_static(cmdline, all_patterns);
+            if !cmdline_matches.is_empty() {
+                // Конвертируем ссылки в owned данные
+                return cmdline_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Применяет улучшенные эвристики для обнаружения приложений (статическая версия).
+    ///
+    /// Этот метод не требует mutable self и работает напрямую с паттернами.
+    ///
+    /// # Аргументы
+    ///
+    /// * `process` - процесс для анализа
+    /// * `all_patterns` - список всех паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn apply_enhanced_detection_static<'a>(
+        process: &ProcessRecord,
+        all_patterns: &'a [(PatternCategory, AppPattern)],
+    ) -> Vec<(&'a PatternCategory, &'a AppPattern)> {
+        // 1. Обнаружение контейнеров и sandbox
+        if let Some(exe) = &process.exe {
+            if Self::is_container_or_sandbox_process(exe) {
+                // Пытаемся обнаружить реальное приложение внутри контейнера
+                if let Some(cmdline) = &process.cmdline {
+                    let container_matches = Self::detect_container_application_static(cmdline, all_patterns);
+                    if !container_matches.is_empty() {
+                        return container_matches;
+                    }
+                }
+            }
+        }
+
+        // 2. Анализ пути исполняемого файла
+        if let Some(exe) = &process.exe {
+            let path_matches = Self::detect_by_executable_path_static(exe, all_patterns);
+            if !path_matches.is_empty() {
+                return path_matches;
+            }
+        }
+
+        // 3. Обнаружение по системным сервисам
+        if let Some(systemd_unit) = &process.systemd_unit {
+            let service_matches = Self::detect_by_systemd_service_static(systemd_unit, all_patterns);
+            if !service_matches.is_empty() {
+                return service_matches;
+            }
+        }
+
+        // 4. Обнаружение по аргументам командной строки
+        if let Some(cmdline) = &process.cmdline {
+            let cmdline_matches = Self::detect_by_command_line_arguments_static(cmdline, all_patterns);
+            if !cmdline_matches.is_empty() {
+                return cmdline_matches;
+            }
+        }
+
+        Vec::new()
+    }
+
+    /// Обнаружение по аргументам командной строки (статическая версия).
+    ///
+    /// # Аргументы
+    ///
+    /// * `cmdline` - командная строка процесса
+    /// * `all_patterns` - список всех паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn detect_by_command_line_arguments_static<'a>(
+        cmdline: &str,
+        all_patterns: &'a [(PatternCategory, AppPattern)],
+    ) -> Vec<(&'a PatternCategory, &'a AppPattern)> {
+        let mut matches = Vec::new();
+
+        // Извлекаем аргументы из командной строки
+        let args: Vec<&str> = cmdline.split_whitespace().collect();
+
+        // Пытаемся найти совпадения в аргументах
+        for arg in args {
+            // Пропускаем аргументы, которые являются флагами или путями
+            if arg.starts_with('-') || arg.starts_with('/') {
+                continue;
+            }
+
+            // Пытаемся сопоставить аргумент с паттернами
+            for (category, pattern) in all_patterns {
+                for exe_pattern in &pattern.exe_patterns {
+                    if Self::matches_pattern(arg, exe_pattern) {
+                        matches.push((category, pattern));
+                        break;
+                    }
+                }
+            }
+
+            if !matches.is_empty() {
+                break;
+            }
+        }
+
+        matches
+    }
+
+    /// Проверяет, является ли процесс контейнером или sandbox.
+    ///
+    /// # Аргументы
+    ///
+    /// * `exe` - имя исполняемого файла
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если процесс является контейнером или sandbox.
+    fn is_container_or_sandbox_process(exe: &str) -> bool {
+        let container_exes = [
+            "docker", "podman", "lxc", "lxd", "containerd", "runc",
+            "flatpak", "snap", "firejail", "bubblewrap", "nsjail",
+        ];
+
+        container_exes.contains(&exe)
+    }
+
+    /// Обнаружение приложения внутри контейнера (статическая версия).
+    ///
+    /// # Аргументы
+    ///
+    /// * `cmdline` - командная строка процесса
+    /// * `all_patterns` - список всех паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn detect_container_application_static<'a>(
+        cmdline: &str,
+        all_patterns: &'a [(PatternCategory, AppPattern)],
+    ) -> Vec<(&'a PatternCategory, &'a AppPattern)> {
+        let mut matches = Vec::new();
+
+        // Извлекаем аргументы из командной строки
+        let args: Vec<&str> = cmdline.split_whitespace().collect();
+
+        // Пытаемся найти реальное приложение в аргументах
+        for arg in args {
+            // Пропускаем аргументы, которые являются флагами или путями
+            if arg.starts_with('-') || arg.starts_with('/') {
+                continue;
+            }
+
+            // Пытаемся сопоставить аргумент с паттернами
+            for (category, pattern) in all_patterns {
+                for exe_pattern in &pattern.exe_patterns {
+                    if Self::matches_pattern(arg, exe_pattern) {
+                        matches.push((category, pattern));
+                        break;
+                    }
+                }
+            }
+
+            if !matches.is_empty() {
+                break;
+            }
+        }
+
+        matches
+    }
+
+    /// Обнаружение по пути исполняемого файла (статическая версия).
+    ///
+    /// # Аргументы
+    ///
+    /// * `exe` - полный путь к исполняемому файлу
+    /// * `all_patterns` - список всех паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn detect_by_executable_path_static<'a>(
+        exe: &str,
+        all_patterns: &'a [(PatternCategory, AppPattern)],
+    ) -> Vec<(&'a PatternCategory, &'a AppPattern)> {
+        let mut matches = Vec::new();
+
+        // Извлекаем имя файла из пути
+        if let Some(file_name) = exe.split('/').last() {
+            // Пытаемся сопоставить имя файла с паттернами
+            for (category, pattern) in all_patterns {
+                for exe_pattern in &pattern.exe_patterns {
+                    if Self::matches_pattern(file_name, exe_pattern) {
+                        matches.push((category, pattern));
+                        break;
+                    }
+                }
+            }
+        }
+
+        matches
+    }
+
+    /// Обнаружение по системному сервису (статическая версия).
+    ///
+    /// # Аргументы
+    ///
+    /// * `systemd_unit` - имя системного сервиса
+    /// * `all_patterns` - список всех паттернов
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn detect_by_systemd_service_static<'a>(
+        systemd_unit: &str,
+        all_patterns: &'a [(PatternCategory, AppPattern)],
+    ) -> Vec<(&'a PatternCategory, &'a AppPattern)> {
+        let mut matches = Vec::new();
+
+        // Извлекаем базовое имя сервиса (без .service суффикса)
+        let service_name = systemd_unit
+            .strip_suffix(".service")
+            .unwrap_or(systemd_unit);
+
+        // Пытаемся сопоставить имя сервиса с паттернами
+        for (category, pattern) in all_patterns {
+            for exe_pattern in &pattern.exe_patterns {
+                if Self::matches_pattern(service_name, exe_pattern) {
+                    matches.push((category, pattern));
+                    break;
+                }
+            }
+        }
+
+        matches
+    }
+
+    /// Обнаружение по аргументам командной строки.
+    ///
+    /// # Аргументы
+    ///
+    /// * `cmdline` - командная строка процесса
+    ///
+    /// # Возвращает
+    ///
+    /// Список совпадающих паттернов с их категориями.
+    fn detect_by_command_line_arguments(
+        &self,
+        cmdline: &str,
+    ) -> Vec<(&PatternCategory, &AppPattern)> {
+        let mut matches = Vec::new();
+
+        // Извлекаем аргументы из командной строки
+        let args: Vec<&str> = cmdline.split_whitespace().collect();
+
+        // Пытаемся найти совпадения в аргументах
+        for arg in args {
+            // Пропускаем аргументы, которые являются флагами или путями
+            if arg.starts_with('-') || arg.starts_with('/') {
+                continue;
+            }
+
+            // Пытаемся сопоставить аргумент с паттернами
+            for (category, pattern) in &self.all_patterns {
+                for exe_pattern in &pattern.exe_patterns {
+                    if Self::matches_pattern(arg, exe_pattern) {
+                        matches.push((category, pattern));
+                        break;
+                    }
+                }
+            }
+
+            if !matches.is_empty() {
+                break;
+            }
+        }
+
+        matches
+    }
+
     /// Проверяет, соответствует ли строка паттерну.
     ///
     /// Поддерживает glob паттерны:
@@ -905,12 +1290,11 @@ pub fn classify_process(
 
     debug!("Используемый desktop_id: {:?}", desktop_id);
 
-    // Ищем совпадающие паттерны (блокируем базу паттернов для чтения)
-    let pattern_db_lock = pattern_db.lock().unwrap();
-    let matches = pattern_db_lock.match_process(
-        process.exe.as_deref(),
+    // Ищем совпадающие паттерны с использованием улучшенного алгоритма обнаружения
+    let mut pattern_db_lock = pattern_db.lock().unwrap();
+    let matches = pattern_db_lock.detect_application_enhanced(
+        process,
         desktop_id,
-        process.cgroup_path.as_deref(),
     );
 
     if matches.is_empty() {
@@ -1009,13 +1393,12 @@ pub fn classify_process(
     // Извлекаем desktop_id из systemd_unit, если не передан явно
     let desktop_id = desktop_id.or(process.systemd_unit.as_deref());
 
-    // Паттерн-базированная классификация (без ML)
+    // Паттерн-базированная классификация с улучшенным обнаружением (без ML)
     // Блокируем базу паттернов для чтения
     let mut pattern_db_lock = pattern_db.lock().unwrap();
-    let matches = pattern_db_lock.match_process(
-        process.exe.as_deref(),
+    let matches = pattern_db_lock.detect_application_enhanced(
+        process,
         desktop_id,
-        process.cgroup_path.as_deref(),
     );
 
     // Собираем все теги из совпадающих паттернов
@@ -2911,5 +3294,251 @@ apps:
 
         // Проверяем, что существующие паттерны сохранены
         assert_eq!(db.all_patterns().len(), initial_patterns);
+    }
+
+    #[test]
+    fn test_enhanced_detection_container_applications() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём паттерны для тестирования обнаружения контейнеров
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox", "firefox-bin"]
+    tags: ["browser"]
+"#,
+        );
+
+        create_test_pattern_file(
+            patterns_dir,
+            "containers.yml",
+            r#"
+category: container
+apps:
+  - name: "docker-container"
+    label: "Docker Container"
+    exe_patterns: ["docker"]
+    tags: ["container", "sandbox"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        // Тестируем обнаружение приложения внутри Docker контейнера
+        let process = ProcessRecord {
+            pid: 1234,
+            exe: Some("docker".to_string()),
+            cmdline: Some("docker run -it firefox".to_string()),
+            ..Default::default()
+        };
+
+        let matches = db.detect_application_enhanced(&process, None);
+        
+        // Должны обнаружить Docker контейнер
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.name, "docker-container");
+        assert_eq!(matches[0].0 .0, "container");
+    }
+
+    #[test]
+    fn test_enhanced_detection_command_line_arguments() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём паттерны для тестирования обнаружения по аргументам
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox", "firefox-bin"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        // Тестируем обнаружение по аргументам командной строки
+        let process = ProcessRecord {
+            pid: 5678,
+            exe: Some("unknown-wrapper".to_string()),
+            cmdline: Some("/usr/bin/unknown-wrapper firefox --new-window".to_string()),
+            ..Default::default()
+        };
+
+        let matches = db.detect_application_enhanced(&process, None);
+        
+        // Должны обнаружить Firefox по аргументу командной строки
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.name, "firefox");
+        assert_eq!(matches[0].0 .0, "browser");
+    }
+
+    #[test]
+    fn test_enhanced_detection_executable_path() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём паттерны для тестирования обнаружения по пути
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox", "firefox-bin"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        // Тестируем обнаружение по полному пути к исполняемому файлу
+        let process = ProcessRecord {
+            pid: 9012,
+            exe: Some("/usr/lib/firefox/firefox-bin".to_string()),
+            ..Default::default()
+        };
+
+        let matches = db.detect_application_enhanced(&process, None);
+        
+        // Должны обнаружить Firefox по имени файла в пути
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.name, "firefox");
+        assert_eq!(matches[0].0 .0, "browser");
+    }
+
+    #[test]
+    fn test_enhanced_detection_systemd_service() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём паттерны для тестирования обнаружения по systemd сервису
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox", "firefox-bin"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        // Тестируем обнаружение по systemd сервису
+        let process = ProcessRecord {
+            pid: 3456,
+            systemd_unit: Some("firefox.service".to_string()),
+            ..Default::default()
+        };
+
+        let matches = db.detect_application_enhanced(&process, None);
+        
+        // Должны обнаружить Firefox по имени сервиса
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.name, "firefox");
+        assert_eq!(matches[0].0 .0, "browser");
+    }
+
+    #[test]
+    fn test_container_detection_logic() {
+        // Тестируем логику обнаружения контейнеров
+        assert!(PatternDatabase::is_container_or_sandbox_process("docker"));
+        assert!(PatternDatabase::is_container_or_sandbox_process("podman"));
+        assert!(PatternDatabase::is_container_or_sandbox_process("flatpak"));
+        assert!(PatternDatabase::is_container_or_sandbox_process("snap"));
+        assert!(PatternDatabase::is_container_or_sandbox_process("firejail"));
+        assert!(PatternDatabase::is_container_or_sandbox_process("bubblewrap"));
+
+        // Тестируем, что обычные приложения не обнаруживаются как контейнеры
+        assert!(!PatternDatabase::is_container_or_sandbox_process("firefox"));
+        assert!(!PatternDatabase::is_container_or_sandbox_process("chrome"));
+        assert!(!PatternDatabase::is_container_or_sandbox_process("bash"));
+    }
+
+    #[test]
+    fn test_enhanced_detection_fallback_behavior() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём паттерны для тестирования fallback поведения
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        // Тестируем процесс без совпадений - должен вернуться пустой список
+        let process = ProcessRecord {
+            pid: 7890,
+            exe: Some("unknown-app".to_string()),
+            ..Default::default()
+        };
+
+        let matches = db.detect_application_enhanced(&process, None);
+        
+        // Не должно быть совпадений
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn test_enhanced_detection_priority() {
+        let temp_dir = TempDir::new().expect("temp dir");
+        let patterns_dir = temp_dir.path();
+
+        // Создаём паттерны для тестирования приоритета обнаружения
+        create_test_pattern_file(
+            patterns_dir,
+            "browser.yml",
+            r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    desktop_patterns: ["firefox.desktop"]
+    tags: ["browser"]
+"#,
+        );
+
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+        // Тестируем, что базовое сопоставление имеет приоритет над улучшенными эвристиками
+        let process = ProcessRecord {
+            pid: 1111,
+            exe: Some("firefox".to_string()),
+            cmdline: Some("firefox --new-window".to_string()),
+            ..Default::default()
+        };
+
+        let matches = db.detect_application_enhanced(&process, None);
+        
+        // Должно быть найдено через базовое сопоставление (по exe)
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].1.name, "firefox");
     }
 }
