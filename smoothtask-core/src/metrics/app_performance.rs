@@ -4,12 +4,11 @@
 //! приложений, сгруппированных по AppGroup. Он фокусируется на метриках,
 //! которые важны для пользовательского опыта и производительности системы.
 
-use crate::classify::grouper::AppGroup;
-use crate::logging::snapshots::ProcessRecord;
+use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 use crate::metrics::process::{collect_process_metrics, ProcessCacheConfig};
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::{Duration, SystemTime};
 
 /// Структура для хранения метрик производительности приложения.
 #[derive(Debug, Clone, serde::Serialize, Default)]
@@ -60,7 +59,7 @@ pub struct AppPerformanceMetrics {
     pub performance_status: PerformanceStatus,
     
     /// Временная метка сбора метрик.
-    pub timestamp: Instant,
+    pub timestamp: Option<SystemTime>,
     
     /// Дополнительные теги и метаданные.
     pub tags: Vec<String>,
@@ -166,7 +165,7 @@ impl Default for PerformanceThresholds {
 ///
 /// Возвращает ошибку, если не удалось собрать метрики процессов.
 pub fn collect_app_performance_metrics(
-    app_groups: &[AppGroup],
+    app_groups: &[AppGroupRecord],
     config: Option<AppPerformanceConfig>
 ) -> Result<HashMap<String, AppPerformanceMetrics>> {
     let app_config = config.unwrap_or_default();
@@ -182,9 +181,10 @@ pub fn collect_app_performance_metrics(
     );
     
     // Собираем метрики всех процессов
-    let start_time = Instant::now();
-    let processes = collect_process_metrics(Some(app_config.process_cache_config))?;
-    let collection_time = start_time.elapsed();
+    let start_time = SystemTime::now();
+    let cache_config = app_config.process_cache_config.clone();
+    let processes = collect_process_metrics(Some(cache_config))?;
+    let collection_time = start_time.elapsed().unwrap_or(Duration::from_secs(0));
     
     tracing::debug!(
         "Собрано метрик для {} процессов за {:?}",
@@ -196,8 +196,8 @@ pub fn collect_app_performance_metrics(
     let mut app_metrics: HashMap<String, AppPerformanceMetrics> = HashMap::new();
     
     for app_group in app_groups {
-        let group_id = app_group.id.clone();
-        let group_name = app_group.name.clone();
+        let group_id = app_group.app_group_id.clone();
+        let _group_name = app_group.app_name.clone().unwrap_or_else(|| "Unknown".to_string());
         
         // Фильтруем процессы, принадлежащие этой группе
         let group_processes: Vec<_> = processes
@@ -347,7 +347,7 @@ fn calculate_group_metrics(
         processes_with_terminals,
         response_time_ms: None, // Будет реализовано позже
         performance_status,
-        timestamp: Instant::now(),
+        timestamp: Some(SystemTime::now()),
         tags,
     }
 }
@@ -393,7 +393,7 @@ fn determine_performance_status(
 ///
 /// Метрики производительности для указанной группы приложений.
 pub fn collect_app_group_performance(
-    app_group: &AppGroup,
+    app_group: &AppGroupRecord,
     config: Option<AppPerformanceConfig>
 ) -> Result<Option<AppPerformanceMetrics>> {
     let app_config = config.unwrap_or_default();
@@ -403,12 +403,13 @@ pub fn collect_app_group_performance(
     }
     
     // Собираем метрики всех процессов
-    let processes = collect_process_metrics(Some(app_config.process_cache_config))?;
+    let cache_config = app_config.process_cache_config.clone();
+    let processes = collect_process_metrics(Some(cache_config))?;
     
     // Фильтруем процессы, принадлежащие этой группе
     let group_processes: Vec<_> = processes
         .iter()
-        .filter(|p| p.app_group_id.as_ref() == Some(&app_group.id))
+        .filter(|p| p.app_group_id.as_ref() == Some(&app_group.app_group_id))
         .collect();
     
     if group_processes.is_empty() {
@@ -441,7 +442,8 @@ pub fn collect_all_app_performance(
     }
     
     // Собираем метрики всех процессов
-    let processes = collect_process_metrics(Some(app_config.process_cache_config))?;
+    let cache_config = app_config.process_cache_config.clone();
+    let processes = collect_process_metrics(Some(cache_config))?;
     
     // Группируем процессы по AppGroup
     let mut app_groups_map: HashMap<String, Vec<&ProcessRecord>> = HashMap::new();
@@ -522,10 +524,10 @@ pub fn collect_performance_history(
         return Err(anyhow::anyhow!("Мониторинг производительности отключен"));
     }
     
-    let start_time = Instant::now();
+    let start_time = SystemTime::now();
     let mut history = Vec::new();
     
-    while start_time.elapsed() < duration {
+    while start_time.elapsed().unwrap_or(Duration::from_secs(0)) < duration {
         let metrics = collect_all_app_performance(Some(app_config.clone()))?;
         history.push(metrics);
         
@@ -563,6 +565,7 @@ pub fn analyze_performance_trends(
     
     // Вычисляем общие тренды
     trends.overall_trend = calculate_overall_trend(&trends.group_trends);
+    trends.analysis_timestamp = Some(SystemTime::now());
     
     Ok(trends)
 }
@@ -715,7 +718,7 @@ pub struct PerformanceTrends {
     pub group_trends: HashMap<String, GroupPerformanceTrend>,
     
     /// Временная метка анализа.
-    pub analysis_timestamp: Instant,
+    pub analysis_timestamp: Option<SystemTime>,
 }
 
 /// Общий тренд производительности.
@@ -901,11 +904,54 @@ mod tests {
         assert_eq!(status, PerformanceStatus::Critical);
     }
 
+    /// Helper function to create a default ProcessRecord for testing
+    fn create_test_process(pid: i32) -> ProcessRecord {
+        ProcessRecord {
+            pid,
+            ppid: 1,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("test".to_string()),
+            cmdline: Some("test".to_string()),
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "R".to_string(),
+            start_time: 0,
+            uptime_sec: 0,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: None,
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: vec![],
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+        }
+    }
+
     #[test]
     fn test_group_metrics_calculation() {
         // Создаем тестовые процессы
-        let mut process1 = ProcessRecord::default();
-        process1.pid = 1;
+        let mut process1 = create_test_process(1);
         process1.cpu_share_1s = Some(10.0);
         process1.rss_mb = Some(100);
         process1.io_read_bytes = Some(1000);
@@ -915,8 +961,7 @@ mod tests {
         process1.has_gui_window = true;
         process1.app_group_id = Some("test_group".to_string());
         
-        let mut process2 = ProcessRecord::default();
-        process2.pid = 2;
+        let mut process2 = create_test_process(2);
         process2.cpu_share_1s = Some(20.0);
         process2.rss_mb = Some(200);
         process2.io_read_bytes = Some(3000);
@@ -963,7 +1008,7 @@ mod tests {
             processes_with_terminals: 0,
             response_time_ms: Some(100.0),
             performance_status: PerformanceStatus::Good,
-            timestamp: Instant::now(),
+            timestamp: Some(SystemTime::now()),
             tags: vec!["has_windows".to_string(), "has_audio".to_string()],
         };
         
@@ -1078,7 +1123,7 @@ mod tests {
             processes_with_terminals: 0,
             response_time_ms: None,
             performance_status: PerformanceStatus::Good,
-            timestamp: Instant::now(),
+            timestamp: Some(SystemTime::now()),
             tags: vec![],
         };
         

@@ -13,6 +13,8 @@ use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
+
+use crate::metrics::app_performance::{AppPerformanceConfig, collect_all_app_performance};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
@@ -1465,7 +1467,7 @@ async fn performance_handler(State(state): State<ApiState>) -> Result<Json<Value
 /// JSON объект с метриками производительности для каждой группы приложений,
 /// включая использование CPU, памяти, ввода-вывода и статус производительности.
 async fn app_performance_handler(
-    State(state): State<ApiState>
+    State(_state): State<ApiState>
 ) -> Result<Json<Value>, StatusCode> {
     // Собираем метрики производительности приложений
     let app_performance_config = AppPerformanceConfig::default();
@@ -1473,11 +1475,12 @@ async fn app_performance_handler(
     let result = collect_all_app_performance(Some(app_performance_config));
     
     match result {
-        Ok(metrics) => {
+        Ok(metrics_map) => {
             // Преобразуем метрики в JSON
             let mut json_metrics = serde_json::Map::new();
+            let total_app_groups = metrics_map.len();
             
-            for (app_group_id, app_metrics) in metrics {
+            for (app_group_id, app_metrics) in metrics_map {
                 let mut group_json = serde_json::Map::new();
                 group_json.insert("app_group_id".to_string(), json!(app_metrics.app_group_id));
                 group_json.insert("app_group_name".to_string(), json!(app_metrics.app_group_name));
@@ -1512,7 +1515,7 @@ async fn app_performance_handler(
             Ok(Json(json!({
                 "status": "ok",
                 "app_performance_metrics": json_metrics,
-                "total_app_groups": metrics.len(),
+                "total_app_groups": total_app_groups,
                 "timestamp": Utc::now().to_rfc3339()
             })))
         }

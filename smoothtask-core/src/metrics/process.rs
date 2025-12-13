@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 
 /// Конфигурация кэширования для метрик процессов.
 #[derive(Debug, Clone)]
@@ -93,7 +93,7 @@ pub struct CachePerformanceStats {
     /// Среднее время обработки процесса без кэша (в микросекундах)
     pub avg_processing_time_micros: u64,
     /// Последнее время обновления статистики
-    pub last_updated: Instant,
+    pub last_updated: Option<SystemTime>,
 }
 
 impl CachePerformanceStats {
@@ -104,7 +104,7 @@ impl CachePerformanceStats {
             cache_misses: 0,
             time_saved_micros: 0,
             avg_processing_time_micros: 0,
-            last_updated: Instant::now(),
+            last_updated: Some(SystemTime::now()),
         }
     }
 
@@ -125,7 +125,7 @@ impl CachePerformanceStats {
             }
         }
         
-        self.last_updated = Instant::now();
+        self.last_updated = Some(SystemTime::now());
     }
 
     /// Сбросить статистику
@@ -193,9 +193,17 @@ impl ProcessCache {
             let mut lru_write = lru_cache.write().unwrap();
             // LRU кэш автоматически удаляет старые записи при превышении лимита
             // Но нам нужно вручную удалить устаревшие записи по TTL
-            lru_write.retain(|_, cached| {
-                now.duration_since(cached.cached_at) < Duration::from_secs(cache_ttl)
-            });
+            let keys_to_remove: Vec<_> = lru_write.iter().filter_map(|(key, cached)| {
+                if now.duration_since(cached.cached_at) >= Duration::from_secs(cache_ttl) {
+                    Some(*key)
+                } else {
+                    None
+                }
+            }).collect();
+            
+            for key in keys_to_remove {
+                lru_write.pop(&key);
+            }
         }
 
         // Ограничить количество записей, если превышен лимит (только для HashMap)
@@ -222,7 +230,7 @@ impl ProcessCache {
         // Пробуем получить из LRU кэша, если он включен
         if let Some(lru_cache) = &self.lru_cache {
             let lru_read = lru_cache.read().unwrap();
-            if let Some(cached) = lru_read.get(&pid) {
+            if let Some(cached) = lru_read.peek(&pid) {
                 if now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds) {
                     return Some(cached.record.clone());
                 }
@@ -560,7 +568,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
     // Это значительно ускоряет сбор метрик для большого количества процессов
     let process_results: Vec<_> = if cache_config.enable_parallel_processing {
         // Используем глобальный пул потоков
-        let batch_size = cache_config.batch_size.unwrap_or(100);
+        let _batch_size = cache_config.batch_size.unwrap_or(100);
         
         all_procs
             .par_bridge() // Преобразуем итератор в параллельный
@@ -572,7 +580,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 
                         // Проверяем кэш, если кэширование включено
                         if cache_config.enable_caching {
-                            let start_time = Instant::now();
+                            let _start_time = Instant::now();
                             let cache_read = PROCESS_CACHE.read().unwrap();
                             if let Some(cached_record) = cache_read.get_cached(pid) {
                                 tracing::debug!("Кэш попадание для процесса PID {}", pid);
@@ -1897,6 +1905,9 @@ mod cache_tests {
             enable_caching: true,
             enable_parallel_processing: false,
             max_parallel_threads: Some(8),
+            batch_size: None,
+            optimize_io: false,
+            use_lru_cache: false,
         };
 
         let cache = ProcessCache::with_config(config.clone());
@@ -2033,12 +2044,16 @@ mod cache_tests {
     fn test_cache_size_limit() {
         let mut cache = ProcessCache {
             records: HashMap::new(),
+            lru_cache: None,
             config: ProcessCacheConfig {
                 cache_ttl_seconds: 300,
                 max_cached_processes: 2, // Очень маленький лимит
                 enable_caching: true,
                 enable_parallel_processing: true,
                 max_parallel_threads: None,
+                batch_size: None,
+                optimize_io: false,
+                use_lru_cache: false,
             },
         };
 
@@ -2211,6 +2226,9 @@ mod cache_tests {
             enable_caching: true,
             enable_parallel_processing: false,
             max_parallel_threads: Some(2),
+            batch_size: None,
+            optimize_io: false,
+            use_lru_cache: false,
         };
 
         cache.update_config(new_config.clone());
@@ -2279,7 +2297,7 @@ mod cache_tests {
         if let Some(lru_cache) = cache.lru_cache {
             let lru_read = lru_cache.read().unwrap();
             assert_eq!(lru_read.len(), 0);
-            assert_eq!(lru_read.cap(), 10);
+            assert_eq!(lru_read.cap().get(), 10);
         }
     }
 
