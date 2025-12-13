@@ -17,7 +17,7 @@ use lru::LruCache;
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
 
-use crate::classify::pattern_watcher::PatternUpdateResult;
+
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
 /// Категория паттернов (browser, ide, terminal, batch, и т.д.).
@@ -1180,6 +1180,7 @@ mod tests {
 
     #[cfg(any(feature = "catboost", feature = "onnx"))]
     use crate::classify::ml_classifier::StubMLClassifier;
+    use crate::classify::pattern_watcher::PatternUpdateResult;
 
     fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) -> PathBuf {
         let file_path = dir.join(filename);
@@ -2697,7 +2698,7 @@ apps:
         assert!(result.has_changes());
         assert_eq!(
             result.summary(),
-            "Updated: 2 new, 1 changed, 1 removed (5 patterns)"
+            "Updated: 1 changed, 2 new, 1 removed (5 patterns)"
         );
 
         let no_change_result = PatternUpdateResult {

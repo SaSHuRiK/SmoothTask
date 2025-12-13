@@ -682,11 +682,11 @@ pub async fn run_daemon(
     let pattern_db_arc = Arc::new(Mutex::new(pattern_db.clone()));
     
     // Создаём PatternWatcher только если автообновление включено в конфигурации
-    let mut pattern_watcher: Option<PatternWatcher> = None;
     let mut pattern_change_receiver: Option<watch::Receiver<PatternUpdateResult>> = None;
     let mut _pattern_watcher_handle: Option<tokio::task::JoinHandle<Result<()>>> = None;
     
     if initial_config.pattern_auto_update.enabled {
+        let pattern_watcher: Option<PatternWatcher>;
         info!("Pattern auto-update is enabled (interval: {}s)", initial_config.pattern_auto_update.interval_sec);
         
         let pattern_watcher_config = PatternWatcherConfig {
