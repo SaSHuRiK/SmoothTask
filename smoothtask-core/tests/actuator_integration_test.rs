@@ -104,6 +104,9 @@ fn create_test_process(pid: i32, name: &str, app_group_id: &str) -> ProcessRecor
         ionice_prio: None,
         teacher_priority_class: None,
         teacher_score: None,
+        energy_uj: Some(500000), // 500000 микроджоулей = 0.5 джоуля
+        power_w: Some(0.25), // 0.25 ватта
+        energy_timestamp: Some(1234567890),
     }
 }
 
@@ -121,6 +124,8 @@ fn create_test_app_group(app_group_id: &str, root_pid: i32) -> AppGroupRecord {
         is_focused_group: app_group_id == "app1",
         tags: vec![],
         priority_class: None,
+        total_energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
+        total_power_w: Some(0.5), // 0.5 ватта
     }
 }
 
