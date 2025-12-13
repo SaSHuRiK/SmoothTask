@@ -9,12 +9,14 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
 use std::num::NonZeroUsize;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
 
 use lru::LruCache;
 
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
+use crate::classify::pattern_watcher::PatternUpdateResult;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
 /// Категория паттернов (browser, ide, terminal, batch, и т.д.).
@@ -96,56 +98,6 @@ pub struct PatternFile {
 /// Результат обновления паттернов.
 ///
 /// Содержит статистику об изменениях при перезагрузке паттерн-базы.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PatternUpdateResult {
-    /// Общее количество обработанных файлов паттернов.
-    pub total_files: usize,
-    /// Общее количество загруженных паттернов.
-    pub total_patterns: usize,
-    /// Количество файлов с недопустимыми данными.
-    pub invalid_files: usize,
-    /// Количество изменённых паттернов.
-    pub changed_files: usize,
-    /// Количество новых паттернов.
-    pub new_files: usize,
-    /// Количество удалённых паттернов.
-    pub removed_files: usize,
-    /// Количество паттернов до обновления.
-    pub patterns_before: usize,
-    /// Количество паттернов после обновления.
-    pub patterns_after: usize,
-}
-
-impl PatternUpdateResult {
-    /// Возвращает `true`, если были обнаружены изменения.
-    pub fn has_changes(&self) -> bool {
-        self.changed_files > 0 || self.new_files > 0 || self.removed_files > 0
-    }
-
-    /// Возвращает краткое описание результата обновления.
-    pub fn summary(&self) -> String {
-        if !self.has_changes() {
-            format!("No changes detected ({} patterns)", self.patterns_after)
-        } else {
-            let mut parts = Vec::new();
-            if self.new_files > 0 {
-                parts.push(format!("{} new", self.new_files));
-            }
-            if self.changed_files > 0 {
-                parts.push(format!("{} changed", self.changed_files));
-            }
-            if self.removed_files > 0 {
-                parts.push(format!("{} removed", self.removed_files));
-            }
-            format!(
-                "Updated: {} ({} patterns)",
-                parts.join(", "),
-                self.patterns_after
-            )
-        }
-    }
-}
-
 /// База паттернов для классификации процессов.
 ///
 /// PatternDatabase загружает паттерны из YAML файлов и предоставляет методы
@@ -182,8 +134,7 @@ type PatternMatchKey = (Option<String>, Option<String>, Option<String>);
 /// Тип для результата сопоставления паттернов.
 /// Представляет список категорий и паттернов, соответствующих процессу.
 type PatternMatchResult = Vec<(PatternCategory, AppPattern)>;
-
-#[derive(Debug, Clone)]
+#[derive(Clone, Debug)]
 pub struct PatternDatabase {
     /// Маппинг категория -> список паттернов.
     patterns_by_category: HashMap<PatternCategory, Vec<AppPattern>>,
@@ -377,7 +328,7 @@ impl PatternDatabase {
     /// - директория не существует или недоступна для чтения
     /// - YAML файл имеет неверный формат
     /// - структура паттерна не соответствует ожидаемой
-    pub fn reload(&mut self, patterns_dir: impl AsRef<Path>) -> Result<PatternUpdateResult> {
+    pub fn reload(&mut self, patterns_dir: impl AsRef<Path>) -> Result<crate::classify::pattern_watcher::PatternUpdateResult> {
         let patterns_dir = patterns_dir.as_ref();
         let mut new_patterns_by_category = HashMap::new();
         let mut new_all_patterns = Vec::new();
@@ -528,7 +479,7 @@ impl PatternDatabase {
         self.patterns_by_category = new_patterns_by_category;
         self.all_patterns = new_all_patterns;
 
-        Ok(PatternUpdateResult {
+        Ok(crate::classify::pattern_watcher::PatternUpdateResult {
             total_files,
             total_patterns,
             invalid_files,
@@ -933,7 +884,7 @@ impl PatternDatabase {
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 pub fn classify_process(
     process: &mut ProcessRecord,
-    pattern_db: &mut PatternDatabase,
+    pattern_db: &Arc<Mutex<PatternDatabase>>,
     ml_classifier: Option<&mut dyn MLClassifier>,
     desktop_id: Option<&str>,
 ) {
@@ -953,8 +904,9 @@ pub fn classify_process(
 
     debug!("Используемый desktop_id: {:?}", desktop_id);
 
-    // Ищем совпадающие паттерны
-    let matches = pattern_db.match_process(
+    // Ищем совпадающие паттерны (блокируем базу паттернов для чтения)
+    let pattern_db_lock = pattern_db.lock().unwrap();
+    let matches = pattern_db_lock.match_process(
         process.exe.as_deref(),
         desktop_id,
         process.cgroup_path.as_deref(),
@@ -1044,7 +996,7 @@ pub fn classify_process(
 #[cfg(not(any(feature = "catboost", feature = "onnx")))]
 pub fn classify_process(
     process: &mut ProcessRecord,
-    pattern_db: &mut PatternDatabase,
+    pattern_db: &Arc<Mutex<PatternDatabase>>,
     _ml_classifier: Option<&dyn std::any::Any>,
     desktop_id: Option<&str>,
 ) {
@@ -1057,7 +1009,9 @@ pub fn classify_process(
     let desktop_id = desktop_id.or(process.systemd_unit.as_deref());
 
     // Паттерн-базированная классификация (без ML)
-    let matches = pattern_db.match_process(
+    // Блокируем базу паттернов для чтения
+    let mut pattern_db_lock = pattern_db.lock().unwrap();
+    let matches = pattern_db_lock.match_process(
         process.exe.as_deref(),
         desktop_id,
         process.cgroup_path.as_deref(),
@@ -1104,7 +1058,7 @@ pub fn classify_process(
 pub fn classify_app_group(
     app_group: &mut AppGroupRecord,
     processes: &[ProcessRecord],
-    _pattern_db: &PatternDatabase,
+    _pattern_db: &Arc<Mutex<PatternDatabase>>,
 ) {
     debug!(
         "Классификация AppGroup {} (root_pid={})",
@@ -1185,7 +1139,7 @@ pub fn classify_app_group(
 pub fn classify_all(
     processes: &mut [ProcessRecord],
     app_groups: &mut [AppGroupRecord],
-    pattern_db: &mut PatternDatabase,
+    pattern_db: &Arc<Mutex<PatternDatabase>>,
     ml_classifier: Option<&dyn MLClassifier>,
 ) {
     // Классифицируем все процессы
@@ -1203,7 +1157,7 @@ pub fn classify_all(
 pub fn classify_all(
     processes: &mut [ProcessRecord],
     app_groups: &mut [AppGroupRecord],
-    pattern_db: &mut PatternDatabase,
+    pattern_db: &Arc<Mutex<PatternDatabase>>,
     _ml_classifier: Option<&dyn std::any::Any>,
 ) {
     // Классифицируем все процессы (без ML)

@@ -20,7 +20,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
 use crate::api::{ApiServer, ApiServerHandle, ApiStateBuilder};
-use crate::classify::{grouper::ProcessGrouper, rules::classify_all, rules::PatternDatabase};
+use crate::classify::{grouper::ProcessGrouper, pattern_watcher::{PatternWatcher, PatternWatcherConfig}, rules::classify_all, rules::PatternDatabase};
+use crate::classify::pattern_watcher::PatternUpdateResult;
 use crate::config::config_struct::NotificationBackend;
 use crate::config::watcher::ConfigWatcher;
 use crate::notifications::{Notification, NotificationManager, NotificationType};
@@ -663,7 +664,7 @@ pub async fn run_daemon(
         "Loading pattern database from: {}",
         initial_config.paths.patterns_dir
     );
-    let mut pattern_db =
+    let pattern_db =
         PatternDatabase::load(&initial_config.paths.patterns_dir).with_context(|| {
             format!(
                 "Failed to load pattern database from {}. \
@@ -675,6 +676,47 @@ pub async fn run_daemon(
         "Loaded {} patterns from database",
         pattern_db.all_patterns().len()
     );
+
+    // Инициализация PatternWatcher для автоматического обновления паттернов
+    // Используем Arc<Mutex<PatternDatabase>> для совместного доступа
+    let pattern_db_arc = Arc::new(Mutex::new(pattern_db.clone()));
+    
+    // Создаём PatternWatcher только если автообновление включено в конфигурации
+    let mut pattern_watcher: Option<PatternWatcher> = None;
+    let mut pattern_change_receiver: Option<watch::Receiver<PatternUpdateResult>> = None;
+    let mut _pattern_watcher_handle: Option<tokio::task::JoinHandle<Result<()>>> = None;
+    
+    if initial_config.pattern_auto_update.enabled {
+        info!("Pattern auto-update is enabled (interval: {}s)", initial_config.pattern_auto_update.interval_sec);
+        
+        let pattern_watcher_config = PatternWatcherConfig {
+            enabled: initial_config.pattern_auto_update.enabled,
+            interval_sec: initial_config.pattern_auto_update.interval_sec,
+            notify_on_update: initial_config.pattern_auto_update.notify_on_update,
+        };
+        
+        let watcher = PatternWatcher::new(
+            &initial_config.paths.patterns_dir,
+            Arc::clone(&pattern_db_arc),
+            pattern_watcher_config
+        ).with_context(|| {
+            format!(
+                "Failed to initialize pattern watcher for directory: {}",
+                initial_config.paths.patterns_dir
+            )
+        })?;
+        
+        pattern_watcher = Some(watcher);
+        pattern_change_receiver = Some(pattern_watcher.as_ref().unwrap().change_receiver());
+        
+        // Запускаем задачу для мониторинга изменений паттернов
+        let handle = pattern_watcher.as_ref().unwrap().start_watching();
+        _pattern_watcher_handle = Some(handle);
+        
+        info!("Pattern watcher started for directory: {}", initial_config.paths.patterns_dir);
+    } else {
+        info!("Pattern auto-update is disabled");
+    }
 
     // Инициализация ConfigWatcher для динамической перезагрузки конфигурации
     let config_watcher = ConfigWatcher::new(&config_path).with_context(|| {
@@ -758,7 +800,7 @@ pub async fn run_daemon(
 
     // Запуск API сервера (если указан адрес)
     let mut api_server_handle: Option<ApiServerHandle> = None;
-    let pattern_db_arc = Arc::new(pattern_db.clone());
+    let api_pattern_db_arc = Arc::new(pattern_db.clone());
     if let Some(ref api_addr_str) = config_arc.read().await.paths.api_listen_addr {
         match api_addr_str.parse::<std::net::SocketAddr>() {
             Ok(addr) => {
@@ -770,7 +812,7 @@ pub async fn run_daemon(
                     .with_app_groups(Some(Arc::clone(&app_groups_arc)))
                     .with_responsiveness_metrics(Some(Arc::clone(&responsiveness_metrics_arc)))
                     .with_config(Some(Arc::clone(&config_arc)))
-                    .with_pattern_database(Some(Arc::clone(&pattern_db_arc)))
+                    .with_pattern_database(Some(Arc::clone(&api_pattern_db_arc)))
                     .with_config_path(Some(config_path.clone()))
                     .with_notification_manager(Some(Arc::clone(&notification_manager)))
                     .with_log_storage(Some(Arc::clone(&log_storage)))
@@ -886,6 +928,43 @@ pub async fn run_daemon(
             }
         }
 
+        // Проверяем изменения паттернов и перезагружаем при необходимости
+        if let Some(ref mut pattern_change_rx) = pattern_change_receiver {
+            if pattern_change_rx.borrow_and_update().has_changes() {
+                info!("Pattern database updated, applying changes...");
+                
+                // Получаем текущий результат обновления
+                let update_result = pattern_change_rx.borrow_and_update();
+                info!("Pattern update: {}", update_result.summary());
+                
+                // Уведомляем пользователя, если включено в конфигурации
+                let config_guard = config_arc.read().await;
+                if config_guard.pattern_auto_update.notify_on_update {
+                    if notification_manager.lock().await.is_enabled() {
+                        let notification = Notification::new(
+                            NotificationType::Info,
+                            "Pattern Database Updated",
+                            format!("Pattern database updated: {}", update_result.summary()),
+                        ).with_details(format!(
+                            "Total patterns: {}, Changed: {}, New: {}, Removed: {}",
+                            update_result.patterns_after,
+                            update_result.changed_files,
+                            update_result.new_files,
+                            update_result.removed_files
+                        ));
+                        
+                        if let Err(e) = notification_manager.lock().await.send(&notification).await {
+                            warn!("Failed to send pattern update notification: {}", e);
+                        }
+                    }
+                }
+                drop(config_guard);
+                
+                // Сбрасываем флаг изменения паттернов
+                // Это будет сделано автоматически при следующем обновлении
+            }
+        }
+
         let loop_start = Instant::now();
         iteration += 1;
 
@@ -968,7 +1047,7 @@ pub async fn run_daemon(
         classify_all(
             &mut processes,
             &mut app_groups,
-            &mut pattern_db,
+            &pattern_db_arc,
             ml_classifier.as_deref(),
         );
 

@@ -5,12 +5,54 @@
 
 use anyhow::Result;
 use std::path::Path;
-use std::sync::Arc;
-use tokio::sync::{watch, Mutex};
+use std::sync::{Arc, Mutex};
+use tokio::sync::watch;
 use tokio::time::{self, Duration};
 use tracing::{debug, error, info, warn};
 
-use crate::classify::rules::{PatternDatabase, PatternUpdateResult};
+use crate::classify::rules::PatternDatabase;
+
+/// Результат обновления паттернов.
+///
+/// Содержит статистику об изменениях в паттерн-базе после обновления.
+#[derive(Debug, Clone)]
+pub struct PatternUpdateResult {
+    /// Общее количество файлов паттернов.
+    pub total_files: usize,
+    /// Общее количество паттернов.
+    pub total_patterns: usize,
+    /// Количество недопустимых файлов.
+    pub invalid_files: usize,
+    /// Количество изменённых файлов.
+    pub changed_files: usize,
+    /// Количество новых файлов.
+    pub new_files: usize,
+    /// Количество удалённых файлов.
+    pub removed_files: usize,
+    /// Количество паттернов до обновления.
+    pub patterns_before: usize,
+    /// Количество паттернов после обновления.
+    pub patterns_after: usize,
+}
+
+impl PatternUpdateResult {
+    /// Проверяет, есть ли значительные изменения.
+    pub fn has_changes(&self) -> bool {
+        self.changed_files > 0 || self.new_files > 0 || self.removed_files > 0
+    }
+
+    /// Возвращает краткое описание результата обновления.
+    pub fn summary(&self) -> String {
+        if self.has_changes() {
+            format!(
+                "Updated: {} changed, {} new, {} removed ({} patterns)",
+                self.changed_files, self.new_files, self.removed_files, self.patterns_after
+            )
+        } else {
+            format!("No changes detected ({} patterns)", self.patterns_after)
+        }
+    }
+}
 
 /// Структура для мониторинга изменений в директории с паттернами.
 ///
@@ -318,7 +360,7 @@ impl PatternWatcher {
     ) -> Result<()> {
         // Проверяем, есть ли изменения
         let has_changes = {
-            let db = pattern_db.lock().await;
+            let db = pattern_db.lock().unwrap();
             db.has_changes(patterns_dir)
         }?;
 
@@ -330,7 +372,7 @@ impl PatternWatcher {
         info!("Changes detected in patterns directory, performing update...");
 
         // Выполняем перезагрузку паттернов
-        let mut db = pattern_db.lock().await;
+        let mut db = pattern_db.lock().unwrap();
         let update_result = db.reload(patterns_dir)?;
 
         if update_result.has_changes() {
@@ -358,9 +400,8 @@ impl PatternWatcher {
 mod tests {
     use super::*;
     use std::fs;
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
     use tempfile::tempdir;
-    use tokio::sync::Mutex;
 
     fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) -> std::path::PathBuf {
         let file_path = dir.join(filename);
