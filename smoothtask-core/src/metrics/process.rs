@@ -65,7 +65,6 @@ lazy_static! {
         Arc::new(RwLock::new(ProcessCache::new()));
 }
 
-/// Глобальный счетчик для отслеживания статистики кэша
 lazy_static! {
     static ref CACHE_STATS: Arc<RwLock<CachePerformanceStats>> =
         Arc::new(RwLock::new(CachePerformanceStats::new()));

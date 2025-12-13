@@ -66,7 +66,7 @@ pub struct AppPerformanceMetrics {
 }
 
 /// Статус производительности приложения.
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq, Default)]
 pub enum PerformanceStatus {
     /// Хорошая производительность.
     Good,
@@ -75,13 +75,8 @@ pub enum PerformanceStatus {
     /// Критическая проблема с производительностью.
     Critical,
     /// Неизвестный статус.
+    #[default]
     Unknown,
-}
-
-impl Default for PerformanceStatus {
-    fn default() -> Self {
-        PerformanceStatus::Unknown
-    }
 }
 
 /// Конфигурация для сбора метрик производительности приложений.
@@ -452,7 +447,7 @@ pub fn collect_all_app_performance(
         if let Some(app_group_id) = &process.app_group_id {
             app_groups_map
                 .entry(app_group_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(process);
         }
     }
@@ -580,7 +575,7 @@ fn group_history_by_app_group(
         for (app_group_id, metrics) in snapshot {
             grouped_history
                 .entry(app_group_id.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(metrics);
         }
     }
@@ -766,7 +761,7 @@ pub struct GroupPerformanceTrend {
 }
 
 /// Направление тренда производительности.
-#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq, Default)]
 pub enum PerformanceTrendDirection {
     /// Производительность улучшается (метрики уменьшаются).
     Decreasing,
@@ -775,13 +770,8 @@ pub enum PerformanceTrendDirection {
     Increasing,
     
     /// Производительность стабильна.
+    #[default]
     Stable,
-}
-
-impl Default for PerformanceTrendDirection {
-    fn default() -> Self {
-        PerformanceTrendDirection::Stable
-    }
 }
 
 /// Преобразовать метрики производительности в JSON для API.

@@ -3409,8 +3409,7 @@ mod tests {
 
     // Import notification types for test configurations
     use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
-    use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds, EbpfMetrics, ProcessGpuStat};
-    use crate::metrics::system::SystemMetrics;
+    use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds};
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -6841,10 +6840,7 @@ fn is_connection_active(last_activity: u64) -> bool {
 #[cfg(test)]
 mod test_process_energy_api {
     use super::*;
-    use crate::metrics::ebpf::{EbpfMetrics, ProcessEnergyStat, ProcessGpuStat};
-    use crate::metrics::system::SystemMetrics;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
+    use crate::metrics::ebpf::{EbpfMetrics, ProcessEnergyStat};
 
     #[tokio::test]
     async fn test_process_energy_handler_without_metrics() {
@@ -7008,12 +7004,11 @@ mod test_process_energy_api {
     }
 }
 
+#[allow(unused_imports)]
 mod test_process_gpu_api {
     use super::*;
     use crate::metrics::ebpf::{EbpfMetrics, ProcessGpuStat};
     use crate::metrics::system::SystemMetrics;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
 
     #[tokio::test]
     async fn test_process_gpu_handler_with_no_metrics() {
@@ -7191,12 +7186,11 @@ mod test_process_gpu_api {
     }
 }
 
+#[allow(unused_imports)]
 mod test_process_network_api {
     use super::*;
     use crate::metrics::ebpf::{EbpfMetrics, ProcessNetworkStat};
     use crate::metrics::system::SystemMetrics;
-    use std::sync::Arc;
-    use tokio::sync::RwLock;
 
     #[tokio::test]
     async fn test_process_network_handler_with_no_metrics() {
@@ -7374,8 +7368,13 @@ mod test_process_network_api {
     }
 }
 
-// Import types needed for testing
+
+
+
+// Import types needed for disk testing
+#[allow(unused_imports)]
 use crate::metrics::system::SystemMetrics;
+#[allow(unused_imports)]
 use crate::metrics::ebpf::EbpfMetrics;
 
     #[tokio::test]
