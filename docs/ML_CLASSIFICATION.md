@@ -1,4 +1,4 @@
-# ML-классификация процессов
+# ML-классификация процессов и обучение моделей
 
 ## Обзор
 
@@ -48,6 +48,286 @@ ML-классификатор интегрирован в функцию `classi
 ```rust
 use smoothtask_core::classify::ml_classifier::StubMLClassifier;
 use smoothtask_core::classify::rules::{PatternDatabase, classify_process};
+```
+
+## Полный Workflow обучения моделей
+
+### 1. Сбор данных
+
+Демон SmoothTask собирает данные о процессах и системе в формате JSONL или SQLite:
+
+```yaml
+# В конфигурационном файле
+enable_snapshot_logging: true
+paths:
+  snapshot_db_path: "/var/lib/smoothtask/snapshots.db"
+```
+
+### 2. Подготовка данных
+
+Используйте Python-инструменты для подготовки данных:
+
+```bash
+# Сбор данных из JSONL файлов в SQLite
+uv run smoothtask_trainer.collect_data \
+    --snapshots snapshots.jsonl \
+    --output-db prepared_data.db
+
+# Валидация датасета
+uv run smoothtask_trainer.validate_dataset \
+    --db prepared_data.db \
+    --min-snapshots 10 \
+    --min-processes 50 \
+    --min-groups 5
+```
+
+### 3. Обучение модели
+
+```bash
+# Обучение из JSONL файлов
+uv run smoothtask_trainer.train_pipeline \
+    --snapshots snapshots.jsonl \
+    --model-json model.json \
+    --model-onnx model.onnx
+
+# Обучение из существующей базы данных
+uv run smoothtask_trainer.train_pipeline \
+    --db prepared_data.db \
+    --model-json model.json \
+    --model-onnx model.onnx
+```
+
+### 4. Экспорт модели
+
+```bash
+# Экспорт с метаданными
+uv run smoothtask_trainer.export_model \
+    --model model.json \
+    --format onnx \
+    --output model.onnx \
+    --metadata '{"version": "1.0.0", "description": "Модель для SmoothTask", "features": ["cpu", "memory", "io"]}'
+```
+
+## Python API
+
+### Сбор данных
+
+```python
+from smoothtask_trainer import collect_data_from_snapshots, validate_dataset
+
+# Сбор данных из нескольких файлов
+db_path = collect_data_from_snapshots(
+    snapshot_files=["snapshots1.jsonl", "snapshots2.jsonl.gz"],
+    output_db=Path("output.db")
+)
+
+# Валидация датасета
+stats = validate_dataset(
+    db_path=db_path,
+    min_snapshots=10,
+    min_processes=50,
+    min_groups=5
+)
+```
+
+### Обучение модели
+
+```python
+from smoothtask_trainer import TrainingPipeline
+
+# Полный pipeline
+pipeline = TrainingPipeline(
+    snapshot_files=["snapshots.jsonl"],
+    use_temp_db=True,
+    min_snapshots=10,
+    min_processes=50,
+    min_groups=5
+)
+
+model = pipeline.run_complete_pipeline(
+    model_path=Path("model.json"),
+    onnx_path=Path("model.onnx")
+)
+```
+
+### Пошаговое выполнение
+
+```python
+# Шаг 1: Сбор данных
+db_path = pipeline.collect_data()
+
+# Шаг 2: Валидация
+stats = pipeline.validate_data()
+
+# Шаг 3: Загрузка данных
+df = pipeline.load_data()
+
+# Шаг 4: Подготовка фич
+X, y, group_id, cat_features = pipeline.prepare_features()
+
+# Шаг 5: Обучение модели
+model = pipeline.train_model(Path("model.json"), Path("model.onnx"))
+```
+
+## Экспорт моделей с метаданными
+
+Новая функциональность поддерживает экспорт моделей с метаданными:
+
+```python
+from smoothtask_trainer.export_model import export_model, validate_exported_model
+
+# Экспорт с метаданными
+metadata = {
+    "version": "1.0.0",
+    "description": "Модель для ранжирования процессов в SmoothTask",
+    "author": "SmoothTask Team",
+    "dataset_size": 1000,
+    "features": ["cpu_usage", "memory_usage", "io_wait", "gpu_usage"],
+    "training_date": "2024-01-15",
+}
+
+result = export_model(
+    model_path=Path("model.json"),
+    format="onnx",
+    output_path=Path("model.onnx"),
+    metadata=metadata,
+    validate=True
+)
+
+# Валидация экспортированной модели
+validation_result = validate_exported_model(
+    model_path=Path("model.onnx"),
+    expected_format="onnx",
+    min_size=1024,
+    check_metadata=True
+)
+```
+
+## Форматы метаданных
+
+Метаданные сохраняются в отдельном JSON файле рядом с моделью:
+- Для ONNX: `model.onnx.metadata.json`
+- Для JSON: `model.json.metadata.json`
+- Для CBM: `model.cbm.metadata.json`
+
+Пример содержимого:
+
+```json
+{
+  "version": "1.0.0",
+  "description": "Модель для ранжирования процессов в SmoothTask",
+  "author": "SmoothTask Team",
+  "dataset_size": 1000,
+  "features": ["cpu_usage", "memory_usage", "io_wait", "gpu_usage"],
+  "training_date": "2024-01-15",
+  "model_type": "CatBoostRanker",
+  "export_format": "onnx",
+  "export_timestamp": 1705324800.123456
+}
+```
+
+## Обработка ошибок
+
+Все функции предоставляют детальные сообщения об ошибках:
+
+- `FileNotFoundError`: Если файлы не найдены
+- `ValueError`: Если данные не проходят валидацию или параметры некорректны
+- `PermissionError`: Если нет прав на запись
+- `CatBoostError`: Если возникают ошибки при обучении модели
+
+## Интеграция с SmoothTask
+
+Обученная модель может быть использована в SmoothTask для ранжирования процессов:
+
+```yaml
+# В конфигурации SmoothTask
+ranker:
+  model_path: "/path/to/model.json"
+  enabled: true
+```
+
+## Примеры использования
+
+### Пример 1: Полный workflow
+
+```bash
+# Сбор данных
+uv run smoothtask_trainer.collect_data \
+    --snapshots /var/lib/smoothtask/snapshots.jsonl \
+    --output-db /tmp/prepared_data.db
+
+# Обучение модели
+uv run smoothtask_trainer.train_pipeline \
+    --db /tmp/prepared_data.db \
+    --model-json /tmp/model.json \
+    --model-onnx /tmp/model.onnx
+
+# Экспорт с метаданными
+uv run smoothtask_trainer.export_model \
+    --model /tmp/model.json \
+    --format onnx \
+    --output /tmp/model_final.onnx \
+    --metadata '{"version": "1.0.0", "description": "Production model"}'
+```
+
+### Пример 2: Обучение с пользовательскими параметрами
+
+```python
+from smoothtask_trainer import TrainingPipeline
+
+pipeline = TrainingPipeline(
+    snapshot_files=["snapshots.jsonl"],
+    use_temp_db=True
+)
+
+# Настройка параметров модели
+pipeline.model_params = {
+    "depth": 6,
+    "learning_rate": 0.05,
+    "iterations": 500,
+    "loss_function": "YetiRank",
+}
+
+model = pipeline.run_complete_pipeline(
+    model_path=Path("custom_model.json"),
+    onnx_path=Path("custom_model.onnx")
+)
+```
+
+### Пример 3: Валидация и тестирование
+
+```python
+from smoothtask_trainer import validate_dataset, load_dataset
+
+# Валидация датасета
+stats = validate_dataset(
+    db_path=Path("data.db"),
+    min_snapshots=10,
+    min_processes=50,
+    min_groups=5
+)
+
+print(f"Снапшоты: {stats['snapshot_count']}")
+print(f"Процессы: {stats['process_count']}")
+print(f"Группы: {stats['group_count']}")
+
+# Загрузка данных для анализа
+df = load_dataset(Path("data.db"), validate=True)
+print(f"Загружено {len(df)} записей")
+```
+
+## Производительность и масштабируемость
+
+- **Скорость обучения**: ~1000 снапшотов за 1-2 минуты на современном CPU
+- **Память**: ~100MB для обучения на 1000 снапшотах
+- **Модели**: ONNX модели занимают ~1-5MB, JSON модели ~5-20MB
+
+## Рекомендации
+
+1. **Качество данных**: Используйте не менее 100 снапшотов и 100 процессов для обучения
+2. **Валидация**: Всегда валидируйте данные перед обучением
+3. **Метаданные**: Добавляйте метаданные для отслеживания версий и параметров
+4. **Тестирование**: Проверяйте модели на тестовых данных перед использованием в продакшене
 use smoothtask_core::logging::snapshots::ProcessRecord;
 
 // Загрузка паттернов

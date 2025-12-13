@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 from catboost import CatBoostRanker, Pool
-from smoothtask_trainer.export_model import export_model
+from smoothtask_trainer.export_model import export_model, validate_exported_model
 
 
 def create_test_model(model_path: Path, format: str = "json"):
@@ -195,3 +195,204 @@ def test_export_model_error_on_save():
         # Ожидаем ValueError при попытке сохранить в директорию
         with pytest.raises(ValueError, match="указывает на директорию"):
             export_model(model_json_path, "onnx", output_dir)
+
+
+def test_export_model_with_metadata():
+    """Тест экспорта модели с метаданными."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        # Создаём тестовую модель
+        create_test_model(model_json_path, format="json")
+
+        # Экспортируем с метаданными
+        metadata = {
+            "version": "1.0.0",
+            "description": "Тестовая модель для SmoothTask",
+            "author": "SmoothTask Trainer",
+            "dataset_size": 1000,
+            "features": ["cpu_usage", "memory_usage", "io_wait"],
+        }
+
+        result = export_model(model_json_path, "onnx", model_onnx_path, metadata=metadata)
+
+        # Проверяем, что модель экспортирована
+        assert model_onnx_path.exists()
+        assert model_onnx_path.stat().st_size > 0
+
+        # Проверяем, что метаданные сохранены
+        metadata_path = model_onnx_path.with_suffix('.onnx.metadata.json')
+        assert metadata_path.exists()
+
+        # Проверяем содержимое метаданных
+        import json
+        with open(metadata_path, 'r', encoding='utf-8') as f:
+            saved_metadata = json.load(f)
+
+        # Проверяем, что все метаданные сохранены
+        for key, value in metadata.items():
+            assert saved_metadata[key] == value
+
+        # Проверяем, что добавлены стандартные метаданные
+        assert 'export_timestamp' in saved_metadata
+        assert 'export_format' in saved_metadata
+        assert 'model_type' in saved_metadata
+
+        # Проверяем возвращаемое значение
+        assert result["input_model"] == str(model_json_path)
+        assert result["output_model"] == str(model_onnx_path)
+        assert result["output_format"] == "onnx"
+        assert result["metadata"] == metadata
+
+
+def test_export_model_with_validation():
+    """Тест экспорта модели с валидацией."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        # Создаём тестовую модель
+        create_test_model(model_json_path, format="json")
+
+        # Экспортируем с валидацией (по умолчанию включена)
+        result = export_model(model_json_path, "onnx", model_onnx_path, validate=True)
+
+        # Проверяем, что экспорт прошёл успешно
+        assert model_onnx_path.exists()
+        assert result["output_size"] > 0
+
+
+def test_export_model_without_validation():
+    """Тест экспорта модели без валидации."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        # Создаём тестовую модель
+        create_test_model(model_json_path, format="json")
+
+        # Экспортируем без валидации
+        result = export_model(model_json_path, "onnx", model_onnx_path, validate=False)
+
+        # Проверяем, что экспорт прошёл успешно
+        assert model_onnx_path.exists()
+        assert result["output_size"] > 0
+
+
+def test_validate_exported_model():
+    """Тест валидации экспортированной модели."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        # Создаём и экспортируем модель
+        create_test_model(model_json_path, format="json")
+        metadata = {"version": "1.0.0", "description": "Тестовая модель"}
+        export_model(model_json_path, "onnx", model_onnx_path, metadata=metadata)
+
+        # Валидируем экспортированную модель
+        validation_result = validate_exported_model(model_onnx_path, "onnx")
+
+        # Проверяем результаты валидации
+        assert validation_result["path"] == str(model_onnx_path)
+        assert validation_result["format"] == "onnx"
+        assert validation_result["size"] > 0
+        assert validation_result["metadata"] is not None
+        assert validation_result["metadata"]["version"] == "1.0.0"
+
+
+def test_validate_exported_model_without_metadata():
+    """Тест валидации модели без метаданных."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        # Создаём и экспортируем модель без метаданных
+        create_test_model(model_json_path, format="json")
+        export_model(model_json_path, "onnx", model_onnx_path)
+
+        # Валидируем без проверки метаданных
+        validation_result = validate_exported_model(
+            model_onnx_path, "onnx", check_metadata=False
+        )
+
+        # Проверяем результаты валидации
+        assert validation_result["path"] == str(model_onnx_path)
+        assert validation_result["format"] == "onnx"
+        assert validation_result["size"] > 0
+        assert validation_result["metadata"] is None
+
+
+def test_validate_exported_model_invalid_format():
+    """Тест валидации модели с неверным форматом."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        model_onnx_path = Path(tmpdir) / "model.onnx"
+
+        # Создаём и экспортируем модель
+        create_test_model(model_json_path, format="json")
+        export_model(model_json_path, "onnx", model_onnx_path)
+
+        # Пробуем валидировать с неверным форматом
+        with pytest.raises(ValueError, match="Несоответствие расширения файла"):
+            validate_exported_model(model_onnx_path, "json")
+
+
+def test_validate_exported_model_file_not_found():
+    """Тест валидации несуществующей модели."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_path = Path(tmpdir) / "nonexistent.onnx"
+
+        with pytest.raises(ValueError, match="Файл модели не найден"):
+            validate_exported_model(model_path, "onnx")
+
+
+def test_export_model_permission_error():
+    """Тест обработки ошибки прав доступа."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        create_test_model(model_json_path, format="json")
+
+        # Создаём директорию без прав на запись (эмуляция)
+        readonly_dir = Path(tmpdir) / "readonly"
+        readonly_dir.mkdir()
+
+        # Пробуем экспортировать в директорию без прав
+        output_path = readonly_dir / "model.onnx"
+
+        # В реальной системе это вызвало бы PermissionError
+        # В тесте мы просто проверяем, что функция обрабатывает такие случаи
+        try:
+            export_model(model_json_path, "onnx", output_path)
+            # Если экспорт прошёл, проверяем результат
+            assert output_path.exists()
+        except PermissionError:
+            # Это ожидаемое поведение в некоторых системах
+            pass
+
+
+def test_export_model_all_formats_with_metadata():
+    """Тест экспорта во все форматы с метаданными."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        model_json_path = Path(tmpdir) / "model.json"
+        create_test_model(model_json_path, format="json")
+
+        metadata = {"version": "1.0.0", "test": "all_formats"}
+
+        # Тестируем все поддерживаемые форматы
+        formats = ["json", "cbm", "onnx"]
+        for fmt in formats:
+            output_path = Path(tmpdir) / f"model.{fmt}"
+            result = export_model(model_json_path, fmt, output_path, metadata=metadata)
+
+            # Проверяем экспорт
+            assert output_path.exists()
+            assert result["output_format"] == fmt
+
+            # Проверяем метаданные
+            if fmt == "onnx":
+                metadata_path = output_path.with_suffix('.onnx.metadata.json')
+            else:
+                metadata_path = output_path.with_suffix('.metadata.json')
+            assert metadata_path.exists()

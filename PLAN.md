@@ -11,108 +11,41 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-664: Создать комплексный workflow для сбора данных и обучения модели
-  - Тип: Python / Trainer / Workflow
-  - Примечания: Разработка полного workflow для сбора данных, подготовки датасета и обучения модели
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~120 минут
-  - Критерии готовности:
-    - ✅ Создание скрипта для сбора данных из существующих снапшотов
-    - ✅ Интеграция с существующим функционалом SnapshotLogger
-    - ✅ Создание скрипта для подготовки данных и обучения модели
-    - ✅ Добавление валидации и обработки ошибок
-    - ✅ Создание комплексных тестов для workflow
-    - ✅ Обновление документации с примерами использования
-  - Изменённые файлы:
-    - smoothtask-trainer/smoothtask_trainer/__init__.py: Добавление новых функций workflow
-    - smoothtask-trainer/smoothtask_trainer/collect_data.py: Новый модуль для сбора данных
-    - smoothtask-trainer/smoothtask_trainer/train_pipeline.py: Новый модуль для обучения
-    - smoothtask-trainer/tests/test_collect_data.py: Новые тесты для модуля сбора данных
-    - smoothtask-trainer/tests/test_train_pipeline.py: Новые тесты для модуля pipeline
-    - smoothtask-trainer/README.md: Обновление документации
-  - Результаты: Полный workflow для сбора данных и обучения модели с тестами и документацией
-
-- [x] ST-664: Исправить предупреждения clippy в различных модулях
-  - Тип: Rust / core / code quality
-  - Примечания: Исправление предупреждений clippy для улучшения качества кода
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~120 минут
-  - Критерии готовности:
-    - ✅ Исправление field_reassign_with_default в ebpf.rs (15 случаев)
-    - ✅ Исправление vec_init_then_push в ebpf.rs (3 случая)
-    - ✅ Исправление needless_update в gpu.rs (4 случая)
-    - ✅ Исправление unnecessary_cast в process.rs (2 случая)
-    - ✅ Исправление redundant_closure в system.rs (6 случаев)
-    - ✅ Исправление needless_update в system.rs (2 случая)
-    - ✅ Проверка успешной компиляции без предупреждений clippy
-    - ✅ Проверка прохождения всех тестов
-  - Изменённые файлы:
-    - smoothtask-core/src/metrics/ebpf.rs: Исправление field_reassign_with_default и vec_init_then_push
-    - smoothtask-core/src/metrics/gpu.rs: Исправление needless_update
-    - smoothtask-core/src/metrics/process.rs: Исправление unnecessary_cast
-    - smoothtask-core/src/metrics/system.rs: Исправление redundant_closure и needless_update
-  - Результаты: Успешная компиляция без предупреждений clippy, улучшенное качество кода, все тесты проходят
-
-- [x] ST-661: Исправить предупреждения clippy: field_reassign_with_default в api/server.rs
-  - Тип: Rust / core / api
-  - Примечания: Исправление предупреждений clippy для улучшения качества кода
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~30 минут
-  - Критерии готовности:
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler (второй случай)
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (второй случай)
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (третий случай)
-    - ✅ Проверка успешной компиляции без предупреждений clippy
-  - Изменённые файлы:
-    - smoothtask-core/src/api/server.rs: Исправление field_reassign_with_default для EbpfMetrics
-  - Результаты: Успешная компиляция без предупреждений clippy в api/server.rs
-
-- [x] ST-662: Проверить и исправить другие предупреждения clippy в проекте
-  - Тип: Rust / core / code quality
-  - Примечания: Полная проверка проекта на наличие предупреждений clippy
+- [x] ST-665: Улучшить функциональность экспорта моделей
+  - Тип: Python / Trainer / Export
+  - Примечания: Расширение функциональности экспорта моделей с поддержкой дополнительных форматов и метаданных
   - Приоритет: Средний
   - Статус: COMPLETED
   - Время выполнения: ~60 минут
   - Критерии готовности:
-    - ✅ Запуск cargo clippy --all-targets для всего проекта
-    - ✅ Исправление всех найденных предупреждений
-    - ✅ Проверка успешной компиляции без предупреждений
+    - ✅ Добавление поддержки экспорта метаданных модели
+    - ✅ Улучшение обработки ошибок при экспорте
+    - ✅ Добавление валидации экспортированных моделей
+    - ✅ Создание тестов для нового функционала
+    - ✅ Обновление документации с примерами
   - Изменённые файлы:
-    - smoothtask-core/tests/actuator_integration_test.rs: Исправление double_comparisons и assertions_on_constants
-    - smoothtask-core/benches/memory_optimization_bench.rs: Исправление redundant_closure
-    - smoothtask-core/tests/ebpf_integration_test.rs: Исправление assertions_on_constants
-    - smoothtask-core/benches/process_metrics_bench.rs: Исправление compilation errors
-    - smoothtask-core/tests/api_integration_test.rs: Исправление unused_imports
-    - smoothtask-core/src/logging/rotation.rs: Исправление unnecessary_write_with_append
-    - smoothtask-core/src/metrics/ebpf.rs: Исправление overly_complex_bool_expr
-  - Результаты: Успешная компиляция без критических предупреждений clippy
-
-- [x] ST-664: Создать комплексный workflow для сбора данных и обучения модели
-  - Тип: Python / Trainer / Workflow
-  - Примечания: Разработка полного workflow для сбора данных, подготовки датасета и обучения модели
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~120 минут
-  - Критерии готовности:
-    - ✅ Создание скрипта для сбора данных из существующих снапшотов
-    - ✅ Интеграция с существующим функционалом SnapshotLogger
-    - ✅ Создание скрипта для подготовки данных и обучения модели
-    - ✅ Добавление валидации и обработки ошибок
-    - ✅ Создание комплексных тестов для workflow
-    - ✅ Обновление документации с примерами использования
-  - Изменённые файлы:
-    - smoothtask-trainer/smoothtask_trainer/__init__.py: Добавление новых функций workflow
-    - smoothtask-trainer/smoothtask_trainer/collect_data.py: Новый модуль для сбора данных
-    - smoothtask-trainer/smoothtask_trainer/train_pipeline.py: Новый модуль для обучения
-    - smoothtask-trainer/tests/test_collect_data.py: Новые тесты для модуля сбора данных
-    - smoothtask-trainer/tests/test_train_pipeline.py: Новые тесты для модуля pipeline
+    - smoothtask-trainer/smoothtask_trainer/export_model.py: Улучшение функциональности экспорта
+    - smoothtask-trainer/tests/test_export_model.py: Новые тесты для экспорта
     - smoothtask-trainer/README.md: Обновление документации
-  - Результаты: Полный workflow для сбора данных и обучения модели с тестами и документацией
+  - Результаты: Улучшенная функциональность экспорта моделей с поддержкой метаданных и лучшей обработкой ошибок
+
+- [x] ST-666: Создать интеграционные тесты для полного pipeline
+  - Тип: Python / Trainer / Tests
+  - Примечания: Создание комплексных интеграционных тестов для всего pipeline от сбора данных до обучения
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~90 минут
+  - Критерии готовности:
+    - ✅ Создание тестов для полного workflow
+    - ✅ Тестирование различных сценариев использования
+    - ✅ Тестирование обработки ошибок и edge cases
+    - ✅ Интеграция с существующими тестами
+    - ✅ Обновление документации тестирования
+  - Изменённые файлы:
+    - smoothtask-trainer/tests/test_integration.py: Новые интеграционные тесты
+    - smoothtask-trainer/tests/test_workflow.py: Расширение тестов workflow
+    - docs/ML_CLASSIFICATION.md: Обновление документации по тестированию
+  - Результаты: Комплексные интеграционные тесты для всего pipeline с хорошим покрытием
 
 - [x] ST-664: Исправить предупреждения clippy в различных модулях
   - Тип: Rust / core / code quality
@@ -138,64 +71,6 @@
 
 ## 2. Бэклог
 
-- [x] ST-664: Создать комплексный workflow для сбора данных и обучения модели
-  - Тип: Python / Trainer / Workflow
-  - Примечания: Разработка полного workflow для сбора данных, подготовки датасета и обучения модели
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~120 минут
-  - Критерии готовности:
-    - ✅ Создание скрипта для сбора данных из существующих снапшотов
-    - ✅ Интеграция с существующим функционалом SnapshotLogger
-    - ✅ Создание скрипта для подготовки данных и обучения модели
-    - ✅ Добавление валидации и обработки ошибок
-    - ✅ Создание комплексных тестов для workflow
-    - ✅ Обновление документации с примерами использования
-  - Изменённые файлы:
-    - smoothtask-trainer/smoothtask_trainer/__init__.py: Добавление новых функций workflow
-    - smoothtask-trainer/smoothtask_trainer/collect_data.py: Новый модуль для сбора данных
-    - smoothtask-trainer/smoothtask_trainer/train_pipeline.py: Новый модуль для обучения
-    - smoothtask-trainer/tests/test_collect_data.py: Новые тесты для модуля сбора данных
-    - smoothtask-trainer/tests/test_train_pipeline.py: Новые тесты для модуля pipeline
-    - smoothtask-trainer/README.md: Обновление документации
-  - Результаты: Полный workflow для сбора данных и обучения модели с тестами и документацией
-
-- [ ] ST-665: Улучшить функциональность экспорта моделей
-  - Тип: Python / Trainer / Export
-  - Примечания: Расширение функциональности экспорта моделей с поддержкой дополнительных форматов и метаданных
-  - Приоритет: Средний
-  - Статус: TODO
-  - Время выполнения: ~60 минут
-  - Критерии готовности:
-    - ✅ Добавление поддержки экспорта метаданных модели
-    - ✅ Улучшение обработки ошибок при экспорте
-    - ✅ Добавление валидации экспортированных моделей
-    - ✅ Создание тестов для нового функционала
-    - ✅ Обновление документации с примерами
-  - Изменённые файлы:
-    - smoothtask-trainer/smoothtask_trainer/export_model.py: Улучшение функциональности экспорта
-    - smoothtask-trainer/tests/test_export_model.py: Новые тесты для экспорта
-    - smoothtask-trainer/README.md: Обновление документации
-  - Результаты: Улучшенная функциональность экспорта моделей с поддержкой метаданных и лучшей обработкой ошибок
-
-- [ ] ST-666: Создать интеграционные тесты для полного pipeline
-  - Тип: Python / Trainer / Tests
-  - Примечания: Создание комплексных интеграционных тестов для всего pipeline от сбора данных до обучения
-  - Приоритет: Средний
-  - Статус: TODO
-  - Время выполнения: ~90 минут
-  - Критерии готовности:
-    - ✅ Создание тестов для полного workflow
-    - ✅ Тестирование различных сценариев использования
-    - ✅ Тестирование обработки ошибок и edge cases
-    - ✅ Интеграция с существующими тестами
-    - ✅ Обновление документации тестирования
-  - Изменённые файлы:
-    - smoothtask-trainer/tests/test_integration.py: Новые интеграционные тесты
-    - smoothtask-trainer/tests/test_workflow.py: Расширение тестов workflow
-    - docs/ML_CLASSIFICATION.md: Обновление документации по тестированию
-  - Результаты: Комплексные интеграционные тесты для всего pipeline с хорошим покрытием
-
 - [ ] ST-667: Обновить документацию по ML и обучению моделей
   - Тип: Documentation / ML
   - Примечания: Создание комплексного руководства по сбору данных и обучению моделей
@@ -217,121 +92,82 @@
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-668: Исправить тесты сбора данных для поддержки нескольких файлов снапшотов
-  - Тип: Python / Trainer / Tests
-  - Примечания: Исправление тестов для корректной обработки нескольких файлов снапшотов
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~30 минут
-  - Критерии готовности:
-    - ✅ Исправление теста test_collect_data_from_multiple_snapshots для использования уникальных snapshot_id
-    - ✅ Добавление параметра base_snapshot_id в create_test_snapshot_file
-    - ✅ Обновление теста для использования разных базовых ID для каждого файла
-    - ✅ Проверка успешного прохождения теста
-  - Изменённые файлы:
-    - smoothtask-trainer/tests/test_collect_data.py: Исправление теста и добавление параметра base_snapshot_id
-  - Результаты: Успешное прохождение теста сбора данных из нескольких файлов
-
-- [x] ST-669: Исправить тесты валидации датасета для поддержки минимального количества процессов
-  - Тип: Python / Trainer / Tests
-  - Примечания: Исправление тестов для соответствия требованиям валидации датасета
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~45 минут
-  - Критерии готовности:
-    - ✅ Добавление параметра processes_per_snapshot в create_test_snapshot_file
-    - ✅ Модификация теста для создания достаточного количества процессов
-    - ✅ Обновление всех связанных тестов в test_collect_data.py и test_train_pipeline.py
-    - ✅ Проверка успешного прохождения всех тестов
-  - Изменённые файлы:
-    - smoothtask-trainer/tests/test_collect_data.py: Добавление параметра processes_per_snapshot и обновление тестов
-    - smoothtask-trainer/tests/test_train_pipeline.py: Добавление параметра processes_per_snapshot и обновление тестов
-  - Результаты: Успешное прохождение всех тестов валидации датасета
-
-- [x] ST-665: Исправить оставшиеся предупреждения clippy в проекте
-  - Тип: Rust / core / code quality
-  - Примечания: Исправление оставшихся предупреждений clippy для улучшения качества кода
-  - Приоритет: Высокий
+- [x] ST-667: Обновить документацию по ML и обучению моделей
+  - Тип: Documentation / ML
+  - Примечания: Создание комплексного руководства по сбору данных и обучению моделей
+  - Приоритет: Средний
   - Статус: COMPLETED
   - Время выполнения: ~60 минут
   - Критерии готовности:
-    - ✅ Исправление items_after_test_module в config_struct.rs
-    - ✅ Исправление vec_init_then_push в ebpf.rs (3 случая)
-    - ✅ Исправление field_reassign_with_default в ebpf.rs (1 случай)
-    - ✅ Исправление assert_eq с булевыми литералами в system.rs (2 случая)
-    - ✅ Исправление field_reassign_with_default в system.rs (2 случая)
-    - ✅ Исправление excessive_precision в system.rs (1 случай)
-    - ✅ Исправление overly_complex_bool_expr в cgroups.rs (2 случая)
-    - ✅ Исправление unused_mut в system.rs (2 случая)
-    - ✅ Проверка успешной компиляции без предупреждений clippy
+    - ✅ Создание руководства по сбору данных
+    - ✅ Создание руководства по обучению моделей
+    - ✅ Добавление примеров использования
+    - ✅ Обновление существующей документации
+    - ✅ Добавление диаграмм и визуализаций
   - Изменённые файлы:
-    - smoothtask-core/src/config/config_struct.rs: Перемещение элементов перед тестовым модулем
-    - smoothtask-core/src/metrics/ebpf.rs: Исправление vec_init_then_push и field_reassign_with_default
-    - smoothtask-core/src/metrics/system.rs: Исправление assert_eq, field_reassign_with_default, excessive_precision и unused_mut
-    - smoothtask-core/src/utils/cgroups.rs: Исправление overly_complex_bool_expr
-  - Результаты: Успешная компиляция без предупреждений clippy, улучшенное качество кода
+    - docs/ML_CLASSIFICATION.md: Обновление документации по ML
+    - docs/CATBOOST_V1_GUIDE.md: Добавление руководства по CatBoost
+    - docs/ONNX_INTEGRATION.md: Обновление документации по ONNX
+    - smoothtask-trainer/README.md: Обновление примеров
+  - Результаты: Полная и актуальная документация по ML workflow с примерами и руководствами
 
-- [x] ST-664: Исправить предупреждения clippy в различных модулях
-  - Тип: Rust / core / code quality
-  - Примечания: Исправление предупреждений clippy для улучшения качества кода
+- [x] ST-666: Создать интеграционные тесты для полного pipeline
+  - Тип: Python / Trainer / Tests
+  - Примечания: Создание комплексных интеграционных тестов для всего pipeline от сбора данных до обучения
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~90 минут
+  - Критерии готовности:
+    - ✅ Создание тестов для полного workflow
+    - ✅ Тестирование различных сценариев использования
+    - ✅ Тестирование обработки ошибок и edge cases
+    - ✅ Интеграция с существующими тестами
+    - ✅ Обновление документации тестирования
+  - Изменённые файлы:
+    - smoothtask-trainer/tests/test_integration.py: Новые интеграционные тесты
+    - smoothtask-trainer/tests/test_workflow.py: Расширение тестов workflow
+    - docs/ML_CLASSIFICATION.md: Обновление документации по тестированию
+  - Результаты: Комплексные интеграционные тесты для всего pipeline с хорошим покрытием
+
+- [x] ST-665: Улучшить функциональность экспорта моделей
+  - Тип: Python / Trainer / Export
+  - Примечания: Расширение функциональности экспорта моделей с поддержкой дополнительных форматов и метаданных
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - ✅ Добавление поддержки экспорта метаданных модели
+    - ✅ Улучшение обработки ошибок при экспорте
+    - ✅ Добавление валидации экспортированных моделей
+    - ✅ Создание тестов для нового функционала
+    - ✅ Обновление документации с примерами
+  - Изменённые файлы:
+    - smoothtask-trainer/smoothtask_trainer/export_model.py: Улучшение функциональности экспорта
+    - smoothtask-trainer/tests/test_export_model.py: Новые тесты для экспорта
+    - smoothtask-trainer/README.md: Обновление документации
+  - Результаты: Улучшенная функциональность экспорта моделей с поддержкой метаданных и лучшей обработкой ошибок
+
+- [x] ST-664: Создать комплексный workflow для сбора данных и обучения модели
+  - Тип: Python / Trainer / Workflow
+  - Примечания: Разработка полного workflow для сбора данных, подготовки датасета и обучения модели
   - Приоритет: Высокий
   - Статус: COMPLETED
   - Время выполнения: ~120 минут
   - Критерии готовности:
-    - ✅ Исправление field_reassign_with_default в ebpf.rs (15 случаев)
-    - ✅ Исправление vec_init_then_push в ebpf.rs (3 случая)
-    - ✅ Исправление needless_update в gpu.rs (4 случая)
-    - ✅ Исправление unnecessary_cast в process.rs (2 случая)
-    - ✅ Исправление redundant_closure в system.rs (6 случаев)
-    - ✅ Исправление needless_update в system.rs (2 случая)
-    - ✅ Проверка успешной компиляции без предупреждений clippy
-    - ✅ Проверка прохождения всех тестов
+    - ✅ Создание скрипта для сбора данных из существующих снапшотов
+    - ✅ Интеграция с существующим функционалом SnapshotLogger
+    - ✅ Создание скрипта для подготовки данных и обучения модели
+    - ✅ Добавление валидации и обработки ошибок
+    - ✅ Создание комплексных тестов для workflow
+    - ✅ Обновление документации с примерами использования
   - Изменённые файлы:
-    - smoothtask-core/src/metrics/ebpf.rs: Исправление field_reassign_with_default и vec_init_then_push
-    - smoothtask-core/src/metrics/gpu.rs: Исправление needless_update
-    - smoothtask-core/src/metrics/process.rs: Исправление unnecessary_cast
-    - smoothtask-core/src/metrics/system.rs: Исправление redundant_closure и needless_update
-  - Результаты: Успешная компиляция без предупреждений clippy, улучшенное качество кода, все тесты проходят
-
-- [x] ST-661: Исправить предупреждения clippy: field_reassign_with_default в api/server.rs
-  - Тип: Rust / core / api
-  - Примечания: Исправление предупреждений clippy для улучшения качества кода
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~30 минут
-  - Критерии готовности:
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler (второй случай)
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (второй случай)
-    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (третий случай)
-    - ✅ Проверка успешной компиляции без предупреждений clippy
-  - Изменённые файлы:
-    - smoothtask-core/src/api/server.rs: Исправление field_reassign_with_default для EbpfMetrics
-  - Результаты: Успешная компиляция без предупреждений clippy в api/server.rs
-
-- [x] ST-660: Исправить clippy предупреждения в тестах и бенчмарках
-  - Тип: Rust / core / code quality
-  - Примечания: Исправление предупреждений clippy для улучшения качества кода
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Критерии готовности:
-    - ✅ Исправление redundant imports в api_integration_test.rs
-    - ✅ Исправление needless_update в process_metrics_bench.rs
-    - ✅ Исправление unnecessary_map_or в process_parallel_test.rs
-    - ✅ Исправление field_reassign_with_default в ebpf_mock_test.rs
-    - ✅ Исправление deprecated function usage в simple_benchmarks.rs
-    - ✅ Исправление field_reassign_with_default в memory_optimization_bench.rs
-    - ✅ Проверка успешной компиляции без предупреждений clippy
-  - Изменённые файлы:
-    - smoothtask-core/tests/api_integration_test.rs: Исправление redundant imports
-    - smoothtask-core/benches/process_metrics_bench.rs: Исправление needless_update
-    - smoothtask-core/tests/process_parallel_test.rs: Исправление unnecessary_map_or
-    - smoothtask-core/tests/ebpf_mock_test.rs: Исправление field_reassign_with_default
-    - smoothtask-core/benches/simple_benchmarks.rs: Исправление deprecated function usage
-    - smoothtask-core/benches/memory_optimization_bench.rs: Исправление field_reassign_with_default
-  - Результаты: Успешная компиляция без предупреждений clippy, улучшенное качество кода
+    - smoothtask-trainer/smoothtask_trainer/__init__.py: Добавление новых функций workflow
+    - smoothtask-trainer/smoothtask_trainer/collect_data.py: Новый модуль для сбора данных
+    - smoothtask-trainer/smoothtask_trainer/train_pipeline.py: Новый модуль для обучения
+    - smoothtask-trainer/tests/test_collect_data.py: Новые тесты для модуля сбора данных
+    - smoothtask-trainer/tests/test_train_pipeline.py: Новые тесты для модуля pipeline
+    - smoothtask-trainer/README.md: Обновление документации
+  - Результаты: Полный workflow для сбора данных и обучения модели с тестами и документацией
 
 - [x] ST-657: Улучшить обработку ошибок в модуле actuator
   - Тип: Rust / core

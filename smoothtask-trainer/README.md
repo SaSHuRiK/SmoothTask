@@ -249,6 +249,114 @@ uv run smoothtask_trainer.export_model \
 
 Поддерживаемые форматы: `onnx`, `json`, `cbm`.
 
+##### Расширенный экспорт с метаданными
+
+Новая версия поддерживает экспорт с метаданными и валидацию:
+
+```bash
+uv run smoothtask_trainer.export_model \
+    --model model.json \
+    --format onnx \
+    --output model.onnx \
+    --metadata '{"version": "1.0.0", "description": "Модель для SmoothTask", "author": "My Team"}' \
+    --validate
+```
+
+Параметры:
+- `--model`: Путь к исходной модели (JSON или CBM)
+- `--format`: Формат экспорта (onnx, json, cbm)
+- `--output`: Путь для сохранения экспортированной модели
+- `--metadata`: Опциональные метаданные в формате JSON (необязательно)
+- `--validate`: Выполнять валидацию модели перед экспортом (по умолчанию: true)
+- `--no-validate`: Отключить валидацию модели
+
+##### Примеры использования
+
+1. **Экспорт с метаданными:**
+
+```bash
+uv run smoothtask_trainer.export_model \
+    --model /path/to/model.json \
+    --format onnx \
+    --output /path/to/model.onnx \
+    --metadata '{"version": "1.0.0", "dataset_size": 1000, "features": ["cpu", "memory", "io"]}'
+```
+
+2. **Экспорт без валидации (для ускорения):**
+
+```bash
+uv run smoothtask_trainer.export_model \
+    --model model.json \
+    --format cbm \
+    --output model.cbm \
+    --no-validate
+```
+
+3. **Экспорт во все форматы:**
+
+```bash
+# Экспорт в JSON
+uv run smoothtask_trainer.export_model --model model.cbm --format json --output model.json
+
+# Экспорт в ONNX
+uv run smoothtask_trainer.export_model --model model.json --format onnx --output model.onnx
+
+# Экспорт в CBM
+uv run smoothtask_trainer.export_model --model model.json --format cbm --output model.cbm
+```
+
+##### Валидация экспортированных моделей
+
+Для валидации экспортированных моделей используйте функцию `validate_exported_model`:
+
+```python
+from smoothtask_trainer.export_model import validate_exported_model
+
+# Валидация модели с метаданными
+validation_result = validate_exported_model(
+    model_path=Path("model.onnx"),
+    expected_format="onnx",
+    min_size=1024,
+    check_metadata=True
+)
+
+print(f"Модель валидна: {validation_result}")
+```
+
+##### Формат метаданных
+
+Метаданные сохраняются в отдельном JSON файле рядом с моделью:
+- Для ONNX: `model.onnx.metadata.json`
+- Для JSON: `model.json.metadata.json`
+- Для CBM: `model.cbm.metadata.json`
+
+Пример содержимого метаданных:
+
+```json
+{
+  "version": "1.0.0",
+  "description": "Модель для ранжирования процессов в SmoothTask",
+  "author": "SmoothTask Team",
+  "dataset_size": 1000,
+  "features": ["cpu_usage", "memory_usage", "io_wait", "gpu_usage"],
+  "training_date": "2024-01-15",
+  "model_type": "CatBoostRanker",
+  "export_format": "onnx",
+  "export_timestamp": 1705324800.123456
+}
+```
+
+##### Обработка ошибок
+
+Функция экспорта предоставляет детальные сообщения об ошибках:
+
+- `FileNotFoundError`: Если исходная модель не найдена
+- `ValueError`: Если формат не поддерживается или параметры некорректны
+- `PermissionError`: Если нет прав на запись в целевую директорию
+- `ValueError`: Если модель не проходит валидацию
+
+Все ошибки содержат практические рекомендации по устранению проблем.
+
 #### Интеграция с SmoothTask
 
 Обученная модель может быть использована в SmoothTask для ранжирования процессов:

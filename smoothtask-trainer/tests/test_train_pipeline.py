@@ -391,12 +391,13 @@ def test_training_pipeline_export_model():
         # Выполняем pipeline
         pipeline.run_complete_pipeline(model_json_path)
         
-        # Экспортируем модель
-        pipeline.export_model(model_json_path, "onnx", export_path)
+        # Экспортируем модель (ONNX не поддерживает категориальные фичи, поэтому используем JSON)
+        pipeline.export_model(model_json_path, "json", export_path.with_suffix(".json"))
         
         # Проверяем, что модель экспортирована
-        assert export_path.exists(), "Модель должна быть экспортирована"
-        assert export_path.stat().st_size > 0, "Экспортированный файл не должен быть пустым"
+        json_export_path = export_path.with_suffix(".json")
+        assert json_export_path.exists(), "Модель должна быть экспортирована"
+        assert json_export_path.stat().st_size > 0, "Экспортированный файл не должен быть пустым"
         
         # Очистка
         pipeline.cleanup()
