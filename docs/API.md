@@ -3053,6 +3053,106 @@ curl -X POST http://127.0.0.1:8080/api/notifications/config \
 
 ---
 
+### POST /api/notifications/custom
+
+Отправка пользовательского уведомления через систему уведомлений.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/custom \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "info",
+    "title": "Custom Notification",
+    "message": "This is a custom notification message",
+    "details": "Additional details about the notification"
+  }'
+```
+
+**Ответ (успешная отправка):**
+```json
+{
+  "status": "success",
+  "message": "Custom notification sent successfully",
+  "notification": {
+    "type": "info",
+    "title": "Custom Notification",
+    "message": "This is a custom notification message",
+    "details": "Additional details about the notification"
+  }
+}
+```
+
+**Ответ (уведомления недоступны):**
+```json
+{
+  "status": "error",
+  "message": "Notification manager not available",
+  "available": false
+}
+```
+
+**Поля запроса:**
+- `type` (string, опционально) - тип уведомления: "critical", "warning" или "info" (по умолчанию: "info")
+- `title` (string, опционально) - заголовок уведомления (по умолчанию: "Custom Notification")
+- `message` (string, опционально) - основное сообщение уведомления (по умолчанию: "Custom notification message")
+- `details` (string, опционально) - дополнительные детали уведомления
+
+**Поля ответа:**
+- `status` (string) - статус операции: "success" или "error"
+- `message` (string) - описание результата операции
+- `notification` (object, опционально) - информация об отправленном уведомлении
+  - `type` (string) - тип уведомления
+  - `title` (string) - заголовок уведомления
+  - `message` (string) - сообщение уведомления
+  - `details` (string, опционально) - дополнительные детали
+- `available` (bool, опционально) - флаг доступности системы уведомлений
+
+**Примечания:**
+- Позволяет отправлять пользовательские уведомления через API
+- Требует наличия менеджера уведомлений в состоянии API
+- Поддерживает три типа уведомлений: critical, warning и info
+- Все поля являются опциональными и имеют значения по умолчанию
+- Полезно для интеграции с внешними системами мониторинга
+
+**Примеры использования:**
+
+**Отправка критического уведомления:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/custom \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "critical",
+    "title": "Critical Alert",
+    "message": "System is running out of memory!"
+  }'
+```
+
+**Отправка уведомления с деталями:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/custom \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "warning",
+    "title": "High CPU Usage",
+    "message": "CPU usage is above 90%",
+    "details": "Process: smoothtaskd, CPU: 95%, Duration: 5 minutes"
+  }'
+```
+
+**Отправка минимального уведомления:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/notifications/custom \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+**Статус коды:**
+- `200 OK` - Успешная отправка уведомления
+- `200 OK` с `status: "error"` - Ошибка отправки уведомления
+
+---
+
 ### GET /api/logs
 
 Получение последних логов приложения с возможностью фильтрации по уровню и ограничения количества записей.

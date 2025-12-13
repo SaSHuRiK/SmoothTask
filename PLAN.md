@@ -11,6 +11,21 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-654: Добавить документацию для API endpoint /api/notifications/custom
+  - Тип: Documentation / API
+  - Примечания: Добавление документации для missing API endpoint
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - ✅ Добавление документации для /api/notifications/custom endpoint
+    - ✅ Проверка соответствия документации реальной реализации
+    - ✅ Добавление примеров использования
+    - ✅ Проверка полноты документации для всех API endpoint
+  - Изменённые файлы:
+    - docs/API.md: Добавлена документация для /api/notifications/custom endpoint
+  - Результаты: Полная и актуальная документация API
+
 - [x] ST-651: Исправить предупреждения clippy: assertions_on_constants в system.rs
   - Тип: Rust / core / metrics
   - Примечания: Удаление избыточных assert!(true) в тестах
@@ -196,6 +211,21 @@
 ## 2. Бэклог
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-654: Добавить документацию для API endpoint /api/notifications/custom
+  - Тип: Documentation / API
+  - Примечания: Добавление документации для missing API endpoint
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - ✅ Добавление документации для /api/notifications/custom endpoint
+    - ✅ Проверка соответствия документации реальной реализации
+    - ✅ Добавление примеров использования
+    - ✅ Проверка полноты документации для всех API endpoint
+  - Изменённые файлы:
+    - docs/API.md: Добавлена документация для /api/notifications/custom endpoint
+  - Результаты: Полная и актуальная документация API
 
 - [x] ST-653: Исправить предупреждения clippy: bool_assert_comparison в ebpf.rs
   - Тип: Rust / core / metrics / eBPF
