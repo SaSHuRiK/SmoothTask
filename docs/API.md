@@ -1184,6 +1184,452 @@ curl -s http://127.0.0.1:8080/api/processes/gpu | \
 
 ---
 
+### GET /api/processes/memory
+
+Получение информации об использовании памяти процессами. Требует включения `enable_process_memory_monitoring` в конфигурации eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/processes/memory
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "process_memory": [
+    {
+      "pid": 1234,
+      "tgid": 1234,
+      "rss_bytes": 268435456,
+      "swap_bytes": 134217728,
+      "uss_bytes": 104857600,
+      "pss_bytes": 150994944,
+      "last_update_ns": 1234567890123456789,
+      "name": "firefox",
+      "memory_usage_percent": 15.2
+    },
+    {
+      "pid": 5678,
+      "tgid": 5678,
+      "rss_bytes": 67108864,
+      "swap_bytes": 33554432,
+      "uss_bytes": 26214400,
+      "pss_bytes": 38666240,
+      "last_update_ns": 1234567890123456789,
+      "name": "blender",
+      "memory_usage_percent": 3.8
+    }
+  ],
+  "count": 2,
+  "total_rss_bytes": 335544320,
+  "total_swap_bytes": 167772160,
+  "total_uss_bytes": 131072000,
+  "total_pss_bytes": 189661184,
+  "message": "Process memory monitoring data retrieved successfully",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "cache_info": {
+    "cached": false,
+    "ttl_seconds": 300
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус запроса (`ok` или `degraded`)
+- `process_memory` (array?) - массив объектов с информацией об использовании памяти процессами
+- `count` (integer) - количество процессов с данными о памяти
+- `total_rss_bytes` (u64?) - общее использование резидентной памяти всеми процессами в байтах
+- `total_swap_bytes` (u64?) - общее использование swap памяти всеми процессами в байтах
+- `total_uss_bytes` (u64?) - общее уникальное использование памяти всеми процессами в байтах
+- `total_pss_bytes` (u64?) - общее пропорциональное использование памяти всеми процессами в байтах
+- `message` (string) - сообщение о статусе запроса
+- `component_status` (object) - статус доступности основных компонентов
+- `cache_info` (object) - информация о кэшировании
+- `timestamp` (string) - время генерации ответа в формате RFC3339
+
+**Поля объекта process_memory:**
+- `pid` (u32) - идентификатор процесса
+- `tgid` (u32) - идентификатор потока группы
+- `rss_bytes` (u64) - резидентное использование памяти в байтах
+- `swap_bytes` (u64) - использование swap памяти в байтах
+- `uss_bytes` (u64) - уникальное использование памяти в байтах
+- `pss_bytes` (u64) - пропорциональное использование памяти в байтах
+- `last_update_ns` (u64) - время последнего обновления в наносекундах
+- `name` (string) - имя процесса
+- `memory_usage_percent` (f32) - процент использования памяти
+
+**Требования:**
+- Требуется включенный мониторинг памяти процессов в конфигурации eBPF (`enable_process_memory_monitoring: true`)
+- Требуется поддержка eBPF в ядре Linux (версия 5.4 или новее)
+- Требуются права CAP_BPF или запуск от root
+
+---
+
+### GET /api/processes/energy
+
+Получение информации об энергопотреблении процессами. Требует включения `enable_process_energy_monitoring` в конфигурации eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/processes/energy
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "process_energy": [
+    {
+      "pid": 1234,
+      "tgid": 1234,
+      "energy_uj": 1500000000,
+      "power_uw": 250000,
+      "last_update_ns": 1234567890123456789,
+      "name": "firefox",
+      "energy_usage_percent": 45.2
+    },
+    {
+      "pid": 5678,
+      "tgid": 5678,
+      "energy_uj": 400000000,
+      "power_uw": 180000,
+      "last_update_ns": 1234567890123456789,
+      "name": "blender",
+      "energy_usage_percent": 12.8
+    }
+  ],
+  "count": 2,
+  "total_energy_uj": 1900000000,
+  "total_power_uw": 430000,
+  "message": "Process energy monitoring data retrieved successfully",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "cache_info": {
+    "cached": false,
+    "ttl_seconds": 300
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус запроса (`ok` или `degraded`)
+- `process_energy` (array?) - массив объектов с информацией об энергопотреблении процессами
+- `count` (integer) - количество процессов с данными об энергопотреблении
+- `total_energy_uj` (u64?) - общее энергопотребление всеми процессами в микроджоулях
+- `total_power_uw` (u64?) - общая мощность потребления всеми процессами в микроваттах
+- `message` (string) - сообщение о статусе запроса
+- `component_status` (object) - статус доступности основных компонентов
+- `cache_info` (object) - информация о кэшировании
+- `timestamp` (string) - время генерации ответа в формате RFC3339
+
+**Поля объекта process_energy:**
+- `pid` (u32) - идентификатор процесса
+- `tgid` (u32) - идентификатор потока группы
+- `energy_uj` (u64) - энергопотребление в микроджоулях
+- `power_uw` (u64) - мощность потребления в микроваттах
+- `last_update_ns` (u64) - время последнего обновления в наносекундах
+- `name` (string) - имя процесса
+- `energy_usage_percent` (f32) - процент энергопотребления
+
+**Требования:**
+- Требуется включенный мониторинг энергопотребления процессов в конфигурации eBPF (`enable_process_energy_monitoring: true`)
+- Требуется поддержка eBPF в ядре Linux (версия 5.4 или новее)
+- Требуются права CAP_BPF или запуск от root
+
+---
+
+### GET /api/processes/network
+
+Получение информации об использовании сети процессами. Требует включения `enable_process_network_monitoring` в конфигурации eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/processes/network
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "process_network": [
+    {
+      "pid": 1234,
+      "tgid": 1234,
+      "rx_bytes": 268435456,
+      "tx_bytes": 134217728,
+      "rx_packets": 1500,
+      "tx_packets": 800,
+      "last_update_ns": 1234567890123456789,
+      "name": "firefox",
+      "network_usage_percent": 45.2
+    },
+    {
+      "pid": 5678,
+      "tgid": 5678,
+      "rx_bytes": 67108864,
+      "tx_bytes": 33554432,
+      "rx_packets": 400,
+      "tx_packets": 200,
+      "last_update_ns": 1234567890123456789,
+      "name": "blender",
+      "network_usage_percent": 12.8
+    }
+  ],
+  "count": 2,
+  "total_rx_bytes": 335544320,
+  "total_tx_bytes": 167772160,
+  "total_rx_packets": 1900,
+  "total_tx_packets": 1000,
+  "message": "Process network monitoring data retrieved successfully",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "cache_info": {
+    "cached": false,
+    "ttl_seconds": 300
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус запроса (`ok` или `degraded`)
+- `process_network` (array?) - массив объектов с информацией об использовании сети процессами
+- `count` (integer) - количество процессов с данными о сети
+- `total_rx_bytes` (u64?) - общее количество принятых байт всеми процессами
+- `total_tx_bytes` (u64?) - общее количество отправленных байт всеми процессами
+- `total_rx_packets` (u64?) - общее количество принятых пакетов всеми процессами
+- `total_tx_packets` (u64?) - общее количество отправленных пакетов всеми процессами
+- `message` (string) - сообщение о статусе запроса
+- `component_status` (object) - статус доступности основных компонентов
+- `cache_info` (object) - информация о кэшировании
+- `timestamp` (string) - время генерации ответа в формате RFC3339
+
+**Поля объекта process_network:**
+- `pid` (u32) - идентификатор процесса
+- `tgid` (u32) - идентификатор потока группы
+- `rx_bytes` (u64) - количество принятых байт
+- `tx_bytes` (u64) - количество отправленных байт
+- `rx_packets` (u64) - количество принятых пакетов
+- `tx_packets` (u64) - количество отправленных пакетов
+- `last_update_ns` (u64) - время последнего обновления в наносекундах
+- `name` (string) - имя процесса
+- `network_usage_percent` (f32) - процент использования сети
+
+**Требования:**
+- Требуется включенный мониторинг сети процессов в конфигурации eBPF (`enable_process_network_monitoring: true`)
+- Требуется поддержка eBPF в ядре Linux (версия 5.4 или новее)
+- Требуются права CAP_BPF или запуск от root
+
+---
+
+### GET /api/processes/disk
+
+Получение информации об использовании диска процессами. Требует включения `enable_process_disk_monitoring` в конфигурации eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/processes/disk
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "process_disk": [
+    {
+      "pid": 1234,
+      "tgid": 1234,
+      "read_bytes": 268435456,
+      "write_bytes": 134217728,
+      "read_ops": 1500,
+      "write_ops": 800,
+      "last_update_ns": 1234567890123456789,
+      "name": "firefox",
+      "disk_usage_percent": 45.2
+    },
+    {
+      "pid": 5678,
+      "tgid": 5678,
+      "read_bytes": 67108864,
+      "write_bytes": 33554432,
+      "read_ops": 400,
+      "write_ops": 200,
+      "last_update_ns": 1234567890123456789,
+      "name": "blender",
+      "disk_usage_percent": 12.8
+    }
+  ],
+  "count": 2,
+  "total_read_bytes": 335544320,
+  "total_write_bytes": 167772160,
+  "total_read_ops": 1900,
+  "total_write_ops": 1000,
+  "message": "Process disk monitoring data retrieved successfully",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "cache_info": {
+    "cached": false,
+    "ttl_seconds": 300
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус запроса (`ok` или `degraded`)
+- `process_disk` (array?) - массив объектов с информацией об использовании диска процессами
+- `count` (integer) - количество процессов с данными о диске
+- `total_read_bytes` (u64?) - общее количество прочитанных байт всеми процессами
+- `total_write_bytes` (u64?) - общее количество записанных байт всеми процессами
+- `total_read_ops` (u64?) - общее количество операций чтения всеми процессами
+- `total_write_ops` (u64?) - общее количество операций записи всеми процессами
+- `message` (string) - сообщение о статусе запроса
+- `component_status` (object) - статус доступности основных компонентов
+- `cache_info` (object) - информация о кэшировании
+- `timestamp` (string) - время генерации ответа в формате RFC3339
+
+**Поля объекта process_disk:**
+- `pid` (u32) - идентификатор процесса
+- `tgid` (u32) - идентификатор потока группы
+- `read_bytes` (u64) - количество прочитанных байт
+- `write_bytes` (u64) - количество записанных байт
+- `read_ops` (u64) - количество операций чтения
+- `write_ops` (u64) - количество операций записи
+- `last_update_ns` (u64) - время последнего обновления в наносекундах
+- `name` (string) - имя процесса
+- `disk_usage_percent` (f32) - процент использования диска
+
+**Требования:**
+- Требуется включенный мониторинг диска процессов в конфигурации eBPF (`enable_process_disk_monitoring: true`)
+- Требуется поддержка eBPF в ядре Linux (версия 5.4 или новее)
+- Требуются права CAP_BPF или запуск от root
+
+---
+
+### GET /api/performance
+
+Получение информации о производительности API сервера и кэшировании.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/performance
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "performance_metrics": {
+    "total_requests": 1500,
+    "cache_hits": 1200,
+    "cache_misses": 300,
+    "cache_hit_rate": 0.8,
+    "average_processing_time_us": 1500,
+    "max_processing_time_us": 5000,
+    "min_processing_time_us": 100,
+    "total_processing_time_us": 2250000,
+    "requests_per_second": 15.5,
+    "active_connections": 5,
+    "total_connections": 1000
+  },
+  "cache_statistics": {
+    "current_entries": 500,
+    "max_entries": 1000,
+    "hit_rate": 0.8,
+    "evictions": 100,
+    "average_ttl_seconds": 300,
+    "memory_usage_bytes": 52428800
+  },
+  "system_load": {
+    "cpu_usage_percent": 45.2,
+    "memory_usage_percent": 65.8,
+    "average_load_1min": 1.2,
+    "average_load_5min": 1.5,
+    "average_load_15min": 1.8
+  },
+  "message": "Performance metrics retrieved successfully",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус запроса (`ok`)
+- `performance_metrics` (object) - метрики производительности API сервера
+- `cache_statistics` (object) - статистика кэширования
+- `system_load` (object) - информация о загрузке системы
+- `message` (string) - сообщение о статусе запроса
+- `component_status` (object) - статус доступности основных компонентов
+- `timestamp` (string) - время генерации ответа в формате RFC3339
+
+**Поля объекта performance_metrics:**
+- `total_requests` (u64) - общее количество запросов
+- `cache_hits` (u64) - количество кэш-попаданий
+- `cache_misses` (u64) - количество кэш-промахов
+- `cache_hit_rate` (f32) - коэффициент попадания в кэш
+- `average_processing_time_us` (u64) - среднее время обработки запроса в микросекундах
+- `max_processing_time_us` (u64) - максимальное время обработки запроса в микросекундах
+- `min_processing_time_us` (u64) - минимальное время обработки запроса в микросекундах
+- `total_processing_time_us` (u64) - общее время обработки всех запросов в микросекундах
+- `requests_per_second` (f32) - количество запросов в секунду
+- `active_connections` (u32) - количество активных соединений
+- `total_connections` (u64) - общее количество соединений
+
+**Поля объекта cache_statistics:**
+- `current_entries` (u32) - текущее количество записей в кэше
+- `max_entries` (u32) - максимальное количество записей в кэше
+- `hit_rate` (f32) - коэффициент попадания в кэш
+- `evictions` (u64) - количество вытеснений из кэша
+- `average_ttl_seconds` (u64) - среднее время жизни записей в кэше в секундах
+- `memory_usage_bytes` (u64) - использование памяти кэшем в байтах
+
+**Поля объекта system_load:**
+- `cpu_usage_percent` (f32) - процент использования CPU
+- `memory_usage_percent` (f32) - процент использования памяти
+- `average_load_1min` (f32) - средняя нагрузка за 1 минуту
+- `average_load_5min` (f32) - средняя нагрузка за 5 минут
+- `average_load_15min` (f32) - средняя нагрузка за 15 минут
+
+**Требования:**
+- Нет специальных требований, доступно всегда
+
+---
+
 ### GET /api/appgroups
 
 Получение списка последних групп приложений.

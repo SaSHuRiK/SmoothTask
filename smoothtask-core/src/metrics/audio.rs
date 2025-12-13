@@ -1283,7 +1283,7 @@ mod tests {
         // Создаём статический интроспектор для теста
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
-        let mut static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
+        let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
         
         // Заменяем базовый интроспектор на статический для теста
         introspector.base_introspector = Box::new(static_introspector);
@@ -1414,12 +1414,12 @@ mod tests {
         // Создаём статический интроспектор
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
-        let mut static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
+        let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
         
         introspector.base_introspector = Box::new(static_introspector);
         
         // Первый вызов
-        let first_call = introspector.audio_metrics().unwrap();
+        let _first_call = introspector.audio_metrics().unwrap();
         assert!(introspector.last_metrics.is_some());
         
         // Ждём истечения кэша
@@ -1558,7 +1558,7 @@ mod tests {
         // Создаём статический интроспектор для теста
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
-        let mut static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
+        let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
         
         // Заменяем базовый интроспектор на статический для теста
         introspector.base_introspector = Box::new(static_introspector);
@@ -1640,7 +1640,7 @@ mod tests {
         // Создаём статический интроспектор для теста
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
-        let mut static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
+        let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
         
         introspector.base_introspector = Box::new(static_introspector);
         

@@ -3017,14 +3017,14 @@ impl EbpfMetricsCollector {
             syscall_details,
             network_details,
             connection_details,
-            gpu_details,
-            cpu_temperature_details,
-            process_details,
-            filesystem_details,
-            process_energy_details,
-            process_gpu_details,
-            process_network_details,
-            process_disk_details,
+            _gpu_details,
+            _cpu_temperature_details,
+            _process_details,
+            _filesystem_details,
+            _process_energy_details,
+            _process_gpu_details,
+            _process_network_details,
+            _process_disk_details,
         );
 
         let collection_time = start_time.elapsed();

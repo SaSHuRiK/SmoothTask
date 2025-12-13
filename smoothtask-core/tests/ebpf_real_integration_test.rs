@@ -206,10 +206,8 @@ fn test_ebpf_real_filesystem_monitoring() {
         for detail in filesystem_details {
             assert!(detail.read_count >= 0);
             assert!(detail.write_count >= 0);
-            assert!(detail.open_count >= 0);
-            assert!(detail.close_count >= 0);
-            assert!(detail.bytes_read >= 0);
-            assert!(detail.bytes_written >= 0);
+            assert!(detail.open_count > 0 || detail.close_count > 0);
+            assert!(detail.bytes_read > 0 || detail.bytes_written > 0);
         }
     }
 }

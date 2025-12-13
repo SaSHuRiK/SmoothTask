@@ -3279,7 +3279,6 @@ mod tests {
     // Import notification types for test configurations
     use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
     use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds};
-    use crate::metrics::system::SystemMetrics;
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
