@@ -16,7 +16,8 @@ use lru::LruCache;
 
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
-use crate::classify::pattern_watcher::PatternUpdateResult;
+
+
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
 /// Категория паттернов (browser, ide, terminal, batch, и т.д.).
@@ -1539,7 +1540,8 @@ apps:
         };
 
         // Тест без ML-классификатора
-        classify_process(&mut process, &mut db, None, None);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_process(&mut process, &pattern_db, None, None);
 
         assert_eq!(process.process_type, Some("browser".to_string()));
         assert!(process.tags.contains(&"browser".to_string()));
@@ -1615,7 +1617,8 @@ apps:
             energy_timestamp: None,
         };
 
-        classify_process(&mut process, &mut db, None, None);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_process(&mut process, &pattern_db, None, None);
 
         assert_eq!(process.process_type, None);
         assert!(process.tags.is_empty());
@@ -1761,7 +1764,8 @@ apps:
             total_power_w: None,
         };
 
-        classify_app_group(&mut app_group, &processes, &db);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_app_group(&mut app_group, &processes, &pattern_db);
 
         // Теги должны быть агрегированы (уникальные)
         assert_eq!(app_group.tags.len(), 2);
@@ -1860,7 +1864,8 @@ apps:
         }];
 
         // Тест без ML-классификатора
-        classify_all(&mut processes, &mut app_groups, &mut db, None);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_all(&mut processes, &mut app_groups, &pattern_db, None);
 
         // Процесс должен быть классифицирован
         assert_eq!(processes[0].process_type, Some("browser".to_string()));
@@ -2232,7 +2237,8 @@ apps:
         };
 
         // Классификация с пустой базой паттернов
-        classify_process(&mut process, &mut db, None, None);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_process(&mut process, &pattern_db, None, None);
 
         // Должен остаться неклассифицированным
         assert_eq!(process.process_type, None);
@@ -2256,6 +2262,10 @@ apps:
             total_cpu_share: None,
             total_io_read_bytes: None,
             total_io_write_bytes: None,
+            total_io_read_operations: None,
+            total_io_write_operations: None,
+            total_io_operations: None,
+            io_data_source: None,
             total_rss_mb: None,
             has_gui_window: false,
             is_focused_group: false,
@@ -2266,7 +2276,8 @@ apps:
         };
 
         // Классификация группы без процессов
-        classify_app_group(&mut app_group, &processes, &db);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_app_group(&mut app_group, &processes, &pattern_db);
 
         // Должна остаться без тегов
         assert!(app_group.tags.is_empty());
@@ -2412,6 +2423,10 @@ apps:
             total_cpu_share: None,
             total_io_read_bytes: None,
             total_io_write_bytes: None,
+            total_io_read_operations: None,
+            total_io_write_operations: None,
+            total_io_operations: None,
+            io_data_source: None,
             total_rss_mb: None,
             has_gui_window: false,
             is_focused_group: false,
@@ -2422,7 +2437,8 @@ apps:
         };
 
         // Классификация группы с разными типами процессов
-        classify_app_group(&mut app_group, &processes, &db);
+        let pattern_db = Arc::new(Mutex::new(db));
+        classify_app_group(&mut app_group, &processes, &pattern_db);
 
         // Должны быть агрегированы теги из разных типов
         assert_eq!(app_group.tags.len(), 2);
