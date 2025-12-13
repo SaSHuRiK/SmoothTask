@@ -1047,7 +1047,37 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     };
 
     // Собираем метрики температуры и энергопотребления
-    let temperature = collect_temperature_metrics();
+    let mut temperature = collect_temperature_metrics();
+    
+    // Пробуем использовать eBPF метрики температуры, если доступно
+    if let Some(ebpf_metrics) = collect_ebpf_metrics() {
+        if ebpf_metrics.cpu_temperature > 0 {
+            // eBPF предоставляет температуру в градусах Цельсия
+            temperature.cpu_temperature_c = Some(ebpf_metrics.cpu_temperature as f32);
+            tracing::info!("Using eBPF CPU temperature: {:.1}°C", ebpf_metrics.cpu_temperature as f32);
+        }
+        
+        if ebpf_metrics.cpu_max_temperature > 0 {
+            // eBPF также предоставляет максимальную температуру
+            // Мы можем использовать это для более точного мониторинга
+            tracing::debug!("eBPF CPU max temperature: {:.1}°C", ebpf_metrics.cpu_max_temperature as f32);
+        }
+        
+        // Если eBPF предоставляет детализированную статистику температуры
+        if let Some(cpu_temp_details) = ebpf_metrics.cpu_temperature_details {
+            if !cpu_temp_details.is_empty() {
+                // Используем среднюю температуру из детализированной статистики
+                let avg_temp = cpu_temp_details.iter()
+                    .map(|stat| stat.temperature_celsius as f32)
+                    .sum::<f32>() / cpu_temp_details.len() as f32;
+                
+                temperature.cpu_temperature_c = Some(avg_temp);
+                tracing::info!("Using eBPF detailed CPU temperature (avg of {} cores): {:.1}°C", 
+                    cpu_temp_details.len(), avg_temp);
+            }
+        }
+    }
+    
     let power = collect_power_metrics();
 
     // Собираем метрики сетевой активности и дисковых операций

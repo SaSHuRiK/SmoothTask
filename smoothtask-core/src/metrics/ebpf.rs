@@ -140,7 +140,7 @@ impl Default for EbpfConfig {
             enable_network_monitoring: false,
             enable_network_connections: false,
             enable_gpu_monitoring: false,
-            enable_cpu_temperature_monitoring: false,
+            enable_cpu_temperature_monitoring: true,
             enable_filesystem_monitoring: false,
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
@@ -582,6 +582,14 @@ pub struct EbpfNotificationThresholds {
     pub filesystem_ops_warning_threshold: u64,
     /// Порог количества операций с файловой системой для критических уведомлений (в операциях/секунду, 0 для отключения)
     pub filesystem_ops_critical_threshold: u64,
+    /// Порог температуры CPU для предупреждений (в градусах Цельсия, 0 для отключения)
+    pub cpu_temperature_warning_threshold: u32,
+    /// Порог температуры CPU для критических уведомлений (в градусах Цельсия, 0 для отключения)
+    pub cpu_temperature_critical_threshold: u32,
+    /// Порог максимальной температуры CPU для предупреждений (в градусах Цельсия, 0 для отключения)
+    pub cpu_max_temperature_warning_threshold: u32,
+    /// Порог максимальной температуры CPU для критических уведомлений (в градусах Цельсия, 0 для отключения)
+    pub cpu_max_temperature_critical_threshold: u32,
 }
 
 impl Default for EbpfNotificationThresholds {
@@ -601,6 +609,10 @@ impl Default for EbpfNotificationThresholds {
             active_connections_critical_threshold: 500,
             filesystem_ops_warning_threshold: 5000,
             filesystem_ops_critical_threshold: 20000,
+            cpu_temperature_warning_threshold: 75,
+            cpu_temperature_critical_threshold: 90,
+            cpu_max_temperature_warning_threshold: 85,
+            cpu_max_temperature_critical_threshold: 95,
         }
     }
 }
@@ -1406,6 +1418,84 @@ impl EbpfMetricsCollector {
             .with_details(format!(
                 "Network metrics: Connections: {}, Packets: {}, Bytes: {}",
                 metrics.active_connections, metrics.network_packets, metrics.network_bytes
+            ));
+
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        // Проверка температуры CPU
+        if thresholds.cpu_temperature_critical_threshold > 0
+            && metrics.cpu_temperature >= thresholds.cpu_temperature_critical_threshold
+        {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical CPU Temperature Detected",
+                format!(
+                    "CPU temperature is at {}°C (threshold: {}°C)",
+                    metrics.cpu_temperature, thresholds.cpu_temperature_critical_threshold
+                ),
+            )
+            .with_details(format!(
+                "System metrics: CPU Temp: {}°C, Max Temp: {}°C, CPU Usage: {}%",
+                metrics.cpu_temperature, metrics.cpu_max_temperature, metrics.cpu_usage
+            ));
+
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.cpu_temperature_warning_threshold > 0
+            && metrics.cpu_temperature >= thresholds.cpu_temperature_warning_threshold
+        {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High CPU Temperature Detected",
+                format!(
+                    "CPU temperature is at {}°C (threshold: {}°C)",
+                    metrics.cpu_temperature, thresholds.cpu_temperature_warning_threshold
+                ),
+            )
+            .with_details(format!(
+                "System metrics: CPU Temp: {}°C, Max Temp: {}°C, CPU Usage: {}%",
+                metrics.cpu_temperature, metrics.cpu_max_temperature, metrics.cpu_usage
+            ));
+
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        }
+
+        // Проверка максимальной температуры CPU
+        if thresholds.cpu_max_temperature_critical_threshold > 0
+            && metrics.cpu_max_temperature >= thresholds.cpu_max_temperature_critical_threshold
+        {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Critical,
+                "Critical CPU Max Temperature Detected",
+                format!(
+                    "CPU max temperature is at {}°C (threshold: {}°C)",
+                    metrics.cpu_max_temperature, thresholds.cpu_max_temperature_critical_threshold
+                ),
+            )
+            .with_details(format!(
+                "System metrics: CPU Temp: {}°C, Max Temp: {}°C, CPU Usage: {}%",
+                metrics.cpu_temperature, metrics.cpu_max_temperature, metrics.cpu_usage
+            ));
+
+            self.send_notification(notification).await?;
+            notifications_sent = true;
+        } else if thresholds.cpu_max_temperature_warning_threshold > 0
+            && metrics.cpu_max_temperature >= thresholds.cpu_max_temperature_warning_threshold
+        {
+            let notification = crate::notifications::Notification::new(
+                crate::notifications::NotificationType::Warning,
+                "High CPU Max Temperature Detected",
+                format!(
+                    "CPU max temperature is at {}°C (threshold: {}°C)",
+                    metrics.cpu_max_temperature, thresholds.cpu_max_temperature_warning_threshold
+                ),
+            )
+            .with_details(format!(
+                "System metrics: CPU Temp: {}°C, Max Temp: {}°C, CPU Usage: {}%",
+                metrics.cpu_temperature, metrics.cpu_max_temperature, metrics.cpu_usage
             ));
 
             self.send_notification(notification).await?;

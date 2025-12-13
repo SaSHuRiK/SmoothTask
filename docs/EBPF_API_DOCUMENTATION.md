@@ -84,6 +84,9 @@ pub struct EbpfConfig {
     /// Enable GPU performance monitoring
     pub enable_gpu_monitoring: bool,
     
+    /// Enable CPU temperature monitoring via eBPF
+    pub enable_cpu_temperature_monitoring: bool,
+    
     /// Enable filesystem operations monitoring
     pub enable_filesystem_monitoring: bool,
     
@@ -146,6 +149,7 @@ impl Default for EbpfConfig {
             enable_network_monitoring: false,
             enable_network_connections: false,
             enable_gpu_monitoring: false,
+            enable_cpu_temperature_monitoring: true, // Enabled by default
             enable_filesystem_monitoring: false,
             enable_process_monitoring: false,
             collection_interval: Duration::from_secs(1),
@@ -901,15 +905,29 @@ let (avg_temp, max_temp, details) = collector.collect_cpu_temperature_data()?;
 
 ### Temperature Monitoring Configuration
 
-To enable temperature monitoring, configure the `EbpfConfig`:
+**Note**: CPU temperature monitoring is now enabled by default in the eBPF configuration. This provides automatic integration with the main system metrics collection.
+
+To customize temperature monitoring, configure the `EbpfConfig`:
 
 ```rust
 let config = EbpfConfig {
-    enable_cpu_temperature_monitoring: true,
+    enable_cpu_temperature_monitoring: true, // Enabled by default
     enable_gpu_monitoring: true,
     ..Default::default()
 };
 ```
+
+### Temperature Monitoring Integration
+
+CPU temperature monitoring is now automatically integrated with the main system metrics collection in `smoothtask-core`. When eBPF temperature data is available, it takes precedence over traditional sysfs/hwmon temperature readings for more accurate and detailed monitoring.
+
+The integration works as follows:
+
+1. **Primary Collection**: Traditional `collect_temperature_metrics()` function gathers temperature data from sysfs/hwmon interfaces
+2. **eBPF Enhancement**: If eBPF temperature monitoring is available and provides valid data, it overrides the traditional temperature values
+3. **Fallback**: If eBPF is not available or fails, the system gracefully falls back to traditional temperature monitoring
+
+This provides the best of both worlds: high-precision eBPF monitoring when available, with reliable fallback to standard interfaces.
 
 ### Temperature Monitoring in Metrics
 
@@ -1858,6 +1876,10 @@ fn main() -> Result<()> {
 
 1. **Enable When Needed**: Temperature monitoring adds overhead, enable only when necessary
 2. **Set Alert Thresholds**: Monitor for overheating conditions (typically >80°C for CPU, >85°C for GPU)
+   - Configure `cpu_temperature_warning_threshold` (default: 75°C)
+   - Configure `cpu_temperature_critical_threshold` (default: 90°C)
+   - Configure `cpu_max_temperature_warning_threshold` (default: 85°C)
+   - Configure `cpu_max_temperature_critical_threshold` (default: 95°C)
 3. **Use Detailed Monitoring**: Enable detailed temperature monitoring for troubleshooting
 4. **Integrate with Alerting**: Combine temperature data with alerting systems
 5. **Monitor Trends**: Track temperature changes over time to detect cooling issues

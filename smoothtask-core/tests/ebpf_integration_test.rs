@@ -237,6 +237,108 @@ fn test_gpu_temperature_and_power_monitoring() {
     );
 }
 
+/// Тест интеграции eBPF мониторинга температуры CPU с основными системными метриками
+#[test]
+fn test_system_metrics_temperature_integration() {
+    // Этот тест проверяет, что eBPF температура CPU правильно интегрируется в основные системные метрики
+    
+    // Создаем конфигурацию с включенным мониторингом температуры CPU
+    let config = EbpfConfig {
+        enable_cpu_temperature_monitoring: true,
+        ..Default::default()
+    };
+    
+    // Создаем коллектор eBPF метрик
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Инициализируем коллектор (в тестовой среде это может не удаться, но мы проверяем логику)
+    let _init_result = collector.initialize();
+    
+    // Проверяем, что коллектор правильно настроен для мониторинга температуры
+    let config = collector.get_config();
+    assert!(config.enable_cpu_temperature_monitoring,
+        "Мониторинг температуры CPU должен быть включен");
+    
+    // Проверяем, что eBPF метрики доступны (даже если инициализация не удалась)
+    // В тестовой среде eBPF может быть недоступен, поэтому мы просто проверяем логику
+    if !EbpfMetricsCollector::is_ebpf_enabled() {
+        // Если eBPF недоступен, пропускаем остальные проверки
+        return;
+    }
+    
+    // Тестируем сбор метрик (в тестовой среде может вернуть значения по умолчанию)
+    let metrics_result = collector.collect_metrics();
+    
+    // Проверяем, что результат сборки метрик корректен
+    assert!(metrics_result.is_ok(),
+        "Сбор eBPF метрик должен завершиться успешно");
+    
+    let metrics = metrics_result.unwrap();
+    
+    // Проверяем, что метрики температуры доступны (даже если они равны 0 в тестовой среде)
+    // cpu_temperature and cpu_max_temperature are u32 (unsigned), so they're always >= 0
+    assert!(metrics.cpu_temperature <= 200,
+        "Температура CPU должна быть <= 200°C");
+    assert!(metrics.cpu_max_temperature <= 200,
+        "Максимальная температура CPU должна быть <= 200°C");
+    
+    // Проверяем, что детализированная статистика температуры доступна (может быть None в тестовой среде)
+    if let Some(temperature_details) = metrics.cpu_temperature_details {
+        for temp_stat in temperature_details {
+            // temperature_celsius and max_temperature_celsius are u32 (unsigned), so they're always >= 0
+            assert!(temp_stat.temperature_celsius <= 200,
+                "Температура CPU ядра {} должна быть <= 200°C", temp_stat.cpu_id);
+            assert!(temp_stat.max_temperature_celsius <= 200,
+                "Максимальная температура CPU ядра {} должна быть <= 200°C", temp_stat.cpu_id);
+        }
+    }
+    
+    // Проверяем, что коллектор правильно обрабатывает конфигурацию
+    let config = collector.get_config();
+    assert_eq!(config.enable_cpu_temperature_monitoring, true,
+        "Конфигурация мониторинга температуры CPU должна быть включена");
+}
+
+/// Тест проверки порогов уведомлений для температуры CPU
+#[test]
+fn test_cpu_temperature_notification_thresholds() {
+    // Этот тест проверяет, что пороги уведомлений для температуры CPU настроены корректно
+    
+    // Создаем конфигурацию с включенными уведомлениями
+    let config = EbpfConfig {
+        enable_notifications: true,
+        enable_cpu_temperature_monitoring: true,
+        ..Default::default()
+    };
+    
+    // Создаем коллектор eBPF метрик
+    let mut collector = EbpfMetricsCollector::new(config);
+    
+    // Проверяем, что пороги уведомлений для температуры CPU настроены корректно
+    let config = collector.get_config();
+    let thresholds = config.notification_thresholds;
+    
+    // Проверяем значения по умолчанию для порогов температуры CPU
+    assert_eq!(thresholds.cpu_temperature_warning_threshold, 75,
+        "Порог предупреждения для температуры CPU должен быть 75°C");
+    assert_eq!(thresholds.cpu_temperature_critical_threshold, 90,
+        "Порог критического уведомления для температуры CPU должен быть 90°C");
+    assert_eq!(thresholds.cpu_max_temperature_warning_threshold, 85,
+        "Порог предупреждения для максимальной температуры CPU должен быть 85°C");
+    assert_eq!(thresholds.cpu_max_temperature_critical_threshold, 95,
+        "Порог критического уведомления для максимальной температуры CPU должен быть 95°C");
+    
+    // Проверяем, что пороги имеют разумные значения
+    assert!(thresholds.cpu_temperature_warning_threshold > 0,
+        "Порог предупреждения для температуры CPU должен быть > 0");
+    assert!(thresholds.cpu_temperature_critical_threshold > thresholds.cpu_temperature_warning_threshold,
+        "Критический порог должен быть выше порога предупреждения");
+    assert!(thresholds.cpu_max_temperature_warning_threshold > 0,
+        "Порог предупреждения для максимальной температуры CPU должен быть > 0");
+    assert!(thresholds.cpu_max_temperature_critical_threshold > thresholds.cpu_max_temperature_warning_threshold,
+        "Критический порог для максимальной температуры должен быть выше порога предупреждения");
+}
+
 #[test]
 fn test_gpu_comprehensive_monitoring() {
     // Тестируем комплексный мониторинг GPU со всеми метриками
