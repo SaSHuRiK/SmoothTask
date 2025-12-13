@@ -4703,6 +4703,7 @@ impl EbpfMetricsCollector {
     }
 
     /// Логировать ошибку eBPF в систему мониторинга
+    #[allow(dead_code)]
     fn log_ebpf_error(&self, error: &anyhow::Error) {
         tracing::error!("eBPF ошибка зафиксирована в системе мониторинга: {}", error);
         
