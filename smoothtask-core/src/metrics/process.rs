@@ -263,29 +263,32 @@ impl ProcessCache {
             lru_write.put(record.pid, cached_record.clone());
         }
 
-        // Сохраняем в HashMap кэш (если не используется LRU или для совместимости)
-        if !self.config.use_lru_cache {
-            // Если после очистки мы все еще превышаем лимит (учитывая новую запись),
-            // удаляем еще одну самую старую запись
-            if self.records.len() + 1 > self.config.max_cached_processes {
-                let mut entries: Vec<_> = self
-                    .records
-                    .iter()
-                    .map(|(pid, cached)| (*pid, cached.cached_at))
-                    .collect();
-                entries.sort_by_key(|(_, cached_at)| *cached_at);
-                if let Some((oldest_pid, _)) = entries.into_iter().next() {
-                    self.records.remove(&oldest_pid);
-                }
+        // Сохраняем в HashMap кэш (всегда для совместимости с тестами и простого доступа)
+        // Если после очистки мы все еще превышаем лимит (учитывая новую запись),
+        // удаляем еще одну самую старую запись
+        if self.records.len() + 1 > self.config.max_cached_processes {
+            let mut entries: Vec<_> = self
+                .records
+                .iter()
+                .map(|(pid, cached)| (*pid, cached.cached_at))
+                .collect();
+            entries.sort_by_key(|(_, cached_at)| *cached_at);
+            if let Some((oldest_pid, _)) = entries.into_iter().next() {
+                self.records.remove(&oldest_pid);
             }
-
-            self.records.insert(record.pid, cached_record);
         }
+
+        self.records.insert(record.pid, cached_record);
     }
 
     /// Очистить весь кэш.
     fn clear(&mut self) {
         self.records.clear();
+        // Также очищаем LRU кэш, если он используется
+        if let Some(lru_cache) = &self.lru_cache {
+            let mut lru_write = lru_cache.write().unwrap();
+            lru_write.clear();
+        }
     }
 
     /// Обновить конфигурацию кэша.

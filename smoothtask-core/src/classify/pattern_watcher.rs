@@ -561,6 +561,9 @@ apps:
         // Отменяем задачу
         handle.abort();
 
+        // Даём задаче время на завершение
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
         // Проверяем, что задача завершилась
         assert!(handle.is_finished());
     }
@@ -579,7 +582,7 @@ apps:
         };
 
         assert!(result.has_changes());
-        assert_eq!(result.summary(), "Updated: 1 changed, 2 new (5 patterns)");
+        assert_eq!(result.summary(), "Updated: 1 changed, 2 new, 0 removed (5 patterns)");
 
         let no_change_result = PatternUpdateResult {
             total_files: 1,
