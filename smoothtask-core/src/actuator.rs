@@ -1073,6 +1073,16 @@ pub struct ApplyResult {
     pub skipped_hysteresis: usize,
     /// Количество ошибок при применении.
     pub errors: usize,
+    /// Количество ошибок при применении nice.
+    pub nice_errors: usize,
+    /// Количество ошибок при применении ionice.
+    pub ionice_errors: usize,
+    /// Количество ошибок при применении latency_nice.
+    pub latency_nice_errors: usize,
+    /// Количество ошибок при применении cgroup.
+    pub cgroup_errors: usize,
+    /// Количество предупреждений о некритичных ошибках.
+    pub warnings: usize,
 }
 
 /// Применить список изменений приоритетов к процессам.
@@ -1198,9 +1208,10 @@ pub fn apply_priority_adjustments(
                 target_nice = adj.target_nice,
                 reason = %adj.reason,
                 error = %e,
-                "Failed to apply nice priority"
+                "Failed to apply nice priority. Check process permissions and limits."
             );
             result.errors += 1;
+            result.nice_errors += 1;
             continue;
         }
 
@@ -1214,10 +1225,12 @@ pub fn apply_priority_adjustments(
                 target_latency_nice = adj.target_latency_nice,
                 reason = %adj.reason,
                 error = %e,
-                "Failed to apply latency_nice (may not be supported on older kernels)"
+                "Failed to apply latency_nice (may not be supported on older kernels). Consider updating kernel or disabling latency_nice features."
             );
             // Не считаем это критичной ошибкой, так как latency_nice может быть не поддерживается
             // на старых ядрах
+            result.warnings += 1;
+            result.latency_nice_errors += 1;
         }
 
         // Применяем ionice
@@ -1231,9 +1244,10 @@ pub fn apply_priority_adjustments(
                 target_ionice_level = adj.target_ionice.level,
                 reason = %adj.reason,
                 error = %e,
-                "Failed to apply ionice priority"
+                "Failed to apply ionice priority. Check if ionice is supported and process has sufficient privileges."
             );
             result.errors += 1;
+            result.ionice_errors += 1;
             continue;
         }
 
@@ -1248,9 +1262,11 @@ pub fn apply_priority_adjustments(
                 target_cpu_weight = adj.target_cpu_weight,
                 reason = %adj.reason,
                 error = %e,
-                "Failed to apply cgroup (cgroups may not be available)"
+                "Failed to apply cgroup (cgroups may not be available). Check if cgroups v2 is mounted and accessible. Try running with --dry-run to see planned changes."
             );
             // Не считаем это критичной ошибкой, так как cgroups может быть недоступен
+            result.warnings += 1;
+            result.cgroup_errors += 1;
         }
 
         // Фиксируем изменение в истории

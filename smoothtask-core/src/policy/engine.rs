@@ -1362,4 +1362,288 @@ mod tests {
         assert_eq!(result.priority_class, PriorityClass::Normal);
         assert!(result.reason.contains("default"));
     }
+
+    #[test]
+    fn test_active_terminal_with_recent_input() {
+        let config = create_test_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        // Устанавливаем активного пользователя с недавним вводом
+        snapshot.global.user_active = true;
+        snapshot.global.time_since_last_input_ms = Some(1000); // 1 секунда назад
+
+        let terminal_process = ProcessRecord {
+            pid: 2000,
+            ppid: 1500,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("/usr/bin/bash".to_string()),
+            cmdline: Some("bash".to_string()),
+            cgroup_path: Some("/user.slice/user-1000.slice/session-1.scope".to_string()),
+            systemd_unit: None,
+            app_group_id: Some("terminal".to_string()),
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 500,
+            tty_nr: 1,
+            has_tty: true,
+            cpu_share_1s: Some(0.05),
+            cpu_share_10s: Some(0.03),
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: Some(20),
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: Some("xterm-256color".to_string()),
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: Some("cli".to_string()),
+            tags: vec!["terminal".to_string()],
+            nice: 0,
+            ionice_class: Some(2),
+            ionice_prio: Some(4),
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        let app_group = AppGroupRecord {
+            app_group_id: "terminal".to_string(),
+            root_pid: 2000,
+            process_ids: vec![2000],
+            app_name: Some("bash".to_string()),
+            total_cpu_share: Some(0.05),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(20),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec!["terminal".to_string()],
+            priority_class: None,
+        };
+
+        snapshot.processes = vec![terminal_process];
+        snapshot.app_groups = vec![app_group.clone()];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+        let result = results.get("terminal").unwrap();
+
+        // Активный терминал должен получить Interactive приоритет
+        assert_eq!(result.priority_class, PriorityClass::Interactive);
+        assert!(result.reason.contains("active terminal"));
+    }
+
+    #[test]
+    fn test_multiple_app_groups_different_priorities() {
+        let config = create_test_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        // Создаем несколько групп с разными характеристиками
+        
+        // Группа 1: Фокусный GUI (должен быть Interactive)
+        let focused_gui_group = AppGroupRecord {
+            app_group_id: "focused-gui".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: Some("firefox".to_string()),
+            total_cpu_share: Some(0.2),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(500),
+            has_gui_window: true,
+            is_focused_group: true,
+            tags: vec!["browser".to_string()],
+            priority_class: None,
+        };
+
+        // Группа 2: Системный процесс (должен быть Normal)
+        let system_group = AppGroupRecord {
+            app_group_id: "systemd".to_string(),
+            root_pid: 1,
+            process_ids: vec![1],
+            app_name: Some("systemd".to_string()),
+            total_cpu_share: Some(0.05),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(50),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec!["system".to_string()],
+            priority_class: None,
+        };
+
+        // Группа 3: Updater с активным пользователем (должен быть Background)
+        let updater_group = AppGroupRecord {
+            app_group_id: "updater".to_string(),
+            root_pid: 2000,
+            process_ids: vec![2000],
+            app_name: Some("packagekitd".to_string()),
+            total_cpu_share: Some(0.1),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec!["updater".to_string()],
+            priority_class: None,
+        };
+
+        // Группа 4: Обычный процесс без особых характеристик (должен быть Normal)
+        let normal_group = AppGroupRecord {
+            app_group_id: "normal".to_string(),
+            root_pid: 3000,
+            process_ids: vec![3000],
+            app_name: Some("background-task".to_string()),
+            total_cpu_share: Some(0.05),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(50),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec!["background".to_string()],
+            priority_class: None,
+        };
+
+        snapshot.app_groups = vec![
+            focused_gui_group,
+            system_group,
+            updater_group,
+            normal_group,
+        ];
+
+        // Добавляем системный процесс для защиты
+        let system_process = ProcessRecord {
+            pid: 1,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: Some("/usr/lib/systemd/systemd".to_string()),
+            cmdline: None,
+            cgroup_path: Some("/system.slice/systemd.service".to_string()),
+            systemd_unit: Some("systemd.service".to_string()),
+            app_group_id: Some("systemd".to_string()),
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 1000,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: Some(50),
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: Some("daemon".to_string()),
+            tags: vec![],
+            nice: 0,
+            ionice_class: Some(2),
+            ionice_prio: Some(4),
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        snapshot.processes = vec![system_process];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+
+        // Проверяем, что каждая группа получила ожидаемый приоритет
+        assert_eq!(results.get("focused-gui").unwrap().priority_class, PriorityClass::Interactive);
+        assert_eq!(results.get("systemd").unwrap().priority_class, PriorityClass::Normal);
+        assert_eq!(results.get("updater").unwrap().priority_class, PriorityClass::Background);
+        assert_eq!(results.get("normal").unwrap().priority_class, PriorityClass::Normal);
+    }
+
+    #[test]
+    fn test_game_with_audio_focused_gets_crit_interactive() {
+        let config = create_test_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        snapshot.responsiveness.audio_xruns_delta = Some(3); // Есть XRUN
+
+        let game_process = ProcessRecord {
+            pid: 3000,
+            ppid: 2500,
+            uid: 1000,
+            gid: 1000,
+            exe: Some("/usr/games/supergame".to_string()),
+            cmdline: Some("supergame".to_string()),
+            cgroup_path: Some("/user.slice/user-1000.slice/session-1.scope".to_string()),
+            systemd_unit: None,
+            app_group_id: Some("game".to_string()),
+            state: "S".to_string(),
+            start_time: 0,
+            uptime_sec: 100,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: Some(0.4),
+            cpu_share_10s: Some(0.3),
+            io_read_bytes: None,
+            io_write_bytes: None,
+            rss_mb: Some(500),
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: true,
+            is_focused_window: true,
+            window_state: None,
+            env_has_display: true,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: true,
+            has_active_stream: true,
+            process_type: Some("gui".to_string()),
+            tags: vec!["game".to_string()],
+            nice: 0,
+            ionice_class: Some(2),
+            ionice_prio: Some(4),
+            teacher_priority_class: None,
+            teacher_score: None,
+        };
+
+        let app_group = AppGroupRecord {
+            app_group_id: "game".to_string(),
+            root_pid: 3000,
+            process_ids: vec![3000],
+            app_name: Some("supergame".to_string()),
+            total_cpu_share: Some(0.4),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(500),
+            has_gui_window: true,
+            is_focused_group: true,
+            tags: vec!["game".to_string()],
+            priority_class: None,
+        };
+
+        snapshot.processes = vec![game_process];
+        snapshot.app_groups = vec![app_group.clone()];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+        let result = results.get("game").unwrap();
+
+        // Фокусная игра с аудио должна получить CritInteractive
+        assert_eq!(result.priority_class, PriorityClass::CritInteractive);
+        assert!(result.reason.contains("focused group with audio/game"));
+    }
 }
