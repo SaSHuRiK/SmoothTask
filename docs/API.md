@@ -3321,6 +3321,373 @@ if __name__ == "__main__":
 
 ---
 
+### GET /api/logging/monitoring
+
+Получение статистики и мониторинга системы логирования.
+
+**Запрос:**
+```bash
+curl "http://127.0.0.1:8080/api/logging/monitoring"
+```
+
+**Ответ (с хранилищем логов):**
+```json
+{
+  "status": "ok",
+  "logging_monitoring": {
+    "statistics": {
+      "total_entries": 42,
+      "max_capacity": 1000,
+      "usage_percentage": 4.2,
+      "error_count": 2,
+      "warning_count": 5,
+      "last_error_time": "2023-12-12T12:34:56.789Z"
+    },
+    "health": {
+      "status": "warning",
+      "message": "Обнаружены ошибки в логах (количество: 2)",
+      "timestamp": "2023-12-12T12:35:01.234Z"
+    },
+    "recent_logs": {
+      "count": 10,
+      "entries": [
+        {
+          "timestamp": "2023-12-12T12:34:56.789Z",
+          "level": "ERROR",
+          "target": "smoothtask_core::api::server",
+          "message": "Failed to connect to database"
+        },
+        {
+          "timestamp": "2023-12-12T12:34:57.123Z",
+          "level": "WARN",
+          "target": "smoothtask_core::config::watcher",
+          "message": "Configuration file not found, using defaults"
+        }
+      ]
+    }
+  },
+  "availability": {
+    "log_storage_available": true,
+    "timestamp": "2023-12-12T12:35:01.234Z"
+  }
+}
+```
+
+**Ответ (без хранилища логов):**
+```json
+{
+  "status": "ok",
+  "logging_monitoring": null,
+  "message": "Log storage not available (may not be configured)",
+  "availability": {
+    "log_storage_available": false,
+    "timestamp": "2023-12-12T12:35:01.234Z"
+  }
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус ответа (всегда "ok")
+- `logging_monitoring` (object | null) - объект с данными мониторинга или null, если хранилище не доступно
+  - `statistics` (object) - статистика использования хранилища логов
+    - `total_entries` (number) - общее количество записей в хранилище
+    - `max_capacity` (number) - максимальная ёмкость хранилища
+    - `usage_percentage` (number) - процент использования хранилища
+    - `error_count` (number) - количество записей с уровнем ERROR
+    - `warning_count` (number) - количество записей с уровнем WARN
+    - `last_error_time` (string | null) - временная метка последней ошибки
+  - `health` (object) - информация о состоянии здоровья системы логирования
+    - `status` (string) - статус здоровья: "healthy", "warning", или "critical"
+    - `message` (string) - описание текущего состояния
+    - `timestamp` (string) - временная метка проверки
+  - `recent_logs` (object) - последние записи логов для мониторинга
+    - `count` (number) - количество последних записей
+    - `entries` (array) - массив последних записей логов
+- `availability` (object) - информация о доступности компонентов
+  - `log_storage_available` (boolean) - доступность хранилища логов
+  - `timestamp` (string) - временная метка проверки доступности
+- `message` (string, опционально) - сообщение об отсутствии данных
+
+**Статусы здоровья:**
+- `healthy` - Система логирования работает нормально (нет ошибок, достаточно свободного места)
+- `warning` - Обнаружены проблемы (есть ошибки или хранилище почти заполнено)
+- `critical` - Критические проблемы (хранилище переполнено или другие серьезные ошибки)
+
+**Примеры использования:**
+
+**Мониторинг состояния системы логирования:**
+```bash
+# Получение текущего состояния системы логирования
+curl -s "http://127.0.0.1:8080/api/logging/monitoring" | jq '.logging_monitoring.health'
+
+# Проверка наличия ошибок
+curl -s "http://127.0.0.1:8080/api/logging/monitoring" | jq '.logging_monitoring.statistics.error_count'
+```
+
+**Интеграция с системами мониторинга:**
+```python
+#!/usr/bin/env python3
+# Мониторинг системы логирования для интеграции с Prometheus
+
+import requests
+import time
+
+def collect_logging_metrics():
+    try:
+        response = requests.get("http://127.0.0.1:8080/api/logging/monitoring")
+        data = response.json()
+        
+        if data["logging_monitoring"]:
+            stats = data["logging_monitoring"]["statistics"]
+            health = data["logging_monitoring"]["health"]
+            
+            print(f"smoothtask_logging_total_entries {stats['total_entries']}")
+            print(f"smoothtask_logging_error_count {stats['error_count']}")
+            print(f"smoothtask_logging_warning_count {stats['warning_count']}")
+            print(f"smoothtask_logging_usage_percentage {stats['usage_percentage']}")
+            print(f"smoothtask_logging_health_status {1 if health['status'] == 'healthy' else 0}")
+    except Exception as e:
+        print(f"# ERROR: {e}")
+
+if __name__ == "__main__":
+    while True:
+        collect_logging_metrics()
+        time.sleep(15)
+```
+
+---
+
+### GET /api/cache/monitoring
+
+Получение статистики и мониторинга системы кэширования API.
+
+**Запрос:**
+```bash
+curl "http://127.0.0.1:8080/api/cache/monitoring"
+```
+
+**Ответ (с кэшем):**
+```json
+{
+  "status": "ok",
+  "cache_monitoring": {
+    "api_cache": {
+      "enabled": true,
+      "cache_type": "api_response_cache",
+      "statistics": {
+        "total_cached_items": 8,
+        "active_items": 8,
+        "stale_items": 0,
+        "active_percentage": 100.0,
+        "cache_ttl_seconds": 60
+      },
+      "health": {
+        "status": "healthy",
+        "message": "Кэш работает эффективно",
+        "timestamp": "2023-12-12T12:35:01.234Z"
+      }
+    },
+    "performance": {
+      "total_requests": 100,
+      "cache_hits": 75,
+      "cache_misses": 25,
+      "cache_hit_rate": 75.0,
+      "cache_miss_rate": 25.0,
+      "average_processing_time_us": 1234
+    },
+    "overall_health": {
+      "status": "healthy",
+      "message": "Кэширование работает отлично",
+      "timestamp": "2023-12-12T12:35:01.234Z"
+    }
+  },
+  "availability": {
+    "cache_available": true,
+    "performance_metrics_available": true,
+    "timestamp": "2023-12-12T12:35:01.234Z"
+  }
+}
+```
+
+**Ответ (без кэша):**
+```json
+{
+  "status": "ok",
+  "cache_monitoring": {
+    "api_cache": {
+      "enabled": false,
+      "cache_type": "api_response_cache",
+      "statistics": {
+        "total_cached_items": 0,
+        "active_items": 0,
+        "stale_items": 0,
+        "active_percentage": 0.0,
+        "cache_ttl_seconds": 0
+      },
+      "health": {
+        "status": "disabled",
+        "message": "Кэш API отключен",
+        "timestamp": "2023-12-12T12:35:01.234Z"
+      }
+    },
+    "performance": {
+      "total_requests": 0,
+      "cache_hits": 0,
+      "cache_misses": 0,
+      "cache_hit_rate": 0.0,
+      "cache_miss_rate": 0.0,
+      "average_processing_time_us": 0
+    },
+    "overall_health": {
+      "status": "disabled",
+      "message": "Кэширование отключено",
+      "timestamp": "2023-12-12T12:35:01.234Z"
+    }
+  },
+  "availability": {
+    "cache_available": false,
+    "performance_metrics_available": true,
+    "timestamp": "2023-12-12T12:35:01.234Z"
+  }
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус ответа (всегда "ok")
+- `cache_monitoring` (object) - объект с данными мониторинга кэша
+  - `api_cache` (object) - информация о кэше API
+    - `enabled` (boolean) - включен ли кэш
+    - `cache_type` (string) - тип кэша (всегда "api_response_cache")
+    - `statistics` (object) - статистика использования кэша
+      - `total_cached_items` (number) - общее количество кэшированных элементов
+      - `active_items` (number) - количество активных (не устаревших) элементов
+      - `stale_items` (number) - количество устаревших элементов
+      - `active_percentage` (number) - процент активных элементов
+      - `cache_ttl_seconds` (number) - время жизни кэша в секундах
+    - `health` (object) - информация о состоянии здоровья кэша
+      - `status` (string) - статус здоровья: "healthy", "warning", "idle", или "disabled"
+      - `message` (string) - описание текущего состояния
+      - `timestamp` (string) - временная метка проверки
+  - `performance` (object) - информация о производительности кэширования
+    - `total_requests` (number) - общее количество запросов
+    - `cache_hits` (number) - количество кэш-хитов
+    - `cache_misses` (number) - количество кэш-миссов
+    - `cache_hit_rate` (number) - процент кэш-хитов
+    - `cache_miss_rate` (number) - процент кэш-миссов
+    - `average_processing_time_us` (number) - среднее время обработки запросов в микросекундах
+  - `overall_health` (object) - общая информация о состоянии здоровья системы кэширования
+    - `status` (string) - общий статус здоровья: "healthy", "warning", "critical", или "disabled"
+    - `message` (string) - описание общего состояния
+    - `timestamp` (string) - временная метка проверки
+- `availability` (object) - информация о доступности компонентов
+  - `cache_available` (boolean) - доступность кэша
+  - `performance_metrics_available` (boolean) - доступность метрик производительности
+  - `timestamp` (string) - временная метка проверки доступности
+
+**Статусы здоровья кэша:**
+- `healthy` - Кэш работает эффективно (большинство элементов активны)
+- `warning` - Много устаревших элементов в кэше
+- `idle` - Кэш не используется (нет кэшированных элементов)
+- `disabled` - Кэш отключен
+
+**Общие статусы здоровья:**
+- `healthy` - Кэширование работает отлично (cache_hit_rate > 70%)
+- `warning` - Кэширование может быть улучшено (30% < cache_hit_rate ≤ 70%)
+- `critical` - Кэширование неэффективно (cache_hit_rate ≤ 30%)
+- `disabled` - Кэширование отключено
+
+**Примеры использования:**
+
+**Мониторинг состояния кэша:**
+```bash
+# Получение текущего состояния кэша
+curl -s "http://127.0.0.1:8080/api/cache/monitoring" | jq '.cache_monitoring.api_cache.health'
+
+# Проверка эффективности кэширования
+curl -s "http://127.0.0.1:8080/api/cache/monitoring" | jq '.cache_monitoring.performance.cache_hit_rate'
+```
+
+**Оптимизация производительности:**
+```bash
+#!/bin/bash
+# Скрипт для мониторинга и оптимизации кэша
+
+while true; do
+    clear
+    echo "=== Cache Monitoring Dashboard ==="
+    echo "Timestamp: $(date)"
+    echo
+    
+    # Получение данных о кэше
+    cache_data=$(curl -s "http://127.0.0.1:8080/api/cache/monitoring")
+    
+    # Отображение ключевых метрик
+    echo "Cache Health: $(echo $cache_data | jq -r '.cache_monitoring.api_cache.health.status')"
+    echo "Cache Hit Rate: $(echo $cache_data | jq '.cache_monitoring.performance.cache_hit_rate')%"
+    echo "Active Items: $(echo $cache_data | jq '.cache_monitoring.api_cache.statistics.active_items')"
+    echo "Total Items: $(echo $cache_data | jq '.cache_monitoring.api_cache.statistics.total_cached_items')"
+    echo
+    
+    # Рекомендации
+    hit_rate=$(echo $cache_data | jq '.cache_monitoring.performance.cache_hit_rate')
+    if (( $(echo "$hit_rate < 50" | bc -l) )); then
+        echo "⚠️  WARNING: Low cache hit rate. Consider increasing cache TTL or optimizing queries."
+    else
+        echo "✅ Cache performance is good."
+    fi
+    
+    sleep 5
+ done
+```
+
+**Интеграция с Prometheus:**
+```python
+#!/usr/bin/env python3
+# Экспортер метрик кэша для Prometheus
+
+import requests
+from prometheus_client import start_http_server, Gauge
+import time
+
+# Создаем метрики
+cache_health = Gauge('smoothtask_cache_health', 'Cache health status (1=healthy, 0=unhealthy)')
+cache_hit_rate = Gauge('smoothtask_cache_hit_rate', 'Cache hit rate percentage')
+cache_active_items = Gauge('smoothtask_cache_active_items', 'Number of active cache items')
+cache_total_items = Gauge('smoothtask_cache_total_items', 'Total number of cached items')
+cache_processing_time = Gauge('smoothtask_cache_processing_time_us', 'Average processing time in microseconds')
+
+def collect_cache_metrics():
+    try:
+        response = requests.get("http://127.0.0.1:8080/api/cache/monitoring")
+        data = response.json()
+        
+        cache_data = data["cache_monitoring"]
+        api_cache = cache_data["api_cache"]
+        performance = cache_data["performance"]
+        
+        # Обновляем метрики
+        health_status = api_cache["health"]["status"]
+        cache_health.set(1 if health_status == "healthy" else 0)
+        cache_hit_rate.set(performance["cache_hit_rate"])
+        cache_active_items.set(api_cache["statistics"]["active_items"])
+        cache_total_items.set(api_cache["statistics"]["total_cached_items"])
+        cache_processing_time.set(performance["average_processing_time_us"])
+        
+    except Exception as e:
+        print(f"Error collecting cache metrics: {e}")
+
+if __name__ == "__main__":
+    # Запускаем HTTP сервер для Prometheus на порту 8000
+    start_http_server(8000)
+    
+    # Собираем метрики каждые 15 секунд
+    while True:
+        collect_cache_metrics()
+        time.sleep(15)
+```
+
+---
+
 ## Примеры использования API уведомлений
 
 ### Проверка работоспособности системы уведомлений

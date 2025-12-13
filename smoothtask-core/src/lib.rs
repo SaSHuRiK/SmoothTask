@@ -1095,7 +1095,7 @@ pub async fn run_daemon(
         }
 
         // Логируем статистику периодически
-        if iteration % STATS_LOG_INTERVAL == 0 {
+        if iteration.is_multiple_of(STATS_LOG_INTERVAL) {
             stats.log_stats();
             // Обновляем статус для systemd (если callback предоставлен)
             if let Some(ref status_callback) = on_status_update {

@@ -162,7 +162,7 @@ impl ModelVersion {
                 }
                 info.push_str(&format!("{}: {}", key, value));
             }
-            info.push_str("}");
+            info.push('}');
         }
         
         info.push_str("} ");
@@ -364,7 +364,7 @@ impl ModelVersionManager {
             info.push_str(&format!("{}Version {}: {}", marker, i + 1, version.info_string()));
             
             if i < self.versions.len() - 1 {
-                info.push_str("\n");
+                info.push('\n');
             }
         }
         

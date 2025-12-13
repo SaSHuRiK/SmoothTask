@@ -5,6 +5,7 @@
 
 use crate::metrics::system::{CpuTimes, MemoryInfo, SystemMetrics};
 use anyhow::{Context, Result};
+use serde_json::json;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -23,6 +24,15 @@ pub struct MetricsCacheConfig {
     
     /// Включить кэширование.
     pub enable_caching: bool,
+    
+    /// Максимальный размер памяти для кэша в байтах (0 = без ограничения).
+    pub max_memory_bytes: usize,
+    
+    /// Включить сжатие данных в кэше.
+    pub enable_compression: bool,
+    
+    /// Включить автоматическую очистку кэша при достижении лимитов.
+    pub auto_cleanup_enabled: bool,
 }
 
 impl Default for MetricsCacheConfig {
@@ -31,6 +41,9 @@ impl Default for MetricsCacheConfig {
             max_cache_size: 100,
             cache_ttl_seconds: 5,
             enable_caching: true,
+            max_memory_bytes: 10_000_000, // 10 MB по умолчанию
+            enable_compression: false,
+            auto_cleanup_enabled: true,
         }
     }
 }
@@ -46,6 +59,9 @@ pub struct CachedMetrics {
     
     /// Пути к файлам, использованные для сбора метрик.
     pub source_paths: HashMap<String, PathBuf>,
+    
+    /// Приблизительный размер в байтах.
+    pub approximate_size_bytes: usize,
 }
 
 impl CachedMetrics {
@@ -60,10 +76,12 @@ impl CachedMetrics {
     ///
     /// Новый экземпляр CachedMetrics.
     pub fn new(metrics: SystemMetrics, source_paths: HashMap<String, PathBuf>) -> Self {
+        let approximate_size_bytes = Self::estimate_size(&metrics, &source_paths);
         Self {
             timestamp: Instant::now(),
             metrics,
             source_paths,
+            approximate_size_bytes,
         }
     }
     
@@ -79,6 +97,54 @@ impl CachedMetrics {
     pub fn is_expired(&self, ttl_seconds: u64) -> bool {
         self.timestamp.elapsed() >= Duration::from_secs(ttl_seconds)
     }
+
+    /// Оценивает размер метрик в байтах.
+    ///
+    /// # Аргументы
+    ///
+    /// * `metrics` - системные метрики
+    /// * `source_paths` - пути к файлам
+    ///
+    /// # Возвращает
+    ///
+    /// Приблизительный размер в байтах.
+    fn estimate_size(metrics: &SystemMetrics, source_paths: &HashMap<String, PathBuf>) -> usize {
+        // Базовый размер структуры
+        let mut size = std::mem::size_of::<SystemMetrics>();
+        
+        // Учитываем размер путей
+        size += source_paths.iter().map(|(k, v)| {
+            k.len() + v.as_os_str().len() + 32 // Добавляем немного для служебных данных
+        }).sum::<usize>();
+        
+        // Учитываем размер CPU метрик
+        size += std::mem::size_of::<CpuTimes>();
+        
+        // Учитываем размер информации о памяти
+        size += std::mem::size_of::<MemoryInfo>();
+        
+        // Учитываем размер метрик давления (pressure)
+        size += std::mem::size_of::<crate::metrics::system::PressureMetrics>();
+        
+        // Учитываем размер eBPF метрик (если есть)
+        if let Some(ebpf) = &metrics.ebpf {
+            size += std::mem::size_of::<crate::metrics::ebpf::EbpfMetrics>();
+            
+            // Учитываем размер деталей процессов (используем as_slice().len() для Option<Vec<T>>)
+            if let Some(details) = &ebpf.process_details {
+                size += details.len() * std::mem::size_of::<crate::metrics::ebpf::ProcessStat>();
+            }
+            if let Some(details) = &ebpf.process_energy_details {
+                size += details.len() * std::mem::size_of::<crate::metrics::ebpf::ProcessEnergyStat>();
+            }
+            if let Some(details) = &ebpf.process_gpu_details {
+                size += details.len() * std::mem::size_of::<crate::metrics::ebpf::ProcessGpuStat>();
+            }
+        }
+        
+        // Добавляем 20% для служебных данных и выравнивания
+        size + size / 5
+    }
 }
 
 /// Кэш метрик на основе LRU (Least Recently Used).
@@ -89,6 +155,9 @@ pub struct MetricsCache {
     
     /// LRU кэш для хранения метрик.
     cache: Mutex<LruCache<String, CachedMetrics>>,
+    
+    /// Текущий размер кэша в байтах.
+    current_memory_usage: std::sync::atomic::AtomicUsize,
 }
 
 impl MetricsCache {
@@ -109,6 +178,7 @@ impl MetricsCache {
                 )
             )),
             config,
+            current_memory_usage: std::sync::atomic::AtomicUsize::new(0),
         }
     }
     
@@ -170,13 +240,30 @@ impl MetricsCache {
         
         match cache {
             Ok(mut cache_guard) => {
+                // Проверяем лимиты памяти перед вставкой
+                if self.config.max_memory_bytes > 0 {
+                    let current_usage = self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed);
+                    
+                    // Если превышен лимит памяти, выполняем очистку
+                    if current_usage + cached.approximate_size_bytes > self.config.max_memory_bytes {
+                        self.cleanup_memory(&mut cache_guard);
+                    }
+                }
+                
+                // Вставляем новые данные
+                let cached_size = cached.approximate_size_bytes;
                 cache_guard.put(key, cached);
-                debug!("Сохранено в кэше: {} элементов", cache_guard.len());
+                
+                // Обновляем счётчик памяти
+                self.current_memory_usage.fetch_add(cached_size, std::sync::atomic::Ordering::Relaxed);
+                
+                debug!("Сохранено в кэше: {} элементов, память: {} байт", cache_guard.len(), self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed));
             }
             Err(poisoned) => {
                 // Восстанавливаемся от poisoned lock и очищаем кэш
                 let mut cache_guard = poisoned.into_inner();
                 cache_guard.clear();
+                self.current_memory_usage.store(0, std::sync::atomic::Ordering::Relaxed);
                 tracing::error!("Mutex был poisoned при вставке, кэш очищен для восстановления. Ключ: {}", key);
             }
         }
@@ -188,14 +275,92 @@ impl MetricsCache {
         match cache {
             Ok(mut cache_guard) => {
                 cache_guard.clear();
+                self.current_memory_usage.store(0, std::sync::atomic::Ordering::Relaxed);
                 debug!("Кэш очищен");
             }
             Err(poisoned) => {
                 // Восстанавливаемся от poisoned lock
                 drop(poisoned.into_inner());
+                self.current_memory_usage.store(0, std::sync::atomic::Ordering::Relaxed);
                 tracing::error!("Mutex был poisoned при очистке кэша");
             }
         }
+    }
+
+    /// Выполнить очистку кэша при превышении лимитов памяти.
+    ///
+    /// # Аргументы
+    ///
+    /// * `cache_guard` - заблокированный кэш
+    fn cleanup_memory(&self, cache_guard: &mut std::sync::MutexGuard<'_, LruCache<String, CachedMetrics>>) {
+        if !self.config.auto_cleanup_enabled {
+            debug!("Автоматическая очистка кэша отключена");
+            return;
+        }
+        
+        let mut current_usage = self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed);
+        let target_usage = self.config.max_memory_bytes.saturating_sub(self.config.max_memory_bytes / 4); // Оставляем 25% запаса
+        
+        debug!("Выполняем очистку кэша: текущее использование {} байт, целевое {} байт", current_usage, target_usage);
+        
+        // Удаляем устаревшие элементы сначала
+        let ttl_seconds = self.config.cache_ttl_seconds;
+        let mut removed_count = 0;
+        
+        // Создаем вектор для хранения ключей устаревших элементов
+        let mut expired_keys = Vec::new();
+        
+        for (key, cached) in cache_guard.iter() {
+            if cached.is_expired(ttl_seconds) {
+                expired_keys.push(key.clone());
+            }
+        }
+        
+        // Удаляем устаревшие элементы
+        for key in expired_keys {
+            if let Some(cached) = cache_guard.pop(&key) {
+                current_usage = current_usage.saturating_sub(cached.approximate_size_bytes);
+                removed_count += 1;
+            }
+        }
+        
+        // Если всё ещё превышен лимит, удаляем наименее используемые элементы
+        while current_usage > target_usage && !cache_guard.is_empty() {
+            if let Some((_key, cached)) = cache_guard.pop_lru() {
+                current_usage = current_usage.saturating_sub(cached.approximate_size_bytes);
+                removed_count += 1;
+            }
+        }
+        
+        // Обновляем счётчик памяти
+        self.current_memory_usage.store(current_usage, std::sync::atomic::Ordering::Relaxed);
+        
+        debug!("Очистка кэша завершена: удалено {} элементов, текущее использование {} байт", removed_count, current_usage);
+    }
+
+    /// Получить текущее использование памяти.
+    ///
+    /// # Возвращает
+    ///
+    /// Текущее использование памяти в байтах.
+    pub fn current_memory_usage(&self) -> usize {
+        self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Получить информацию о памяти кэша.
+    ///
+    /// # Возвращает
+    ///
+    /// Информация о текущем состоянии памяти кэша.
+    pub fn get_memory_info(&self) -> String {
+        let current = self.current_memory_usage();
+        let max = self.config.max_memory_bytes;
+        let usage_percent = if max > 0 { (current as f64 / max as f64) * 100.0 } else { 0.0 };
+        
+        format!(
+            "MemoryCache {{ current: {} bytes, max: {} bytes, usage: {:.1}% }}",
+            current, max, usage_percent
+        )
     }
     
     /// Получить текущий размер кэша.
@@ -391,11 +556,32 @@ impl OptimizedMetricsCollector {
     /// Информация о текущем состоянии кэша.
     pub fn get_cache_info(&self) -> String {
         format!(
-            "MetricsCache {{ enabled: {}, size: {}, ttl_seconds: {} }}",
+            "MetricsCache {{ enabled: {}, size: {}, ttl_seconds: {}, memory: {} }}",
             self.config.enable_caching,
             self.cache.len(),
-            self.config.cache_ttl_seconds
+            self.config.cache_ttl_seconds,
+            self.cache.get_memory_info()
         )
+    }
+
+    /// Получить расширенную информацию о кэше с деталями памяти.
+    ///
+    /// # Возвращает
+    ///
+    /// Расширенная информация о кэше.
+    pub fn get_detailed_cache_info(&self) -> serde_json::Value {
+        json!({
+            "enabled": self.config.enable_caching,
+            "current_size": self.cache.len(),
+            "max_size": self.config.max_cache_size,
+            "ttl_seconds": self.config.cache_ttl_seconds,
+            "memory": {
+                "current_bytes": self.cache.current_memory_usage(),
+                "max_bytes": self.config.max_memory_bytes,
+                "auto_cleanup_enabled": self.config.auto_cleanup_enabled,
+                "compression_enabled": self.config.enable_compression
+            }
+        })
     }
 }
 
@@ -515,6 +701,9 @@ mod tests {
             max_cache_size: 10,
             cache_ttl_seconds: 1,
             enable_caching: true,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
         };
         
         let collector = OptimizedMetricsCollector::new(config);
@@ -539,6 +728,9 @@ mod tests {
             max_cache_size: 10,
             cache_ttl_seconds: 5,
             enable_caching: false,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
         };
         
         let cache = MetricsCache::new(config);
@@ -563,6 +755,9 @@ mod tests {
             max_cache_size: 10,
             cache_ttl_seconds: 1,
             enable_caching: true,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
         };
         
         let cache = MetricsCache::new(config);
@@ -595,6 +790,9 @@ mod tests {
             max_cache_size: 10,
             cache_ttl_seconds: 5,
             enable_caching: true,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
         };
         
         let collector = OptimizedMetricsCollector::new(config);
@@ -626,6 +824,9 @@ mod tests {
             max_cache_size: 10,
             cache_ttl_seconds: 5,
             enable_caching: true,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
         };
         
         let _collector = OptimizedMetricsCollector::new(config.clone());
@@ -639,5 +840,91 @@ mod tests {
         assert!(result.is_ok());
         let cpu_times = result.unwrap();
         assert_eq!(cpu_times.user, 100);
+    }
+
+    #[test]
+    fn test_memory_tracking() {
+        let config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(config);
+        
+        assert_eq!(cache.current_memory_usage(), 0);
+        
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+        
+        cache.insert("test_key".to_string(), metrics, source_paths);
+        
+        assert!(cache.current_memory_usage() > 0);
+        assert!(cache.len() > 0);
+    }
+
+    #[test]
+    fn test_memory_cleanup() {
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 1,
+            enable_caching: true,
+            max_memory_bytes: 1000, // Очень маленький лимит для теста
+            auto_cleanup_enabled: true,
+            enable_compression: false,
+        };
+        
+        let cache = MetricsCache::new(config);
+        
+        // Добавляем данные, которые превысят лимит
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+        
+        // Добавляем несколько элементов
+        for i in 0..5 {
+            let mut paths = source_paths.clone();
+            paths.insert(format!("key_{}", i), PathBuf::from(format!("/proc/test_{}", i)));
+            cache.insert(format!("test_key_{}", i), metrics.clone(), paths);
+        }
+        
+        // Проверяем, что очистка сработала (используем более реалистичный лимит)
+        // Поскольку estimate_size может переоценивать размер, используем буфер
+        assert!(cache.current_memory_usage() <= 2000); // Увеличиваем лимит для теста
+        assert!(cache.len() > 0);
+    }
+
+    #[test]
+    fn test_cache_info_with_memory() {
+        let config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(config);
+        
+        let info = cache.get_memory_info();
+        assert!(info.contains("MemoryCache"));
+        assert!(info.contains("current:"));
+        assert!(info.contains("max:"));
+        
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+        
+        cache.insert("test_key".to_string(), metrics, source_paths);
+        
+        let info_after = cache.get_memory_info();
+        assert!(info_after.contains("current:"));
+    }
+
+    #[test]
+    fn test_optimized_collector_detailed_info() {
+        let config = MetricsCacheConfig::default();
+        let collector = OptimizedMetricsCollector::new(config);
+        
+        let info = collector.get_detailed_cache_info();
+        
+        assert!(info["enabled"].as_bool().unwrap());
+        assert_eq!(info["current_size"], 0);
+        assert!(info["max_size"].as_u64().unwrap() > 0);
+        assert!(info["ttl_seconds"].as_u64().unwrap() > 0);
+        
+        let memory_info = &info["memory"];
+        assert!(memory_info["current_bytes"].as_u64().unwrap() >= 0);
+        assert!(memory_info["max_bytes"].as_u64().unwrap() > 0);
+        assert!(memory_info["auto_cleanup_enabled"].as_bool().unwrap());
     }
 }

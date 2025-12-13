@@ -1902,23 +1902,34 @@ impl EbpfMetricsCollector {
         }
 
         if self.config.enable_gpu_monitoring {
-            // Пробуем загрузить высокопроизводительную версию программы
+            // Пробуем загрузить комплексную версию программы (наиболее полная)
+            let comprehensive_path = "src/ebpf_programs/gpu_monitor_comprehensive.c";
             let high_perf_path = "src/ebpf_programs/gpu_monitor_high_perf.c";
+            let memory_optimized_path = "src/ebpf_programs/gpu_monitor_memory_optimized.c";
             let optimized_path = "src/ebpf_programs/gpu_monitor_optimized.c";
             let basic_path = "src/ebpf_programs/gpu_monitor.c";
 
-            let program_path = if std::path::Path::new(high_perf_path).exists() {
+            let program_path = if std::path::Path::new(comprehensive_path).exists() {
+                tracing::info!("Выбрана комплексная eBPF программа для мониторинга GPU");
+                comprehensive_path
+            } else if std::path::Path::new(high_perf_path).exists() {
+                tracing::info!("Выбрана высокопроизводительная eBPF программа для мониторинга GPU");
                 high_perf_path
+            } else if std::path::Path::new(memory_optimized_path).exists() {
+                tracing::info!("Выбрана оптимизированная по памяти eBPF программа для мониторинга GPU");
+                memory_optimized_path
             } else if std::path::Path::new(optimized_path).exists() {
+                tracing::info!("Выбрана оптимизированная eBPF программа для мониторинга GPU");
                 optimized_path
             } else if std::path::Path::new(basic_path).exists() {
+                tracing::info!("Выбрана базовая eBPF программа для мониторинга GPU");
                 basic_path
             } else {
                 None
             };
 
             if let Some(path) = program_path {
-                programs_to_load.push(("gpu", path, "gpu_metrics_map"));
+                programs_to_load.push(("gpu", path, "gpu_stats_map"));
             }
         }
 
@@ -2294,16 +2305,27 @@ impl EbpfMetricsCollector {
         use libbpf_rs::{Map, Program};
         use std::path::Path;
 
-        // Пробуем загрузить высокопроизводительную версию программы
+        // Пробуем загрузить комплексную версию программы (наиболее полная)
+        let comprehensive_program_path = Path::new("src/ebpf_programs/gpu_monitor_comprehensive.c");
         let high_perf_program_path = Path::new("src/ebpf_programs/gpu_monitor_high_perf.c");
+        let memory_optimized_program_path = Path::new("src/ebpf_programs/gpu_monitor_memory_optimized.c");
         let optimized_program_path = Path::new("src/ebpf_programs/gpu_monitor_optimized.c");
         let basic_program_path = Path::new("src/ebpf_programs/gpu_monitor.c");
 
-        let program_path = if high_perf_program_path.exists() {
+        let program_path = if comprehensive_program_path.exists() {
+            tracing::info!("Выбрана комплексная eBPF программа для мониторинга GPU");
+            comprehensive_program_path
+        } else if high_perf_program_path.exists() {
+            tracing::info!("Выбрана высокопроизводительная eBPF программа для мониторинга GPU");
             high_perf_program_path
+        } else if memory_optimized_program_path.exists() {
+            tracing::info!("Выбрана оптимизированная по памяти eBPF программа для мониторинга GPU");
+            memory_optimized_program_path
         } else if optimized_program_path.exists() {
+            tracing::info!("Выбрана оптимизированная eBPF программа для мониторинга GPU");
             optimized_program_path
         } else if basic_program_path.exists() {
+            tracing::info!("Выбрана базовая eBPF программа для мониторинга GPU");
             basic_program_path
         } else {
             tracing::warn!("eBPF программы для мониторинга GPU не найдены");
@@ -2331,7 +2353,22 @@ impl EbpfMetricsCollector {
 
         // Загрузка карт из программы
         self.gpu_maps =
-            self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_metrics_map")?;
+            self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_stats_map")?;
+        
+        // Для комплексной программы загружаем дополнительные карты
+        if program_path == comprehensive_program_path {
+            let mut additional_maps = self.load_maps_from_program(
+                program_path.to_str().unwrap(), 
+                "total_gpu_usage_map"
+            )?;
+            self.gpu_maps.extend(additional_maps);
+            
+            let mut device_maps = self.load_maps_from_program(
+                program_path.to_str().unwrap(), 
+                "gpu_device_info_map"
+            )?;
+            self.gpu_maps.extend(device_maps);
+        }
 
         tracing::info!(
             "eBPF программа для мониторинга GPU успешно загружена с {} картами",
@@ -8723,4 +8760,196 @@ mod test_process_energy {
         } else {
             panic!("process_disk_details должно быть Some");
         }
+    }
+
+    #[test]
+    fn test_comprehensive_gpu_monitoring() {
+        // Тест проверяет комплексный мониторинг GPU через eBPF
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            enable_high_performance_mode: true,
+            ..Default::default()
+        };
+
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+
+        let metrics = collector.collect_metrics().unwrap();
+
+        // Проверяем, что GPU метрики собираются корректно
+        #[cfg(feature = "ebpf")]
+        {
+            // В комплексном режиме должны быть более детализированные метрики
+            assert!(metrics.gpu_usage >= 0.0);
+            assert!(metrics.gpu_memory_usage >= 0);
+            
+            // Проверяем детализированную статистику GPU
+            if let Some(gpu_details) = metrics.gpu_details {
+                assert!(!gpu_details.is_empty(), "Должны быть детализированные метрики GPU");
+                
+                for stat in gpu_details {
+                    assert!(stat.gpu_usage >= 0.0, "Использование GPU должно быть неотрицательным");
+                    assert!(stat.memory_usage >= 0, "Использование памяти должно быть неотрицательным");
+                    assert!(stat.compute_units >= 0, "Количество вычислительных единиц должно быть неотрицательным");
+                    assert!(stat.power_usage >= 0, "Потребление энергии должно быть неотрицательным");
+                    assert!(stat.temperature_celsius >= 0, "Температура должна быть неотрицательной");
+                }
+            }
+        }
+        #[cfg(not(feature = "ebpf"))]
+        {
+            // Без eBPF поддержки GPU метрики должны быть 0
+            assert_eq!(metrics.gpu_usage, 0.0);
+            assert_eq!(metrics.gpu_memory_usage, 0);
+        }
+    }
+
+    #[test]
+    fn test_gpu_program_selection() {
+        // Тест проверяет выбор оптимальной eBPF программы для GPU мониторинга
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            ..Default::default()
+        };
+
+        let mut collector = EbpfMetricsCollector::new(config);
+        
+        // Проверяем, что программа загружается корректно
+        assert!(collector.initialize().is_ok());
+        
+        // Проверяем, что программа выбрана в зависимости от доступности
+        #[cfg(feature = "ebpf")]
+        {
+            if std::path::Path::new("src/ebpf_programs/gpu_monitor_comprehensive.c").exists() {
+                // Должна быть выбрана комплексная программа
+                assert!(collector.gpu_program.is_some(), "Должна быть загружена eBPF программа для GPU");
+            } else if std::path::Path::new("src/ebpf_programs/gpu_monitor_high_perf.c").exists() {
+                // Должна быть выбрана высокопроизводительная программа
+                assert!(collector.gpu_program.is_some(), "Должна быть загружена eBPF программа для GPU");
+            }
+        }
+    }
+
+    #[test]
+    fn test_gpu_error_handling() {
+        // Тест проверяет обработку ошибок в GPU мониторинге
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            ..Default::default()
+        };
+
+        let mut collector = EbpfMetricsCollector::new(config);
+        
+        // Даже если произойдет ошибка, система должна продолжать работу
+        let result = collector.collect_metrics();
+        assert!(result.is_ok(), "Сбор метрик должен завершаться успешно даже при ошибках GPU");
+        
+        let metrics = result.unwrap();
+        
+        // Проверяем, что система не падает при отсутствии GPU
+        assert!(metrics.gpu_usage >= 0.0, "Использование GPU должно быть неотрицательным");
+        assert!(metrics.gpu_memory_usage >= 0, "Использование памяти GPU должно быть неотрицательным");
+    }
+
+    #[test]
+    fn test_gpu_metrics_consistency() {
+        // Тест проверяет согласованность GPU метрик при многократном сборе
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            ..Default::default()
+        };
+
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+
+        // Собираем метрики несколько раз
+        let metrics1 = collector.collect_metrics().unwrap();
+        let metrics2 = collector.collect_metrics().unwrap();
+        let metrics3 = collector.collect_metrics().unwrap();
+
+        // Проверяем, что метрики согласованы
+        assert!(metrics1.gpu_usage >= 0.0);
+        assert!(metrics2.gpu_usage >= 0.0);
+        assert!(metrics3.gpu_usage >= 0.0);
+        
+        assert!(metrics1.gpu_memory_usage >= 0);
+        assert!(metrics2.gpu_memory_usage >= 0);
+        assert!(metrics3.gpu_memory_usage >= 0);
+    }
+
+    #[test]
+    fn test_gpu_config_serialization() {
+        // Тест проверяет сериализацию конфигурации GPU мониторинга
+        let mut config = EbpfConfig::default();
+        
+        // Включаем GPU мониторинг
+        config.enable_gpu_monitoring = true;
+        config.enable_process_gpu_monitoring = true;
+        
+        // Сериализуем конфигурацию
+        let serialized = serde_json::to_string(&config).expect("Сериализация должна завершиться успешно");
+        
+        // Десериализуем конфигурацию
+        let deserialized: EbpfConfig = serde_json::from_str(&serialized).expect("Десериализация должна завершиться успешно");
+        
+        // Проверяем, что конфигурация сохранена корректно
+        assert_eq!(deserialized.enable_gpu_monitoring, true);
+        assert_eq!(deserialized.enable_process_gpu_monitoring, true);
+    }
+
+    #[test]
+    fn test_gpu_metrics_with_different_modes() {
+        // Тест проверяет GPU метрики в разных режимах работы
+        
+        // Режим 1: Базовый режим
+        let basic_config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            enable_high_performance_mode: false,
+            ..Default::default()
+        };
+        
+        let mut basic_collector = EbpfMetricsCollector::new(basic_config);
+        assert!(basic_collector.initialize().is_ok());
+        let basic_metrics = basic_collector.collect_metrics().unwrap();
+        
+        // Режим 2: Высокопроизводительный режим
+        let high_perf_config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            enable_high_performance_mode: true,
+            ..Default::default()
+        };
+        
+        let mut high_perf_collector = EbpfMetricsCollector::new(high_perf_config);
+        assert!(high_perf_collector.initialize().is_ok());
+        let high_perf_metrics = high_perf_collector.collect_metrics().unwrap();
+        
+        // Проверяем, что оба режима работают корректно
+        assert!(basic_metrics.gpu_usage >= 0.0);
+        assert!(high_perf_metrics.gpu_usage >= 0.0);
+    }
+
+    #[test]
+    fn test_gpu_integration_with_other_metrics() {
+        // Тест проверяет интеграцию GPU мониторинга с другими метриками
+        let config = EbpfConfig {
+            enable_gpu_monitoring: true,
+            enable_cpu_metrics: true,
+            enable_memory_metrics: true,
+            ..Default::default()
+        };
+
+        let mut collector = EbpfMetricsCollector::new(config);
+        assert!(collector.initialize().is_ok());
+
+        let metrics = collector.collect_metrics().unwrap();
+
+        // Проверяем, что все метрики собираются корректно
+        assert!(metrics.gpu_usage >= 0.0);
+        assert!(metrics.cpu_usage >= 0.0);
+        assert!(metrics.memory_usage >= 0);
+        
+        // Проверяем, что GPU метрики не влияют на другие метрики
+        assert!(metrics.gpu_usage >= 0.0);
+        assert!(metrics.cpu_usage >= 0.0);
+        assert!(metrics.memory_usage >= 0);
     }

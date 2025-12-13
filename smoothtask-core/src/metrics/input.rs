@@ -440,7 +440,7 @@ impl EvdevInputTracker {
                         }
                         
                         // Логируем количество ошибок для диагностики
-                        if self.activity_tracker.error_count % 10 == 0 {
+                        if self.activity_tracker.error_count.is_multiple_of(10) {
                             warn!("Input device error count reached {}: {}", self.activity_tracker.error_count, e);
                         }
                     }

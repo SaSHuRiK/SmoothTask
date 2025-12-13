@@ -1052,12 +1052,17 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Получение последних логов приложения с фильтрацией по уровню и лимиту"
             },
             {
+                "path": "/api/cache/monitoring",
+                "method": "GET",
+                "description": "Получение статистики и мониторинга системы кэширования API"
+            },
+            {
                 "path": "/api/network/connections",
                 "method": "GET",
                 "description": "Получение информации о текущих сетевых соединениях через eBPF"
             }
         ],
-        "count": 23
+        "count": 24
     }))
 }
 
@@ -1628,6 +1633,208 @@ async fn logs_handler(
     }
 }
 
+/// Обработчик для endpoint `/api/cache/monitoring` (GET).
+///
+/// Возвращает статистику и мониторинг системы кэширования API, включая:
+/// - Статистику использования кэша
+/// - Состояние здоровья кэша
+/// - Информацию о производительности кэширования
+///
+/// # Примеры
+///
+/// ```bash
+/// # Получение статистики кэширования
+/// curl "http://127.0.0.1:8080/api/cache/monitoring"
+/// ```
+async fn cache_monitoring_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
+    // Получаем текущие метрики производительности API
+    let perf_metrics = state.performance_metrics.read().await;
+    
+    // Получаем информацию о кэше
+    let cache_info = match &state.cache {
+        Some(cache_arc) => {
+            let cache = cache_arc.read().await;
+            
+            // Считаем количество кэшированных элементов
+            let cached_count = [
+                cache.cached_processes_json.is_some() as u32,
+                cache.cached_appgroups_json.is_some() as u32,
+                cache.cached_metrics_json.is_some() as u32,
+                cache.cached_config_json.is_some() as u32,
+                cache.cached_process_energy_json.is_some() as u32,
+                cache.cached_process_memory_json.is_some() as u32,
+                cache.cached_process_gpu_json.is_some() as u32,
+                cache.cached_process_network_json.is_some() as u32,
+                cache.cached_process_disk_json.is_some() as u32,
+            ].iter().sum::<u32>();
+            
+            // Считаем количество активных (не устаревших) элементов
+            let mut active_count = 0;
+            let current_time = Instant::now();
+            
+            if let Some((_, time)) = &cache.cached_processes_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_appgroups_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_metrics_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_config_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_process_energy_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_process_memory_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_process_gpu_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_process_network_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            if let Some((_, time)) = &cache.cached_process_disk_json {
+                if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
+                    active_count += 1;
+                }
+            }
+            
+            // Вычисляем процент активных элементов
+            let active_percentage = if cached_count > 0 {
+                (active_count as f64 / cached_count as f64) * 100.0
+            } else {
+                0.0
+            };
+            
+            // Определяем статус здоровья кэша
+            let health_status = if cached_count == 0 {
+                "idle"
+            } else if active_percentage < 50.0 {
+                "warning"
+            } else {
+                "healthy"
+            };
+            
+            let health_message = match health_status {
+                "healthy" => "Кэш работает эффективно".to_string(),
+                "warning" => "Много устаревших элементов в кэше".to_string(),
+                "idle" => "Кэш не используется".to_string(),
+                _ => "Неизвестный статус".to_string(),
+            };
+            
+            json!({
+                "enabled": true,
+                "cache_type": "api_response_cache",
+                "statistics": {
+                    "total_cached_items": cached_count,
+                    "active_items": active_count,
+                    "stale_items": cached_count - active_count,
+                    "active_percentage": active_percentage,
+                    "cache_ttl_seconds": cache.cache_ttl_seconds,
+                },
+                "health": {
+                    "status": health_status,
+                    "message": health_message,
+                    "timestamp": Utc::now().to_rfc3339()
+                }
+            })
+        }
+        None => {
+            json!({
+                "enabled": false,
+                "cache_type": "api_response_cache",
+                "statistics": {
+                    "total_cached_items": 0,
+                    "active_items": 0,
+                    "stale_items": 0,
+                    "active_percentage": 0.0,
+                    "cache_ttl_seconds": 0,
+                },
+                "health": {
+                    "status": "disabled",
+                    "message": "Кэш API отключен",
+                    "timestamp": Utc::now().to_rfc3339()
+                }
+            })
+        }
+    };
+    
+    // Вычисляем эффективность кэширования
+    let total_requests = perf_metrics.total_requests;
+    let cache_hit_rate = if total_requests > 0 {
+        (perf_metrics.cache_hits as f64 / total_requests as f64) * 100.0
+    } else {
+        0.0
+    };
+    
+    let cache_miss_rate = 100.0 - cache_hit_rate;
+    
+    // Определяем общий статус здоровья
+    let overall_health_status = if !cache_info["enabled"].as_bool().unwrap_or(false) {
+        "disabled"
+    } else if cache_hit_rate > 70.0 {
+        "healthy"
+    } else if cache_hit_rate > 30.0 {
+        "warning"
+    } else {
+        "critical"
+    };
+    
+    let overall_health_message = match overall_health_status {
+        "healthy" => "Кэширование работает отлично".to_string(),
+        "warning" => "Кэширование может быть улучшено".to_string(),
+        "critical" => "Кэширование неэффективно".to_string(),
+        "disabled" => "Кэширование отключено".to_string(),
+        _ => "Неизвестный статус".to_string(),
+    };
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "cache_monitoring": {
+            "api_cache": cache_info,
+            "performance": {
+                "total_requests": total_requests,
+                "cache_hits": perf_metrics.cache_hits,
+                "cache_misses": perf_metrics.cache_misses,
+                "cache_hit_rate": cache_hit_rate,
+                "cache_miss_rate": cache_miss_rate,
+                "average_processing_time_us": perf_metrics.average_processing_time_us(),
+            },
+            "overall_health": {
+                "status": overall_health_status,
+                "message": overall_health_message,
+                "timestamp": Utc::now().to_rfc3339()
+            }
+        },
+        "availability": {
+            "cache_available": state.cache.is_some(),
+            "performance_metrics_available": true,
+            "timestamp": Utc::now().to_rfc3339()
+        }
+    })))
+}
+
 /// Обработчик для endpoint `/api/notifications/config` (POST).
 ///
 /// Изменяет конфигурацию уведомлений в runtime.
@@ -1767,6 +1974,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/performance", get(performance_handler))
         .route("/api/app/performance", get(app_performance_handler))
         .route("/api/logs", get(logs_handler))
+        .route("/api/cache/monitoring", get(cache_monitoring_handler))
         .route("/api/cache/stats", get(cache_stats_handler))
         .route("/api/cache/clear", post(cache_clear_handler))
         .route("/api/cache/config", get(cache_config_handler))
@@ -4468,10 +4676,10 @@ mod tests {
         let json = result.0;
         assert_eq!(json["status"], "ok");
         assert!(json["endpoints"].is_array());
-        assert_eq!(json["count"], 25); // Обновлено с 23 до 25 (добавлен /api/processes/memory)
+        assert_eq!(json["count"], 26); // Обновлено с 23 до 26 (добавлен /api/processes/memory и /api/cache/monitoring)
 
         let endpoints = json["endpoints"].as_array().unwrap();
-        assert_eq!(endpoints.len(), 25); // Обновлено с 23 до 25 (добавлен /api/processes/memory)
+        assert_eq!(endpoints.len(), 26); // Обновлено с 23 до 26 (добавлен /api/processes/memory и /api/cache/monitoring)
 
         // Проверяем наличие основных endpoints
         let endpoint_paths: Vec<&str> = endpoints
@@ -7001,6 +7209,126 @@ mod test_process_energy_api {
             json_response1.0, json_response2.0,
             "Результаты должны быть идентичны при использовании кэша"
         );
+    }
+
+    #[tokio::test]
+    async fn test_cache_monitoring_handler_without_cache() {
+        // Тест для cache_monitoring_handler без кэша
+        let state = ApiState::new();
+
+        let result = cache_monitoring_handler(State(state)).await;
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+
+        assert_eq!(value["status"], "ok");
+        assert!(value["cache_monitoring"].is_object());
+
+        let monitoring = &value["cache_monitoring"];
+        assert!(monitoring["api_cache"].is_object());
+        assert!(monitoring["performance"].is_object());
+        assert!(monitoring["overall_health"].is_object());
+
+        // Проверяем, что кэш отключен
+        let api_cache = &monitoring["api_cache"];
+        assert_eq!(api_cache["enabled"], false);
+        assert_eq!(api_cache["health"]["status"], "disabled");
+
+        // Проверяем доступность
+        assert_eq!(value["availability"]["cache_available"], false);
+        assert_eq!(value["availability"]["performance_metrics_available"], true);
+    }
+
+    #[tokio::test]
+    async fn test_cache_monitoring_handler_with_cache() {
+        // Тест для cache_monitoring_handler с кэшем
+        use super::ApiCache;
+
+        let cache = Arc::new(RwLock::new(ApiCache::new(60)));
+        
+        // Добавляем некоторые кэшированные данные
+        let mut cache_write = cache.write().await;
+        cache_write.cached_processes_json = Some((json!({"test": "data"}), Instant::now()));
+        cache_write.cached_metrics_json = Some((json!({"cpu": 50}), Instant::now()));
+        drop(cache_write); // Освобождаем блокировку
+
+        let state = ApiStateBuilder::new()
+            .with_cache(Some(cache))
+            .build();
+
+        let result = cache_monitoring_handler(State(state)).await;
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+
+        assert_eq!(value["status"], "ok");
+        assert!(value["cache_monitoring"].is_object());
+
+        let monitoring = &value["cache_monitoring"];
+        assert!(monitoring["api_cache"].is_object());
+        assert!(monitoring["performance"].is_object());
+        assert!(monitoring["overall_health"].is_object());
+
+        // Проверяем, что кэш включен
+        let api_cache = &monitoring["api_cache"];
+        assert_eq!(api_cache["enabled"], true);
+        assert_eq!(api_cache["statistics"]["total_cached_items"], 2);
+        assert_eq!(api_cache["statistics"]["active_items"], 2);
+        assert_eq!(api_cache["statistics"]["stale_items"], 0);
+
+        // Проверяем здоровье
+        assert_eq!(api_cache["health"]["status"], "healthy");
+
+        // Проверяем производительность
+        let performance = &monitoring["performance"];
+        assert_eq!(performance["total_requests"], 0);
+        assert_eq!(performance["cache_hits"], 0);
+        assert_eq!(performance["cache_misses"], 0);
+
+        // Проверяем общий статус здоровья
+        let overall_health = &monitoring["overall_health"];
+        assert_eq!(overall_health["status"], "disabled"); // disabled потому что нет запросов
+
+        // Проверяем доступность
+        assert_eq!(value["availability"]["cache_available"], true);
+        assert_eq!(value["availability"]["performance_metrics_available"], true);
+    }
+
+    #[tokio::test]
+    async fn test_cache_monitoring_handler_with_stale_cache() {
+        // Тест для cache_monitoring_handler с устаревшим кэшем
+        use super::ApiCache;
+
+        let cache = Arc::new(RwLock::new(ApiCache::new(1))); // Очень короткое TTL
+        
+        // Добавляем кэшированные данные
+        let mut cache_write = cache.write().await;
+        cache_write.cached_processes_json = Some((json!({"test": "data"}), Instant::now() - Duration::from_secs(2))); // Устаревшие данные
+        cache_write.cached_metrics_json = Some((json!({"cpu": 50}), Instant::now())); // Актуальные данные
+        drop(cache_write);
+
+        let state = ApiStateBuilder::new()
+            .with_cache(Some(cache))
+            .build();
+
+        let result = cache_monitoring_handler(State(state)).await;
+
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+
+        let monitoring = &value["cache_monitoring"];
+        let api_cache = &monitoring["api_cache"];
+        
+        // Должно быть 2 кэшированных элемента, но только 1 активный
+        assert_eq!(api_cache["statistics"]["total_cached_items"], 2);
+        assert_eq!(api_cache["statistics"]["active_items"], 1);
+        assert_eq!(api_cache["statistics"]["stale_items"], 1);
+        
+        // Должно быть предупреждение из-за устаревших элементов
+        assert_eq!(api_cache["health"]["status"], "warning");
     }
 }
 

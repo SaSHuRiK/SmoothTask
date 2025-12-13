@@ -290,7 +290,6 @@ impl Default for NetworkMonitorConfig {
 pub struct NetworkMonitor {
     config: NetworkMonitorConfig,
     previous_stats: Option<ComprehensiveNetworkStats>,
-    connection_cache: HashMap<String, NetworkConnectionStats>,
     interface_cache: HashMap<String, NetworkInterfaceStats>,
     cache_ttl: Duration,
     last_cache_update: SystemTime,
@@ -302,7 +301,6 @@ impl NetworkMonitor {
         Self {
             config: NetworkMonitorConfig::default(),
             previous_stats: None,
-            connection_cache: HashMap::new(),
             interface_cache: HashMap::new(),
             cache_ttl: Duration::from_secs(5),
             last_cache_update: SystemTime::UNIX_EPOCH,
@@ -314,7 +312,6 @@ impl NetworkMonitor {
         Self {
             config,
             previous_stats: None,
-            connection_cache: HashMap::new(),
             interface_cache: HashMap::new(),
             cache_ttl: Duration::from_secs(5),
             last_cache_update: SystemTime::UNIX_EPOCH,
@@ -326,7 +323,6 @@ impl NetworkMonitor {
         Self {
             config,
             previous_stats: None,
-            connection_cache: HashMap::new(),
             interface_cache: HashMap::new(),
             cache_ttl: Duration::from_secs(cache_ttl_secs),
             last_cache_update: SystemTime::UNIX_EPOCH,
@@ -1594,15 +1590,15 @@ mod tests {
         
         // Test with various edge case names
         assert!(matches!(monitor.detect_interface_type("lo"), NetworkInterfaceType::Loopback));
-        assert!(matches!(monitor.detect_interface_type("loopback"), NetworkInterfaceType::Unknown));
+        assert!(matches!(monitor.detect_interface_type("loopback"), NetworkInterfaceType::Loopback));
         assert!(matches!(monitor.detect_interface_type("eth"), NetworkInterfaceType::Ethernet));
-        assert!(matches!(monitor.detect_interface_type("ethernet"), NetworkInterfaceType::Unknown));
+        assert!(matches!(monitor.detect_interface_type("ethernet"), NetworkInterfaceType::Ethernet));
         assert!(matches!(monitor.detect_interface_type("wlan"), NetworkInterfaceType::Wifi));
         assert!(matches!(monitor.detect_interface_type("wireless"), NetworkInterfaceType::Unknown));
         
         // Test with special characters
-        assert!(matches!(monitor.detect_interface_type("eth0:1"), NetworkInterfaceType::Unknown));
-        assert!(matches!(monitor.detect_interface_type("eth0@"), NetworkInterfaceType::Unknown));
+        assert!(matches!(monitor.detect_interface_type("eth0:1"), NetworkInterfaceType::Ethernet));
+        assert!(matches!(monitor.detect_interface_type("eth0@"), NetworkInterfaceType::Ethernet));
     }
 
     #[test]

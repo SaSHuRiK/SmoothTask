@@ -11,22 +11,24 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Уровень логирования, совместимый с tracing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
 pub enum LogLevel {
-    /// Ошибки - критические проблемы, требующие немедленного внимания
-    Error,
-    /// Предупреждения - потенциальные проблемы или неоптимальные состояния
-    Warn,
-    /// Информация - информационные сообщения о нормальной работе
-    Info,
-    /// Отладка - отладочная информация
-    Debug,
     /// Трейс - очень подробная отладочная информация
     Trace,
+    /// Отладка - отладочная информация
+    Debug,
+    /// Информация - информационные сообщения о нормальной работе
+    Info,
+    /// Предупреждения - потенциальные проблемы или неоптимальные состояния
+    Warn,
+    /// Ошибки - критические проблемы, требующие немедленного внимания
+    Error,
 }
 
 impl std::fmt::Display for LogLevel {
@@ -94,6 +96,12 @@ pub struct LogStorage {
     max_entries: usize,
     /// Вектор записей логов (самые новые в конце)
     entries: Vec<LogEntry>,
+    /// Счётчик ошибок логирования
+    error_count: usize,
+    /// Счётчик предупреждений
+    warning_count: usize,
+    /// Временная метка последней ошибки
+    last_error_time: Option<DateTime<Utc>>,
 }
 
 impl LogStorage {
@@ -102,12 +110,27 @@ impl LogStorage {
         Self {
             max_entries,
             entries: Vec::with_capacity(max_entries),
+            error_count: 0,
+            warning_count: 0,
+            last_error_time: None,
         }
     }
 
     /// Добавляет новую запись в хранилище.
     /// Если превышено максимальное количество записей, самая старая запись удаляется.
     pub fn add_entry(&mut self, entry: LogEntry) {
+        // Обновляем счётчики в зависимости от уровня лога
+        match entry.level {
+            LogLevel::Error => {
+                self.error_count += 1;
+                self.last_error_time = Some(Utc::now());
+            }
+            LogLevel::Warn => {
+                self.warning_count += 1;
+            }
+            _ => {}
+        }
+        
         if self.entries.len() >= self.max_entries && self.max_entries > 0 {
             self.entries.remove(0); // Удаляем самую старую запись
         }
@@ -159,6 +182,68 @@ impl LogStorage {
     /// Возвращает максимальное количество записей.
     pub fn max_entries(&self) -> usize {
         self.max_entries
+    }
+
+    /// Возвращает количество ошибок в логах.
+    pub fn error_count(&self) -> usize {
+        self.error_count
+    }
+
+    /// Возвращает количество предупреждений в логах.
+    pub fn warning_count(&self) -> usize {
+        self.warning_count
+    }
+
+    /// Возвращает временную метку последней ошибки.
+    pub fn last_error_time(&self) -> Option<DateTime<Utc>> {
+        self.last_error_time
+    }
+
+    /// Возвращает статистику по уровням логов.
+    pub fn get_level_statistics(&self) -> HashMap<LogLevel, usize> {
+        let mut stats = HashMap::new();
+        
+        for entry in &self.entries {
+            *stats.entry(entry.level).or_insert(0) += 1;
+        }
+        
+        stats
+    }
+
+    /// Возвращает мониторинговые метрики для системы наблюдения.
+    pub fn get_monitoring_metrics(&self) -> serde_json::Value {
+        let level_stats = self.get_level_statistics();
+        
+        json!({
+            "total_entries": self.entries.len(),
+            "max_capacity": self.max_entries,
+            "error_count": self.error_count,
+            "warning_count": self.warning_count,
+            "last_error_time": self.last_error_time.map(|t| t.to_rfc3339()),
+            "level_distribution": {
+                "error": level_stats.get(&LogLevel::Error).unwrap_or(&0),
+                "warn": level_stats.get(&LogLevel::Warn).unwrap_or(&0),
+                "info": level_stats.get(&LogLevel::Info).unwrap_or(&0),
+                "debug": level_stats.get(&LogLevel::Debug).unwrap_or(&0),
+                "trace": level_stats.get(&LogLevel::Trace).unwrap_or(&0),
+            },
+            "health_status": self.get_health_status()
+        })
+    }
+
+    /// Возвращает статус здоровья системы логирования.
+    pub fn get_health_status(&self) -> String {
+        if self.error_count > 0 {
+            if self.last_error_time.is_some_and(|t| t > Utc::now() - chrono::Duration::minutes(5)) {
+                "critical".to_string()
+            } else {
+                "warning".to_string()
+            }
+        } else if self.warning_count > 10 {
+            "warning".to_string()
+        } else {
+            "healthy".to_string()
+        }
     }
 }
 
@@ -222,6 +307,36 @@ impl SharedLogStorage {
     pub async fn max_entries(&self) -> usize {
         let storage = self.inner.read().await;
         storage.max_entries()
+    }
+
+    /// Возвращает количество ошибок в логах.
+    pub async fn error_count(&self) -> usize {
+        let storage = self.inner.read().await;
+        storage.error_count()
+    }
+
+    /// Возвращает количество предупреждений в логах.
+    pub async fn warning_count(&self) -> usize {
+        let storage = self.inner.read().await;
+        storage.warning_count()
+    }
+
+    /// Возвращает временную метку последней ошибки.
+    pub async fn last_error_time(&self) -> Option<DateTime<Utc>> {
+        let storage = self.inner.read().await;
+        storage.last_error_time()
+    }
+
+    /// Возвращает мониторинговые метрики для системы наблюдения.
+    pub async fn get_monitoring_metrics(&self) -> serde_json::Value {
+        let storage = self.inner.read().await;
+        storage.get_monitoring_metrics()
+    }
+
+    /// Возвращает статус здоровья системы логирования.
+    pub async fn get_health_status(&self) -> String {
+        let storage = self.inner.read().await;
+        storage.get_health_status()
     }
 }
 
@@ -476,5 +591,106 @@ mod tests {
         assert!(LogLevel::Debug < LogLevel::Info);
         assert!(LogLevel::Info < LogLevel::Warn);
         assert!(LogLevel::Warn < LogLevel::Error);
+    }
+
+    #[test]
+    fn test_log_storage_error_tracking() {
+        let mut storage = LogStorage::new(100);
+        
+        assert_eq!(storage.error_count(), 0);
+        assert_eq!(storage.warning_count(), 0);
+        assert!(storage.last_error_time().is_none());
+        
+        // Добавляем ошибку
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error message"));
+        assert_eq!(storage.error_count(), 1);
+        assert_eq!(storage.warning_count(), 0);
+        assert!(storage.last_error_time().is_some());
+        
+        // Добавляем предупреждение
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning message"));
+        assert_eq!(storage.error_count(), 1);
+        assert_eq!(storage.warning_count(), 1);
+        
+        // Добавляем ещё одну ошибку
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Another error"));
+        assert_eq!(storage.error_count(), 2);
+        assert_eq!(storage.warning_count(), 1);
+    }
+
+    #[test]
+    fn test_log_storage_level_statistics() {
+        let mut storage = LogStorage::new(100);
+        
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error"));
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning"));
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Info"));
+        storage.add_entry(LogEntry::new(LogLevel::Debug, "test", "Debug"));
+        storage.add_entry(LogEntry::new(LogLevel::Trace, "test", "Trace"));
+        
+        let stats = storage.get_level_statistics();
+        assert_eq!(stats.get(&LogLevel::Error), Some(&1));
+        assert_eq!(stats.get(&LogLevel::Warn), Some(&1));
+        assert_eq!(stats.get(&LogLevel::Info), Some(&1));
+        assert_eq!(stats.get(&LogLevel::Debug), Some(&1));
+        assert_eq!(stats.get(&LogLevel::Trace), Some(&1));
+    }
+
+    #[test]
+    fn test_log_storage_monitoring_metrics() {
+        let mut storage = LogStorage::new(100);
+        
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error"));
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning"));
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Info"));
+        
+        let metrics = storage.get_monitoring_metrics();
+        
+        assert_eq!(metrics["total_entries"], 3);
+        assert_eq!(metrics["max_capacity"], 100);
+        assert_eq!(metrics["error_count"], 1);
+        assert_eq!(metrics["warning_count"], 1);
+        assert!(metrics["last_error_time"].is_string());
+        
+        let level_dist = &metrics["level_distribution"];
+        assert_eq!(level_dist["error"], 1);
+        assert_eq!(level_dist["warn"], 1);
+        assert_eq!(level_dist["info"], 1);
+        assert_eq!(level_dist["debug"], 0);
+        assert_eq!(level_dist["trace"], 0);
+    }
+
+    #[test]
+    fn test_log_storage_health_status() {
+        let mut storage = LogStorage::new(100);
+        
+        // Healthy status (no errors or warnings)
+        assert_eq!(storage.get_health_status(), "healthy");
+        
+        // Add warnings
+        for _ in 0..11 {
+            storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning"));
+        }
+        assert_eq!(storage.get_health_status(), "warning");
+        
+        // Add error
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error"));
+        assert_eq!(storage.get_health_status(), "critical");
+    }
+
+    #[tokio::test]
+    async fn test_shared_log_storage_monitoring() {
+        let storage = SharedLogStorage::new(100);
+        
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error")).await;
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning")).await;
+        
+        assert_eq!(storage.error_count().await, 1);
+        assert_eq!(storage.warning_count().await, 1);
+        assert_eq!(storage.get_health_status().await, "critical");
+        
+        let metrics = storage.get_monitoring_metrics().await;
+        assert_eq!(metrics["error_count"], 1);
+        assert_eq!(metrics["warning_count"], 1);
     }
 }
