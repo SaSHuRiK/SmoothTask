@@ -2008,6 +2008,75 @@ async fn process_memory_handler(State(state): State<ApiState>) -> Result<Json<Va
         }
     }
 
+    // Пробуем получить данные из eBPF метрик (если доступны)
+    if let Some(metrics_arc) = &state.metrics {
+        let metrics = metrics_arc.read().await;
+        if let Some(ebpf_metrics) = &metrics.ebpf {
+            if let Some(process_memory_details) = &ebpf_metrics.process_memory_details {
+                // Добавляем eBPF данные к результату
+                let mut ebpf_memory_processes = Vec::new();
+                let mut total_rss_bytes = 0u64;
+                let mut total_vms_bytes = 0u64;
+                let mut total_shared_bytes = 0u64;
+                let mut total_swap_bytes = 0u64;
+                let mut total_heap_usage = 0u64;
+                let mut total_stack_usage = 0u64;
+                let mut total_anonymous_memory = 0u64;
+                let mut total_file_backed_memory = 0u64;
+                let mut total_major_faults = 0u64;
+                let mut total_minor_faults = 0u64;
+
+                for stat in process_memory_details {
+                    let process_json = json!({
+                        "pid": stat.pid,
+                        "tgid": stat.tgid,
+                        "last_update_ns": stat.last_update_ns,
+                        "rss_bytes": stat.rss_bytes,
+                        "vms_bytes": stat.vms_bytes,
+                        "shared_bytes": stat.shared_bytes,
+                        "swap_bytes": stat.swap_bytes,
+                        "heap_usage": stat.heap_usage,
+                        "stack_usage": stat.stack_usage,
+                        "anonymous_memory": stat.anonymous_memory,
+                        "file_backed_memory": stat.file_backed_memory,
+                        "major_faults": stat.major_faults,
+                        "minor_faults": stat.minor_faults,
+                        "name": stat.name,
+                        "source": "ebpf"
+                    });
+                    ebpf_memory_processes.push(process_json);
+
+                    // Обновляем общие суммы
+                    total_rss_bytes += stat.rss_bytes;
+                    total_vms_bytes += stat.vms_bytes;
+                    total_shared_bytes += stat.shared_bytes;
+                    total_swap_bytes += stat.swap_bytes;
+                    total_heap_usage += stat.heap_usage;
+                    total_stack_usage += stat.stack_usage;
+                    total_anonymous_memory += stat.anonymous_memory;
+                    total_file_backed_memory += stat.file_backed_memory;
+                    total_major_faults += stat.major_faults;
+                    total_minor_faults += stat.minor_faults;
+                }
+
+                // Добавляем eBPF данные к результату
+                result["ebpf_process_memory"] = json!(ebpf_memory_processes);
+                result["ebpf_count"] = json!(process_memory_details.len());
+                result["total_rss_bytes"] = json!(total_rss_bytes);
+                result["total_vms_bytes"] = json!(total_vms_bytes);
+                result["total_shared_bytes"] = json!(total_shared_bytes);
+                result["total_swap_bytes"] = json!(total_swap_bytes);
+                result["total_heap_usage"] = json!(total_heap_usage);
+                result["total_stack_usage"] = json!(total_stack_usage);
+                result["total_anonymous_memory"] = json!(total_anonymous_memory);
+                result["total_file_backed_memory"] = json!(total_file_backed_memory);
+                result["total_major_faults"] = json!(total_major_faults);
+                result["total_minor_faults"] = json!(total_minor_faults);
+                result["message"] = json!("Process memory monitoring data retrieved successfully (with eBPF details)");
+            }
+        }
+    }
+
     // Кэшируем результат
     cache_write.cached_process_memory_json = Some((result.clone(), Instant::now()));
 
@@ -2308,6 +2377,8 @@ async fn process_disk_handler(State(state): State<ApiState>) -> Result<Json<Valu
 
     Ok(Json(result))
 }
+
+
 
 /// Обработчик для endpoint `/api/appgroups`.
 ///
@@ -3260,7 +3331,8 @@ mod tests {
 
     // Import notification types for test configurations
     use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
-    use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds};
+    use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds, EbpfMetrics, ProcessGpuStat};
+    use crate::metrics::system::SystemMetrics;
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -3795,6 +3867,7 @@ mod tests {
                 enable_process_gpu_monitoring: false,
                 enable_process_network_monitoring: false,
                 enable_process_disk_monitoring: false,
+                enable_process_memory_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -3903,6 +3976,7 @@ mod tests {
                 enable_process_gpu_monitoring: false,
                 enable_process_network_monitoring: false,
                 enable_process_disk_monitoring: false,
+                enable_process_memory_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -6841,6 +6915,14 @@ mod test_process_energy_api {
             "Результаты должны быть идентичны при использовании кэша"
         );
     }
+}
+
+mod test_process_gpu_api {
+    use super::*;
+    use crate::metrics::ebpf::{EbpfMetrics, ProcessGpuStat};
+    use crate::metrics::system::SystemMetrics;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
 
     #[tokio::test]
     async fn test_process_gpu_handler_with_no_metrics() {
@@ -7016,6 +7098,14 @@ mod test_process_energy_api {
             "Результаты должны быть идентичны при использовании кэша"
         );
     }
+}
+
+mod test_process_network_api {
+    use super::*;
+    use crate::metrics::ebpf::{EbpfMetrics, ProcessNetworkStat};
+    use crate::metrics::system::SystemMetrics;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
 
     #[tokio::test]
     async fn test_process_network_handler_with_no_metrics() {
@@ -7191,6 +7281,11 @@ mod test_process_energy_api {
             "Результаты должны быть идентичны при использовании кэша"
         );
     }
+}
+
+// Import types needed for testing
+use crate::metrics::system::SystemMetrics;
+use crate::metrics::ebpf::EbpfMetrics;
 
     #[tokio::test]
     async fn test_process_disk_handler_with_no_metrics() {
@@ -7352,4 +7447,5 @@ mod test_process_energy_api {
             "Результаты должны быть идентичны при использовании кэша"
         );
     }
-}
+
+

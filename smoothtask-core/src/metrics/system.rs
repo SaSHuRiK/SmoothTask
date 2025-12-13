@@ -3258,6 +3258,7 @@ SwapFree:        4096000 kB
             active_connections: 0,
             gpu_usage: 0.0,
             gpu_memory_usage: 0,
+            process_memory_details: None,
             gpu_compute_units: 0,
             gpu_power_usage: 0,
             gpu_temperature: 0,

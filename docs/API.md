@@ -1201,31 +1201,47 @@ curl http://127.0.0.1:8080/api/processes/memory
     {
       "pid": 1234,
       "tgid": 1234,
-      "rss_bytes": 268435456,
-      "swap_bytes": 134217728,
-      "uss_bytes": 104857600,
-      "pss_bytes": 150994944,
       "last_update_ns": 1234567890123456789,
-      "name": "firefox",
-      "memory_usage_percent": 15.2
+      "rss_bytes": 268435456,
+      "vms_bytes": 536870912,
+      "shared_bytes": 134217728,
+      "swap_bytes": 67108864,
+      "heap_usage": 201326592,
+      "stack_usage": 33554432,
+      "anonymous_memory": 167772160,
+      "file_backed_memory": 100663296,
+      "major_faults": 15,
+      "minor_faults": 75,
+      "name": "firefox"
     },
     {
       "pid": 5678,
       "tgid": 5678,
-      "rss_bytes": 67108864,
-      "swap_bytes": 33554432,
-      "uss_bytes": 26214400,
-      "pss_bytes": 38666240,
       "last_update_ns": 1234567890123456789,
-      "name": "blender",
-      "memory_usage_percent": 3.8
+      "rss_bytes": 134217728,
+      "vms_bytes": 268435456,
+      "shared_bytes": 67108864,
+      "swap_bytes": 33554432,
+      "heap_usage": 100663296,
+      "stack_usage": 16777216,
+      "anonymous_memory": 83886080,
+      "file_backed_memory": 50331648,
+      "major_faults": 8,
+      "minor_faults": 42,
+      "name": "blender"
     }
   ],
   "count": 2,
-  "total_rss_bytes": 335544320,
-  "total_swap_bytes": 167772160,
-  "total_uss_bytes": 131072000,
-  "total_pss_bytes": 189661184,
+  "total_rss_bytes": 402653184,
+  "total_vms_bytes": 805306368,
+  "total_shared_bytes": 201326592,
+  "total_swap_bytes": 100663296,
+  "total_heap_usage": 301989888,
+  "total_stack_usage": 50331648,
+  "total_anonymous_memory": 251658240,
+  "total_file_backed_memory": 150994944,
+  "total_major_faults": 23,
+  "total_minor_faults": 117,
   "message": "Process memory monitoring data retrieved successfully",
   "component_status": {
     "daemon_stats": true,
@@ -1248,9 +1264,15 @@ curl http://127.0.0.1:8080/api/processes/memory
 - `process_memory` (array?) - массив объектов с информацией об использовании памяти процессами
 - `count` (integer) - количество процессов с данными о памяти
 - `total_rss_bytes` (u64?) - общее использование резидентной памяти всеми процессами в байтах
+- `total_vms_bytes` (u64?) - общее использование виртуальной памяти всеми процессами в байтах
+- `total_shared_bytes` (u64?) - общее использование разделяемой памяти всеми процессами в байтах
 - `total_swap_bytes` (u64?) - общее использование swap памяти всеми процессами в байтах
-- `total_uss_bytes` (u64?) - общее уникальное использование памяти всеми процессами в байтах
-- `total_pss_bytes` (u64?) - общее пропорциональное использование памяти всеми процессами в байтах
+- `total_heap_usage` (u64?) - общее использование heap памяти всеми процессами в байтах
+- `total_stack_usage` (u64?) - общее использование stack памяти всеми процессами в байтах
+- `total_anonymous_memory` (u64?) - общее использование анонимной памяти всеми процессами в байтах
+- `total_file_backed_memory` (u64?) - общее использование памяти, поддерживаемой файлами, всеми процессами в байтах
+- `total_major_faults` (u64?) - общее количество major page faults всех процессов
+- `total_minor_faults` (u64?) - общее количество minor page faults всех процессов
 - `message` (string) - сообщение о статусе запроса
 - `component_status` (object) - статус доступности основных компонентов
 - `cache_info` (object) - информация о кэшировании
@@ -1259,13 +1281,18 @@ curl http://127.0.0.1:8080/api/processes/memory
 **Поля объекта process_memory:**
 - `pid` (u32) - идентификатор процесса
 - `tgid` (u32) - идентификатор потока группы
-- `rss_bytes` (u64) - резидентное использование памяти в байтах
-- `swap_bytes` (u64) - использование swap памяти в байтах
-- `uss_bytes` (u64) - уникальное использование памяти в байтах
-- `pss_bytes` (u64) - пропорциональное использование памяти в байтах
 - `last_update_ns` (u64) - время последнего обновления в наносекундах
+- `rss_bytes` (u64) - резидентное использование памяти в байтах
+- `vms_bytes` (u64) - использование виртуальной памяти в байтах
+- `shared_bytes` (u64) - использование разделяемой памяти в байтах
+- `swap_bytes` (u64) - использование swap памяти в байтах
+- `heap_usage` (u64) - использование heap памяти в байтах
+- `stack_usage` (u64) - использование stack памяти в байтах
+- `anonymous_memory` (u64) - использование анонимной памяти в байтах
+- `file_backed_memory` (u64) - использование памяти, поддерживаемой файлами, в байтах
+- `major_faults` (u64) - количество major page faults
+- `minor_faults` (u64) - количество minor page faults
 - `name` (string) - имя процесса
-- `memory_usage_percent` (f32) - процент использования памяти
 
 **Требования:**
 - Требуется включенный мониторинг памяти процессов в конфигурации eBPF (`enable_process_memory_monitoring: true`)

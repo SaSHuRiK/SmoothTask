@@ -105,6 +105,8 @@ pub struct EbpfConfig {
     pub enable_process_network_monitoring: bool,
     /// Включить мониторинг использования диска процессами
     pub enable_process_disk_monitoring: bool,
+    /// Включить мониторинг использования памяти процессами
+    pub enable_process_memory_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
     /// Включить кэширование метрик для уменьшения накладных расходов
@@ -145,6 +147,7 @@ impl Default for EbpfConfig {
             enable_process_gpu_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -452,6 +455,39 @@ pub struct ProcessDiskStat {
     pub total_io_operations: u64,
 }
 
+/// Структура для хранения статистики использования памяти процессами
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessMemoryStat {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Идентификатор потока
+    pub tgid: u32,
+    /// Время последнего обновления в наносекундах
+    pub last_update_ns: u64,
+    /// Использование резидентной памяти (RSS) в байтах
+    pub rss_bytes: u64,
+    /// Использование виртуальной памяти (VMS) в байтах
+    pub vms_bytes: u64,
+    /// Использование разделяемой памяти в байтах
+    pub shared_bytes: u64,
+    /// Использование swap памяти в байтах
+    pub swap_bytes: u64,
+    /// Использование heap памяти в байтах
+    pub heap_usage: u64,
+    /// Использование stack памяти в байтах
+    pub stack_usage: u64,
+    /// Использование анонимной памяти в байтах
+    pub anonymous_memory: u64,
+    /// Использование памяти, поддерживаемой файлами, в байтах
+    pub file_backed_memory: u64,
+    /// Количество major page faults
+    pub major_faults: u64,
+    /// Количество minor page faults
+    pub minor_faults: u64,
+    /// Имя процесса
+    pub name: String,
+}
+
 
 
 /// Структура для хранения eBPF метрик
@@ -511,6 +547,8 @@ pub struct EbpfMetrics {
     pub process_network_details: Option<Vec<ProcessNetworkStat>>,
     /// Детализированная статистика по использованию диска процессами (опционально)
     pub process_disk_details: Option<Vec<ProcessDiskStat>>,
+    /// Детализированная статистика по использованию памяти процессами (опционально)
+    pub process_memory_details: Option<Vec<ProcessMemoryStat>>,
 }
 
 /// Конфигурация порогов для уведомлений eBPF
@@ -964,6 +1002,8 @@ pub struct EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     process_disk_program: Option<Program>,
     #[cfg(feature = "ebpf")]
+    process_memory_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
     gpu_program: Option<Program>,
     #[cfg(feature = "ebpf")]
     cpu_temperature_program: Option<Program>,
@@ -989,6 +1029,8 @@ pub struct EbpfMetricsCollector {
     process_network_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     process_disk_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    process_memory_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     gpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
@@ -1630,6 +1672,24 @@ impl EbpfMetricsCollector {
                         let error_msg = format!("Ошибка загрузки программы мониторинга использования диска процессами: {}. Проверьте доступ к дискам и права доступа", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("ProcessDisk: {}", e));
+                        error_count += 1;
+                        self.last_error = Some(error_msg);
+                    }
+                }
+            }
+
+            if self.config.enable_process_memory_monitoring {
+                match self.load_process_memory_program() {
+                    Ok(_) => {
+                        success_count += 1;
+                        tracing::info!(
+                            "Программа мониторинга использования памяти процессами успешно загружена"
+                        );
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Ошибка загрузки программы мониторинга использования памяти процессами: {}. Проверьте доступ к памяти и права доступа", e);
+                        tracing::error!("{}", error_msg);
+                        detailed_errors.push(format!("ProcessMemory: {}", e));
                         error_count += 1;
                         self.last_error = Some(error_msg);
                     }
@@ -2420,6 +2480,41 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга использования памяти процессами
+    #[cfg(feature = "ebpf")]
+    fn load_process_memory_program(&mut self) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        use std::path::Path;
+
+        let program_path = Path::new("src/ebpf_programs/process_memory.c");
+
+        if !program_path.exists() {
+            tracing::warn!(
+                "eBPF программа для мониторинга использования памяти процессами не найдена: {:?}",
+                program_path
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Загрузка eBPF программы для мониторинга использования памяти процессами: {:?}",
+            program_path
+        );
+
+        // Загрузка eBPF программы
+        let program = load_ebpf_program_from_file(program_path.to_str().unwrap())?;
+
+        // Сохранение программы
+        self.process_memory_program = Some(program);
+
+        // Загрузка карт из программы
+        self.process_memory_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "process_memory_stats")?;
+
+        tracing::info!("eBPF программа для мониторинга использования памяти процессами успешно загружена с {} картами", self.process_memory_maps.len());
+        Ok(())
+    }
+
     /// Загрузить eBPF программу для мониторинга файловой системы
     #[cfg(feature = "ebpf")]
     fn load_filesystem_program(&mut self) -> Result<()> {
@@ -2965,6 +3060,12 @@ impl EbpfMetricsCollector {
             None
         };
 
+        let process_memory_details = if self.config.enable_process_memory_monitoring {
+            self.collect_process_memory_stats()?
+        } else {
+            None
+        };
+
         // Оптимизация: собираем детализированную статистику параллельно
         let (
             syscall_details,
@@ -2974,6 +3075,10 @@ impl EbpfMetricsCollector {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
+            process_gpu_details,
+            process_network_details,
+            process_memory_details,
         ) = self.collect_detailed_stats_parallel();
 
         // Оптимизируем детализированную статистику для уменьшения использования памяти
@@ -2985,6 +3090,10 @@ impl EbpfMetricsCollector {
             cpu_temperature_details,
             process_details,
             filesystem_details,
+            process_energy_details,
+            process_gpu_details,
+            process_network_details,
+            process_memory_details,
         ) = self.optimize_detailed_stats(
             syscall_details,
             network_details,
@@ -2997,6 +3106,7 @@ impl EbpfMetricsCollector {
             _process_gpu_details,
             _process_network_details,
             _process_disk_details,
+            _process_memory_details,
         );
 
         let collection_time = start_time.elapsed();
@@ -3040,6 +3150,7 @@ impl EbpfMetricsCollector {
             process_energy_details,
             process_gpu_details,
             process_disk_details,
+            process_memory_details,
         })
     }
 
@@ -3057,6 +3168,8 @@ impl EbpfMetricsCollector {
         Option<Vec<FilesystemStat>>,
         Option<Vec<ProcessEnergyStat>>,
         Option<Vec<ProcessGpuStat>>,
+        Option<Vec<ProcessNetworkStat>>,
+        Option<Vec<ProcessMemoryStat>>,
     ) {
         use rayon::prelude::*;
 
@@ -3132,6 +3245,13 @@ impl EbpfMetricsCollector {
                     None
                 }
             }),
+            std::thread::spawn(|| {
+                if self.config.enable_process_memory_monitoring {
+                    self.collect_process_memory_stats()
+                } else {
+                    None
+                }
+            }),
         ];
 
         let syscall_details = results[0].join().unwrap();
@@ -3144,6 +3264,7 @@ impl EbpfMetricsCollector {
         let process_energy_details = results[7].join().unwrap();
         let process_gpu_details = results[8].join().unwrap();
         let process_network_details = results[9].join().unwrap();
+        let process_memory_details = results[10].join().unwrap();
 
         (
             syscall_details,
@@ -3156,6 +3277,7 @@ impl EbpfMetricsCollector {
             process_energy_details,
             process_gpu_details,
             process_network_details,
+            process_memory_details,
         )
     }
 
@@ -3178,6 +3300,7 @@ impl EbpfMetricsCollector {
         process_gpu_details: Option<Vec<ProcessGpuStat>>,
         process_network_details: Option<Vec<ProcessNetworkStat>>,
         process_disk_details: Option<Vec<ProcessDiskStat>>,
+        process_memory_details: Option<Vec<ProcessMemoryStat>>,
     ) -> (
         Option<Vec<SyscallStat>>,
         Option<Vec<NetworkStat>>,
@@ -3190,6 +3313,7 @@ impl EbpfMetricsCollector {
         Option<Vec<ProcessGpuStat>>,
         Option<Vec<ProcessNetworkStat>>,
         Option<Vec<ProcessDiskStat>>,
+        Option<Vec<ProcessMemoryStat>>,
     ) {
         // Ограничиваем количество системных вызовов
         let syscall_details = syscall_details.map(|mut details| {
@@ -3335,6 +3459,7 @@ impl EbpfMetricsCollector {
             process_gpu_details,
             process_network_details,
             process_disk_details,
+            process_memory_details,
         )
     }
 
@@ -4121,6 +4246,60 @@ impl EbpfMetricsCollector {
             Ok(None)
         } else {
             Ok(Some(disk_stats))
+        }
+    }
+
+    /// Собрать статистику использования памяти процессами из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_process_memory_stats(&self) -> Result<Option<Vec<ProcessMemoryStat>>> {
+        use libbpf_rs::Map;
+
+        if !self.config.enable_process_memory_monitoring {
+            return Ok(None);
+        }
+
+        // Пробуем получить доступ к картам использования памяти процессами
+        if self.process_memory_maps.is_empty() {
+            tracing::warn!("Карты использования памяти процессами не инициализированы");
+            return Ok(None);
+        }
+
+        let mut memory_stats = Vec::new();
+
+        for map in &self.process_memory_maps {
+            // Используем функцию итерации по ключам для получения всех записей использования памяти
+            match iterate_ebpf_map_keys::<ProcessMemoryStat>(map, 10240) {
+                Ok(stats) => {
+                    for stat in stats {
+                        memory_stats.push(ProcessMemoryStat {
+                            pid: stat.pid,
+                            tgid: stat.tgid,
+                            last_update_ns: stat.last_update_ns,
+                            rss_bytes: stat.rss_bytes,
+                            vms_bytes: stat.vms_bytes,
+                            shared_bytes: stat.shared_bytes,
+                            swap_bytes: stat.swap_bytes,
+                            heap_usage: stat.heap_usage,
+                            stack_usage: stat.stack_usage,
+                            anonymous_memory: stat.anonymous_memory,
+                            file_backed_memory: stat.file_backed_memory,
+                            major_faults: stat.major_faults,
+                            minor_faults: stat.minor_faults,
+                            name: stat.name.clone(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по карте использования памяти процессами: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        if memory_stats.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(memory_stats))
         }
     }
 
@@ -5473,6 +5652,7 @@ mod tests {
             enable_process_gpu_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5543,6 +5723,7 @@ mod tests {
             process_gpu_details: None,
             process_network_details: None,
             process_disk_details: None,
+            process_memory_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5891,6 +6072,7 @@ mod tests {
             enable_process_gpu_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5966,6 +6148,7 @@ mod tests {
             process_gpu_details: None,
             process_network_details: None,
             process_disk_details: None,
+            process_memory_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -6068,6 +6251,7 @@ mod tests {
             enable_process_gpu_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -6147,6 +6331,7 @@ mod tests {
             process_gpu_details: None,
             process_network_details: None,
             process_disk_details: None,
+            process_memory_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -6818,6 +7003,7 @@ mod tests {
             enable_process_energy_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -6881,6 +7067,7 @@ mod tests {
             enable_process_energy_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             enable_notifications: false,
@@ -6924,6 +7111,7 @@ mod tests {
             enable_process_energy_monitoring: false,
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
+            enable_process_memory_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -7606,6 +7794,7 @@ mod ebpf_memory_optimization_tests {
             _process_gpu_details,
             _process_network_details,
             _process_disk_details,
+            _process_memory_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -7618,6 +7807,7 @@ mod ebpf_memory_optimization_tests {
             metrics.process_gpu_details.take(),
             metrics.process_network_details.take(),
             metrics.process_disk_details.take(),
+            metrics.process_memory_details.take(),
         );
 
         metrics.syscall_details = syscall_details;
@@ -7736,6 +7926,7 @@ mod ebpf_memory_optimization_tests {
             _process_gpu_details,
             _process_network_details,
             _process_disk_details,
+            _process_memory_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -7748,6 +7939,7 @@ mod ebpf_memory_optimization_tests {
             metrics.process_gpu_details.take(),
             metrics.process_network_details.take(),
             metrics.process_disk_details.take(),
+            metrics.process_memory_details.take(),
         );
 
         metrics.syscall_details = syscall_details;
@@ -7876,10 +8068,12 @@ mod ebpf_memory_optimization_tests {
             _process_gpu_details,
             _process_network_details,
             _process_disk_details,
+            _process_memory_details,
         ) = collector.optimize_detailed_stats(
             Some(syscall_details),
             Some(network_details),
             Some(connection_details),
+            None,
             None,
             None,
             None,
@@ -8058,6 +8252,7 @@ mod test_process_energy {
             _process_gpu_details,
             _process_network_details,
             _process_disk_details,
+            _process_memory_details,
         ) = collector.optimize_detailed_stats(
             None,
             None,
@@ -8067,6 +8262,7 @@ mod test_process_energy {
             None,
             None,
             Some(energy_stats),
+            None,
             None,
             None,
             None,
@@ -8306,6 +8502,7 @@ mod test_process_energy {
             process_gpu_details,
             _process_network_details,
             _process_disk_details,
+            _process_memory_details,
         ) = collector.optimize_detailed_stats(
             None,
             None,
@@ -8316,6 +8513,7 @@ mod test_process_energy {
             None,
             None,
             Some(gpu_stats),
+            None,
             None,
             None,
         );
@@ -8412,6 +8610,7 @@ mod test_process_energy {
             _process_energy_details,
             _process_gpu_details,
             _process_network_details,
+            _process_memory_details,
             process_disk_details,
         ) = collector.optimize_detailed_stats(
             None,
@@ -8425,6 +8624,7 @@ mod test_process_energy {
             None,
             None,
             Some(disk_stats),
+            None,
         );
 
         if let Some(details) = process_disk_details {
