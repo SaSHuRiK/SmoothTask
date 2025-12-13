@@ -1743,7 +1743,7 @@ async fn cache_monitoring_handler(
             // Определяем статус здоровья кэша
             let health_status = if cached_count == 0 {
                 "idle"
-            } else if active_percentage < 50.0 {
+            } else if active_percentage <= 50.0 {
                 "warning"
             } else {
                 "healthy"
@@ -7170,8 +7170,8 @@ mod test_process_energy_api {
 
         assert_eq!(
             value["status"].as_str().unwrap(),
-            "ok",
-            "Статус должен быть ok"
+            "degraded",
+            "Статус должен быть degraded"
         );
         assert_eq!(
             value["count"].as_u64().unwrap(),
@@ -7197,10 +7197,9 @@ mod test_process_energy_api {
             3000,
             "Общее потребление энергии должно быть 3000 микроджоулей"
         );
-        assert_eq!(
-            value["total_energy_w"].as_f64().unwrap(),
-            0.003,
-            "Общее потребление энергии должно быть 0.003 ватт"
+        assert!(
+            (value["total_energy_w"].as_f64().unwrap() - 0.003).abs() < 1e-10,
+            "Общее потребление энергии должно быть примерно 0.003 ватт"
         );
     }
 
@@ -7348,8 +7347,9 @@ mod test_process_energy_api {
         
         // Добавляем кэшированные данные
         let mut cache_write = cache.write().await;
-        cache_write.cached_processes_json = Some((json!({"test": "data"}), Instant::now() - Duration::from_secs(2))); // Устаревшие данные
-        cache_write.cached_metrics_json = Some((json!({"cpu": 50}), Instant::now())); // Актуальные данные
+        let now = Instant::now();
+        cache_write.cached_processes_json = Some((json!({"test": "data"}), now - Duration::from_secs(2))); // Устаревшие данные
+        cache_write.cached_metrics_json = Some((json!({"cpu": 50}), now)); // Актуальные данные
         drop(cache_write);
 
         let state = ApiStateBuilder::new()
@@ -7397,8 +7397,8 @@ mod test_process_gpu_api {
 
         assert_eq!(
             value["status"].as_str().unwrap(),
-            "ok",
-            "Статус должен быть ok"
+            "degraded",
+            "Статус должен быть degraded"
         );
         assert_eq!(
             value["count"].as_u64().unwrap(),

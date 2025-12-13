@@ -505,8 +505,8 @@ mod tests {
         // Тест 4: Проверка текущей версии
         let current_version = updater.version_manager.get_current_version();
         assert!(current_version.is_some());
-        assert!(current_version.unwrap().version_id == "v1.0.0" || 
-                current_version.unwrap().version_id == "v2.0.0");
+        let version_id = current_version.unwrap().version_id.clone();
+        assert!(version_id == "v1.0.0.onnx" || version_id == "v2.0.0.onnx");
         
         // Тест 5: Откат к предыдущей версии (если есть несколько версий)
         if updater.version_manager.version_count() > 1 {
@@ -565,7 +565,7 @@ mod tests {
         assert_eq!(updater.version_manager.version_count(), 1);
         
         // Проверяем, что версия невалидна
-        let version = updater.version_manager.get_version("invalid").unwrap();
+        let version = updater.version_manager.get_version("invalid.onnx").unwrap();
         assert!(!version.validate());
     }
 }

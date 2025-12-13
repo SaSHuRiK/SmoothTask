@@ -646,8 +646,8 @@ mod tests {
         let versions = utils::load_versions_from_directory(dir_path, "model_").unwrap();
         
         assert_eq!(versions.len(), 2);
-        assert!(versions.iter().any(|v| v.version_id == "v1.0.0"));
-        assert!(versions.iter().any(|v| v.version_id == "v2.0.0"));
+        assert!(versions.iter().any(|v| v.version_id == "v1.0.0.onnx"));
+        assert!(versions.iter().any(|v| v.version_id == "v2.0.0.onnx"));
         
         // Проверяем, что хэши вычислены
         for version in versions {

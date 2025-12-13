@@ -1707,7 +1707,7 @@ mod tests {
     fn test_enhanced_audio_introspector_graceful_degradation() {
         // Тест проверяет graceful degradation с сохранением последних успешных метрик
         let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
+            Duration::from_millis(1), // Очень короткий кэш для теста
             2
         );
         
@@ -1744,6 +1744,9 @@ mod tests {
         assert!(result1.is_ok());
         let metrics1 = result1.unwrap();
         assert_eq!(metrics1.xrun_count, 3);
+        
+        // Ждём, чтобы кэш устарел
+        std::thread::sleep(Duration::from_millis(2));
         
         // Второй вызов должен вернуть ошибку (лимит еще не достигнут)
         let result2 = introspector.audio_metrics();

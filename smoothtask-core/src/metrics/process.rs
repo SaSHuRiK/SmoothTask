@@ -622,23 +622,29 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
                         tracing::debug!("Обработка процесса PID {}", pid);
 
                         // Проверяем кэш, если кэширование включено
-                        if cache_config.enable_caching {
-                            let _start_time = Instant::now();
+                        // Оптимизация: быстрый путь для кэша без блокировки статистики
+                        let cached_record = if cache_config.enable_caching {
                             let cache_read = PROCESS_CACHE.read().unwrap();
-                            if let Some(cached_record) = cache_read.get_cached(pid) {
-                                tracing::debug!("Кэш попадание для процесса PID {}", pid);
-                                
-                                // Обновляем статистику кэша
+                            cache_read.get_cached(pid)
+                        } else {
+                            None
+                        };
+
+                        if let Some(cached_record) = cached_record {
+                            tracing::debug!("Кэш попадание для процесса PID {}", pid);
+                            
+                            // Обновляем статистику кэша (оптимизация: только если включено)
+                            if cache_config.enable_caching {
                                 let mut stats_write = CACHE_STATS.write().unwrap();
                                 stats_write.record_request(true, None);
                                 drop(stats_write);
-                                
-                                drop(cache_read);
-                                return Some(cached_record);
                             }
-                            drop(cache_read);
                             
-                            // Обновляем статистику кэша для промаха
+                            return Some(cached_record);
+                        }
+
+                        // Обновляем статистику кэша для промаха (оптимизация: только если включено)
+                        if cache_config.enable_caching {
                             let mut stats_write = CACHE_STATS.write().unwrap();
                             stats_write.record_request(false, None);
                             drop(stats_write);

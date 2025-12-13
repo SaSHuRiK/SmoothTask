@@ -234,6 +234,55 @@ impl LogStorage {
         self.last_cleanup_time = Some(Utc::now());
     }
 
+    /// Добавляет пакет записей в хранилище с оптимизацией производительности.
+    /// Выполняет очистку только один раз для всего пакета вместо каждого вызова.
+    ///
+    /// # Аргументы
+    ///
+    /// * `entries` - вектор записей лога для добавления
+    /// * `memory_limit_bytes` - максимальный размер памяти в байтах (0 = без ограничения)
+    pub fn add_entries_batch(&mut self, entries: Vec<LogEntry>, memory_limit_bytes: usize) {
+        if entries.is_empty() {
+            return;
+        }
+
+        // Обновляем счётчики в зависимости от уровня лога (оптимизация: один проход)
+        for entry in &entries {
+            match entry.level {
+                LogLevel::Error => {
+                    self.error_count += 1;
+                    self.last_error_time = Some(Utc::now());
+                }
+                LogLevel::Warn => {
+                    self.warning_count += 1;
+                }
+                _ => {}
+            }
+        }
+
+        // Выполняем очистку старых записей только один раз для всего пакета
+        self.cleanup_old_entries();
+
+        // Выполняем очистку на основе использования памяти только один раз
+        self.cleanup_by_memory(memory_limit_bytes);
+
+        // Применяем ограничение по количеству записей
+        let capacity = if self.max_entries > 0 {
+            self.max_entries - self.entries.len()
+        } else {
+            entries.len()
+        };
+
+        // Добавляем только те записи, которые помещаются в лимит
+        let entries_to_add = if capacity > 0 {
+            entries.into_iter().take(capacity).collect::<Vec<_>>()
+        } else {
+            Vec::new()
+        };
+
+        self.entries.extend(entries_to_add);
+    }
+
     /// Выполняет очистку на основе использования памяти.
     /// Удаляет старые записи, если использование памяти превышает лимит.
     ///
