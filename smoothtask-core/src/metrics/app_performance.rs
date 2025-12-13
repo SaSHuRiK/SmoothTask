@@ -1,500 +1,1096 @@
-//! Метрики производительности приложений.
+//! Мониторинг производительности приложений на уровне AppGroup.
 //!
-//! Этот модуль предоставляет функциональность для мониторинга производительности
-//! отдельных приложений, включая:
-//! - Задержки отклика (latency)
-//! - FPS для графических приложений
-//! - Использование ресурсов на уровне приложения
-//! - Метрики отзывчивости UI
+//! Этот модуль предоставляет функции для сбора и анализа производительности
+//! приложений, сгруппированных по AppGroup. Он фокусируется на метриках,
+//! которые важны для пользовательского опыта и производительности системы.
 
-use anyhow::Result;
-use serde::{Deserialize, Serialize};
+use crate::classify::grouper::AppGroup;
+use crate::logging::snapshots::ProcessRecord;
+use crate::metrics::process::{collect_process_metrics, ProcessCacheConfig};
+use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Глобальный счетчик времени для тестирования.
-/// В реальной реализации нужно использовать внешний источник времени.
-static GLOBAL_TIME_COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-fn increment_time_counter() -> u128 {
-    GLOBAL_TIME_COUNTER.fetch_add(1, std::sync::atomic::Ordering::SeqCst) as u128 + 1
-}
-
-fn get_current_time_counter() -> u128 {
-    GLOBAL_TIME_COUNTER.load(std::sync::atomic::Ordering::SeqCst) as u128
-}
-
-/// Метрики производительности для отдельного приложения.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+/// Структура для хранения метрик производительности приложения.
+#[derive(Debug, Clone, serde::Serialize, Default)]
 pub struct AppPerformanceMetrics {
-    /// Идентификатор процесса
-    pub pid: u32,
-
-    /// Имя процесса
-    pub name: String,
-
-    /// Средняя задержка отклика (в миллисекундах)
-    /// Это может быть задержка обработки событий, задержка рендеринга и т.д.
-    pub avg_latency_ms: f64,
-
-    /// Максимальная задержка отклика (в миллисекундах)
-    pub max_latency_ms: f64,
-
-    /// Минимальная задержка отклика (в миллисекундах)
-    pub min_latency_ms: f64,
-
-    /// Количество замеров задержки
-    pub latency_samples: u32,
-
-    /// Средний FPS (кадров в секунду) для графических приложений
-    /// 0.0 если метрика не применима
-    pub avg_fps: f64,
-
-    /// Минимальный FPS
-    pub min_fps: f64,
-
-    /// Максимальный FPS
-    pub max_fps: f64,
-
-    /// Количество замеров FPS
-    pub fps_samples: u32,
-
-    /// Среднее использование CPU приложением (в процентах)
-    pub avg_cpu_usage: f64,
-
-    /// Среднее использование памяти приложением (в мегабайтах)
-    pub avg_memory_usage_mb: f64,
-
-    /// Количество сбоев/ошибок за период
-    pub error_count: u32,
-
-    /// Время последнего обновления метрик (в миллисекундах с момента запуска)
-    /// Для тестирования используем простой счетчик
-    pub last_updated_ms: u128,
+    /// Идентификатор группы приложений.
+    pub app_group_id: String,
+    
+    /// Название группы приложений (для отображения).
+    pub app_group_name: String,
+    
+    /// Количество процессов в группе.
+    pub process_count: usize,
+    
+    /// Общее использование CPU группой (в процентах).
+    pub total_cpu_usage: f64,
+    
+    /// Среднее использование CPU на процесс.
+    pub average_cpu_usage: f64,
+    
+    /// Пиковое использование CPU в группе.
+    pub peak_cpu_usage: f64,
+    
+    /// Общее использование памяти группой (в МБ).
+    pub total_memory_mb: u64,
+    
+    /// Среднее использование памяти на процесс (в МБ).
+    pub average_memory_mb: f64,
+    
+    /// Общий ввод-вывод на диск (байт/сек).
+    pub total_io_bytes_per_sec: u64,
+    
+    /// Количество контекстных переключений (добровольных + принудительных).
+    pub total_context_switches: u64,
+    
+    /// Количество процессов с активными окнами.
+    pub processes_with_windows: usize,
+    
+    /// Количество процессов с активными аудио потоками.
+    pub processes_with_audio: usize,
+    
+    /// Количество процессов с активными терминалами.
+    pub processes_with_terminals: usize,
+    
+    /// Время ответа приложения (если доступно).
+    pub response_time_ms: Option<f64>,
+    
+    /// Статус производительности (хорошо, предупреждение, критическое).
+    pub performance_status: PerformanceStatus,
+    
+    /// Временная метка сбора метрик.
+    pub timestamp: Instant,
+    
+    /// Дополнительные теги и метаданные.
+    pub tags: Vec<String>,
 }
 
-impl AppPerformanceMetrics {
-    /// Создает новые метрики производительности для приложения.
-    pub fn new(pid: u32, name: String) -> Self {
+/// Статус производительности приложения.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub enum PerformanceStatus {
+    /// Хорошая производительность.
+    Good,
+    /// Предупреждение о возможных проблемах.
+    Warning,
+    /// Критическая проблема с производительностью.
+    Critical,
+    /// Неизвестный статус.
+    Unknown,
+}
+
+impl Default for PerformanceStatus {
+    fn default() -> Self {
+        PerformanceStatus::Unknown
+    }
+}
+
+/// Конфигурация для сбора метрик производительности приложений.
+#[derive(Debug, Clone)]
+pub struct AppPerformanceConfig {
+    /// Включить сбор метрик производительности.
+    pub enable_app_performance_monitoring: bool,
+    
+    /// Интервал сбора метрик (в секундах).
+    pub collection_interval_seconds: u64,
+    
+    /// Минимальное количество процессов для мониторинга.
+    pub min_processes_for_monitoring: usize,
+    
+    /// Пороговые значения для определения статуса производительности.
+    pub performance_thresholds: PerformanceThresholds,
+    
+    /// Конфигурация кэша процессов.
+    pub process_cache_config: ProcessCacheConfig,
+}
+
+impl Default for AppPerformanceConfig {
+    fn default() -> Self {
         Self {
-            pid,
-            name,
-            avg_latency_ms: 0.0,
-            max_latency_ms: 0.0,
-            min_latency_ms: f64::MAX,
-            latency_samples: 0,
-            avg_fps: 0.0,
-            min_fps: f64::MAX,
-            max_fps: 0.0,
-            fps_samples: 0,
-            avg_cpu_usage: 0.0,
-            avg_memory_usage_mb: 0.0,
-            error_count: 0,
-            last_updated_ms: 0,
+            enable_app_performance_monitoring: true,
+            collection_interval_seconds: 10,
+            min_processes_for_monitoring: 5,
+            performance_thresholds: PerformanceThresholds::default(),
+            process_cache_config: ProcessCacheConfig::default(),
         }
-    }
-
-    /// Добавляет новый замер задержки.
-    pub fn add_latency_sample(&mut self, latency_ms: f64) {
-        self.latency_samples += 1;
-
-        // Обновляем среднее значение
-        if self.latency_samples == 1 {
-            self.avg_latency_ms = latency_ms;
-        } else {
-            self.avg_latency_ms = (self.avg_latency_ms * (self.latency_samples - 1) as f64
-                + latency_ms)
-                / self.latency_samples as f64;
-        }
-
-        // Обновляем мин/макс
-        self.min_latency_ms = self.min_latency_ms.min(latency_ms);
-        self.max_latency_ms = self.max_latency_ms.max(latency_ms);
-
-        self.last_updated_ms = increment_time_counter();
-    }
-
-    /// Добавляет новый замер FPS.
-    pub fn add_fps_sample(&mut self, fps: f64) {
-        self.fps_samples += 1;
-
-        // Обновляем среднее значение
-        if self.fps_samples == 1 {
-            self.avg_fps = fps;
-        } else {
-            self.avg_fps =
-                (self.avg_fps * (self.fps_samples - 1) as f64 + fps) / self.fps_samples as f64;
-        }
-
-        // Обновляем мин/макс
-        self.min_fps = self.min_fps.min(fps);
-        self.max_fps = self.max_fps.max(fps);
-
-        self.last_updated_ms = increment_time_counter();
-    }
-
-    /// Обновляет использование CPU.
-    pub fn update_cpu_usage(&mut self, cpu_usage: f64) {
-        // Для CPU мы используем скользящее среднее
-        if self.avg_cpu_usage > 0.0 {
-            // Вес 0.3 для нового значения, 0.7 для старого
-            self.avg_cpu_usage = self.avg_cpu_usage * 0.7 + cpu_usage * 0.3;
-        } else {
-            self.avg_cpu_usage = cpu_usage;
-        }
-        self.last_updated_ms = increment_time_counter();
-    }
-
-    /// Обновляет использование памяти.
-    pub fn update_memory_usage(&mut self, memory_usage_mb: f64) {
-        // Для памяти мы используем скользящее среднее
-        if self.latency_samples > 0 {
-            // Вес 0.2 для нового значения, 0.8 для старого
-            self.avg_memory_usage_mb = self.avg_memory_usage_mb * 0.8 + memory_usage_mb * 0.2;
-        } else {
-            self.avg_memory_usage_mb = memory_usage_mb;
-        }
-        self.last_updated_ms = increment_time_counter();
-    }
-
-    /// Увеличивает счетчик ошибок.
-    pub fn increment_error_count(&mut self) {
-        self.error_count += 1;
-        self.last_updated_ms = increment_time_counter();
-    }
-
-    /// Сбрасывает все счетчики и метрики.
-    pub fn reset(&mut self) {
-        self.avg_latency_ms = 0.0;
-        self.max_latency_ms = 0.0;
-        self.min_latency_ms = f64::MAX;
-        self.latency_samples = 0;
-        self.avg_fps = 0.0;
-        self.min_fps = f64::MAX;
-        self.max_fps = 0.0;
-        self.fps_samples = 0;
-        self.avg_cpu_usage = 0.0;
-        self.avg_memory_usage_mb = 0.0;
-        self.error_count = 0;
-        self.last_updated_ms = increment_time_counter();
-    }
-
-    /// Проверяет, устарели ли метрики (не обновлялись дольше заданного времени).
-    ///
-    /// Примечание: Эта реализация использует простой счетчик времени с момента последнего обновления.
-    /// Для точного отслеживания времени нужно использовать внешний источник времени.
-    pub fn is_stale(&self, max_age: Duration) -> bool {
-        // Если last_updated_ms == 0, значит метрики никогда не обновлялись
-        if self.last_updated_ms == 0 {
-            return false;
-        }
-
-        let current_time = get_current_time_counter();
-        let age = current_time.saturating_sub(self.last_updated_ms);
-        Duration::from_millis(age as u64) > max_age
     }
 }
 
-/// Коллекция метрик производительности для всех приложений.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct AppPerformanceCollection {
-    /// Метрики для отдельных приложений
-    pub apps: HashMap<u32, AppPerformanceMetrics>,
-
-    /// Глобальные метрики производительности
-    pub global: GlobalAppPerformanceMetrics,
+/// Пороговые значения для определения статуса производительности.
+#[derive(Debug, Clone)]
+pub struct PerformanceThresholds {
+    /// Порог CPU для статуса "предупреждение" (в процентах).
+    pub cpu_warning_threshold: f64,
+    
+    /// Порог CPU для статуса "критическое" (в процентах).
+    pub cpu_critical_threshold: f64,
+    
+    /// Порог памяти для статуса "предупреждение" (в МБ).
+    pub memory_warning_threshold: u64,
+    
+    /// Порог памяти для статуса "критическое" (в МБ).
+    pub memory_critical_threshold: u64,
+    
+    /// Порог ввода-вывода для статуса "предупреждение" (в байтах/сек).
+    pub io_warning_threshold: u64,
+    
+    /// Порог ввода-вывода для статуса "критическое" (в байтах/сек).
+    pub io_critical_threshold: u64,
 }
 
-impl AppPerformanceCollection {
-    /// Создает новую коллекцию метрик.
-    pub fn new() -> Self {
+impl Default for PerformanceThresholds {
+    fn default() -> Self {
         Self {
-            apps: HashMap::new(),
-            global: GlobalAppPerformanceMetrics::default(),
+            cpu_warning_threshold: 70.0,
+            cpu_critical_threshold: 90.0,
+            memory_warning_threshold: 1000,  // 1 GB
+            memory_critical_threshold: 2000, // 2 GB
+            io_warning_threshold: 10_000_000, // 10 MB/s
+            io_critical_threshold: 50_000_000, // 50 MB/s
         }
-    }
-
-    /// Добавляет или обновляет метрики для приложения.
-    pub fn update_app(&mut self, metrics: AppPerformanceMetrics) {
-        self.apps.insert(metrics.pid, metrics);
-    }
-
-    /// Получает метрики для приложения по PID.
-    pub fn get_app(&self, pid: u32) -> Option<&AppPerformanceMetrics> {
-        self.apps.get(&pid)
-    }
-
-    /// Удаляет устаревшие метрики (не обновлявшиеся дольше заданного времени).
-    pub fn cleanup_stale(&mut self, max_age: Duration) {
-        self.apps.retain(|_, metrics| !metrics.is_stale(max_age));
-    }
-
-    /// Обновляет глобальные метрики на основе текущих метрик приложений.
-    pub fn update_global_metrics(&mut self) {
-        let mut total_latency = 0.0;
-        let mut total_fps = 0.0;
-        let mut total_cpu = 0.0;
-        let mut total_memory = 0.0;
-        let mut total_errors = 0;
-        let mut app_count = 0;
-
-        for metrics in self.apps.values() {
-            if metrics.latency_samples > 0 {
-                total_latency += metrics.avg_latency_ms;
-                app_count += 1;
-            }
-            if metrics.fps_samples > 0 {
-                total_fps += metrics.avg_fps;
-            }
-            if metrics.avg_cpu_usage > 0.0 {
-                total_cpu += metrics.avg_cpu_usage;
-            }
-            if metrics.avg_memory_usage_mb > 0.0 {
-                total_memory += metrics.avg_memory_usage_mb;
-            }
-            total_errors += metrics.error_count;
-        }
-
-        self.global.avg_latency_ms = if app_count > 0 {
-            total_latency / app_count as f64
-        } else {
-            0.0
-        };
-        self.global.avg_fps = if app_count > 0 {
-            total_fps / app_count as f64
-        } else {
-            0.0
-        };
-        self.global.avg_cpu_usage = if app_count > 0 {
-            total_cpu / app_count as f64
-        } else {
-            0.0
-        };
-        self.global.avg_memory_usage_mb = if app_count > 0 {
-            total_memory / app_count as f64
-        } else {
-            0.0
-        };
-        self.global.total_error_count = total_errors;
-        self.global.active_app_count = app_count;
     }
 }
 
-/// Глобальные метрики производительности приложений.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct GlobalAppPerformanceMetrics {
-    /// Средняя задержка отклика по всем приложениям
-    pub avg_latency_ms: f64,
-
-    /// Средний FPS по всем приложениям
-    pub avg_fps: f64,
-
-    /// Среднее использование CPU по всем приложениям
-    pub avg_cpu_usage: f64,
-
-    /// Среднее использование памяти по всем приложениям
-    pub avg_memory_usage_mb: f64,
-
-    /// Общее количество ошибок по всем приложениям
-    pub total_error_count: u32,
-
-    /// Количество активных приложений с метриками
-    pub active_app_count: u32,
+/// Собрать метрики производительности для всех групп приложений.
+///
+/// # Аргументы
+///
+/// * `app_groups` - Список групп приложений для мониторинга.
+/// * `config` - Конфигурация сбора метрик.
+///
+/// # Возвращаемое значение
+///
+/// Хэш-карта с метриками производительности для каждой группы приложений.
+///
+/// # Ошибки
+///
+/// Возвращает ошибку, если не удалось собрать метрики процессов.
+pub fn collect_app_performance_metrics(
+    app_groups: &[AppGroup],
+    config: Option<AppPerformanceConfig>
+) -> Result<HashMap<String, AppPerformanceMetrics>> {
+    let app_config = config.unwrap_or_default();
+    
+    if !app_config.enable_app_performance_monitoring {
+        tracing::info!("Мониторинг производительности приложений отключен");
+        return Ok(HashMap::new());
+    }
+    
+    tracing::info!(
+        "Начало сбора метрик производительности приложений для {} групп",
+        app_groups.len()
+    );
+    
+    // Собираем метрики всех процессов
+    let start_time = Instant::now();
+    let processes = collect_process_metrics(Some(app_config.process_cache_config))?;
+    let collection_time = start_time.elapsed();
+    
+    tracing::debug!(
+        "Собрано метрик для {} процессов за {:?}",
+        processes.len(),
+        collection_time
+    );
+    
+    // Группируем процессы по AppGroup
+    let mut app_metrics: HashMap<String, AppPerformanceMetrics> = HashMap::new();
+    
+    for app_group in app_groups {
+        let group_id = app_group.id.clone();
+        let group_name = app_group.name.clone();
+        
+        // Фильтруем процессы, принадлежащие этой группе
+        let group_processes: Vec<_> = processes
+            .iter()
+            .filter(|p| p.app_group_id.as_ref() == Some(&group_id))
+            .collect();
+        
+        if group_processes.is_empty() {
+            continue;
+        }
+        
+        // Вычисляем метрики для группы
+        let metrics = calculate_group_metrics(&group_processes, &app_config);
+        
+        app_metrics.insert(group_id.clone(), metrics);
+    }
+    
+    tracing::info!(
+        "Завершен сбор метрик производительности для {} групп приложений",
+        app_metrics.len()
+    );
+    
+    Ok(app_metrics)
 }
 
-/// Коллектор метрик производительности приложений.
-/// Отвечает за сбор метрик с различных источников.
-#[derive(Debug)]
-pub struct AppPerformanceCollector {
-    /// Текущая коллекция метрик
-    collection: AppPerformanceCollection,
-
-    /// Максимальный возраст метрик перед удалением
-    max_metrics_age: Duration,
+/// Вычислить метрики производительности для группы процессов.
+fn calculate_group_metrics(
+    processes: &[&ProcessRecord],
+    config: &AppPerformanceConfig
+) -> AppPerformanceMetrics {
+    let process_count = processes.len();
+    
+    // Вычисляем общие метрики CPU
+    let total_cpu_usage: f64 = processes
+        .iter()
+        .map(|p| p.cpu_share_1s.unwrap_or(0.0))
+        .sum();
+    
+    let average_cpu_usage = if process_count > 0 {
+        total_cpu_usage / process_count as f64
+    } else {
+        0.0
+    };
+    
+    let peak_cpu_usage = processes
+        .iter()
+        .map(|p| p.cpu_share_1s.unwrap_or(0.0))
+        .fold(0.0, f64::max);
+    
+    // Вычисляем общие метрики памяти
+    let total_memory_mb: u64 = processes
+        .iter()
+        .map(|p| p.rss_mb.unwrap_or(0))
+        .sum();
+    
+    let average_memory_mb = if process_count > 0 {
+        total_memory_mb as f64 / process_count as f64
+    } else {
+        0.0
+    };
+    
+    // Вычисляем общие метрики ввода-вывода
+    let total_io_bytes_per_sec: u64 = processes
+        .iter()
+        .map(|p| {
+            let read_bytes = p.io_read_bytes.unwrap_or(0);
+            let write_bytes = p.io_write_bytes.unwrap_or(0);
+            read_bytes + write_bytes
+        })
+        .sum();
+    
+    // Вычисляем общие контекстные переключения
+    let total_context_switches: u64 = processes
+        .iter()
+        .map(|p| {
+            let voluntary = p.voluntary_ctx.unwrap_or(0);
+            let involuntary = p.involuntary_ctx.unwrap_or(0);
+            voluntary + involuntary
+        })
+        .sum();
+    
+    // Считаем процессы с окнами
+    let processes_with_windows = processes
+        .iter()
+        .filter(|p| p.has_gui_window || p.is_focused_window)
+        .count();
+    
+    // Считаем процессы с аудио
+    let processes_with_audio = processes
+        .iter()
+        .filter(|p| p.is_audio_client || p.has_active_stream)
+        .count();
+    
+    // Считаем процессы с терминалами
+    let processes_with_terminals = processes
+        .iter()
+        .filter(|p| p.has_tty || p.env_term.is_some())
+        .count();
+    
+    // Определяем статус производительности
+    let performance_status = determine_performance_status(
+        total_cpu_usage,
+        total_memory_mb,
+        total_io_bytes_per_sec,
+        &config.performance_thresholds
+    );
+    
+    // Собираем теги
+    let mut tags = Vec::new();
+    if processes_with_windows > 0 {
+        tags.push("has_windows".to_string());
+    }
+    if processes_with_audio > 0 {
+        tags.push("has_audio".to_string());
+    }
+    if processes_with_terminals > 0 {
+        tags.push("has_terminals".to_string());
+    }
+    
+    // Определяем имя группы (используем имя первого процесса или "Unknown")
+    let app_group_name = processes
+        .first()
+        .and_then(|p| p.app_group_id.as_ref())
+        .map(|id| format!("AppGroup_{}", id))
+        .unwrap_or_else(|| "Unknown_AppGroup".to_string());
+    
+    // Определяем ID группы
+    let app_group_id = processes
+        .first()
+        .and_then(|p| p.app_group_id.as_ref())
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string());
+    
+    AppPerformanceMetrics {
+        app_group_id,
+        app_group_name,
+        process_count,
+        total_cpu_usage,
+        average_cpu_usage,
+        peak_cpu_usage,
+        total_memory_mb,
+        average_memory_mb,
+        total_io_bytes_per_sec,
+        total_context_switches,
+        processes_with_windows,
+        processes_with_audio,
+        processes_with_terminals,
+        response_time_ms: None, // Будет реализовано позже
+        performance_status,
+        timestamp: Instant::now(),
+        tags,
+    }
 }
 
-impl AppPerformanceCollector {
-    /// Создает новый коллектор.
-    pub fn new(max_metrics_age: Duration) -> Self {
-        Self {
-            collection: AppPerformanceCollection::new(),
-            max_metrics_age,
+/// Определить статус производительности на основе метрик и порогов.
+fn determine_performance_status(
+    total_cpu_usage: f64,
+    total_memory_mb: u64,
+    total_io_bytes_per_sec: u64,
+    thresholds: &PerformanceThresholds
+) -> PerformanceStatus {
+    let cpu_critical = total_cpu_usage > thresholds.cpu_critical_threshold;
+    let cpu_warning = total_cpu_usage > thresholds.cpu_warning_threshold;
+    
+    let memory_critical = total_memory_mb > thresholds.memory_critical_threshold;
+    let memory_warning = total_memory_mb > thresholds.memory_warning_threshold;
+    
+    let io_critical = total_io_bytes_per_sec > thresholds.io_critical_threshold;
+    let io_warning = total_io_bytes_per_sec > thresholds.io_warning_threshold;
+    
+    // Критический статус, если хотя бы один критический порог превышен
+    if cpu_critical || memory_critical || io_critical {
+        return PerformanceStatus::Critical;
+    }
+    
+    // Предупреждение, если хотя бы один порог предупреждения превышен
+    if cpu_warning || memory_warning || io_warning {
+        return PerformanceStatus::Warning;
+    }
+    
+    // Хороший статус, если все метрики в норме
+    PerformanceStatus::Good
+}
+
+/// Собрать метрики производительности для конкретной группы приложений.
+///
+/// # Аргументы
+///
+/// * `app_group` - Группа приложений для мониторинга.
+/// * `config` - Конфигурация сбора метрик.
+///
+/// # Возвращаемое значение
+///
+/// Метрики производительности для указанной группы приложений.
+pub fn collect_app_group_performance(
+    app_group: &AppGroup,
+    config: Option<AppPerformanceConfig>
+) -> Result<Option<AppPerformanceMetrics>> {
+    let app_config = config.unwrap_or_default();
+    
+    if !app_config.enable_app_performance_monitoring {
+        return Ok(None);
+    }
+    
+    // Собираем метрики всех процессов
+    let processes = collect_process_metrics(Some(app_config.process_cache_config))?;
+    
+    // Фильтруем процессы, принадлежащие этой группе
+    let group_processes: Vec<_> = processes
+        .iter()
+        .filter(|p| p.app_group_id.as_ref() == Some(&app_group.id))
+        .collect();
+    
+    if group_processes.is_empty() {
+        return Ok(None);
+    }
+    
+    // Вычисляем метрики для группы
+    let metrics = calculate_group_metrics(&group_processes, &app_config);
+    
+    Ok(Some(metrics))
+}
+
+/// Собрать метрики производительности для всех процессов в системе.
+///
+/// # Аргументы
+///
+/// * `config` - Конфигурация сбора метрик.
+///
+/// # Возвращаемое значение
+///
+/// Метрики производительности для всех процессов, сгруппированные по AppGroup.
+pub fn collect_all_app_performance(
+    config: Option<AppPerformanceConfig>
+) -> Result<HashMap<String, AppPerformanceMetrics>> {
+    let app_config = config.unwrap_or_default();
+    
+    if !app_config.enable_app_performance_monitoring {
+        tracing::info!("Мониторинг производительности приложений отключен");
+        return Ok(HashMap::new());
+    }
+    
+    // Собираем метрики всех процессов
+    let processes = collect_process_metrics(Some(app_config.process_cache_config))?;
+    
+    // Группируем процессы по AppGroup
+    let mut app_groups_map: HashMap<String, Vec<&ProcessRecord>> = HashMap::new();
+    
+    for process in &processes {
+        if let Some(app_group_id) = &process.app_group_id {
+            app_groups_map
+                .entry(app_group_id.clone())
+                .or_insert_with(Vec::new)
+                .push(process);
         }
     }
-
-    /// Собирает метрики производительности приложений.
-    /// В текущей реализации это заглушка, которая будет расширена.
-    pub fn collect(&mut self) -> Result<&AppPerformanceCollection> {
-        // Пока это заглушка - в будущем здесь будет реальный сбор метрик
-        // из различных источников (eBPF, системные вызовы, интеграция с приложениями)
-
-        // Очищаем устаревшие метрики
-        self.collection.cleanup_stale(self.max_metrics_age);
-
-        // Обновляем глобальные метрики
-        self.collection.update_global_metrics();
-
-        Ok(&self.collection)
+    
+    // Вычисляем метрики для каждой группы
+    let mut app_metrics: HashMap<String, AppPerformanceMetrics> = HashMap::new();
+    
+    for (app_group_id, group_processes) in app_groups_map {
+        if group_processes.len() >= app_config.min_processes_for_monitoring {
+            let metrics = calculate_group_metrics(&group_processes, &app_config);
+            app_metrics.insert(app_group_id, metrics);
+        }
     }
+    
+    tracing::info!(
+        "Собрано метрик производительности для {} групп приложений",
+        app_metrics.len()
+    );
+    
+    Ok(app_metrics)
+}
 
-    /// Получает текущую коллекцию метрик.
-    pub fn collection(&self) -> &AppPerformanceCollection {
-        &self.collection
+/// Собрать метрики производительности для конкретного процесса.
+///
+/// # Аргументы
+///
+/// * `process` - Процесс для анализа.
+/// * `config` - Конфигурация сбора метрик.
+///
+/// # Возвращаемое значение
+///
+/// Метрики производительности для указанного процесса.
+pub fn collect_process_performance(
+    process: &ProcessRecord,
+    config: Option<AppPerformanceConfig>
+) -> Result<AppPerformanceMetrics> {
+    let app_config = config.unwrap_or_default();
+    
+    if !app_config.enable_app_performance_monitoring {
+        return Err(anyhow::anyhow!("Мониторинг производительности отключен"));
     }
+    
+    // Создаем временную группу с одним процессом
+    let group_processes = vec![process];
+    let metrics = calculate_group_metrics(&group_processes, &app_config);
+    
+    Ok(metrics)
+}
+
+/// Собрать исторические метрики производительности.
+///
+/// # Аргументы
+///
+/// * `duration` - Длительность сбора истории (в секундах).
+/// * `interval` - Интервал между сборами (в секундах).
+/// * `config` - Конфигурация сбора метрик.
+///
+/// # Возвращаемое значение
+///
+/// Вектор метрик производительности, собранных за указанный период.
+pub fn collect_performance_history(
+    duration: Duration,
+    interval: Duration,
+    config: Option<AppPerformanceConfig>
+) -> Result<Vec<HashMap<String, AppPerformanceMetrics>>> {
+    let app_config = config.unwrap_or_default();
+    
+    if !app_config.enable_app_performance_monitoring {
+        return Err(anyhow::anyhow!("Мониторинг производительности отключен"));
+    }
+    
+    let start_time = Instant::now();
+    let mut history = Vec::new();
+    
+    while start_time.elapsed() < duration {
+        let metrics = collect_all_app_performance(Some(app_config.clone()))?;
+        history.push(metrics);
+        
+        if interval > Duration::from_secs(0) {
+            std::thread::sleep(interval);
+        }
+    }
+    
+    Ok(history)
+}
+
+/// Проанализировать тренды производительности.
+///
+/// # Аргументы
+///
+/// * `history` - История метрик производительности.
+///
+/// # Возвращаемое значение
+///
+/// Анализ трендов производительности.
+pub fn analyze_performance_trends(
+    history: &[HashMap<String, AppPerformanceMetrics>]
+) -> Result<PerformanceTrends> {
+    if history.is_empty() {
+        return Err(anyhow::anyhow!("История метрик пуста"));
+    }
+    
+    let mut trends = PerformanceTrends::default();
+    
+    // Анализируем тренды для каждой группы
+    for (app_group_id, metrics_list) in group_history_by_app_group(history) {
+        let group_trend = analyze_group_trend(&metrics_list);
+        trends.group_trends.insert(app_group_id, group_trend);
+    }
+    
+    // Вычисляем общие тренды
+    trends.overall_trend = calculate_overall_trend(&trends.group_trends);
+    
+    Ok(trends)
+}
+
+/// Группировать историю метрик по группам приложений.
+fn group_history_by_app_group(
+    history: &[HashMap<String, AppPerformanceMetrics>]
+) -> HashMap<String, Vec<&AppPerformanceMetrics>> {
+    let mut grouped_history: HashMap<String, Vec<&AppPerformanceMetrics>> = HashMap::new();
+    
+    for snapshot in history {
+        for (app_group_id, metrics) in snapshot {
+            grouped_history
+                .entry(app_group_id.clone())
+                .or_insert_with(Vec::new)
+                .push(metrics);
+        }
+    }
+    
+    grouped_history
+}
+
+/// Проанализировать тренд для одной группы приложений.
+fn analyze_group_trend(
+    metrics_list: &[&AppPerformanceMetrics]
+) -> GroupPerformanceTrend {
+    if metrics_list.is_empty() {
+        return GroupPerformanceTrend::default();
+    }
+    
+    let first = metrics_list.first().unwrap();
+    let last = metrics_list.last().unwrap();
+    
+    let cpu_change = last.total_cpu_usage - first.total_cpu_usage;
+    let memory_change = last.total_memory_mb as f64 - first.total_memory_mb as f64;
+    let io_change = last.total_io_bytes_per_sec as f64 - first.total_io_bytes_per_sec as f64;
+    
+    let cpu_trend = if cpu_change > 0.0 {
+        PerformanceTrendDirection::Increasing
+    } else if cpu_change < 0.0 {
+        PerformanceTrendDirection::Decreasing
+    } else {
+        PerformanceTrendDirection::Stable
+    };
+    
+    let memory_trend = if memory_change > 0.0 {
+        PerformanceTrendDirection::Increasing
+    } else if memory_change < 0.0 {
+        PerformanceTrendDirection::Decreasing
+    } else {
+        PerformanceTrendDirection::Stable
+    };
+    
+    let io_trend = if io_change > 0.0 {
+        PerformanceTrendDirection::Increasing
+    } else if io_change < 0.0 {
+        PerformanceTrendDirection::Decreasing
+    } else {
+        PerformanceTrendDirection::Stable
+    };
+    
+    GroupPerformanceTrend {
+        cpu_trend,
+        memory_trend,
+        io_trend,
+        average_cpu_usage: last.average_cpu_usage,
+        average_memory_mb: last.average_memory_mb,
+        average_io_bytes_per_sec: last.total_io_bytes_per_sec as f64,
+    }
+}
+
+/// Вычислить общий тренд производительности.
+fn calculate_overall_trend(
+    group_trends: &HashMap<String, GroupPerformanceTrend>
+) -> OverallPerformanceTrend {
+    if group_trends.is_empty() {
+        return OverallPerformanceTrend::default();
+    }
+    
+    let mut cpu_increasing = 0;
+    let mut cpu_decreasing = 0;
+    let mut memory_increasing = 0;
+    let mut memory_decreasing = 0;
+    let mut io_increasing = 0;
+    let mut io_decreasing = 0;
+    
+    for trend in group_trends.values() {
+        match trend.cpu_trend {
+            PerformanceTrendDirection::Increasing => cpu_increasing += 1,
+            PerformanceTrendDirection::Decreasing => cpu_decreasing += 1,
+            PerformanceTrendDirection::Stable => {}
+        }
+        
+        match trend.memory_trend {
+            PerformanceTrendDirection::Increasing => memory_increasing += 1,
+            PerformanceTrendDirection::Decreasing => memory_decreasing += 1,
+            PerformanceTrendDirection::Stable => {}
+        }
+        
+        match trend.io_trend {
+            PerformanceTrendDirection::Increasing => io_increasing += 1,
+            PerformanceTrendDirection::Decreasing => io_decreasing += 1,
+            PerformanceTrendDirection::Stable => {}
+        }
+    }
+    
+    let total_groups = group_trends.len() as f64;
+    
+    let cpu_trend = if cpu_increasing > cpu_decreasing {
+        PerformanceTrendDirection::Increasing
+    } else if cpu_decreasing > cpu_increasing {
+        PerformanceTrendDirection::Decreasing
+    } else {
+        PerformanceTrendDirection::Stable
+    };
+    
+    let memory_trend = if memory_increasing > memory_decreasing {
+        PerformanceTrendDirection::Increasing
+    } else if memory_decreasing > memory_increasing {
+        PerformanceTrendDirection::Decreasing
+    } else {
+        PerformanceTrendDirection::Stable
+    };
+    
+    let io_trend = if io_increasing > io_decreasing {
+        PerformanceTrendDirection::Increasing
+    } else if io_decreasing > io_increasing {
+        PerformanceTrendDirection::Decreasing
+    } else {
+        PerformanceTrendDirection::Stable
+    };
+    
+    OverallPerformanceTrend {
+        cpu_trend,
+        memory_trend,
+        io_trend,
+        groups_improving: cpu_decreasing + memory_decreasing + io_decreasing,
+        groups_degrading: cpu_increasing + memory_increasing + io_increasing,
+        total_groups,
+    }
+}
+
+/// Структура для хранения трендов производительности.
+#[derive(Debug, Clone, serde::Serialize, Default)]
+pub struct PerformanceTrends {
+    /// Общий тренд производительности.
+    pub overall_trend: OverallPerformanceTrend,
+    
+    /// Тренды для отдельных групп приложений.
+    pub group_trends: HashMap<String, GroupPerformanceTrend>,
+    
+    /// Временная метка анализа.
+    pub analysis_timestamp: Instant,
+}
+
+/// Общий тренд производительности.
+#[derive(Debug, Clone, serde::Serialize, Default)]
+pub struct OverallPerformanceTrend {
+    /// Тренд использования CPU.
+    pub cpu_trend: PerformanceTrendDirection,
+    
+    /// Тренд использования памяти.
+    pub memory_trend: PerformanceTrendDirection,
+    
+    /// Тренд ввода-вывода.
+    pub io_trend: PerformanceTrendDirection,
+    
+    /// Количество групп, показывающих улучшение.
+    pub groups_improving: usize,
+    
+    /// Количество групп, показывающих ухудшение.
+    pub groups_degrading: usize,
+    
+    /// Общее количество групп.
+    pub total_groups: f64,
+}
+
+/// Тренд производительности для группы приложений.
+#[derive(Debug, Clone, serde::Serialize, Default)]
+pub struct GroupPerformanceTrend {
+    /// Тренд использования CPU.
+    pub cpu_trend: PerformanceTrendDirection,
+    
+    /// Тренд использования памяти.
+    pub memory_trend: PerformanceTrendDirection,
+    
+    /// Тренд ввода-вывода.
+    pub io_trend: PerformanceTrendDirection,
+    
+    /// Среднее использование CPU.
+    pub average_cpu_usage: f64,
+    
+    /// Среднее использование памяти (в МБ).
+    pub average_memory_mb: f64,
+    
+    /// Средний ввод-вывод (в байтах/сек).
+    pub average_io_bytes_per_sec: f64,
+}
+
+/// Направление тренда производительности.
+#[derive(Debug, Clone, serde::Serialize, PartialEq, Eq)]
+pub enum PerformanceTrendDirection {
+    /// Производительность улучшается (метрики уменьшаются).
+    Decreasing,
+    
+    /// Производительность ухудшается (метрики увеличиваются).
+    Increasing,
+    
+    /// Производительность стабильна.
+    Stable,
+}
+
+impl Default for PerformanceTrendDirection {
+    fn default() -> Self {
+        PerformanceTrendDirection::Stable
+    }
+}
+
+/// Преобразовать метрики производительности в JSON для API.
+///
+/// # Аргументы
+///
+/// * `metrics` - Метрики производительности для преобразования.
+///
+/// # Возвращаемое значение
+///
+/// JSON представление метрик производительности.
+pub fn metrics_to_json(
+    metrics: &HashMap<String, AppPerformanceMetrics>
+) -> Result<String> {
+    serde_json::to_string(metrics)
+        .context("Не удалось сериализовать метрики производительности в JSON")
+}
+
+/// Преобразовать метрики производительности в формат для Prometheus.
+///
+/// # Аргументы
+///
+/// * `metrics` - Метрики производительности для преобразования.
+///
+/// # Возвращаемое значение
+///
+/// Формат Prometheus для метрик производительности.
+pub fn metrics_to_prometheus(
+    metrics: &HashMap<String, AppPerformanceMetrics>
+) -> String {
+    let mut output = String::new();
+    
+    for (app_group_id, metrics) in metrics {
+        // Метрики CPU
+        output.push_str(&format!(
+            "app_performance_cpu_usage{{app_group=\"{}\"}} {}\n",
+            app_group_id, metrics.total_cpu_usage
+        ));
+        
+        output.push_str(&format!(
+            "app_performance_avg_cpu_usage{{app_group=\"{}\"}} {}\n",
+            app_group_id, metrics.average_cpu_usage
+        ));
+        
+        // Метрики памяти
+        output.push_str(&format!(
+            "app_performance_memory_mb{{app_group=\"{}\"}} {}\n",
+            app_group_id, metrics.total_memory_mb
+        ));
+        
+        output.push_str(&format!(
+            "app_performance_avg_memory_mb{{app_group=\"{}\"}} {}\n",
+            app_group_id, metrics.average_memory_mb
+        ));
+        
+        // Метрики ввода-вывода
+        output.push_str(&format!(
+            "app_performance_io_bytes_per_sec{{app_group=\"{}\"}} {}\n",
+            app_group_id, metrics.total_io_bytes_per_sec
+        ));
+        
+        // Метрики статуса
+        let status_value = match metrics.performance_status {
+            PerformanceStatus::Good => 0,
+            PerformanceStatus::Warning => 1,
+            PerformanceStatus::Critical => 2,
+            PerformanceStatus::Unknown => 3,
+        };
+        
+        output.push_str(&format!(
+            "app_performance_status{{app_group=\"{}\"}} {}\n",
+            app_group_id, status_value
+        ));
+        
+        // Метрики процессов
+        output.push_str(&format!(
+            "app_performance_process_count{{app_group=\"{}\"}} {}\n",
+            app_group_id, metrics.process_count
+        ));
+    }
+    
+    output
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
-    use std::time::Duration;
+    use crate::logging::snapshots::ProcessRecord;
 
     #[test]
-    fn test_app_performance_metrics_new() {
-        let metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-        assert_eq!(metrics.pid, 1234);
-        assert_eq!(metrics.name, "test_app");
-        assert_eq!(metrics.latency_samples, 0);
-        assert_eq!(metrics.fps_samples, 0);
+    fn test_performance_status_determination() {
+        let thresholds = PerformanceThresholds::default();
+        
+        // Тест хорошего статуса
+        let status = determine_performance_status(30.0, 500, 1_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Good);
+        
+        // Тест статуса предупреждения (CPU)
+        let status = determine_performance_status(75.0, 500, 1_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Warning);
+        
+        // Тест статуса предупреждения (память)
+        let status = determine_performance_status(30.0, 1500, 1_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Warning);
+        
+        // Тест статуса предупреждения (ввод-вывод)
+        let status = determine_performance_status(30.0, 500, 15_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Warning);
+        
+        // Тест критического статуса (CPU)
+        let status = determine_performance_status(95.0, 500, 1_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Critical);
+        
+        // Тест критического статуса (память)
+        let status = determine_performance_status(30.0, 2500, 1_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Critical);
+        
+        // Тест критического статуса (ввод-вывод)
+        let status = determine_performance_status(30.0, 500, 60_000_000, &thresholds);
+        assert_eq!(status, PerformanceStatus::Critical);
     }
 
     #[test]
-    fn test_add_latency_sample() {
-        let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-
-        metrics.add_latency_sample(10.0);
-        assert_eq!(metrics.latency_samples, 1);
-        assert_eq!(metrics.avg_latency_ms, 10.0);
-        assert_eq!(metrics.min_latency_ms, 10.0);
-        assert_eq!(metrics.max_latency_ms, 10.0);
-
-        metrics.add_latency_sample(20.0);
-        assert_eq!(metrics.latency_samples, 2);
-        assert_eq!(metrics.avg_latency_ms, 15.0);
-        assert_eq!(metrics.min_latency_ms, 10.0);
-        assert_eq!(metrics.max_latency_ms, 20.0);
+    fn test_group_metrics_calculation() {
+        // Создаем тестовые процессы
+        let mut process1 = ProcessRecord::default();
+        process1.pid = 1;
+        process1.cpu_share_1s = Some(10.0);
+        process1.rss_mb = Some(100);
+        process1.io_read_bytes = Some(1000);
+        process1.io_write_bytes = Some(2000);
+        process1.voluntary_ctx = Some(10);
+        process1.involuntary_ctx = Some(5);
+        process1.has_gui_window = true;
+        process1.app_group_id = Some("test_group".to_string());
+        
+        let mut process2 = ProcessRecord::default();
+        process2.pid = 2;
+        process2.cpu_share_1s = Some(20.0);
+        process2.rss_mb = Some(200);
+        process2.io_read_bytes = Some(3000);
+        process2.io_write_bytes = Some(4000);
+        process2.voluntary_ctx = Some(20);
+        process2.involuntary_ctx = Some(10);
+        process2.is_audio_client = true;
+        process2.app_group_id = Some("test_group".to_string());
+        
+        let processes = vec![&process1, &process2];
+        let config = AppPerformanceConfig::default();
+        
+        let metrics = calculate_group_metrics(&processes, &config);
+        
+        // Проверяем основные метрики
+        assert_eq!(metrics.process_count, 2);
+        assert_eq!(metrics.total_cpu_usage, 30.0);
+        assert_eq!(metrics.average_cpu_usage, 15.0);
+        assert_eq!(metrics.peak_cpu_usage, 20.0);
+        assert_eq!(metrics.total_memory_mb, 300);
+        assert_eq!(metrics.average_memory_mb, 150.0);
+        assert_eq!(metrics.total_io_bytes_per_sec, 10000); // 1000+2000+3000+4000
+        assert_eq!(metrics.total_context_switches, 45); // 10+5+20+10
+        assert_eq!(metrics.processes_with_windows, 1);
+        assert_eq!(metrics.processes_with_audio, 1);
+        assert_eq!(metrics.processes_with_terminals, 0);
     }
 
     #[test]
-    fn test_add_fps_sample() {
-        let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-
-        metrics.add_fps_sample(60.0);
-        assert_eq!(metrics.fps_samples, 1);
-        assert_eq!(metrics.avg_fps, 60.0);
-        assert_eq!(metrics.min_fps, 60.0);
-        assert_eq!(metrics.max_fps, 60.0);
-
-        metrics.add_fps_sample(30.0);
-        assert_eq!(metrics.fps_samples, 2);
-        assert_eq!(metrics.avg_fps, 45.0);
-        assert_eq!(metrics.min_fps, 30.0);
-        assert_eq!(metrics.max_fps, 60.0);
+    fn test_performance_metrics_serialization() {
+        let metrics = AppPerformanceMetrics {
+            app_group_id: "test_group".to_string(),
+            app_group_name: "Test Application".to_string(),
+            process_count: 2,
+            total_cpu_usage: 30.0,
+            average_cpu_usage: 15.0,
+            peak_cpu_usage: 20.0,
+            total_memory_mb: 300,
+            average_memory_mb: 150.0,
+            total_io_bytes_per_sec: 10000,
+            total_context_switches: 45,
+            processes_with_windows: 1,
+            processes_with_audio: 1,
+            processes_with_terminals: 0,
+            response_time_ms: Some(100.0),
+            performance_status: PerformanceStatus::Good,
+            timestamp: Instant::now(),
+            tags: vec!["has_windows".to_string(), "has_audio".to_string()],
+        };
+        
+        // Тестируем сериализацию в JSON
+        let json_result = serde_json::to_string(&metrics);
+        assert!(json_result.is_ok());
+        
+        // Тестируем преобразование в Prometheus
+        let mut metrics_map = HashMap::new();
+        metrics_map.insert("test_group".to_string(), metrics);
+        
+        let prometheus_output = metrics_to_prometheus(&metrics_map);
+        assert!(prometheus_output.contains("app_performance_cpu_usage"));
+        assert!(prometheus_output.contains("app_performance_memory_mb"));
+        assert!(prometheus_output.contains("app_performance_io_bytes_per_sec"));
     }
 
     #[test]
-    fn test_update_cpu_usage() {
-        let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-
-        metrics.update_cpu_usage(50.0);
-        assert_eq!(metrics.avg_cpu_usage, 50.0);
-
-        metrics.update_cpu_usage(75.0);
-        // 50 * 0.7 + 75 * 0.3 = 35 + 22.5 = 57.5
-        assert_eq!(metrics.avg_cpu_usage, 57.5);
+    fn test_config_defaults() {
+        let config = AppPerformanceConfig::default();
+        
+        assert!(config.enable_app_performance_monitoring);
+        assert_eq!(config.collection_interval_seconds, 10);
+        assert_eq!(config.min_processes_for_monitoring, 5);
+        assert_eq!(config.performance_thresholds.cpu_warning_threshold, 70.0);
+        assert_eq!(config.performance_thresholds.cpu_critical_threshold, 90.0);
     }
 
     #[test]
-    fn test_is_stale() {
-        let mut metrics = AppPerformanceMetrics::new(1234, "test_app".to_string());
-
-        // Новые метрики (не обновлявшиеся) не должны быть устаревшими
-        assert!(!metrics.is_stale(Duration::from_secs(1)));
-
-        // Обновим метрики
-        metrics.add_latency_sample(10.0);
-
-        // Имитируем прохождение времени, увеличивая счетчик
-        // В реальном сценарии это бы сделало время, но для теста мы делаем это вручную
-        for _ in 0..100 {
-            increment_time_counter();
-        }
-
-        assert!(metrics.is_stale(Duration::from_millis(50)));
-    }
-
-    #[test]
-    fn test_app_performance_collection() {
-        let mut collection = AppPerformanceCollection::new();
-
-        let metrics1 = AppPerformanceMetrics::new(1, "app1".to_string());
-        let metrics2 = AppPerformanceMetrics::new(2, "app2".to_string());
-
-        collection.update_app(metrics1);
-        collection.update_app(metrics2);
-
-        assert_eq!(collection.apps.len(), 2);
-        assert!(collection.get_app(1).is_some());
-        assert!(collection.get_app(2).is_some());
-        assert!(collection.get_app(3).is_none());
-    }
-
-    #[test]
-    fn test_cleanup_stale() {
-        let mut collection = AppPerformanceCollection::new();
-
-        let mut metrics1 = AppPerformanceMetrics::new(1, "app1".to_string());
-        let mut metrics2 = AppPerformanceMetrics::new(2, "app2".to_string());
-
-        // Обновим метрики, чтобы они имели timestamp
-        metrics1.add_latency_sample(10.0);
-        metrics2.add_latency_sample(20.0);
-
-        // Добавим метрики
-        collection.update_app(metrics1);
-        collection.update_app(metrics2);
-
-        // Подождем немного
-        thread::sleep(Duration::from_millis(100));
-
-        // Очистим устаревшие (с возрастом 50мс)
-        collection.cleanup_stale(Duration::from_millis(50));
-
-        // Обе метрики должны быть удалены
-        assert_eq!(collection.apps.len(), 0);
-    }
-
-    #[test]
-    fn test_update_global_metrics() {
-        let mut collection = AppPerformanceCollection::new();
-
-        let mut metrics1 = AppPerformanceMetrics::new(1, "app1".to_string());
-        metrics1.add_latency_sample(10.0);
-        metrics1.update_cpu_usage(50.0);
-
-        let mut metrics2 = AppPerformanceMetrics::new(2, "app2".to_string());
-        metrics2.add_latency_sample(20.0);
-        metrics2.update_cpu_usage(75.0);
-
-        collection.update_app(metrics1);
-        collection.update_app(metrics2);
-
-        collection.update_global_metrics();
-
-        assert_eq!(collection.global.avg_latency_ms, 15.0);
-        assert_eq!(collection.global.avg_cpu_usage, 62.5);
-        assert_eq!(collection.global.active_app_count, 2);
-    }
-
-    #[test]
-    fn test_collector() {
-        let mut collector = AppPerformanceCollector::new(Duration::from_secs(1));
-
-        let result = collector.collect();
+    fn test_disabled_monitoring() {
+        let config = AppPerformanceConfig {
+            enable_app_performance_monitoring: false,
+            ..Default::default()
+        };
+        
+        let app_groups = vec![];
+        let result = collect_app_performance_metrics(&app_groups, Some(config));
+        
         assert!(result.is_ok());
+        let metrics = result.unwrap();
+        assert!(metrics.is_empty());
+    }
 
-        let collection = result.unwrap();
-        assert_eq!(collection.apps.len(), 0);
-        assert_eq!(collection.global.active_app_count, 0);
+    #[test]
+    fn test_empty_app_groups() {
+        let config = AppPerformanceConfig::default();
+        let app_groups = vec![];
+        
+        let result = collect_app_performance_metrics(&app_groups, Some(config));
+        
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        assert!(metrics.is_empty());
+    }
+
+    #[test]
+    fn test_trend_analysis() {
+        // Создаем историю метрик
+        let mut history = Vec::new();
+        
+        // Первая точка данных
+        let mut metrics1 = HashMap::new();
+        let mut app_metrics1 = AppPerformanceMetrics::default();
+        app_metrics1.app_group_id = "test_group".to_string();
+        app_metrics1.total_cpu_usage = 30.0;
+        app_metrics1.total_memory_mb = 500;
+        app_metrics1.total_io_bytes_per_sec = 5_000_000;
+        metrics1.insert("test_group".to_string(), app_metrics1);
+        history.push(metrics1);
+        
+        // Вторая точка данных (увеличение метрик)
+        let mut metrics2 = HashMap::new();
+        let mut app_metrics2 = AppPerformanceMetrics::default();
+        app_metrics2.app_group_id = "test_group".to_string();
+        app_metrics2.total_cpu_usage = 40.0;
+        app_metrics2.total_memory_mb = 600;
+        app_metrics2.total_io_bytes_per_sec = 6_000_000;
+        metrics2.insert("test_group".to_string(), app_metrics2);
+        history.push(metrics2);
+        
+        // Анализируем тренды
+        let trends_result = analyze_performance_trends(&history);
+        assert!(trends_result.is_ok());
+        
+        let trends = trends_result.unwrap();
+        assert_eq!(trends.group_trends.len(), 1);
+        
+        if let Some(group_trend) = trends.group_trends.get("test_group") {
+            assert_eq!(group_trend.cpu_trend, PerformanceTrendDirection::Increasing);
+            assert_eq!(group_trend.memory_trend, PerformanceTrendDirection::Increasing);
+            assert_eq!(group_trend.io_trend, PerformanceTrendDirection::Increasing);
+        }
+    }
+
+    #[test]
+    fn test_prometheus_format() {
+        let mut metrics = HashMap::new();
+        
+        let app_metrics = AppPerformanceMetrics {
+            app_group_id: "test_group".to_string(),
+            app_group_name: "Test App".to_string(),
+            process_count: 2,
+            total_cpu_usage: 30.0,
+            average_cpu_usage: 15.0,
+            peak_cpu_usage: 20.0,
+            total_memory_mb: 300,
+            average_memory_mb: 150.0,
+            total_io_bytes_per_sec: 10000,
+            total_context_switches: 45,
+            processes_with_windows: 1,
+            processes_with_audio: 1,
+            processes_with_terminals: 0,
+            response_time_ms: None,
+            performance_status: PerformanceStatus::Good,
+            timestamp: Instant::now(),
+            tags: vec![],
+        };
+        
+        metrics.insert("test_group".to_string(), app_metrics);
+        
+        let prometheus_output = metrics_to_prometheus(&metrics);
+        
+        // Проверяем, что вывод содержит ожидаемые метрики
+        assert!(prometheus_output.contains("app_performance_cpu_usage{app_group=\"test_group\"}"));
+        assert!(prometheus_output.contains("app_performance_memory_mb{app_group=\"test_group\"}"));
+        assert!(prometheus_output.contains("app_performance_io_bytes_per_sec{app_group=\"test_group\"}"));
+        assert!(prometheus_output.contains("app_performance_status{app_group=\"test_group\"}"));
+        assert!(prometheus_output.contains("app_performance_process_count{app_group=\"test_group\"}"));
     }
 }

@@ -109,8 +109,9 @@ fn benchmark_process_metrics_cache_limited_threads(c: &mut Criterion) {
         max_cached_processes: 5000,
         enable_parallel_processing: true,
         max_parallel_threads: Some(4), // Ограничиваем до 4 потоков
-
-
+        use_lru_cache: true,
+        batch_size: Some(100),
+        optimize_io: true,
     };
 
     c.bench_function("process_metrics_cache_limited_threads", |b| {
@@ -190,10 +191,83 @@ fn benchmark_process_metrics_cache_ttl_variations(c: &mut Criterion) {
             cache_ttl_seconds: ttl,
             max_cached_processes: 1000,
             enable_parallel_processing: true,
+            use_lru_cache: true,
             ..Default::default()
         };
 
         c.bench_function(&format!("process_metrics_cache_ttl_{}", ttl), |b| {
+            b.iter(|| {
+                let _result = collect_process_metrics(Some(config.clone()));
+            })
+        });
+    }
+}
+
+/// Бенчмарк для измерения производительности LRU кэша
+///
+/// Этот бенчмарк сравнивает производительность HashMap и LRU кэшей.
+fn benchmark_process_metrics_lru_vs_hashmap(c: &mut Criterion) {
+    // Очищаем кэш перед бенчмарком
+    clear_process_cache();
+
+    // Бенчмарк с HashMap кэшем
+    let hashmap_config = ProcessCacheConfig {
+        enable_caching: true,
+        cache_ttl_seconds: 300,
+        max_cached_processes: 1000,
+        enable_parallel_processing: true,
+        use_lru_cache: false,
+        ..Default::default()
+    };
+
+    c.bench_function("process_metrics_hashmap_cache", |b| {
+        b.iter(|| {
+            let _result = collect_process_metrics(Some(hashmap_config.clone()));
+        })
+    });
+
+    // Очищаем кэш перед следующим бенчмарком
+    clear_process_cache();
+
+    // Бенчмарк с LRU кэшем
+    let lru_config = ProcessCacheConfig {
+        enable_caching: true,
+        cache_ttl_seconds: 300,
+        max_cached_processes: 1000,
+        enable_parallel_processing: true,
+        use_lru_cache: true,
+        ..Default::default()
+    };
+
+    c.bench_function("process_metrics_lru_cache", |b| {
+        b.iter(|| {
+            let _result = collect_process_metrics(Some(lru_config.clone()));
+        })
+    });
+}
+
+/// Бенчмарк для измерения производительности с разными размерами батчей
+///
+/// Этот бенчмарк измеряет производительность функции collect_process_metrics
+/// с разными размерами батчей для параллельной обработки.
+fn benchmark_process_metrics_batch_size_variations(c: &mut Criterion) {
+    // Очищаем кэш перед бенчмарком
+    clear_process_cache();
+
+    let batch_sizes = [50, 100, 200, 500];
+
+    for &batch_size in &batch_sizes {
+        let config = ProcessCacheConfig {
+            enable_caching: true,
+            cache_ttl_seconds: 300,
+            max_cached_processes: 1000,
+            enable_parallel_processing: true,
+            batch_size: Some(batch_size),
+            use_lru_cache: true,
+            ..Default::default()
+        };
+
+        c.bench_function(&format!("process_metrics_batch_size_{}", batch_size), |b| {
             b.iter(|| {
                 let _result = collect_process_metrics(Some(config.clone()));
             })
@@ -215,7 +289,9 @@ criterion_group! {
         benchmark_process_metrics_cache_limited_threads,
         benchmark_process_metrics_cache_warmup,
         benchmark_process_metrics_cache_size_variations,
-        benchmark_process_metrics_cache_ttl_variations
+        benchmark_process_metrics_cache_ttl_variations,
+        benchmark_process_metrics_lru_vs_hashmap,
+        benchmark_process_metrics_batch_size_variations
 }
 
 criterion_main!(process_metrics_benchmarks);

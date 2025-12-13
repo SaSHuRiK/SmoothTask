@@ -1449,6 +1449,80 @@ async fn performance_handler(State(state): State<ApiState>) -> Result<Json<Value
     })))
 }
 
+/// Обработчик для endpoint `/api/app/performance` (GET).
+///
+/// Возвращает метрики производительности приложений, сгруппированные по AppGroup.
+///
+/// # Примеры
+///
+/// ```bash
+/// # Получение метрик производительности всех приложений
+/// curl "http://127.0.0.1:8080/api/app/performance"
+/// ```
+///
+/// # Возвращаемое значение
+///
+/// JSON объект с метриками производительности для каждой группы приложений,
+/// включая использование CPU, памяти, ввода-вывода и статус производительности.
+async fn app_performance_handler(
+    State(state): State<ApiState>
+) -> Result<Json<Value>, StatusCode> {
+    // Собираем метрики производительности приложений
+    let app_performance_config = AppPerformanceConfig::default();
+    
+    let result = collect_all_app_performance(Some(app_performance_config));
+    
+    match result {
+        Ok(metrics) => {
+            // Преобразуем метрики в JSON
+            let mut json_metrics = serde_json::Map::new();
+            
+            for (app_group_id, app_metrics) in metrics {
+                let mut group_json = serde_json::Map::new();
+                group_json.insert("app_group_id".to_string(), json!(app_metrics.app_group_id));
+                group_json.insert("app_group_name".to_string(), json!(app_metrics.app_group_name));
+                group_json.insert("process_count".to_string(), json!(app_metrics.process_count));
+                group_json.insert("total_cpu_usage".to_string(), json!(app_metrics.total_cpu_usage));
+                group_json.insert("average_cpu_usage".to_string(), json!(app_metrics.average_cpu_usage));
+                group_json.insert("peak_cpu_usage".to_string(), json!(app_metrics.peak_cpu_usage));
+                group_json.insert("total_memory_mb".to_string(), json!(app_metrics.total_memory_mb));
+                group_json.insert("average_memory_mb".to_string(), json!(app_metrics.average_memory_mb));
+                group_json.insert("total_io_bytes_per_sec".to_string(), json!(app_metrics.total_io_bytes_per_sec));
+                group_json.insert("total_context_switches".to_string(), json!(app_metrics.total_context_switches));
+                group_json.insert("processes_with_windows".to_string(), json!(app_metrics.processes_with_windows));
+                group_json.insert("processes_with_audio".to_string(), json!(app_metrics.processes_with_audio));
+                group_json.insert("processes_with_terminals".to_string(), json!(app_metrics.processes_with_terminals));
+                
+                // Добавляем статус производительности
+                let status_str = match app_metrics.performance_status {
+                    crate::metrics::app_performance::PerformanceStatus::Good => "good",
+                    crate::metrics::app_performance::PerformanceStatus::Warning => "warning",
+                    crate::metrics::app_performance::PerformanceStatus::Critical => "critical",
+                    crate::metrics::app_performance::PerformanceStatus::Unknown => "unknown",
+                };
+                group_json.insert("performance_status".to_string(), json!(status_str));
+                
+                // Добавляем теги
+                let tags_array: Vec<Value> = app_metrics.tags.iter().map(|tag| json!(tag)).collect();
+                group_json.insert("tags".to_string(), json!(tags_array));
+                
+                json_metrics.insert(app_group_id, Value::Object(group_json));
+            }
+            
+            Ok(Json(json!({
+                "status": "ok",
+                "app_performance_metrics": json_metrics,
+                "total_app_groups": metrics.len(),
+                "timestamp": Utc::now().to_rfc3339()
+            })))
+        }
+        Err(e) => {
+            error!("Ошибка сбора метрик производительности приложений: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 /// Обработчик для endpoint `/api/logs` (GET).
 ///
 /// Возвращает последние логи приложения с возможностью фильтрации по уровню
@@ -1688,6 +1762,7 @@ fn create_router(state: ApiState) -> Router {
             post(notifications_config_handler),
         )
         .route("/api/performance", get(performance_handler))
+        .route("/api/app/performance", get(app_performance_handler))
         .route("/api/logs", get(logs_handler))
         .route("/api/cache/stats", get(cache_stats_handler))
         .route("/api/cache/clear", post(cache_clear_handler))
@@ -4506,6 +4581,19 @@ mod tests {
         let cache_info = &value["cache_info"];
         assert_eq!(cache_info["enabled"], false);
         assert!(cache_info["ttl_seconds"].is_null());
+    }
+
+    #[tokio::test]
+    async fn test_app_performance_handler() {
+        let state = ApiState::new();
+        let result = app_performance_handler(State(state)).await;
+        assert!(result.is_ok());
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "ok");
+        assert!(value["app_performance_metrics"].is_object());
+        assert!(value["total_app_groups"].is_number());
+        assert!(value["timestamp"].is_string());
     }
 
     #[tokio::test]

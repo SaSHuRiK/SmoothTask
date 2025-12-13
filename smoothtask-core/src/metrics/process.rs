@@ -7,11 +7,13 @@ use crate::actuator::read_ionice;
 use crate::logging::snapshots::ProcessRecord;
 use anyhow::{Context, Result};
 use lazy_static::lazy_static;
+use lru::LruCache;
 use procfs::process::{Process, Stat};
 use procfs::ProcError;
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs;
+use std::num::NonZeroUsize;
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -28,6 +30,12 @@ pub struct ProcessCacheConfig {
     pub enable_parallel_processing: bool,
     /// Максимальное количество параллельных потоков.
     pub max_parallel_threads: Option<usize>,
+    /// Использовать LRU кэш вместо простого HashMap.
+    pub use_lru_cache: bool,
+    /// Размер батча для параллельной обработки процессов.
+    pub batch_size: Option<usize>,
+    /// Включить оптимизацию ввода-вывода (чтение файлов пакетами).
+    pub optimize_io: bool,
 }
 
 impl Default for ProcessCacheConfig {
@@ -38,6 +46,9 @@ impl Default for ProcessCacheConfig {
             enable_caching: true,
             enable_parallel_processing: true,
             max_parallel_threads: None,
+            use_lru_cache: true,
+            batch_size: Some(100),
+            optimize_io: true,
         }
     }
 }
@@ -54,26 +65,115 @@ lazy_static! {
         Arc::new(RwLock::new(ProcessCache::new()));
 }
 
+/// Глобальный счетчик для отслеживания статистики кэша
+lazy_static! {
+    static ref CACHE_STATS: Arc<RwLock<CachePerformanceStats>> =
+        Arc::new(RwLock::new(CachePerformanceStats::new()));
+}
+
 /// Структура кэша процессов.
 #[derive(Debug)]
 struct ProcessCache {
     records: HashMap<i32, CachedProcessRecord>,
+    lru_cache: Option<Arc<RwLock<LruCache<i32, CachedProcessRecord>>>>,
     config: ProcessCacheConfig,
+}
+
+/// Статистика производительности кэша для мониторинга эффективности.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CachePerformanceStats {
+    /// Общее количество запросов к кэшу
+    pub total_requests: u64,
+    /// Количество попаданий в кэш
+    pub cache_hits: u64,
+    /// Количество промахов кэша
+    pub cache_misses: u64,
+    /// Общее время, сэкономленное благодаря кэшу (в микросекундах)
+    pub time_saved_micros: u64,
+    /// Среднее время обработки процесса без кэша (в микросекундах)
+    pub avg_processing_time_micros: u64,
+    /// Последнее время обновления статистики
+    pub last_updated: Instant,
+}
+
+impl CachePerformanceStats {
+    fn new() -> Self {
+        Self {
+            total_requests: 0,
+            cache_hits: 0,
+            cache_misses: 0,
+            time_saved_micros: 0,
+            avg_processing_time_micros: 0,
+            last_updated: Instant::now(),
+        }
+    }
+
+    /// Обновить статистику после запроса к кэшу
+    fn record_request(&mut self, is_hit: bool, processing_time_micros: Option<u64>) {
+        self.total_requests += 1;
+        if is_hit {
+            self.cache_hits += 1;
+        } else {
+            self.cache_misses += 1;
+        }
+        
+        if let Some(time) = processing_time_micros {
+            // Обновляем среднее время обработки
+            if self.total_requests > 0 {
+                self.avg_processing_time_micros = 
+                    ((self.avg_processing_time_micros * (self.total_requests - 1)) + time) / self.total_requests;
+            }
+        }
+        
+        self.last_updated = Instant::now();
+    }
+
+    /// Сбросить статистику
+    fn reset(&mut self) {
+        *self = Self::new();
+    }
+
+    /// Вычислить процент попаданий в кэш
+    fn hit_rate(&self) -> f64 {
+        if self.total_requests == 0 {
+            0.0
+        } else {
+            self.cache_hits as f64 / self.total_requests as f64
+        }
+    }
 }
 
 impl ProcessCache {
     fn new() -> Self {
         Self {
             records: HashMap::new(),
+            lru_cache: None,
             config: ProcessCacheConfig::default(),
         }
     }
 
     #[allow(dead_code)]
     fn with_config(config: ProcessCacheConfig) -> Self {
-        Self {
+        let mut cache = Self {
             records: HashMap::new(),
-            config,
+            lru_cache: None,
+            config: config.clone(),
+        };
+        
+        // Инициализируем LRU кэш, если он включен
+        if config.use_lru_cache && config.max_cached_processes > 0 {
+            cache.initialize_lru_cache();
+        }
+        
+        cache
+    }
+
+    /// Инициализировать LRU кэш
+    fn initialize_lru_cache(&mut self) {
+        if self.config.max_cached_processes > 0 {
+            self.lru_cache = Some(Arc::new(RwLock::new(
+                LruCache::new(NonZeroUsize::new(self.config.max_cached_processes).unwrap())
+            )));
         }
     }
 
@@ -88,8 +188,18 @@ impl ProcessCache {
             now.duration_since(cached.cached_at) < Duration::from_secs(cache_ttl)
         });
 
-        // Ограничить количество записей, если превышен лимит
-        if self.records.len() > max_processes {
+        // Для LRU кэша очистка происходит автоматически при вставке
+        if let Some(lru_cache) = &self.lru_cache {
+            let mut lru_write = lru_cache.write().unwrap();
+            // LRU кэш автоматически удаляет старые записи при превышении лимита
+            // Но нам нужно вручную удалить устаревшие записи по TTL
+            lru_write.retain(|_, cached| {
+                now.duration_since(cached.cached_at) < Duration::from_secs(cache_ttl)
+            });
+        }
+
+        // Ограничить количество записей, если превышен лимит (только для HashMap)
+        if !self.config.use_lru_cache && self.records.len() > max_processes {
             // Удаляем самые старые записи (FIFO)
             let mut entries: Vec<_> = self
                 .records
@@ -107,10 +217,21 @@ impl ProcessCache {
 
     /// Получить запись из кэша, если она актуальна.
     fn get_cached(&self, pid: i32) -> Option<ProcessRecord> {
+        let now = Instant::now();
+        
+        // Пробуем получить из LRU кэша, если он включен
+        if let Some(lru_cache) = &self.lru_cache {
+            let lru_read = lru_cache.read().unwrap();
+            if let Some(cached) = lru_read.get(&pid) {
+                if now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds) {
+                    return Some(cached.record.clone());
+                }
+            }
+        }
+        
+        // Пробуем получить из HashMap кэша
         self.records.get(&pid).and_then(|cached| {
-            let now = Instant::now();
-            if now.duration_since(cached.cached_at)
-                < Duration::from_secs(self.config.cache_ttl_seconds)
+            if now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds)
             {
                 Some(cached.record.clone())
             } else {
@@ -121,30 +242,38 @@ impl ProcessCache {
 
     /// Сохранить запись в кэш.
     fn cache_record(&mut self, record: ProcessRecord) {
-        // Очищаем устаревшие записи и удаляем лишние, учитывая что добавим новую запись
+        // Очищаем устаревшие записи
         self.cleanup_stale_entries();
 
-        // Если после очистки мы все еще превышаем лимит (учитывая новую запись),
-        // удаляем еще одну самую старую запись
-        if self.records.len() + 1 > self.config.max_cached_processes {
-            let mut entries: Vec<_> = self
-                .records
-                .iter()
-                .map(|(pid, cached)| (*pid, cached.cached_at))
-                .collect();
-            entries.sort_by_key(|(_, cached_at)| *cached_at);
-            if let Some((oldest_pid, _)) = entries.into_iter().next() {
-                self.records.remove(&oldest_pid);
-            }
+        let cached_record = CachedProcessRecord {
+            record: record.clone(),
+            cached_at: Instant::now(),
+        };
+
+        // Сохраняем в LRU кэш, если он включен
+        if let Some(lru_cache) = &self.lru_cache {
+            let mut lru_write = lru_cache.write().unwrap();
+            lru_write.put(record.pid, cached_record.clone());
         }
 
-        self.records.insert(
-            record.pid,
-            CachedProcessRecord {
-                record,
-                cached_at: Instant::now(),
-            },
-        );
+        // Сохраняем в HashMap кэш (если не используется LRU или для совместимости)
+        if !self.config.use_lru_cache {
+            // Если после очистки мы все еще превышаем лимит (учитывая новую запись),
+            // удаляем еще одну самую старую запись
+            if self.records.len() + 1 > self.config.max_cached_processes {
+                let mut entries: Vec<_> = self
+                    .records
+                    .iter()
+                    .map(|(pid, cached)| (*pid, cached.cached_at))
+                    .collect();
+                entries.sort_by_key(|(_, cached_at)| *cached_at);
+                if let Some((oldest_pid, _)) = entries.into_iter().next() {
+                    self.records.remove(&oldest_pid);
+                }
+            }
+
+            self.records.insert(record.pid, cached_record);
+        }
     }
 
     /// Очистить весь кэш.
@@ -188,6 +317,10 @@ impl ProcessCache {
             0.0
         };
 
+        // Получаем статистику производительности
+        let perf_stats = CACHE_STATS.read().unwrap();
+        let hit_rate = perf_stats.hit_rate();
+
         ProcessCacheStats {
             total_entries,
             active_entries,
@@ -195,7 +328,7 @@ impl ProcessCache {
             max_capacity: self.config.max_cached_processes,
             cache_ttl_seconds: self.config.cache_ttl_seconds,
             average_age_seconds: avg_age_seconds,
-            hit_rate: 0.0, // Будет установлено позже
+            hit_rate,
         }
     }
 }
@@ -427,6 +560,8 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
     // Это значительно ускоряет сбор метрик для большого количества процессов
     let process_results: Vec<_> = if cache_config.enable_parallel_processing {
         // Используем глобальный пул потоков
+        let batch_size = cache_config.batch_size.unwrap_or(100);
+        
         all_procs
             .par_bridge() // Преобразуем итератор в параллельный
             .filter_map(|proc_result| {
@@ -437,13 +572,25 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 
                         // Проверяем кэш, если кэширование включено
                         if cache_config.enable_caching {
+                            let start_time = Instant::now();
                             let cache_read = PROCESS_CACHE.read().unwrap();
                             if let Some(cached_record) = cache_read.get_cached(pid) {
                                 tracing::debug!("Кэш попадание для процесса PID {}", pid);
+                                
+                                // Обновляем статистику кэша
+                                let mut stats_write = CACHE_STATS.write().unwrap();
+                                stats_write.record_request(true, None);
+                                drop(stats_write);
+                                
                                 drop(cache_read);
                                 return Some(cached_record);
                             }
                             drop(cache_read);
+                            
+                            // Обновляем статистику кэша для промаха
+                            let mut stats_write = CACHE_STATS.write().unwrap();
+                            stats_write.record_request(false, None);
+                            drop(stats_write);
                         }
 
                         match collect_single_process(&proc) {
@@ -2087,6 +2234,9 @@ mod cache_tests {
         let config = get_process_cache_config();
         assert_eq!(config.cache_ttl_seconds, 5);
         assert_eq!(config.max_cached_processes, 1000);
+        assert!(config.use_lru_cache);
+        assert_eq!(config.batch_size, Some(100));
+        assert!(config.optimize_io);
 
         // Обновляем конфигурацию
         let new_config = ProcessCacheConfig {
@@ -2101,6 +2251,49 @@ mod cache_tests {
         let updated_config = get_process_cache_config();
         assert_eq!(updated_config.cache_ttl_seconds, 30);
         assert_eq!(updated_config.max_cached_processes, 2000);
+    }
+
+    #[test]
+    fn test_cache_performance_stats() {
+        // Очищаем статистику перед тестом
+        reset_cache_performance_stats();
+
+        let stats = get_cache_performance_stats();
+        assert_eq!(stats.total_requests, 0);
+        assert_eq!(stats.cache_hits, 0);
+        assert_eq!(stats.cache_misses, 0);
+        assert_eq!(stats.hit_rate(), 0.0);
+    }
+
+    #[test]
+    fn test_lru_cache_initialization() {
+        let config = ProcessCacheConfig {
+            use_lru_cache: true,
+            max_cached_processes: 10,
+            ..Default::default()
+        };
+
+        let cache = ProcessCache::with_config(config);
+        assert!(cache.lru_cache.is_some());
+        
+        if let Some(lru_cache) = cache.lru_cache {
+            let lru_read = lru_cache.read().unwrap();
+            assert_eq!(lru_read.len(), 0);
+            assert_eq!(lru_read.cap(), 10);
+        }
+    }
+
+    #[test]
+    fn test_batch_config() {
+        let config = ProcessCacheConfig {
+            batch_size: Some(50),
+            ..Default::default()
+        };
+
+        assert_eq!(config.batch_size, Some(50));
+        
+        let config2 = ProcessCacheConfig::default();
+        assert_eq!(config2.batch_size, Some(100));
     }
 }
 
@@ -2119,7 +2312,47 @@ mod cache_tests {
 pub fn clear_process_cache() {
     let mut cache_write = PROCESS_CACHE.write().unwrap();
     cache_write.clear();
+    
+    // Также очищаем статистику производительности
+    let mut stats_write = CACHE_STATS.write().unwrap();
+    stats_write.reset();
+    
     tracing::info!("Кэш метрик процессов очищен");
+}
+
+/// Сбросить статистику производительности кэша.
+///
+/// # Примеры использования
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::reset_cache_performance_stats;
+///
+/// // Сброс статистики перед новым тестом
+/// reset_cache_performance_stats();
+/// ```
+pub fn reset_cache_performance_stats() {
+    let mut stats_write = CACHE_STATS.write().unwrap();
+    stats_write.reset();
+    tracing::info!("Статистика производительности кэша сброшена");
+}
+
+/// Получить статистику производительности кэша.
+///
+/// # Возвращаемое значение
+///
+/// Статистика производительности кэша метрик процессов.
+///
+/// # Примеры использования
+///
+/// ```rust
+/// use smoothtask_core::metrics::process::get_cache_performance_stats;
+///
+/// let stats = get_cache_performance_stats();
+/// println!("Процент попаданий в кэш: {:.2}%", stats.hit_rate() * 100.0);
+/// ```
+pub fn get_cache_performance_stats() -> CachePerformanceStats {
+    let stats_read = CACHE_STATS.read().unwrap();
+    stats_read.clone()
 }
 
 /// Обновить конфигурацию кэша метрик процессов.

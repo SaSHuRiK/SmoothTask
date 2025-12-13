@@ -50,6 +50,9 @@ flate2 = { version = "1.0", features = ["zlib"] }
 # Lazy static для глобальных кэшей
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 
+# LRU кэш для оптимизации производительности
+lru = "0.12"
+
 # ML-классификация (опционально)
 catboost = { version = "0.1", optional = true }
 ort = { version = "2.0.0-rc.10", features = ["default"], optional = true }
