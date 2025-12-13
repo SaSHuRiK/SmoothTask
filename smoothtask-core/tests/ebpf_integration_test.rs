@@ -171,10 +171,8 @@ fn test_gpu_monitoring_with_detailed_stats() {
 
     // Проверяем, что GPU метрики имеют разумные значения
     assert!(metrics.gpu_usage >= 0.0); // Должно быть >= 0.0
-    assert!(metrics.gpu_memory_usage >= 0); // Должно быть >= 0
-    assert!(metrics.gpu_compute_units >= 0); // Должно быть >= 0
-    assert!(metrics.gpu_power_usage >= 0); // Должно быть >= 0
-    assert!(metrics.gpu_temperature >= 0); // Должно быть >= 0
+    // gpu_memory_usage, gpu_compute_units, gpu_power_usage, gpu_temperature are unsigned types
+    // No assertions needed since they're always >= 0
 
     // Проверяем, что детализированная статистика GPU отсутствует или пустая
     // В тестовой среде без реальных GPU данных она должна быть None или пустой
@@ -183,11 +181,8 @@ fn test_gpu_monitoring_with_detailed_stats() {
             // Если есть детали, они должны быть пустыми или содержать только нулевые значения
             for gpu_stat in details {
                 assert!(gpu_stat.gpu_usage >= 0.0);
-                assert!(gpu_stat.memory_usage >= 0);
-                assert!(gpu_stat.compute_units_active >= 0);
-                assert!(gpu_stat.power_usage_uw >= 0);
-                assert!(gpu_stat.temperature_celsius >= 0);
-                assert!(gpu_stat.max_temperature_celsius >= 0);
+                // memory_usage, compute_units_active, power_usage_uw, temperature_celsius, max_temperature_celsius are unsigned types
+                // No assertions needed since they're always >= 0
             }
         }
         None => {
@@ -225,18 +220,8 @@ fn test_gpu_temperature_and_power_monitoring() {
     let metrics = metrics.unwrap();
 
     // Проверяем, что новые метрики температуры и энергопотребления присутствуют
-    assert!(
-        metrics.gpu_temperature >= 0,
-        "Температура GPU должна быть >= 0"
-    );
-    assert!(
-        metrics.gpu_power_usage >= 0,
-        "Энергопотребление GPU должно быть >= 0"
-    );
-    assert!(
-        metrics.gpu_compute_units >= 0,
-        "Количество вычислительных единиц GPU должно быть >= 0"
-    );
+    // gpu_temperature, gpu_power_usage, gpu_compute_units are unsigned types
+    // No assertions needed since they're always >= 0
 
     // Проверяем, что значения находятся в разумных пределах
     assert!(
@@ -290,22 +275,8 @@ fn test_gpu_comprehensive_monitoring() {
         "Использование GPU должно быть <= 100%"
     );
 
-    assert!(
-        metrics.gpu_memory_usage >= 0,
-        "Использование памяти GPU должно быть >= 0"
-    );
-    assert!(
-        metrics.gpu_compute_units >= 0,
-        "Количество вычислительных единиц GPU должно быть >= 0"
-    );
-    assert!(
-        metrics.gpu_power_usage >= 0,
-        "Энергопотребление GPU должно быть >= 0"
-    );
-    assert!(
-        metrics.gpu_temperature >= 0,
-        "Температура GPU должна быть >= 0"
-    );
+    // gpu_memory_usage, gpu_compute_units, gpu_power_usage, gpu_temperature are unsigned types
+    // No assertions needed since they're always >= 0
 
     // Проверяем, что метрики согласованы
     if metrics.gpu_usage > 0.0 {
@@ -388,14 +359,8 @@ fn test_cpu_temperature_monitoring() {
     let metrics = metrics.unwrap();
 
     // Проверяем, что температура CPU имеет разумные значения
-    assert!(
-        metrics.cpu_temperature >= 0,
-        "Температура CPU должна быть >= 0"
-    );
-    assert!(
-        metrics.cpu_max_temperature >= 0,
-        "Максимальная температура CPU должна быть >= 0"
-    );
+    // cpu_temperature and cpu_max_temperature are u32 (unsigned), so they're always >= 0
+    // No assertions needed since they're always true
 
     // В тестовой среде температура может быть 0, но не должна быть нереалистично высокой
     assert!(
@@ -413,14 +378,8 @@ fn test_cpu_temperature_monitoring() {
                "Детализированная статистика температуры CPU должна быть доступна при включенном мониторинге");
 
         for temp_stat in temperature_details {
-            assert!(
-                temp_stat.temperature_celsius >= 0,
-                "Температура CPU в деталях должна быть >= 0"
-            );
-            assert!(
-                temp_stat.max_temperature_celsius >= 0,
-                "Максимальная температура CPU в деталях должна быть >= 0"
-            );
+            // temperature_celsius and max_temperature_celsius are u32 (unsigned), so they're always >= 0
+            // No assertions needed since they're always true
             assert!(
                 temp_stat.timestamp > 0,
                 "Временная метка температуры CPU должна быть > 0"
@@ -432,7 +391,7 @@ fn test_cpu_temperature_monitoring() {
 #[test]
 fn test_process_type_filtering() {
     // Тестируем фильтрацию по типам процессов
-    let mut config = EbpfConfig {
+    let config = EbpfConfig {
         enable_process_monitoring: true,
         ..Default::default()
     };
@@ -517,7 +476,8 @@ fn test_real_time_event_processing_optimization() {
     let metrics = metrics.unwrap();
     // Проверяем, что метрики все еще собираются корректно
     assert!(metrics.cpu_usage >= 0.0);
-    assert!(metrics.memory_usage >= 0);
+    // memory_usage is u64 (unsigned), so it's always >= 0
+    // No assertion needed since it's always true
 }
 
 #[test]
@@ -725,7 +685,8 @@ fn test_ebpf_filtering_and_aggregation() {
 
     let metrics = metrics.unwrap();
     assert!(metrics.cpu_usage >= 0.0);
-    assert!(metrics.memory_usage >= 0);
+    // memory_usage is u64 (unsigned), so it's always >= 0
+    // No assertion needed since it's always true
 }
 
 #[test]
@@ -745,10 +706,9 @@ fn test_ebpf_temperature_monitoring() {
     let metrics = collector.collect_metrics();
     assert!(metrics.is_ok());
 
-    let metrics = metrics.unwrap();
-    assert!(metrics.cpu_temperature >= 0);
-    assert!(metrics.cpu_max_temperature >= 0);
-    assert!(metrics.gpu_temperature >= 0);
+    let _metrics = metrics.unwrap();
+    // cpu_temperature, cpu_max_temperature, gpu_temperature are unsigned types
+    // No assertions needed since they're always >= 0
 }
 
 #[test]
@@ -927,15 +887,9 @@ fn test_cpu_temperature_with_different_configs() {
     let mut collector_enabled = EbpfMetricsCollector::new(config_enabled);
     assert!(collector_enabled.initialize().is_ok());
 
-    let metrics_enabled = collector_enabled.collect_metrics().unwrap();
-    assert!(
-        metrics_enabled.cpu_temperature >= 0,
-        "Температура CPU должна быть >= 0 при включенном мониторинге"
-    );
-    assert!(
-        metrics_enabled.cpu_max_temperature >= 0,
-        "Максимальная температура CPU должна быть >= 0 при включенном мониторинге"
-    );
+    let _metrics_enabled = collector_enabled.collect_metrics().unwrap();
+    // cpu_temperature and cpu_max_temperature are u32 (unsigned), so they're always >= 0
+    // No assertions needed since they're always true
 }
 
 #[test]
@@ -957,17 +911,11 @@ fn test_cpu_temperature_error_handling() {
         "Сбор метрик должен завершаться успешно даже без реальной eBPF поддержки"
     );
 
-    let metrics = result.unwrap();
+    let _metrics = result.unwrap();
 
     // В тестовой среде значения могут быть по умолчанию
-    assert!(
-        metrics.cpu_temperature >= 0,
-        "Температура CPU должна быть >= 0"
-    );
-    assert!(
-        metrics.cpu_max_temperature >= 0,
-        "Максимальная температура CPU должна быть >= 0"
-    );
+    // cpu_temperature and cpu_max_temperature are u32 (unsigned), so they're always >= 0
+    // No assertions needed since they're always true
 }
 
 #[test]

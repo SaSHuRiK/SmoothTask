@@ -11,7 +11,74 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-633: Добавить поддержку мониторинга температуры процессора через eBPF
+- [x] ST-642: Исправить предупреждения компилятора в ebpf.rs (unused variables)
+  - Тип: Rust / core / metrics / eBPF
+  - Примечания: Исправление unused переменных success и errors в функции collect_cpu_temperature_data
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~15 минут
+  - Критерии готовности:
+    - ✅ Исправление unused переменных с добавлением префикса _
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Исправление unused переменных
+  - Результаты: Успешная компиляция без предупреждений
+
+- [x] ST-643: Исправить предупреждения компилятора в ebpf_advanced_example.rs (unused imports и dead code)
+  - Тип: Rust / core / examples
+  - Примечания: Исправление unused импортов и удаление неиспользуемой функции demonstrate_integration
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~10 минут
+  - Критерии готовности:
+    - ✅ Удаление unused импортов EbpfFilterConfig и EbpfNotificationThresholds
+    - ✅ Удаление неиспользуемой функции demonstrate_integration
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/examples/ebpf_advanced_example.rs: Исправление unused импортов и удаление dead code
+  - Результаты: Успешная компиляция без предупреждений
+
+- [x] ST-644: Исправить предупреждения компилятора в ml_classifier_integration_test.rs (unused imports и dead code)
+  - Тип: Rust / core / tests
+  - Примечания: Исправление unused импортов и удаление неиспользуемых функций
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~15 минут
+  - Критерии готовности:
+    - ✅ Удаление unused импортов PatternWatcher, PatternWatcherConfig, MLClassifierConfig, Arc, TempDir, tempdir, Mutex
+    - ✅ Удаление неиспользуемых функций create_test_process и create_test_pattern_file
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/tests/ml_classifier_integration_test.rs: Исправление unused импортов и удаление dead code
+  - Результаты: Успешная компиляция без предупреждений
+
+- [x] ST-645: Исправить предупреждения компилятора в ebpf_real_integration_test.rs (unused imports и useless comparisons)
+  - Тип: Rust / core / tests
+  - Примечания: Исправление unused импортов и удаление useless сравнений для unsigned типов
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~20 минут
+  - Критерии готовности:
+    - ✅ Удаление unused импорта Duration
+    - ✅ Удаление useless сравнений для unsigned типов (>= 0)
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/tests/ebpf_real_integration_test.rs: Исправление unused импортов и удаление useless сравнений
+  - Результаты: Успешная компиляция без предупреждений
+
+- [x] ST-646: Исправить предупреждения компилятора в ebpf_integration_test.rs (unused mut и useless comparisons)
+  - Тип: Rust / core / tests
+  - Примечания: Исправление unused mut и удаление useless сравнений для unsigned типов
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~25 минут
+  - Критерии готовности:
+    - ✅ Удаление unused mut для переменной config
+    - ✅ Удаление useless сравнений для unsigned типов (>= 0)
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/tests/ebpf_integration_test.rs: Исправление unused mut и удаление useless сравнений
+  - Результаты: Успешная компиляция без предупреждений
   - Тип: Rust / core / metrics / eBPF
   - Примечания: Реализация мониторинга температуры процессора с использованием eBPF
   - Приоритет: Средний
@@ -38,20 +105,73 @@
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-641: Исправить предупреждения компилятора (unused variables и useless comparisons)
-  - Тип: Rust / core / code quality
+- [x] ST-646: Исправить предупреждения компилятора в ebpf_integration_test.rs (unused mut и useless comparisons)
+  - Тип: Rust / core / tests
   - Примечания: Исправление предупреждений компилятора для улучшения качества кода
   - Приоритет: Высокий
   - Статус: COMPLETED
-  - Время выполнения: ~30 минут
+  - Время выполнения: ~25 минут
   - Критерии готовности:
-    - ✅ Исправление unused переменных в audio.rs (тест graceful degradation)
-    - ✅ Исправление unused переменных в ebpf.rs (process_gpu_details, process_network_details, process_disk_details)
-    - ✅ Исправление useless comparisons для unsigned типов (u64, usize)
+    - ✅ Удаление unused mut для переменной config
+    - ✅ Удаление useless сравнений для unsigned типов (>= 0)
     - ✅ Проверка успешной компиляции без предупреждений
   - Изменённые файлы:
-    - smoothtask-core/src/metrics/audio.rs: Исправлена unused переменная в тесте
-    - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные и useless comparisons
+    - smoothtask-core/tests/ebpf_integration_test.rs: Исправление unused mut и удаление useless сравнений
+  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
+
+- [x] ST-645: Исправить предупреждения компилятора в ebpf_real_integration_test.rs (unused imports и useless comparisons)
+  - Тип: Rust / core / tests
+  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~20 минут
+  - Критерии готовности:
+    - ✅ Удаление unused импорта Duration
+    - ✅ Удаление useless сравнений для unsigned типов (>= 0)
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/tests/ebpf_real_integration_test.rs: Исправление unused импортов и удаление useless сравнений
+  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
+
+- [x] ST-644: Исправить предупреждения компилятора в ml_classifier_integration_test.rs (unused imports и dead code)
+  - Тип: Rust / core / tests
+  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~15 минут
+  - Критерии готовности:
+    - ✅ Удаление unused импортов PatternWatcher, PatternWatcherConfig, MLClassifierConfig, Arc, TempDir, tempdir, Mutex
+    - ✅ Удаление неиспользуемых функций create_test_process и create_test_pattern_file
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/tests/ml_classifier_integration_test.rs: Исправление unused импортов и удаление dead code
+  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
+
+- [x] ST-643: Исправить предупреждения компилятора в ebpf_advanced_example.rs (unused imports и dead code)
+  - Тип: Rust / core / examples
+  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~10 минут
+  - Критерии готовности:
+    - ✅ Удаление unused импортов EbpfFilterConfig и EbpfNotificationThresholds
+    - ✅ Удаление неиспользуемой функции demonstrate_integration
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/examples/ebpf_advanced_example.rs: Исправление unused импортов и удаление dead code
+  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
+
+- [x] ST-642: Исправить предупреждения компилятора в ebpf.rs (unused variables)
+  - Тип: Rust / core / metrics / eBPF
+  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~15 минут
+  - Критерии готовности:
+    - ✅ Исправление unused переменных с добавлением префикса _
+    - ✅ Проверка успешной компиляции без предупреждений
+  - Изменённые файлы:
+    - smoothtask-core/src/metrics/ebpf.rs: Исправление unused переменных
   - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
 
 - [x] ST-633: Добавить поддержку мониторинга температуры процессора через eBPF

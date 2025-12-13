@@ -10,15 +10,16 @@
 use smoothtask_core::classify::ml_classifier::{
     create_ml_classifier, MLClassificationResult, MLClassifier,
 };
-use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherConfig};
-use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
-use smoothtask_core::config::config_struct::MLClassifierConfig;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use smoothtask_core::classify::rules::classify_process;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 use smoothtask_core::logging::snapshots::ProcessRecord;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 use std::path::Path;
-use std::sync::Arc;
-use tempfile::{tempdir, TempDir};
-use tokio::sync::Mutex;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use tempfile::tempdir;
 
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn create_test_process() -> ProcessRecord {
     ProcessRecord {
         pid: 1000,
@@ -62,6 +63,7 @@ fn create_test_process() -> ProcessRecord {
     }
 }
 
+#[cfg(any(feature = "catboost", feature = "onnx"))]
 fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) {
     use std::fs;
     let file_path = dir.join(filename);

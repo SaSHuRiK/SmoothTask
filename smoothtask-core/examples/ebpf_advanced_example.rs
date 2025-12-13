@@ -5,7 +5,7 @@
 //! с поддержкой динамической конфигурации и обработки ошибок.
 
 use smoothtask_core::metrics::ebpf::{
-    EbpfConfig, EbpfFilterConfig, EbpfMetrics, EbpfMetricsCollector, EbpfNotificationThresholds,
+    EbpfConfig, EbpfMetrics, EbpfMetricsCollector,
 };
 use std::sync::{Arc, Mutex};
 use std::thread;
@@ -346,79 +346,3 @@ fn analyze_metrics(metrics: &EbpfMetrics) {
     }
 }
 
-/// Демонстрация интеграции с другими компонентами
-fn demonstrate_integration() -> anyhow::Result<()> {
-    println!("\n=== Integration Demonstration ===");
-
-    // 1. Интеграция с системой уведомлений
-    println!("\n1. Notification System Integration:");
-
-    let config = EbpfConfig {
-        enable_cpu_metrics: true,
-        enable_memory_metrics: true,
-        ..Default::default()
-    };
-
-    let mut collector = EbpfMetricsCollector::new(config.clone());
-
-    if collector.initialize().is_ok() {
-        if let Ok(metrics) = collector.collect_metrics() {
-            // Симуляция отправки уведомления
-            if metrics.cpu_usage > 90.0 {
-                println!(
-                    "   🔔 Notification: High CPU usage detected ({:.1}%)",
-                    metrics.cpu_usage
-                );
-                println!("   Action: Consider adjusting process priorities");
-            }
-        }
-    }
-
-    // 2. Интеграция с системой логирования
-    println!("\n2. Logging System Integration:");
-
-    let status = collector.is_initialized();
-    println!(
-        "   📝 Log: eBPF collector status - {}",
-        if status {
-            "initialized"
-        } else {
-            "not initialized"
-        }
-    );
-
-    if collector.has_errors() {
-        if let Some(error_info) = collector.get_detailed_error_info() {
-            println!("   ❌ Log: eBPF error detected - {}", error_info);
-        }
-    }
-
-    // 3. Интеграция с системой мониторинга
-    println!("\n3. Monitoring System Integration:");
-
-    let memory_usage = collector.get_memory_usage_estimate();
-    println!("   📊 Metric: eBPF memory usage - {} bytes", memory_usage);
-
-    let (success, errors) = collector.get_initialization_stats();
-    println!(
-        "   📊 Metric: eBPF programs loaded - {}, errors - {}",
-        success, errors
-    );
-
-    // 4. Интеграция с системой конфигурации
-    println!("\n4. Configuration System Integration:");
-
-    // Симуляция динамического изменения конфигурации
-    let new_config = EbpfConfig {
-        enable_caching: true,
-        aggressive_cache_interval_ms: 10000,
-        ..config
-    };
-
-    let mut new_collector = EbpfMetricsCollector::new(new_config);
-    if new_collector.initialize().is_ok() {
-        println!("   ✅ Config: Successfully updated to aggressive caching mode");
-    }
-
-    Ok(())
-}

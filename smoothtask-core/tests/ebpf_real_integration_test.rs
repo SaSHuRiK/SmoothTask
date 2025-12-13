@@ -1,7 +1,6 @@
 //! Интеграционные тесты для реального сбора данных eBPF
 
 use smoothtask_core::metrics::ebpf::{EbpfConfig, EbpfMetricsCollector};
-use std::time::Duration;
 
 #[test]
 fn test_ebpf_real_cpu_metrics_collection() {
@@ -99,7 +98,8 @@ fn test_ebpf_real_syscall_monitoring() {
     // Проверяем, что метрики имеют разумные значения
     #[cfg(feature = "ebpf")]
     {
-        assert!(metrics.syscall_count >= 0);
+        // syscall_count is u64 (unsigned), so it's always >= 0
+        // No assertion needed since it's always true
     }
 
     #[cfg(not(feature = "ebpf"))]
@@ -150,19 +150,17 @@ fn test_ebpf_real_network_monitoring() {
     println!("Реальные метрики сетевой активности: {:?}", metrics);
 
     // Проверяем, что метрики имеют разумные значения
-    assert!(metrics.network_packets >= 0);
-    assert!(metrics.network_bytes >= 0);
+    // network_packets and network_bytes are u64 (unsigned), so they're always >= 0
+    // No assertions needed since they're always true
 
     // Проверяем детализированную статистику сети
     if let Some(network_details) = metrics.network_details {
         println!("Детализированная статистика сети: {:?}", network_details);
         assert!(!network_details.is_empty());
 
-        for detail in network_details {
-            assert!(detail.packets_sent >= 0);
-            assert!(detail.packets_received >= 0);
-            assert!(detail.bytes_sent >= 0);
-            assert!(detail.bytes_received >= 0);
+        for _detail in network_details {
+            // packets_sent, packets_received, bytes_sent, bytes_received are u64 (unsigned)
+            // No assertions needed since they're always >= 0
         }
     }
 }
@@ -193,7 +191,8 @@ fn test_ebpf_real_filesystem_monitoring() {
     println!("Реальные метрики файловой системы: {:?}", metrics);
 
     // Проверяем, что метрики имеют разумные значения
-    assert!(metrics.filesystem_ops >= 0);
+    // filesystem_ops is u64 (unsigned), so it's always >= 0
+    // No assertion needed since it's always true
 
     // Проверяем детализированную статистику файловой системы
     if let Some(filesystem_details) = metrics.filesystem_details {
@@ -204,8 +203,8 @@ fn test_ebpf_real_filesystem_monitoring() {
         assert!(!filesystem_details.is_empty());
 
         for detail in filesystem_details {
-            assert!(detail.read_count >= 0);
-            assert!(detail.write_count >= 0);
+            // read_count and write_count are u64 (unsigned), so they're always >= 0
+            // No assertions needed since they're always true
             assert!(detail.open_count > 0 || detail.close_count > 0);
             assert!(detail.bytes_read > 0 || detail.bytes_written > 0);
         }
@@ -251,10 +250,8 @@ fn test_ebpf_real_comprehensive_monitoring() {
     #[cfg(feature = "ebpf")]
     {
         assert!(metrics.memory_usage > 0);
-        assert!(metrics.syscall_count >= 0);
-        assert!(metrics.network_packets >= 0);
-        assert!(metrics.network_bytes >= 0);
-        assert!(metrics.filesystem_ops >= 0);
+        // syscall_count, network_packets, network_bytes, filesystem_ops are u64 (unsigned)
+        // No assertions needed since they're always >= 0
     }
 
     #[cfg(not(feature = "ebpf"))]

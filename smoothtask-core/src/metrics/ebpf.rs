@@ -6817,8 +6817,8 @@ mod tests {
         assert!(collector.has_errors() || !collector.has_errors());
 
         // Тестируем статистику инициализации
-        let (success, errors) = collector.get_initialization_stats();
-        // success and errors are usize (unsigned), so they're always >= 0
+        let (_success, _errors) = collector.get_initialization_stats();
+        // _success and _errors are usize (unsigned), so they're always >= 0
         // No assertions needed since they're always true
 
         // Тестируем проверку доступности карт
