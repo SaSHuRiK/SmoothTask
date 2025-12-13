@@ -21,6 +21,7 @@
 //! - **gpu**: Мониторинг GPU устройств и их метрик
 //! - **ebpf**: Высокопроизводительный сбор метрик через eBPF
 //! - **app_performance**: Метрики производительности приложений
+//! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
 
 pub mod app_performance;
 pub mod audio;
@@ -28,6 +29,7 @@ pub mod audio_pipewire;
 pub mod ebpf;
 pub mod gpu;
 pub mod input;
+pub mod ml_performance;
 pub mod process;
 pub mod scheduling_latency;
 pub mod system;

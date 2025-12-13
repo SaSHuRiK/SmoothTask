@@ -401,6 +401,101 @@ def _ensure_no_infinite(
             )
 
 
+def _detect_and_handle_outliers(
+    df: pd.DataFrame, table: str, columns: Iterable[str], 
+    method: str = "iqr", factor: float = 1.5, sample_size: int = 5
+) -> None:
+    """
+    Обнаруживает и обрабатывает выбросы в числовых данных.
+    
+    Args:
+        df: DataFrame с данными
+        table: Имя таблицы для сообщений
+        columns: Столбцы для проверки на выбросы
+        method: Метод обнаружения выбросов ('iqr' или 'zscore')
+        factor: Коэффициент для метода IQR (обычно 1.5 или 3.0)
+        sample_size: Количество примеров для отображения
+    
+    Raises:
+        ValueError: Если обнаружены выбросы
+    """
+    for col in columns:
+        if col not in df.columns:
+            continue
+        
+        series = pd.to_numeric(df[col], errors="coerce").dropna()
+        if series.empty:
+            continue
+            
+        if method == "iqr":
+            # Метод межквартильного размаха (IQR)
+            q1 = series.quantile(0.25)
+            q3 = series.quantile(0.75)
+            iqr = q3 - q1
+            lower_bound = q1 - factor * iqr
+            upper_bound = q3 + factor * iqr
+            outliers_mask = (series < lower_bound) | (series > upper_bound)
+            
+        elif method == "zscore":
+            # Метод Z-оценки
+            mean = series.mean()
+            std = series.std()
+            if std == 0:
+                continue  # Все значения одинаковые, выбросов нет
+            z_scores = (series - mean) / std
+            outliers_mask = (z_scores.abs() > factor)
+            
+        else:
+            raise ValueError(f"Неизвестный метод обнаружения выбросов: {method}")
+            
+        if outliers_mask.any():
+            outlier_values = series[outliers_mask]
+            sample_values = outlier_values.head(sample_size)
+            formatted = ", ".join(f"{v:.2f}" for v in sample_values)
+            
+            raise ValueError(
+                f"В таблице '{table}' колонка '{col}' содержит выбросы (метод: {method}): {formatted}"
+            )
+
+
+def _validate_data_quality(
+    df: pd.DataFrame, table: str, columns: Iterable[str], 
+    min_value: float = 0.0, max_value: float = 100.0, sample_size: int = 5
+) -> None:
+    """
+    Проверяет качество данных и обнаруживает аномальные значения.
+    
+    Args:
+        df: DataFrame с данными
+        table: Имя таблицы для сообщений
+        columns: Столбцы для проверки
+        min_value: Минимальное допустимое значение
+        max_value: Максимальное допустимое значение
+        sample_size: Количество примеров для отображения
+    
+    Raises:
+        ValueError: Если обнаружены аномальные значения
+    """
+    for col in columns:
+        if col not in df.columns:
+            continue
+        
+        series = pd.to_numeric(df[col], errors="coerce").dropna()
+        if series.empty:
+            continue
+            
+        # Проверяем значения вне допустимого диапазона
+        out_of_range_mask = (series < min_value) | (series > max_value)
+        if out_of_range_mask.any():
+            outlier_values = series[out_of_range_mask]
+            sample_values = outlier_values.head(sample_size)
+            formatted = ", ".join(f"{v:.2f}" for v in sample_values)
+            
+            raise ValueError(
+                f"В таблице '{table}' колонка '{col}' содержит значения вне допустимого диапазона [{min_value}, {max_value}]: {formatted}"
+            )
+
+
 def _ensure_integer_like(
     df: pd.DataFrame,
     table: str,
@@ -551,6 +646,60 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
         table="app_groups",
         columns=_APP_GROUP_NUMERIC_COLS,
     )
+    
+    # Проверяем выбросы в числовых данных
+    _detect_and_handle_outliers(
+        snapshots,
+        table="snapshots",
+        columns=["cpu_user", "cpu_system", "cpu_idle", "cpu_iowait", 
+                "load_avg_one", "load_avg_five", "load_avg_fifteen",
+                "psi_cpu_some_avg10", "psi_cpu_some_avg60", 
+                "psi_io_some_avg10", "psi_mem_some_avg10"],
+        method="iqr",
+        factor=3.0
+    )
+    
+    _detect_and_handle_outliers(
+        processes,
+        table="processes",
+        columns=["cpu_share_1s", "cpu_share_10s", "rss_mb", "swap_mb",
+                "voluntary_ctx", "involuntary_ctx"],
+        method="iqr",
+        factor=3.0
+    )
+    
+    _detect_and_handle_outliers(
+        app_groups,
+        table="app_groups",
+        columns=["total_cpu_share", "total_rss_mb"],
+        method="iqr",
+        factor=3.0
+    )
+    
+    # Проверяем качество данных - допустимые диапазоны
+    _validate_data_quality(
+        snapshots,
+        table="snapshots",
+        columns=["cpu_user", "cpu_system", "cpu_idle", "cpu_iowait"],
+        min_value=0.0,
+        max_value=1.0
+    )
+    
+    _validate_data_quality(
+        processes,
+        table="processes",
+        columns=["cpu_share_1s", "cpu_share_10s"],
+        min_value=0.0,
+        max_value=1.0
+    )
+    
+    _validate_data_quality(
+        app_groups,
+        table="app_groups",
+        columns=["total_cpu_share"],
+        min_value=0.0,
+        max_value=1.0
+    )
 
     # Проверяем ссылочную целостность snapshot_id в processes.
     snapshot_ids = set(snapshots["snapshot_id"].dropna().unique())
@@ -658,3 +807,129 @@ def load_snapshots_as_frame(db_path: Path | str) -> pd.DataFrame:
     df = df.sort_values(["snapshot_id", "pid"]).reset_index(drop=True)
 
     return df
+
+
+def _add_edge_case_handling_to_dataframe(
+    df: pd.DataFrame, 
+    numeric_columns: list[str],
+    bool_columns: list[str],
+    categorical_columns: list[str],
+    outlier_method: str = "iqr",
+    outlier_factor: float = 3.0
+) -> pd.DataFrame:
+    """
+    Добавляет обработку edge cases к DataFrame.
+    
+    Args:
+        df: Исходный DataFrame
+        numeric_columns: Список числовых столбцов
+        bool_columns: Список булевых столбцов
+        categorical_columns: Список категориальных столбцов
+        outlier_method: Метод обнаружения выбросов
+        outlier_factor: Коэффициент для обнаружения выбросов
+        
+    Returns:
+        DataFrame с обработанными edge cases
+    """
+    # Создаем копию, чтобы не изменять оригинал
+    result_df = df.copy()
+    
+    # Обработка выбросов в числовых данных
+    for col in numeric_columns:
+        if col in result_df.columns:
+            series = pd.to_numeric(result_df[col], errors="coerce")
+            if not series.empty:
+                # Используем тот же метод, что и в _detect_and_handle_outliers
+                if outlier_method == "iqr":
+                    q1 = series.quantile(0.25)
+                    q3 = series.quantile(0.75)
+                    iqr = q3 - q1
+                    lower_bound = q1 - outlier_factor * iqr
+                    upper_bound = q3 + outlier_factor * iqr
+                    outliers_mask = (series < lower_bound) | (series > upper_bound)
+                    
+                    # Заменяем выбросы медианой
+                    median = series.median()
+                    result_df.loc[outliers_mask, col] = median
+                    
+                elif outlier_method == "zscore":
+                    mean = series.mean()
+                    std = series.std()
+                    if std > 0:
+                        z_scores = (series - mean) / std
+                        outliers_mask = (z_scores.abs() > outlier_factor)
+                        
+                        # Заменяем выбросы медианой
+                        median = series.median()
+                        result_df.loc[outliers_mask, col] = median
+    
+    # Обработка пропущенных значений
+    for col in numeric_columns:
+        if col in result_df.columns:
+            # Заполняем пропущенные значения медианой
+            median = result_df[col].median()
+            result_df[col] = result_df[col].fillna(median)
+            
+    for col in bool_columns:
+        if col in result_df.columns:
+            # Заполняем пропущенные булевые значения наиболее частым значением
+            mode = result_df[col].mode()
+            if not mode.empty:
+                result_df[col] = result_df[col].fillna(mode[0])
+    
+    for col in categorical_columns:
+        if col in result_df.columns:
+            # Заполняем пропущенные категориальные значения наиболее частым значением
+            mode = result_df[col].mode()
+            if not mode.empty:
+                result_df[col] = result_df[col].fillna(mode[0])
+            else:
+                result_df[col] = result_df[col].fillna("unknown")
+    
+    return result_df
+
+
+def load_snapshots_with_edge_case_handling(
+    db_path: Path | str,
+    outlier_method: str = "iqr",
+    outlier_factor: float = 3.0
+) -> pd.DataFrame:
+    """
+    Загружает снапшоты с обработкой edge cases.
+    
+    Эта функция выполняет те же проверки, что и load_snapshots_as_frame,
+    но дополнительно обрабатывает выбросы и пропущенные значения.
+    
+    Args:
+        db_path: Путь к SQLite базе данных со снапшотами
+        outlier_method: Метод обнаружения выбросов ('iqr' или 'zscore')
+        outlier_factor: Коэффициент для обнаружения выбросов
+        
+    Returns:
+        DataFrame с обработанными edge cases
+        
+    Raises:
+        FileNotFoundError: если файл базы данных не существует
+    """
+    # Загружаем данные с базовой валидацией
+    df = load_snapshots_as_frame(db_path)
+    
+    if df.empty:
+        return df
+        
+    # Определяем типы столбцов
+    numeric_columns = list(_PROCESS_NUMERIC_COLS | _SNAPSHOT_NUMERIC_COLS | _APP_GROUP_NUMERIC_COLS)
+    bool_columns = list(_PROCESS_BOOL_COLS | _SNAPSHOT_BOOL_COLS | _APP_GROUP_BOOL_COLS)
+    categorical_columns = ["process_type", "app_name", "priority_class", "teacher_priority_class", "env_term"]
+    
+    # Добавляем обработку edge cases
+    processed_df = _add_edge_case_handling_to_dataframe(
+        df,
+        numeric_columns=numeric_columns,
+        bool_columns=bool_columns,
+        categorical_columns=categorical_columns,
+        outlier_method=outlier_method,
+        outlier_factor=outlier_factor
+    )
+    
+    return processed_df

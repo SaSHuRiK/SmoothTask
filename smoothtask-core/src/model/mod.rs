@@ -102,3 +102,4 @@
 pub mod features;
 pub mod onnx_ranker;
 pub mod ranker;
+pub mod version;
