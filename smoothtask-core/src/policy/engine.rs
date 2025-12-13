@@ -142,6 +142,9 @@ impl PolicyEngine {
                             config.model.model_path,
                             e
                         );
+                        tracing::warn!(
+                            "Фоллбек на StubRanker для hybrid режима. ML-ранжирование будет менее точным."
+                        );
                         None
                     }
                 }
@@ -150,14 +153,19 @@ impl PolicyEngine {
                     tracing::warn!(
                         "ONNX поддержка отключена (feature 'onnx' не включен). Используется дефолтный ранкер."
                     );
+                    tracing::info!(
+                        "Для использования ML-моделей включите feature 'onnx' и пересоберите проект."
+                    );
                     None
                 }
             } else {
                 // Модель отключена в конфигурации, используем заглушку
                 tracing::info!("ML-модель отключена в конфигурации, используется StubRanker");
+                tracing::info!("Для включения ML-ранжирования установите model.enabled = true в конфигурации");
                 Some(Box::new(crate::model::ranker::StubRanker::new()))
             }
         } else {
+            tracing::debug!("Режим policy_mode = {:?}, ML-ранкер не используется", config.policy_mode);
             None
         };
         Self { config, ranker }

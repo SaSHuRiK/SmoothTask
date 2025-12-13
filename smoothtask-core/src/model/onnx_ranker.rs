@@ -83,6 +83,7 @@ impl ONNXRanker {
     /// * `FileNotFoundError` - если файл модели не существует
     /// * `InvalidModelError` - если модель имеет неверный формат или структуру
     /// * `ONNXRuntimeError` - если произошла ошибка при загрузке модели
+    /// * `PermissionError` - если нет прав на чтение файла модели
     ///
     /// # Примеры
     ///
@@ -99,11 +100,22 @@ impl ONNXRanker {
             return Err(anyhow::anyhow!(
                 "Файл модели не найден: {}",
                 model_path.display()
-            ));
+            )).context("Проверьте путь к файлу модели в конфигурации");
+        }
+
+        // Проверяем права на чтение
+        if let Err(e) = std::fs::metadata(model_path) {
+            return Err(anyhow::anyhow!(
+                "Не удалось получить метаданные файла модели {}: {}",
+                model_path.display(),
+                e
+            )).context("Проверьте права доступа к файлу модели");
         }
 
         // Загружаем модель с использованием простого API
-        let session = Session::builder()?.commit_from_file(model_path)?;
+        let session = Session::builder()?
+            .commit_from_file(model_path)
+            .with_context(|| format!("Не удалось загрузить ONNX модель из файла: {}", model_path.display()))?;
 
         // Получаем информацию о модели
         let input_info = session
@@ -211,13 +223,14 @@ impl ONNXRanker {
                 "Размер вектора фич ({}) не совпадает с ожидаемым размером модели ({})",
                 tensor_data.len(),
                 self.expected_input_size
-            ));
+            )).context("Проверьте соответствие фич модели. Возможно, модель была обучена на других данных.");
         }
 
         // Создаём тензор с формой [1, feature_size] (batch_size=1)
         let shape = [1usize, self.expected_input_size];
         Tensor::from_array((shape, tensor_data.into_boxed_slice()))
             .map_err(|e| anyhow::anyhow!("Не удалось создать тензор из вектора фич: {}", e))
+            .with_context(|| format!("Ошибка создания тензора с формой {:?}", shape))
     }
 
     /// Преобразовать строку в числовой индекс для категориальных фич.
@@ -267,6 +280,10 @@ impl Ranker for ONNXRanker {
                         app_group.app_group_id,
                         e
                     );
+                    tracing::warn!(
+                        "Используется дефолтный score 0.5 для группы {}",
+                        app_group.app_group_id
+                    );
                     scores.push((app_group.app_group_id.clone(), 0.5));
                     continue;
                 }
@@ -281,6 +298,10 @@ impl Ranker for ONNXRanker {
                         "Ошибка при выполнении инференса для группы {}: {}",
                         app_group.app_group_id,
                         e
+                    );
+                    tracing::warn!(
+                        "Используется дефолтный score 0.5 для группы {}",
+                        app_group.app_group_id
                     );
                     0.5
                 }
@@ -340,13 +361,16 @@ impl ONNXRanker {
         // Выполняем инференс с использованием Mutex
         let mut session_guard = self.session.lock().map_err(|e| {
             anyhow::anyhow!("Mutex poisoned: {}", e)
-        })?;
-        let outputs = session_guard.run(inputs)?;
+        }).with_context(|| "Ошибка блокировки ONNX сессии для инференса")?;
+        
+        let outputs = session_guard.run(inputs)
+            .with_context(|| "Ошибка выполнения ONNX инференса")?;
 
         // Извлекаем выходной тензор
         let output_tensor = outputs
             .get(&self.output_name)
-            .context("Не удалось получить выходной тензор")?;
+            .context("Не удалось получить выходной тензор")
+            .with_context(|| format!("Ожидаемый выходной тензор: {}", self.output_name))?;
 
         // Преобразуем выход в score
         let (_, output_array) = output_tensor

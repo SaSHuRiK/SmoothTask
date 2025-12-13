@@ -50,6 +50,226 @@ pub struct MLClassificationResult {
 ```rust
 pub struct CatBoostMLClassifier {
     model: CatBoostModel,
+}
+```
+
+### 4. Обучение и интеграция моделей
+
+#### Процесс обучения
+
+SmoothTask предоставляет полный пайплайн для обучения моделей на собранных данных:
+
+1. **Сбор данных**: Используйте `collect_data_from_snapshots()` для создания тренировочного датасета
+2. **Валидация данных**: Проверьте качество данных с помощью `validate_dataset()`
+3. **Обучение модели**: Обучите CatBoostRanker модель с помощью `train_ranker()`
+4. **Экспорт модели**: Экспортируйте модель в формат ONNX для использования в Rust
+5. **Интеграция**: Обновите конфигурацию для использования обученной модели
+
+#### Python API для обучения
+
+```python
+from smoothtask_trainer.train_pipeline import TrainingPipeline
+from smoothtask_trainer.collect_data import collect_data_from_snapshots, validate_dataset
+
+# Создание тренировочного датасета
+pipeline = TrainingPipeline(
+    db_path="training_data.sqlite",
+    use_temp_db=False,
+    min_snapshots=5,
+    min_processes=50,
+    min_groups=10
+)
+
+# Сбор данных
+db_path = pipeline.collect_data()
+
+# Валидация данных
+stats = validate_dataset(
+    db_path=db_path,
+    min_snapshots=5,
+    min_processes=50,
+    min_groups=10
+)
+
+# Обучение модели
+model = pipeline.train_model(
+    model_path="trained_model.json",
+    onnx_path="trained_model.onnx"
+)
+```
+
+#### Интеграция модели в конфигурацию
+
+```python
+from smoothtask_trainer.integrate_model import update_configuration
+
+# Обновление конфигурации
+update_configuration(
+    config_path="configs/smoothtask.example.yml",
+    model_path="trained_model.onnx"
+)
+```
+
+### 5. Примеры использования
+
+#### Полный пайплайн обучения
+
+```python
+#!/usr/bin/env python3
+"""
+Полный пайплайн обучения модели SmoothTask
+"""
+
+import sys
+from pathlib import Path
+
+# Добавление тренера в путь
+sys.path.insert(0, 'smoothtask-trainer')
+
+from smoothtask_trainer.train_pipeline import TrainingPipeline
+from smoothtask_trainer.collect_data import validate_dataset
+
+def main():
+    # Создание тренировочного датасета
+    pipeline = TrainingPipeline(
+        db_path="training_data.sqlite",
+        use_temp_db=False,
+        min_snapshots=1,
+        min_processes=10,
+        min_groups=1
+    )
+    
+    # Сбор данных
+    db_path = pipeline.collect_data()
+    print(f"Данные собраны: {db_path}")
+    
+    # Валидация данных
+    stats = validate_dataset(
+        db_path=db_path,
+        min_snapshots=5,
+        min_processes=50,
+        min_groups=10
+    )
+    
+    print(f"Статистика датасета:")
+    print(f"  Снапшоты: {stats['snapshot_count']}")
+    print(f"  Процессы: {stats['process_count']}")
+    print(f"  Группы: {stats['group_count']}")
+    
+    # Обучение модели
+    model_path_json = Path("trained_model.json")
+    model_path_onnx = Path("trained_model.onnx")
+    
+    model = pipeline.train_model(
+        model_path=model_path_json,
+        onnx_path=model_path_onnx
+    )
+    
+    print(f"Модель обучена!")
+    print(f"  JSON модель: {model_path_json}")
+    print(f"  ONNX модель: {model_path_onnx}")
+
+if __name__ == "__main__":
+    main()
+```
+
+#### Интеграция модели
+
+```python
+#!/usr/bin/env python3
+"""
+Интеграция обученной модели в конфигурацию SmoothTask
+"""
+
+import sys
+from pathlib import Path
+import yaml
+
+def update_configuration():
+    # Проверка наличия файлов модели
+    model_json = Path("trained_model.json")
+    model_onnx = Path("trained_model.onnx")
+    
+    if not model_json.exists():
+        print(f"Ошибка: JSON модель не найдена: {model_json}")
+        return 1
+    
+    if not model_onnx.exists():
+        print(f"Ошибка: ONNX модель не найдена: {model_onnx}")
+        return 1
+    
+    # Чтение конфигурации
+    config_path = Path("configs/smoothtask.example.yml")
+    
+    with open(config_path, 'r') as f:
+        config_content = f.read()
+    
+    # Обновление конфигурации
+    updated_config = config_content.replace(
+        "policy_mode: rules-only",
+        "policy_mode: hybrid"
+    )
+    
+    updated_config = updated_config.replace(
+        "model:\n  enabled: false",
+        "model:\n  enabled: true"
+    )
+    
+    updated_config = updated_config.replace(
+        "model_path: \"models/ranker.onnx\"",
+        f"model_path: \"{model_onnx.absolute()}\""
+    )
+    
+    # Запись обновленной конфигурации
+    with open(config_path, 'w') as f:
+        f.write(updated_config)
+    
+    print(f"Конфигурация обновлена: {config_path}")
+
+if __name__ == "__main__":
+    update_configuration()
+```
+
+### 6. Лучшие практики
+
+#### Сбор данных
+
+1. **Собирайте данные в разных состояниях системы**: idle, load, interactive
+2. **Обеспечьте разнообразие процессов**: background, interactive, latency-critical
+3. **Используйте достаточное количество снапшотов**: минимум 10-15 для хорошего качества
+4. **Валидируйте данные**: проверяйте качество данных перед обучением
+
+#### Обучение модели
+
+1. **Начинайте с простых параметров**: depth=6, learning_rate=0.1, iterations=500
+2. **Используйте YetiRank**: оптимизирован для задач ранжирования
+3. **Мониторьте качество**: проверяйте метрики качества на валидационной выборке
+4. **Экспериментируйте**: пробуйте разные параметры для улучшения качества
+
+#### Интеграция модели
+
+1. **Проверяйте совместимость**: убедитесь, что модель совместима с текущей версией SmoothTask
+2. **Начинайте с hybrid режима**: используйте `policy_mode: hybrid` для постепенного внедрения
+3. **Мониторьте производительность**: следите за влиянием модели на систему
+4. **Обновляйте регулярно**: переобучайте модель на новых данных
+
+### 7. Устранение неполадок
+
+#### Проблемы с обучением
+
+- **Недостаточно данных**: Увеличьте количество снапшотов и процессов
+- **Плохое качество**: Проверьте разнообразие данных и параметры модели
+- **Ошибки экспорта**: Убедитесь, что все зависимости установлены
+
+#### Проблемы с интеграцией
+
+- **Модель не загружается**: Проверьте путь к файлу и права доступа
+- **Плохая производительность**: Проверьте совместимость модели с текущей версией
+- **Ошибки ранжирования**: Проверьте качество обученной модели
+
+```rust
+pub struct CatBoostMLClassifier {
+    model: CatBoostModel,
     feature_names: Vec<String>,
 }
 ```

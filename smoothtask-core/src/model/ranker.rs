@@ -138,22 +138,40 @@ impl Ranker for StubRanker {
             // - Фокусная группа: +0.4
             if app_group.is_focused_group {
                 score += 0.4;
+                tracing::debug!(
+                    "Группа {}: фокусная группа, score += 0.4",
+                    app_group.app_group_id
+                );
             }
 
             // - GUI группа: +0.2
             if app_group.has_gui_window {
                 score += 0.2;
+                tracing::debug!(
+                    "Группа {}: GUI группа, score += 0.2",
+                    app_group.app_group_id
+                );
             }
 
             // - Высокий CPU usage (может быть важно): +0.1
             if let Some(cpu_share) = app_group.total_cpu_share {
                 if cpu_share > 0.3 {
                     score += 0.1;
+                    tracing::debug!(
+                        "Группа {}: высокий CPU usage ({:.2}), score += 0.1",
+                        app_group.app_group_id,
+                        cpu_share
+                    );
                 }
             }
 
             // Ограничиваем score в диапазоне [0.0, 1.0]
             score = score.clamp(0.0, 1.0);
+            tracing::debug!(
+                "Группа {}: итоговый score = {:.2}",
+                app_group.app_group_id,
+                score
+            );
 
             scores.push((app_group.app_group_id.clone(), score));
         }

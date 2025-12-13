@@ -29,7 +29,9 @@ graph TD
 
 ### 1. Подготовка данных
 
-Перед обучением необходимо собрать данные о работе системы:
+Перед обучением необходимо собрать данные о работе системы. SmoothTask предоставляет несколько способов сбора данных:
+
+#### Способ 1: Сбор данных через демон
 
 ```bash
 # Запустить демон SmoothTask для сбора снапшотов
@@ -39,15 +41,248 @@ cargo run --bin smoothtaskd -- --config configs/smoothtask.example.yml
 sqlite3 snapshots.db "SELECT COUNT(*) FROM snapshots;"
 ```
 
-### 2. Обучение модели
-
-Используйте `train_ranker.py` для обучения CatBoost модели:
+#### Способ 2: Использование скриптов сбора данных
 
 ```bash
+# Собрать данные из существующих снапшотов
+python3 collect_and_train.py
+
+# Или использовать комплексный скрипт сбора данных
+python3 complete_data_collection.py
+```
+
+### 2. Обучение модели
+
+SmoothTask предоставляет несколько способов обучения моделей:
+
+#### Способ 1: Использование TrainingPipeline
+
+```python
+from smoothtask_trainer.train_pipeline import TrainingPipeline
+
+# Создание пайплайна
+pipeline = TrainingPipeline(
+    db_path="training_data.sqlite",
+    use_temp_db=False,
+    min_snapshots=5,
+    min_processes=50,
+    min_groups=10
+)
+
+# Сбор данных
+db_path = pipeline.collect_data()
+
+# Обучение модели
+model = pipeline.train_model(
+    model_path="trained_model.json",
+    onnx_path="trained_model.onnx"
+)
+```
+
+#### Способ 2: Использование командной строки
+
+```bash
+# Использовать скрипт обучения
+python3 train_model.py
+
+# Или использовать модуль напрямую
 cd smoothtask-trainer
 python -m smoothtask_trainer.train_ranker \
-    --db snapshots.db \
-    --model-json models/ranker.json \
+    --db training_data.sqlite \
+    --model-json trained_model.json \
+```
+
+### 3. Интеграция модели
+
+После обучения модели необходимо интегрировать её в конфигурацию SmoothTask:
+
+```bash
+# Использовать скрипт интеграции
+python3 integrate_model.py
+
+# Или вручную обновить конфигурацию
+# Обновить configs/smoothtask.example.yml:
+# - policy_mode: hybrid
+# - model.enabled: true
+# - model_path: "/path/to/trained_model.onnx"
+```
+
+### 4. Полный пайплайн
+
+Для удобства SmoothTask предоставляет скрипты для полного пайплайна:
+
+```bash
+# Сбор данных и обучение
+python3 collect_and_train.py
+
+# Интеграция модели
+python3 integrate_model.py
+
+# Проверка результатов
+ls -la trained_model.*
+cat MODEL_README.md
+```
+
+### 5. Примеры использования
+
+#### Пример 1: Обучение модели на существующих данных
+
+```python
+#!/usr/bin/env python3
+"""
+Обучение модели на существующих данных
+"""
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, 'smoothtask-trainer')
+
+from smoothtask_trainer.train_pipeline import TrainingPipeline
+from smoothtask_trainer.collect_data import validate_dataset
+
+def main():
+    # Создание тренировочного пайплайна
+    pipeline = TrainingPipeline(
+        db_path="training_data.sqlite",
+        use_temp_db=False,
+        min_snapshots=1,
+        min_processes=10,
+        min_groups=1
+    )
+    
+    # Сбор данных
+    db_path = pipeline.collect_data()
+    print(f"Данные собраны: {db_path}")
+    
+    # Валидация данных
+    stats = validate_dataset(
+        db_path=db_path,
+        min_snapshots=5,
+        min_processes=50,
+        min_groups=10
+    )
+    
+    print(f"Статистика датасета:")
+    print(f"  Снапшоты: {stats['snapshot_count']}")
+    print(f"  Процессы: {stats['process_count']}")
+    print(f"  Группы: {stats['group_count']}")
+    
+    # Обучение модели
+    model_path_json = Path("trained_model.json")
+    model_path_onnx = Path("trained_model.onnx")
+    
+    model = pipeline.train_model(
+        model_path=model_path_json,
+        onnx_path=model_path_onnx
+    )
+    
+    print(f"Модель обучена!")
+    print(f"  JSON модель: {model_path_json} ({model_path_json.stat().st_size} bytes)")
+    print(f"  ONNX модель: {model_path_onnx} ({model_path_onnx.stat().st_size} bytes)")
+
+if __name__ == "__main__":
+    main()
+```
+
+#### Пример 2: Интеграция модели в конфигурацию
+
+```python
+#!/usr/bin/env python3
+"""
+Интеграция обученной модели в конфигурацию
+"""
+
+import sys
+from pathlib import Path
+import yaml
+
+def update_configuration():
+    # Проверка наличия файлов модели
+    model_json = Path("trained_model.json")
+    model_onnx = Path("trained_model.onnx")
+    
+    if not model_json.exists():
+        print(f"Ошибка: JSON модель не найдена: {model_json}")
+        return 1
+    
+    if not model_onnx.exists():
+        print(f"Ошибка: ONNX модель не найдена: {model_onnx}")
+        return 1
+    
+    # Чтение конфигурации
+    config_path = Path("configs/smoothtask.example.yml")
+    
+    with open(config_path, 'r') as f:
+        config_content = f.read()
+    
+    # Обновление конфигурации
+    updated_config = config_content.replace(
+        "policy_mode: rules-only",
+        "policy_mode: hybrid"
+    )
+    
+    updated_config = updated_config.replace(
+        "model:\n  enabled: false",
+        "model:\n  enabled: true"
+    )
+    
+    updated_config = updated_config.replace(
+        "model_path: \"models/ranker.onnx\"",
+        f"model_path: \"{model_onnx.absolute()}\""
+    )
+    
+    # Запись обновленной конфигурации
+    with open(config_path, 'w') as f:
+        f.write(updated_config)
+    
+    print(f"Конфигурация обновлена: {config_path}")
+    print(f"  policy_mode: rules-only -> hybrid")
+    print(f"  model.enabled: false -> true")
+    print(f"  model_path: models/ranker.onnx -> {model_onnx.absolute()}")
+
+if __name__ == "__main__":
+    update_configuration()
+```
+
+### 6. Лучшие практики
+
+#### Сбор данных
+
+1. **Собирайте данные в разных состояниях системы**: idle, load, interactive
+2. **Обеспечьте разнообразие процессов**: background, interactive, latency-critical
+3. **Используйте достаточное количество снапшотов**: минимум 10-15 для хорошего качества
+4. **Валидируйте данные**: проверяйте качество данных перед обучением
+
+#### Обучение модели
+
+1. **Начинайте с простых параметров**: depth=6, learning_rate=0.1, iterations=500
+2. **Используйте YetiRank**: оптимизирован для задач ранжирования
+3. **Мониторьте качество**: проверяйте метрики качества на валидационной выборке
+4. **Экспериментируйте**: пробуйте разные параметры для улучшения качества
+
+#### Интеграция модели
+
+1. **Проверяйте совместимость**: убедитесь, что модель совместима с текущей версией SmoothTask
+2. **Начинайте с hybrid режима**: используйте `policy_mode: hybrid` для постепенного внедрения
+3. **Мониторьте производительность**: следите за влиянием модели на систему
+4. **Обновляйте регулярно**: переобучайте модель на новых данных
+
+### 7. Устранение неполадок
+
+#### Проблемы с обучением
+
+- **Недостаточно данных**: Увеличьте количество снапшотов и процессов
+- **Плохое качество**: Проверьте разнообразие данных и параметры модели
+- **Ошибки экспорта**: Убедитесь, что все зависимости установлены
+
+#### Проблемы с интеграцией
+
+- **Модель не загружается**: Проверьте путь к файлу и права доступа
+- **Плохая производительность**: Проверьте совместимость модели с текущей версией
+- **Ошибки ранжирования**: Проверьте качество обученной модели
+
+```bash
     --model-onnx models/ranker.onnx
 ```
 
