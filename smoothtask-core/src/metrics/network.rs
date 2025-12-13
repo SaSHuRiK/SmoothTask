@@ -639,52 +639,7 @@ impl NetworkMonitor {
         }
     }
 
-    /// Check if interface is up
-    fn check_interface_up(&self, name: &str) -> bool {
-        let operstate_path = format!("/sys/class/net/{}/operstate", name);
-        fs::read_to_string(operstate_path)
-            .map(|s| s.trim() == "up")
-            .unwrap_or(false)
-    }
 
-    /// Get MAC address for interface
-    fn get_mac_address(&self, name: &str) -> Option<String> {
-        let address_path = format!("/sys/class/net/{}/address", name);
-        fs::read_to_string(address_path)
-            .map(|s| s.trim().to_string())
-            .ok()
-    }
-
-    /// Get IP addresses for interface
-    fn get_ip_addresses(&self, name: &str) -> Vec<IpAddr> {
-        let mut addresses = Vec::new();
-
-        // Try IPv4
-        let ipv4_path = format!("/sys/class/net/{}/inet4", name);
-        if let Ok(ipv4_dir) = fs::read_dir(ipv4_path) {
-            for entry in ipv4_dir.flatten() {
-                if let Some(ip_str) = entry.file_name().to_str() {
-                    if let Ok(ip) = ip_str.parse::<Ipv4Addr>() {
-                        addresses.push(IpAddr::V4(ip));
-                    }
-                }
-            }
-        }
-
-        // Try IPv6
-        let ipv6_path = format!("/sys/class/net/{}/inet6", name);
-        if let Ok(ipv6_dir) = fs::read_dir(ipv6_path) {
-            for entry in ipv6_dir.flatten() {
-                if let Some(ip_str) = entry.file_name().to_str() {
-                    if let Ok(ip) = ip_str.parse::<Ipv6Addr>() {
-                        addresses.push(IpAddr::V6(ip));
-                    }
-                }
-            }
-        }
-
-        addresses
-    }
 
     /// Get interface speed with error handling
     fn get_interface_speed(&self, name: &str) -> Option<u64> {
@@ -1447,7 +1402,7 @@ mod tests {
     #[test]
     fn test_network_error_handling_empty_data() {
         // Test error handling with empty interface data
-        let mut monitor = NetworkMonitor::new();
+        let monitor = NetworkMonitor::new();
         
         // Test with empty interface name
         let interface_type = monitor.detect_interface_type("");
@@ -1815,19 +1770,73 @@ mod tests {
         let monitor = NetworkMonitor::new();
         
         // Test interface up check
-        let is_up = monitor.check_interface_up_optimized("lo");
+        let _is_up = monitor.check_interface_up_optimized("lo");
         // Should return false for non-existent interface or handle gracefully
         
         // Test MAC address retrieval
-        let mac = monitor.get_mac_address_optimized("lo");
+        let _mac = monitor.get_mac_address_optimized("lo");
         // Should return None for non-existent interface or handle gracefully
         
         // Test IP addresses retrieval
-        let ips = monitor.get_ip_addresses_optimized("lo");
+        let _ips = monitor.get_ip_addresses_optimized("lo");
         // Should return empty vec for non-existent interface or handle gracefully
         
         // Test interface speed retrieval
-        let speed = monitor.get_interface_speed_optimized("lo");
+        let _speed = monitor.get_interface_speed_optimized("lo");
         // Should return None for non-existent interface or handle gracefully
+    }
+
+    #[test]
+    fn test_ip_conversion_functions() {
+        // Test u32_to_ipaddr function
+        let ip1 = u32_to_ipaddr(0x01020304); // 1.2.3.4
+        assert_eq!(ip1, IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
+
+        let ip2 = u32_to_ipaddr(0x7F000001); // 127.0.0.1
+        assert_eq!(ip2, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
+
+        // Test format_ip_addr function
+        assert_eq!(format_ip_addr(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))), "1.2.3.4");
+        assert_eq!(format_ip_addr(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))), "::1");
+    }
+
+
+
+    #[test]
+    fn test_network_stats_equality() {
+        // Test equality for network stats structures
+        let mut stats1 = NetworkInterfaceStats::default();
+        stats1.name = "eth0".to_string();
+        stats1.rx_bytes = 1000;
+
+        let mut stats2 = NetworkInterfaceStats::default();
+        stats2.name = "eth0".to_string();
+        stats2.rx_bytes = 1000;
+
+        assert_eq!(stats1, stats2);
+
+        let mut stats3 = NetworkInterfaceStats::default();
+        stats3.name = "eth1".to_string();
+        stats3.rx_bytes = 1000;
+
+        assert_ne!(stats1, stats3);
+    }
+
+    #[test]
+    fn test_network_error_handling() {
+        // Test that network functions handle errors gracefully
+        // This is a basic test - more comprehensive error handling tests
+        // would require mocking system calls
+        
+        // Test that we can create a monitor even if some interfaces don't exist
+        let mut monitor = NetworkMonitor::new();
+        
+        // Test that cache operations don't panic
+        monitor.clear_interface_cache();
+        
+        // Test that we can work with empty data
+        let empty_stats = ComprehensiveNetworkStats::default();
+        assert_eq!(empty_stats.interfaces.len(), 0);
+        assert_eq!(empty_stats.total_rx_bytes, 0);
     }
 }

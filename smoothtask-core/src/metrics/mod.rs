@@ -31,6 +31,7 @@ pub mod ebpf;
 pub mod gpu;
 pub mod input;
 pub mod ml_performance;
+pub mod network;
 pub mod process;
 pub mod scheduling_latency;
 pub mod system;

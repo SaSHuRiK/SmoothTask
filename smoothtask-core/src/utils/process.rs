@@ -330,7 +330,13 @@ pub fn read_process_cgroup(pid: i32) -> Result<Option<String>> {
     // Ищем строку, начинающуюся с "0::"
     for line in content.lines() {
         if line.starts_with("0::") {
-            let path = line.strip_prefix("0::").unwrap_or("");
+            let path = match line.strip_prefix("0::") {
+                Some(stripped) => stripped,
+                None => {
+                    debug!(line = line, "Failed to strip prefix from cgroup line");
+                    continue;
+                }
+            };
             if !path.is_empty() {
                 return Ok(Some(path.to_string()));
             }
@@ -392,11 +398,16 @@ pub fn read_cpu_weight(pid: i32) -> Result<Option<u32>> {
     // Формируем полный путь к cgroup процесса
     // cgroup_path_str может быть относительным (начинается с /) или абсолютным
     let cgroup_path = if cgroup_path_str.starts_with('/') {
-        cgroup_root.join(
-            cgroup_path_str
-                .strip_prefix('/')
-                .unwrap_or(&cgroup_path_str),
-        )
+        let stripped_path = if let Some(stripped) = cgroup_path_str.strip_prefix('/') {
+            stripped
+        } else {
+            debug!(
+                cgroup_path = cgroup_path_str,
+                "Failed to strip prefix from cgroup path, using original"
+            );
+            &cgroup_path_str
+        };
+        cgroup_root.join(stripped_path)
     } else {
         cgroup_root.join(&cgroup_path_str)
     };

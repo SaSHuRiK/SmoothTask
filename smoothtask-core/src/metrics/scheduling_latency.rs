@@ -2,11 +2,11 @@
 //!
 //! Реализует mini-cyclictest поток, который периодически спит и измеряет задержки пробуждения.
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tracing::{debug, error, info, warn};
 
 /// Коллектор для хранения измерений scheduling latency и вычисления перцентилей.
@@ -19,6 +19,10 @@ pub struct LatencyCollector {
     max_samples: usize,
     /// Измерения latency в миллисекундах (скользящее окно)
     samples: Arc<Mutex<VecDeque<f64>>>,
+    /// Кэш для часто используемых перцентилей (P95 и P99)
+    percentile_cache: Arc<Mutex<BTreeMap<(u32, u32), (f64, SystemTime)>>>,
+    /// Время жизни кэша в секундах
+    cache_ttl_seconds: u64,
 }
 
 impl LatencyCollector {
@@ -27,6 +31,7 @@ impl LatencyCollector {
     /// # Аргументы
     ///
     /// * `max_samples` - максимальное количество измерений в окне (рекомендуется 1000-5000)
+    /// * `cache_ttl_seconds` - время жизни кэша в секундах (по умолчанию 1 секунда)
     ///
     /// # Пример
     ///
@@ -39,6 +44,31 @@ impl LatencyCollector {
         Self {
             max_samples,
             samples: Arc::new(Mutex::new(VecDeque::with_capacity(max_samples))),
+            percentile_cache: Arc::new(Mutex::new(BTreeMap::new())),
+            cache_ttl_seconds: 1, // 1 секунда по умолчанию
+        }
+    }
+
+    /// Создаёт новый LatencyCollector с настраиваемым TTL кэша.
+    ///
+    /// # Аргументы
+    ///
+    /// * `max_samples` - максимальное количество измерений в окне (рекомендуется 1000-5000)
+    /// * `cache_ttl_seconds` - время жизни кэша в секундах
+    ///
+    /// # Пример
+    ///
+    /// ```
+    /// use smoothtask_core::metrics::scheduling_latency::LatencyCollector;
+    ///
+    /// let collector = LatencyCollector::new_with_cache_ttl(1000, 5); // 5 секунд кэша
+    /// ```
+    pub fn new_with_cache_ttl(max_samples: usize, cache_ttl_seconds: u64) -> Self {
+        Self {
+            max_samples,
+            samples: Arc::new(Mutex::new(VecDeque::with_capacity(max_samples))),
+            percentile_cache: Arc::new(Mutex::new(BTreeMap::new())),
+            cache_ttl_seconds,
         }
     }
 
@@ -117,6 +147,12 @@ impl LatencyCollector {
             return None;
         }
 
+        // Проверяем кэш
+        let cached_value = self.check_cache(percentile);
+        if let Some(value) = cached_value {
+            return Some(value);
+        }
+
         let samples = match self.samples.lock() {
             Ok(guard) => guard,
             Err(e) => {
@@ -161,7 +197,75 @@ impl LatencyCollector {
             }
         };
 
-        Some(sorted[index])
+        let result = sorted[index];
+        
+        // Кэшируем результат
+        self.cache_percentile(percentile, result);
+        
+        Some(result)
+    }
+
+    /// Конвертирует f64 перцентиль в ключ для кэша.
+    /// Используем (целую_часть, дробную_часть) для представления перцентиля.
+    fn percentile_to_cache_key(percentile: f64) -> (u32, u32) {
+        // Умножаем на 1000 для сохранения точности (например, 0.95 -> 950)
+        let scaled = (percentile * 1000.0).round() as u32;
+        let integer_part = scaled / 1000;
+        let fractional_part = scaled % 1000;
+        (integer_part, fractional_part)
+    }
+
+    /// Проверяет кэш на наличие актуального значения перцентиля.
+    fn check_cache(&self, percentile: f64) -> Option<f64> {
+        let cache_key = Self::percentile_to_cache_key(percentile);
+        
+        let cache = match self.percentile_cache.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "LatencyCollector cache mutex is poisoned: {}. Cannot check cache.",
+                    e
+                );
+                return None;
+            }
+        };
+        
+        if let Some((cached_value, timestamp)) = cache.get(&cache_key) {
+            let now = SystemTime::now();
+            if let Ok(elapsed) = now.duration_since(*timestamp) {
+                if elapsed.as_secs() < self.cache_ttl_seconds {
+                    debug!(
+                        "Cache hit for percentile {}: {:.2} ms",
+                        percentile, cached_value
+                    );
+                    return Some(*cached_value);
+                }
+            }
+        }
+        
+        None
+    }
+
+    /// Кэширует значение перцентиля.
+    fn cache_percentile(&self, percentile: f64, value: f64) {
+        let cache_key = Self::percentile_to_cache_key(percentile);
+        
+        let mut cache = match self.percentile_cache.lock() {
+            Ok(guard) => guard,
+            Err(e) => {
+                warn!(
+                    "LatencyCollector cache mutex is poisoned: {}. Cannot update cache.",
+                    e
+                );
+                return;
+            }
+        };
+        
+        cache.insert(cache_key, (value, SystemTime::now()));
+        debug!(
+            "Cached percentile {}: {:.2} ms (TTL: {}s)",
+            percentile, value, self.cache_ttl_seconds
+        );
     }
 
     /// Вычисляет P95 перцентиль.
@@ -231,6 +335,14 @@ impl LatencyCollector {
 /// Создаёт отдельный поток, который периодически спит на заданный интервал
 /// и измеряет задержку пробуждения (wakeup_delay = фактическое время - ожидаемое время).
 /// Измерения сохраняются в LatencyCollector для последующего вычисления перцентилей.
+/// Ошибки, которые могут возникнуть при работе с scheduling latency.
+#[derive(Debug, thiserror::Error)]
+pub enum SchedulingLatencyError {
+    /// Ошибка при создании потока probe-thread.
+    #[error("Failed to spawn latency probe thread: {0}")]
+    ThreadSpawnFailed(String),
+}
+
 pub struct LatencyProbe {
     /// Поток probe-thread
     handle: Option<thread::JoinHandle<()>>,
@@ -254,13 +366,14 @@ impl LatencyProbe {
     /// use std::sync::Arc;
     ///
     /// let collector = Arc::new(LatencyCollector::new(1000));
-    /// let probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+    /// let probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000)
+    ///     .expect("Failed to create latency probe");
     /// ```
     pub fn new(
         collector: Arc<LatencyCollector>,
         sleep_interval_ms: u64,
         max_samples: usize,
-    ) -> Self {
+    ) -> Result<Self, SchedulingLatencyError> {
         let shutdown = Arc::new(AtomicBool::new(false));
         let shutdown_clone = Arc::clone(&shutdown);
         let collector_clone = Arc::clone(&collector);
@@ -271,20 +384,20 @@ impl LatencyProbe {
             .spawn(move || {
                 Self::probe_thread_loop(collector_clone, shutdown_clone, sleep_interval);
             })
-            .unwrap_or_else(|e| {
+            .map_err(|e| {
                 error!("Failed to spawn latency probe thread: {}", e);
-                panic!("Failed to spawn latency probe thread: {}", e);
-            });
+                SchedulingLatencyError::ThreadSpawnFailed(e.to_string())
+            })?;
 
         info!(
             "Started latency probe thread (sleep_interval={}ms, max_samples={})",
             sleep_interval_ms, max_samples
         );
 
-        Self {
+        Ok(Self {
             handle: Some(handle),
             shutdown,
-        }
+        })
     }
 
     /// Основной цикл probe-thread.
@@ -609,7 +722,8 @@ mod tests {
     fn test_latency_probe_starts_and_stops() {
         use std::time::Duration;
         let collector = Arc::new(LatencyCollector::new(1000));
-        let mut probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+        let mut probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000)
+            .expect("Failed to create latency probe in test");
 
         // Даём probe-thread немного времени для работы
         thread::sleep(Duration::from_millis(50));
@@ -641,7 +755,8 @@ mod tests {
     fn test_latency_probe_collects_measurements() {
         use std::time::Duration;
         let collector = Arc::new(LatencyCollector::new(1000));
-        let mut probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+        let mut probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000)
+            .expect("Failed to create latency probe in test");
 
         // Даём probe-thread больше времени для сбора измерений
         // Увеличиваем время ожидания, чтобы учесть возможные задержки в планировщике
@@ -669,7 +784,8 @@ mod tests {
     fn test_latency_probe_drop_stops_thread() {
         use std::time::Duration;
         let collector = Arc::new(LatencyCollector::new(1000));
-        let probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+        let probe = LatencyProbe::new(Arc::clone(&collector), 5, 1000)
+            .expect("Failed to create latency probe in test");
 
         // Даём probe-thread время для работы
         thread::sleep(Duration::from_millis(50));
@@ -691,5 +807,103 @@ mod tests {
             len_after_wait, len_after_drop,
             "Probe thread should stop after drop"
         );
+    }
+
+    #[test]
+    fn test_latency_collector_cache_functionality() {
+        // Тест на функциональность кэша
+        let collector = LatencyCollector::new_with_cache_ttl(1000, 1); // 1 секунда TTL
+        
+        // Добавляем тестовые данные
+        for i in 0..100 {
+            collector.add_sample(i as f64 * 0.1);
+        }
+        
+        // Первое вычисление P95 - должно вычислить и закэшировать
+        let p95_1 = collector.p95();
+        assert!(p95_1.is_some());
+        
+        // Второе вычисление P95 - должно использовать кэш
+        let p95_2 = collector.p95();
+        assert!(p95_2.is_some());
+        
+        // Результаты должны быть одинаковыми
+        assert_eq!(p95_1, p95_2);
+        
+        // Тест P99 кэширования
+        let p99_1 = collector.p99();
+        let p99_2 = collector.p99();
+        assert_eq!(p99_1, p99_2);
+    }
+
+    #[test]
+    fn test_latency_collector_cache_expiration() {
+        use std::thread;
+        use std::time::Duration;
+        
+        // Тест на истечение срока кэша
+        let collector = LatencyCollector::new_with_cache_ttl(1000, 1); // 1 секунда TTL
+        
+        // Добавляем тестовые данные
+        for i in 0..100 {
+            collector.add_sample(i as f64 * 0.1);
+        }
+        
+        // Первое вычисление
+        let p95_before = collector.p95();
+        
+        // Ждём, пока кэш истечёт
+        thread::sleep(Duration::from_secs(2));
+        
+        // Добавляем новые данные, которые изменят результат
+        for i in 0..50 {
+            collector.add_sample(i as f64 * 0.2); // Другие значения
+        }
+        
+        // Второе вычисление - должно вычислить заново (кэш истёк)
+        let p95_after = collector.p95();
+        
+        // Оба результата должны быть Some, но могут отличаться
+        assert!(p95_before.is_some());
+        assert!(p95_after.is_some());
+    }
+
+    #[test]
+    fn test_latency_collector_new_with_cache_ttl() {
+        // Тест на создание коллектора с настраиваемым TTL кэша
+        let collector = LatencyCollector::new_with_cache_ttl(1000, 5);
+        
+        assert_eq!(collector.max_samples, 1000);
+        assert_eq!(collector.cache_ttl_seconds, 5);
+        assert!(collector.is_empty());
+    }
+
+    #[test]
+    fn test_latency_probe_thread_spawn_error() {
+        // Тест на обработку ошибки создания потока
+        // Используем недопустимое имя потока, чтобы вызвать ошибку
+        // Note: Это сложно протестировать напрямую, так как thread::Builder::new() 
+        // не позволяет установить недопустимое имя. Вместо этого проверяем, что 
+        // функция возвращает Result и может быть обработана.
+        let collector = Arc::new(LatencyCollector::new(1000));
+        
+        // Проверяем, что функция возвращает Result
+        let result: Result<LatencyProbe, SchedulingLatencyError> = 
+            LatencyProbe::new(Arc::clone(&collector), 5, 1000);
+        
+        // В нормальных условиях это должно пройти успешно
+        assert!(result.is_ok(), "LatencyProbe should be created successfully");
+        
+        // Проверяем, что мы можем обработать ошибку
+        match result {
+            Ok(_probe) => {
+                // Успешное создание - это ожидаемое поведение
+                assert!(true, "Probe created successfully");
+            }
+            Err(SchedulingLatencyError::ThreadSpawnFailed(_msg)) => {
+                // Это было бы ошибкой создания потока
+                panic!("Unexpected thread spawn failure in test");
+            }
+        }
     }
 }

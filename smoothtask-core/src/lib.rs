@@ -652,7 +652,11 @@ pub async fn run_daemon(
     let latency_collector = Arc::new(LatencyCollector::new(5000));
     let sleep_interval_ms = 5; // 5 мс согласно документации tz.md
     let mut latency_probe =
-        LatencyProbe::new(Arc::clone(&latency_collector), sleep_interval_ms, 5000);
+        LatencyProbe::new(Arc::clone(&latency_collector), sleep_interval_ms, 5000)
+        .map_err(|e| {
+            error!("Failed to create latency probe: {}", e);
+            anyhow::anyhow!(e)
+        })?;
 
     // Загрузка базы паттернов для классификации
     info!(
