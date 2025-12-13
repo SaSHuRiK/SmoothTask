@@ -8,7 +8,10 @@ use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::Path;
+use std::num::NonZeroUsize;
 use tracing::{debug, error, info, warn};
+
+use lru::LruCache;
 
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
@@ -171,13 +174,28 @@ impl PatternUpdateResult {
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct PatternDatabase {
     /// Маппинг категория -> список паттернов.
     patterns_by_category: HashMap<PatternCategory, Vec<AppPattern>>,
     /// Плоский список всех паттернов для быстрого поиска.
     all_patterns: Vec<(PatternCategory, AppPattern)>,
+    /// Кэш для результатов сопоставления паттернов.
+    /// Ключ: (exe, desktop_id, cgroup_path), Значение: Vec<(PatternCategory, AppPattern)>
+    match_cache: LruCache<(Option<String>, Option<String>, Option<String>), Vec<(PatternCategory, AppPattern)>>,
 }
+
+impl Default for PatternDatabase {
+    fn default() -> Self {
+        Self {
+            patterns_by_category: HashMap::new(),
+            all_patterns: Vec::new(),
+            match_cache: LruCache::new(NonZeroUsize::new(512).unwrap()),
+        }
+    }
+}
+
+
 
 impl PatternDatabase {
     /// Загружает паттерны из директории с YAML файлами.
@@ -314,6 +332,7 @@ impl PatternDatabase {
         Ok(Self {
             patterns_by_category,
             all_patterns,
+            match_cache: LruCache::new(NonZeroUsize::new(512).unwrap()),
         })
     }
 
@@ -725,18 +744,45 @@ impl PatternDatabase {
     ///
     /// Список совпадающих паттернов с их категориями.
     pub fn match_process(
-        &self,
+        &mut self,
         exe: Option<&str>,
         desktop_id: Option<&str>,
         cgroup_path: Option<&str>,
     ) -> Vec<(&PatternCategory, &AppPattern)> {
+        // Создаем кэш-ключ
+        let cache_key = (
+            exe.map(|s| s.to_string()),
+            desktop_id.map(|s| s.to_string()),
+            cgroup_path.map(|s| s.to_string()),
+        );
+        
+        // Пробуем получить результат из кэша
+        if let Some(cached_matches) = self.match_cache.get(&cache_key) {
+            // Преобразуем кэшированные результаты в нужный формат
+            let mut matches = Vec::new();
+            for (category, pattern) in cached_matches {
+                // Находим соответствующие паттерны в all_patterns
+                if let Some((found_category, found_pattern)) = self.all_patterns.iter()
+                    .find(|(cat, pat)| cat.0 == category.0 && pat.name == pattern.name) {
+                    matches.push((found_category, found_pattern));
+                }
+            }
+            return matches;
+        }
+
+        // Кэш промах - выполняем полное сопоставление
         let mut matches = Vec::new();
+        let mut cacheable_matches = Vec::new();
 
         for (category, pattern) in &self.all_patterns {
             if Self::pattern_matches(pattern, exe, desktop_id, cgroup_path) {
                 matches.push((category, pattern));
+                cacheable_matches.push((category.clone(), pattern.clone()));
             }
         }
+
+        // Сохраняем результат в кэш
+        self.match_cache.put(cache_key, cacheable_matches);
 
         matches
     }
@@ -797,64 +843,59 @@ impl PatternDatabase {
             return text == pattern;
         }
 
-        // Используем рекурсивный алгоритм сопоставления glob паттернов
-        Self::glob_match_recursive(text.as_bytes(), pattern.as_bytes())
+        // Используем оптимизированный алгоритм сопоставления glob паттернов
+        Self::glob_match_optimized(text, pattern)
     }
 
-    /// Рекурсивная функция для сопоставления glob паттернов.
+    /// Оптимизированная функция для сопоставления glob паттернов.
     ///
     /// Алгоритм:
     /// - `*` соответствует любой последовательности символов (включая пустую)
     /// - `?` соответствует одному символу
     /// - Обычные символы должны совпадать точно
-    fn glob_match_recursive(text: &[u8], pattern: &[u8]) -> bool {
-        // Базовый случай: если паттерн пуст, текст тоже должен быть пуст
-        if pattern.is_empty() {
-            return text.is_empty();
-        }
-
-        // Базовый случай: если текст пуст, паттерн должен состоять только из `*`
-        if text.is_empty() {
-            return pattern.iter().all(|&b| b == b'*');
-        }
-
-        match pattern[0] {
-            b'*' => {
-                // `*` может соответствовать:
-                // 1. Пустой строке (пропускаем `*` и продолжаем)
-                // 2. Одному или более символам (пропускаем один символ из text и продолжаем)
-                // 3. Всей оставшейся строке (если после `*` ничего нет)
-
-                // Оптимизация: если паттерн заканчивается на `*`, он соответствует всему
-                if pattern.len() == 1 {
-                    return true;
-                }
-
-                // Пробуем все возможные совпадения для `*`
-                for i in 0..=text.len() {
-                    if Self::glob_match_recursive(&text[i..], &pattern[1..]) {
-                        return true;
-                    }
-                }
-                false
-            }
-            b'?' => {
-                // `?` соответствует одному символу
-                if text.is_empty() {
-                    false
-                } else {
-                    Self::glob_match_recursive(&text[1..], &pattern[1..])
-                }
-            }
-            ch => {
-                // Обычный символ должен совпадать точно
-                if text.is_empty() || text[0] != ch {
-                    false
-                } else {
-                    Self::glob_match_recursive(&text[1..], &pattern[1..])
-                }
+    ///
+    /// Оптимизации:
+    /// - Итеративный подход вместо рекурсивного для лучшей производительности
+    /// - Раннее завершение при несовпадении
+    fn glob_match_optimized(text: &str, pattern: &str) -> bool {
+        // Преобразование в байты для быстрого сравнения
+        let text_bytes = text.as_bytes();
+        let pattern_bytes = pattern.as_bytes();
+        
+        let mut text_idx = 0;
+        let mut pattern_idx = 0;
+        let mut star_idx = None;
+        let mut match_idx = 0;
+        
+        while text_idx < text_bytes.len() {
+            if pattern_idx < pattern_bytes.len() && 
+               (pattern_bytes[pattern_idx] == b'?' || 
+                pattern_bytes[pattern_idx] == text_bytes[text_idx]) {
+                // Совпадение символа или ?
+                text_idx += 1;
+                pattern_idx += 1;
+            } else if pattern_idx < pattern_bytes.len() && pattern_bytes[pattern_idx] == b'*' {
+                // Нашли звездочку - запоминаем позицию
+                star_idx = Some(pattern_idx);
+                match_idx = text_idx;
+                pattern_idx += 1;
+            } else if let Some(star_pos) = star_idx {
+                // Попробуем продолжить после звездочки
+                pattern_idx = star_pos + 1;
+                match_idx += 1;
+                text_idx = match_idx;
+            } else {
+                // Нет совпадения
+                return false;
             }
         }
+        
+        // Пропускаем оставшиеся звездочки
+        while pattern_idx < pattern_bytes.len() && pattern_bytes[pattern_idx] == b'*' {
+            pattern_idx += 1;
+        }
+        
+        pattern_idx == pattern_bytes.len()
     }
 }
 
@@ -883,7 +924,7 @@ impl PatternDatabase {
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 pub fn classify_process(
     process: &mut ProcessRecord,
-    pattern_db: &PatternDatabase,
+    pattern_db: &mut PatternDatabase,
     ml_classifier: Option<&mut dyn MLClassifier>,
     desktop_id: Option<&str>,
 ) {
@@ -994,7 +1035,7 @@ pub fn classify_process(
 #[cfg(not(any(feature = "catboost", feature = "onnx")))]
 pub fn classify_process(
     process: &mut ProcessRecord,
-    pattern_db: &PatternDatabase,
+    pattern_db: &mut PatternDatabase,
     _ml_classifier: Option<&dyn std::any::Any>,
     desktop_id: Option<&str>,
 ) {
@@ -1135,7 +1176,7 @@ pub fn classify_app_group(
 pub fn classify_all(
     processes: &mut [ProcessRecord],
     app_groups: &mut [AppGroupRecord],
-    pattern_db: &PatternDatabase,
+    pattern_db: &mut PatternDatabase,
     ml_classifier: Option<&dyn MLClassifier>,
 ) {
     // Классифицируем все процессы
@@ -1153,7 +1194,7 @@ pub fn classify_all(
 pub fn classify_all(
     processes: &mut [ProcessRecord],
     app_groups: &mut [AppGroupRecord],
-    pattern_db: &PatternDatabase,
+    pattern_db: &mut PatternDatabase,
     _ml_classifier: Option<&dyn std::any::Any>,
 ) {
     // Классифицируем все процессы (без ML)
@@ -1252,7 +1293,7 @@ apps:
 "#,
         );
 
-        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         // Совпадение по exe
         let matches = db.match_process(Some("firefox"), None, None);
@@ -1282,7 +1323,7 @@ apps:
 "#,
         );
 
-        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let matches = db.match_process(None, Some("firefox.desktop"), None);
         assert_eq!(matches.len(), 1);
@@ -1307,7 +1348,7 @@ apps:
 "#,
         );
 
-        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let matches = db.match_process(None, None, Some("/system.slice/my-service.service"));
         assert_eq!(matches.len(), 1);
@@ -1483,7 +1524,7 @@ apps:
 "#,
         );
 
-        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let mut process = ProcessRecord {
             pid: 1000,
@@ -1527,7 +1568,7 @@ apps:
         };
 
         // Тест без ML-классификатора
-        classify_process(&mut process, &db, None, None);
+        classify_process(&mut process, &mut db, None, None);
 
         assert_eq!(process.process_type, Some("browser".to_string()));
         assert!(process.tags.contains(&"browser".to_string()));
@@ -1552,7 +1593,7 @@ apps:
 "#,
         );
 
-        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let mut process = ProcessRecord {
             pid: 1000,
@@ -1595,7 +1636,7 @@ apps:
             teacher_score: None,
         };
 
-        classify_process(&mut process, &db, None, None);
+        classify_process(&mut process, &mut db, None, None);
 
         assert_eq!(process.process_type, None);
         assert!(process.tags.is_empty());
@@ -1745,7 +1786,7 @@ apps:
 "#,
         );
 
-        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let mut processes = vec![ProcessRecord {
             pid: 1000,
@@ -1804,7 +1845,7 @@ apps:
         }];
 
         // Тест без ML-классификатора
-        classify_all(&mut processes, &mut app_groups, &db, None);
+        classify_all(&mut processes, &mut app_groups, &mut db, None);
 
         // Процесс должен быть классифицирован
         assert_eq!(processes[0].process_type, Some("browser".to_string()));
@@ -1879,7 +1920,7 @@ apps:
         };
 
         // Классификация с ML-классификатором
-        classify_process(&mut process, &db, Some(&ml_classifier), None);
+        classify_process(&mut process, &mut db, Some(&ml_classifier), None);
 
         // Должны быть теги и от паттернов, и от ML
         assert!(process.tags.contains(&"browser".to_string())); // от паттернов
@@ -1953,7 +1994,7 @@ apps:
         };
 
         // Классификация с ML-классификатором
-        classify_process(&mut process, &db, Some(&ml_classifier), None);
+        classify_process(&mut process, &mut db, Some(&ml_classifier), None);
 
         // Должны быть теги и от паттернов, и от ML
         assert!(process.tags.contains(&"browser".to_string())); // от паттернов
@@ -2109,7 +2150,11 @@ apps:
         let _patterns_dir = temp_dir.path();
 
         // Создаем базу с пустыми паттернами
-        let db = PatternDatabase::default();
+        let mut db = PatternDatabase {
+            patterns_by_category: HashMap::new(),
+            all_patterns: Vec::new(),
+            match_cache: LruCache::new(NonZeroUsize::new(512).unwrap()),
+        };
 
         let mut process = ProcessRecord {
             pid: 1000,
@@ -2153,7 +2198,7 @@ apps:
         };
 
         // Классификация с пустой базой паттернов
-        classify_process(&mut process, &db, None, None);
+        classify_process(&mut process, &mut db, None, None);
 
         // Должен остаться неклассифицированным
         assert_eq!(process.process_type, None);

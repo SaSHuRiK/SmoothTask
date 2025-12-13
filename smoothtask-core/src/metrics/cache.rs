@@ -489,7 +489,7 @@ impl OptimizedMetricsCollector {
         
         // Создаем временные метрики для кэширования
         let metrics = SystemMetrics {
-            cpu_times: cpu_times,
+            cpu_times,
             ..Default::default()
         };
         

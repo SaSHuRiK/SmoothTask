@@ -663,7 +663,7 @@ pub async fn run_daemon(
         "Loading pattern database from: {}",
         initial_config.paths.patterns_dir
     );
-    let pattern_db =
+    let mut pattern_db =
         PatternDatabase::load(&initial_config.paths.patterns_dir).with_context(|| {
             format!(
                 "Failed to load pattern database from {}. \
@@ -968,7 +968,7 @@ pub async fn run_daemon(
         classify_all(
             &mut processes,
             &mut app_groups,
-            &pattern_db,
+            &mut pattern_db,
             ml_classifier.as_deref(),
         );
 

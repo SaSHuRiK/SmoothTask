@@ -152,6 +152,65 @@ impl Notification {
             timestamp: chrono::Utc::now(),
         }
     }
+
+    /// Создаёт уведомление о ресурсном событии.
+    /// Используется для уведомлений о высоком использовании ресурсов (CPU, память, GPU и т.д.).
+    pub fn resource_event(
+        resource_type: impl Into<String> + Clone + std::fmt::Display,
+        usage_value: impl Into<String>,
+        threshold: impl Into<String>,
+    ) -> Self {
+        let resource_type_str = resource_type.clone();
+        Self {
+            notification_type: NotificationType::Warning,
+            title: format!("High {} Usage", resource_type.into()),
+            message: format!(
+                "{} usage is at {} (threshold: {})",
+                resource_type_str,
+                usage_value.into(),
+                threshold.into()
+            ),
+            details: None,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    /// Создаёт уведомление о температурном событии.
+    /// Используется для уведомлений о высокой температуре компонентов.
+    pub fn temperature_event(
+        component: impl Into<String> + Clone + std::fmt::Display,
+        temperature: impl Into<String>,
+        threshold: impl Into<String>,
+    ) -> Self {
+        let component_str = component.clone();
+        Self {
+            notification_type: NotificationType::Warning,
+            title: format!("High {} Temperature", component.into()),
+            message: format!(
+                "{} temperature is at {}°C (threshold: {}°C)",
+                component_str,
+                temperature.into(),
+                threshold.into()
+            ),
+            details: None,
+            timestamp: chrono::Utc::now(),
+        }
+    }
+
+    /// Создаёт уведомление о сетевом событии.
+    /// Используется для уведомлений о сетевой активности.
+    pub fn network_event(
+        event_type: impl Into<String>,
+        details: impl Into<String>,
+    ) -> Self {
+        Self {
+            notification_type: NotificationType::Info,
+            title: format!("Network Event: {}", event_type.into()),
+            message: details.into(),
+            details: None,
+            timestamp: chrono::Utc::now(),
+        }
+    }
 }
 
 /// Трейт для отправки уведомлений.
@@ -346,6 +405,49 @@ impl DBusNotifier {
         Ok(())
     }
 
+    /// Устанавливает соединение с сессионным D-Bus (для пользовательских уведомлений).
+    pub async fn connect_session(&mut self) -> Result<()> {
+        self.connection = Some(Connection::session().await?);
+        Ok(())
+    }
+
+    /// Проверяет доступность D-Bus сервиса уведомлений.
+    pub async fn check_notification_service_available(&self) -> bool {
+        if let Some(conn) = &self.connection {
+            let proxy = zbus::Proxy::new(
+                conn,
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+            );
+            
+            // Пробуем вызвать метод GetServerInformation для проверки доступности
+            let result: zbus::Result<(String, String, String, String)> = proxy
+                .call_method("GetServerInformation", &())
+                .await;
+            
+            result.is_ok()
+        } else {
+            false
+        }
+    }
+
+    /// Получает информацию о сервере уведомлений.
+    pub async fn get_server_information(&self) -> Result<(String, String, String, String)> {
+        if let Some(conn) = &self.connection {
+            let proxy = zbus::Proxy::new(
+                conn,
+                "org.freedesktop.Notifications",
+                "/org/freedesktop/Notifications",
+                "org.freedesktop.Notifications",
+            );
+            
+            proxy.call_method("GetServerInformation", &()).await
+        } else {
+            Err(anyhow::anyhow!("D-Bus connection not established"))
+        }
+    }
+
     /// Проверяет, установлено ли соединение с D-Bus.
     pub fn is_connected(&self) -> bool {
         self.connection.is_some()
@@ -364,6 +466,40 @@ impl Notifier for DBusNotifier {
                 return Ok(());
             }
         };
+
+        // Проверяем доступность сервиса уведомлений
+        let service_available = self.check_notification_service_available().await;
+        if !service_available {
+            tracing::warn!("D-Bus notification service not available, falling back to logging");
+            // В случае отсутствия сервиса, логируем уведомление как заглушка
+            match notification.notification_type {
+                NotificationType::Critical => {
+                    tracing::error!(
+                        "[NOTIFICATION] {}: {}",
+                        notification.title,
+                        notification.message
+                    );
+                }
+                NotificationType::Warning => {
+                    tracing::warn!(
+                        "[NOTIFICATION] {}: {}",
+                        notification.title,
+                        notification.message
+                    );
+                }
+                NotificationType::Info => {
+                    tracing::info!(
+                        "[NOTIFICATION] {}: {}",
+                        notification.title,
+                        notification.message
+                    );
+                }
+            }
+            if let Some(details) = &notification.details {
+                tracing::debug!("Notification details: {}", details);
+            }
+            return Ok(());
+        }
 
         // Преобразуем тип уведомления в уровень срочности
         let urgency = match notification.notification_type {
@@ -409,9 +545,25 @@ impl Notifier for DBusNotifier {
             let mut hints_map = std::collections::HashMap::new();
             // Устанавливаем уровень срочности
             hints_map.insert("urgency", zbus::zvariant::Value::new(urgency));
+            // Добавляем временную метку
+            hints_map.insert("timestamp", zbus::zvariant::Value::new(notification.timestamp.timestamp()));
+            // Добавляем категорию уведомления
+            let category = match notification.notification_type {
+                NotificationType::Critical => "device.error",
+                NotificationType::Warning => "device.warning",
+                NotificationType::Info => "device.info",
+                NotificationType::PriorityChange => "system.performance",
+                NotificationType::ConfigChange => "system.config",
+                NotificationType::SystemEvent => "system.event",
+            };
+            hints_map.insert("category", zbus::zvariant::Value::new(category));
             hints_map
         };
-        let expire_timeout: i32 = 5000; // 5 секунд
+        let expire_timeout: i32 = match notification.notification_type {
+            NotificationType::Critical => 10000, // 10 секунд для критических уведомлений
+            NotificationType::Warning => 7000,  // 7 секунд для предупреждений
+            _ => 5000, // 5 секунд для остальных
+        };
 
         // Отправляем уведомление через D-Bus
         let result: zbus::Result<u32> = proxy
@@ -1137,5 +1289,82 @@ mod tests {
         assert_eq!(error_entries.len(), 1, "Expected 1 error entry");
         assert_eq!(warn_entries.len(), 1, "Expected 1 warning entry");
         assert_eq!(info_entries.len(), 4, "Expected 4 info entries");
+    }
+
+
+
+    #[tokio::test]
+    async fn test_notification_manager_new_types() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+
+        let log_storage = Arc::new(SharedLogStorage::new(15));
+        let manager = NotificationManager::new_stub_with_logging(Arc::clone(&log_storage));
+
+        // Тестируем новые типы уведомлений
+        let notifications = vec![
+            Notification::resource_event("Memory", "12GB", "10GB"),
+            Notification::temperature_event("GPU", "80", "75"),
+            Notification::network_event("Connection Spike", "1000 active connections"),
+        ];
+
+        // Отправляем все уведомления
+        for notification in &notifications {
+            let result = manager.send(notification).await;
+            assert!(result.is_ok(), "Failed to send notification: {:?}", notification);
+        }
+
+        // Проверяем, что все уведомления были залоггированы
+        let all_entries = log_storage.get_all_entries().await;
+        assert_eq!(all_entries.len(), 3, "Expected 3 log entries, got {}", all_entries.len());
+
+        // Проверяем уровни логирования
+        let warn_entries: Vec<_> = all_entries
+            .iter()
+            .filter(|e| e.level == crate::logging::log_storage::LogLevel::Warn)
+            .collect();
+
+        let info_entries: Vec<_> = all_entries
+            .iter()
+            .filter(|e| e.level == crate::logging::log_storage::LogLevel::Info)
+            .collect();
+
+        assert_eq!(warn_entries.len(), 2, "Expected 2 warning entries");
+        assert_eq!(info_entries.len(), 1, "Expected 1 info entry");
+    }
+
+    #[cfg(feature = "dbus")]
+    #[tokio::test]
+    async fn test_dbus_notifier_enhanced_features() {
+        let mut notifier = DBusNotifier::new("TestApp");
+        
+        // Проверяем, что соединение не установлено изначально
+        assert!(!notifier.is_connected());
+        
+        // Проверяем, что сервис уведомлений недоступен без соединения
+        assert!(!notifier.check_notification_service_available().await);
+        
+        // Проверяем, что получение информации о сервере возвращает ошибку без соединения
+        let result = notifier.get_server_information().await;
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_notification_serialization_new_types() {
+        let resource_notification = Notification::resource_event("GPU", "90%", "85%");
+        let serialized = serde_json::to_string(&resource_notification).unwrap();
+        let deserialized: Notification = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.notification_type, NotificationType::Warning);
+        assert_eq!(deserialized.title, "High GPU Usage");
+        assert!(deserialized.message.contains("GPU usage is at 90% (threshold: 85%)"));
+
+        let temperature_notification = Notification::temperature_event("CPU", "85", "80");
+        let serialized = serde_json::to_string(&temperature_notification).unwrap();
+        let deserialized: Notification = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.notification_type, NotificationType::Warning);
+        assert_eq!(deserialized.title, "High CPU Temperature");
+        assert!(deserialized.message.contains("CPU temperature is at 85°C (threshold: 80°C)"));
     }
 }
