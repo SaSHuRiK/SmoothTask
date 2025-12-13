@@ -3,6 +3,7 @@
 //! Этот модуль предоставляет функциональность для сбора различных метрик:
 //! - Системные метрики (CPU, память, PSI)
 //! - Метрики процессов (CPU, IO, память)
+//! - Метрики энергопотребления процессов (RAPL, /proc/power, eBPF)
 //! - Метрики окон и фокуса (X11/Wayland)
 //! - Метрики аудио (PipeWire/PulseAudio, XRUN)
 //! - Метрики ввода пользователя (evdev)
@@ -14,6 +15,7 @@
 //!
 //! - **system**: Глобальные метрики системы из /proc и PSI
 //! - **process**: Метрики отдельных процессов
+//! - **process_energy**: Мониторинг энергопотребления процессов
 //! - **windows**: Интроспекция окон через X11/Wayland
 //! - **audio**: Метрики аудио-системы (PipeWire/PulseAudio)
 //! - **input**: Отслеживание активности пользователя
@@ -28,6 +30,7 @@ pub mod audio;
 pub mod audio_pipewire;
 pub mod cache;
 pub mod ebpf;
+pub mod process_energy;
 pub mod process_gpu;
 pub mod gpu;
 pub mod input;

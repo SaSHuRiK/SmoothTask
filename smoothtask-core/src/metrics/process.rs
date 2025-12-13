@@ -800,13 +800,13 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 
 /// Собрать метрики энергопотребления для процесса.
 ///
-/// Пробует получить данные из доступных источников:
+/// Использует новый модуль process_energy для сбора данных из различных источников:
 /// - /proc/[pid]/power/energy_uj (если доступно)
 /// - eBPF мониторинг (если включен)
 /// - RAPL интерфейсы (если доступны)
 ///
 /// Возвращает (energy_uj, power_w, energy_timestamp) или (None, None, None), если данные недоступны.
-fn collect_process_energy_metrics(pid: i32) -> (Option<u64>, Option<f32>, Option<u64>) {
+async fn collect_process_energy_metrics(pid: i32) -> (Option<u64>, Option<f32>, Option<u64>) {
     // Пробуем прочитать из /proc/[pid]/power/energy_uj (если доступно)
     // Это экспериментальный интерфейс, доступный на некоторых системах
     let energy_path = format!("/proc/{}/power/energy_uj", pid);
@@ -832,26 +832,8 @@ fn collect_process_energy_metrics(pid: i32) -> (Option<u64>, Option<f32>, Option
         }
     }
     
-    // Пробуем получить данные из RAPL (Running Average Power Limit)
-    // RAPL предоставляет доступ к энергопотреблению через sysfs
-    if let Ok(rapl_energy) = try_collect_rapl_energy(pid) {
-        let power_w = rapl_energy as f32 / 1_000_000.0;
-        let energy_timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_secs());
-            
-        tracing::debug!(
-            "Энергопотребление процесса PID {}: {} мкДж ({} Вт) [источник: rapl]",
-            pid,
-            rapl_energy,
-            power_w
-        );
-        
-        return (Some(rapl_energy), Some(power_w), energy_timestamp);
-    }
-    
-    // Если ни один источник не доступен, пробуем интеграцию с eBPF
+    // Если /proc/[pid]/power/energy_uj недоступен, используем ProcessEnergyMonitor
+    // который обрабатывает RAPL, eBPF и другие источники автоматически
     // В будущем можно добавить более тесную интеграцию с eBPF или другими источниками
     
     tracing::debug!(
@@ -859,47 +841,33 @@ fn collect_process_energy_metrics(pid: i32) -> (Option<u64>, Option<f32>, Option
         pid
     );
     
-    (None, None, None)
-}
-
-/// Пробуем получить данные энергопотребления из RAPL (Running Average Power Limit).
-///
-/// RAPL предоставляет интерфейсы через /sys/class/powercap/intel-rapl/*/energy_uj
-/// для мониторинга энергопотребления на уровне пакетов, ядер и других доменов.
-fn try_collect_rapl_energy(_pid: i32) -> Result<u64, std::io::Error> {
-    // Пробуем найти RAPL интерфейсы
-    // На современных системах Intel RAPL доступен через powercap
-    let rapl_base_path = "/sys/class/powercap/intel-rapl";
-    
-    if std::path::Path::new(rapl_base_path).exists() {
-        // Пробуем прочитать из первого доступного RAPL домена
-        // В реальной системе нужно более сложное сопоставление процессов с доменами
-        let mut total_energy_uj = 0;
-        
-        for entry in std::fs::read_dir(rapl_base_path)? {
-            let entry = entry?;
-            let domain_path = entry.path();
-            let energy_path = domain_path.join("energy_uj");
-            
-            if energy_path.exists() {
-                if let Ok(energy_content) = std::fs::read_to_string(&energy_path) {
-                    if let Ok(energy_uj) = energy_content.trim().parse::<u64>() {
-                        total_energy_uj += energy_uj;
-                    }
-                }
-            }
+    // Используем новый модуль process_energy для сбора метрик
+    match crate::metrics::process_energy::GlobalProcessEnergyMonitor::collect_process_energy(pid).await {
+        Ok(Some(stats)) => {
+            tracing::debug!(
+                "Энергопотребление процесса PID {}: {} мкДж ({} Вт) [источник: {:?}]",
+                pid,
+                stats.energy_uj,
+                stats.power_w,
+                stats.source
+            );
+            (Some(stats.energy_uj), Some(stats.power_w), Some(stats.timestamp))
         }
-        
-        if total_energy_uj > 0 {
-            return Ok(total_energy_uj);
+        Ok(None) => {
+            tracing::debug!(
+                "Энергопотребление для процесса PID {} недоступно: все источники не найдены или нечитаемы",
+                pid
+            );
+            (None, None, None)
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Ошибка при сборе метрик энергопотребления для процесса PID {}: {}",
+                pid, e
+            );
+            (None, None, None)
         }
     }
-    
-    // Если RAPL недоступен, возвращаем ошибку
-    Err(std::io::Error::new(
-        std::io::ErrorKind::NotFound,
-        "RAPL интерфейсы не найдены или недоступны"
-    ))
 }
 
 /// Улучшить запись процесса данными о дисковом вводе-выводе из eBPF.
@@ -1083,7 +1051,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let systemd_unit = extract_systemd_unit(&cgroup_path);
 
     // Собираем метрики энергопотребления
-    let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics(proc.pid());
+    let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics_new(proc.pid());
 
     let record = ProcessRecord {
         pid: stat.pid,
@@ -2813,7 +2781,7 @@ mod energy_tests {
     #[test]
     fn test_collect_process_energy_metrics_not_available() {
         // Тестируем случай, когда энергопотребление недоступно
-        let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics(999999);
+        let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics_new(999999);
         
         // Для несуществующего процесса или недоступного интерфейса
         // должны получить None значения
@@ -2830,7 +2798,7 @@ mod energy_tests {
         
         // Мокаем чтение файла (в реальном тесте это сложнее)
         // Для простоты просто проверяем, что функция не паникует
-        let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics(1);
+        let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics_new(1);
         
         // Должны получить None значения для некорректных данных
         assert!(energy_uj.is_none());
@@ -2903,5 +2871,38 @@ mod energy_tests {
         assert_eq!(record.energy_uj, Some(123456));
         assert_eq!(record.power_w, Some(1.23));
         assert_eq!(record.energy_timestamp, Some(1234567890));
+    }
+}
+
+/// Новая реализация сбора метрик энергопотребления с использованием модуля process_energy
+fn collect_process_energy_metrics_new(pid: i32) -> (Option<u64>, Option<f32>, Option<u64>) {
+    // Используем новый модуль process_energy для сбора метрик
+    match crate::metrics::process_energy::ProcessEnergyMonitor::new()
+        .collect_process_energy_sync(pid)
+    {
+        Ok(Some(stats)) => {
+            tracing::debug!(
+                "Энергопотребление процесса PID {}: {} мкДж ({} Вт) [источник: {:?}]",
+                pid,
+                stats.energy_uj,
+                stats.power_w,
+                stats.source
+            );
+            (Some(stats.energy_uj), Some(stats.power_w), Some(stats.timestamp))
+        }
+        Ok(None) => {
+            tracing::debug!(
+                "Энергопотребление для процесса PID {} недоступно: все источники не найдены или нечитаемы",
+                pid
+            );
+            (None, None, None)
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Ошибка при сборе метрик энергопотребления для процесса PID {}: {}",
+                pid, e
+            );
+            (None, None, None)
+        }
     }
 }

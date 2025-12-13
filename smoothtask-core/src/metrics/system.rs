@@ -1938,7 +1938,7 @@ lazy_static! {
         std::sync::Mutex::new(None);
 }
 
-fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
+pub fn collect_ebpf_metrics() -> Option<crate::metrics::ebpf::EbpfMetrics> {
     // Проверяем, включена ли поддержка eBPF
     if !crate::metrics::ebpf::EbpfMetricsCollector::is_ebpf_enabled() {
         tracing::debug!("eBPF support is disabled (compiled without 'ebpf' feature)");
