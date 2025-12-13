@@ -586,7 +586,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
     }
 
     let all_procs = procfs::process::all_processes()
-        .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc. Попробуйте: ls -la /proc | sudo ls /proc. Для устранения: 1) Проверьте права: id && groups, 2) Проверьте монтирование: mount | grep proc, 3) Попробуйте запустить с sudo")?;
+        .context("Не удалось получить список процессов из /proc: проверьте права доступа и доступность /proc. Попробуйте: ls -la /proc | sudo ls /proc. Для устранения: 1) Проверьте права: id && groups, 2) Проверьте монтирование: mount | grep proc, 3) Попробуйте запустить с sudo, 4) Проверьте SELinux: getenforce, 5) Проверьте AppArmor: aa-status")?;
 
     // Сохраняем количество процессов до обработки
     let total_process_count = all_procs.size_hint().0;
@@ -896,9 +896,13 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
             return Err(anyhow::anyhow!(
                 "Не удалось прочитать /proc/{}/stat: {}. \
                  Проверьте, что процесс существует и доступен для чтения. \
-                 Попробуйте: sudo cat /proc/{}/stat",
+                 Попробуйте: sudo cat /proc/{}/stat. \
+                 Дополнительная диагностика: 1) Проверьте монтирование /proc: mount | grep proc, \
+                 2) Проверьте права пользователя: id && groups, \
+                 3) Проверьте доступность процесса: ps aux | grep {}",
                 pid,
                 e,
+                pid,
                 pid
             ));
         }
@@ -919,9 +923,15 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
             return Err(anyhow::anyhow!(
                 "Не удалось прочитать /proc/{}/status: {}. \
                  Проверьте, что процесс существует и доступен для чтения. \
-                 Попробуйте: sudo cat /proc/{}/status",
+                 Попробуйте: sudo cat /proc/{}/status. \
+                 Дополнительная диагностика: 1) Проверьте права доступа: ls -la /proc/{}/status, \
+                 2) Проверьте владельца процесса: ps -o user,pid,cmd | grep {}, \
+                 3) Проверьте SELinux контекст: ls -Z /proc/{}/status",
                 pid,
                 e,
+                pid,
+                pid,
+                pid,
                 pid
             ));
         }
@@ -958,7 +968,11 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     let uptime_sec = calculate_uptime(&stat).with_context(|| {
         format!(
             "Не удалось вычислить uptime для процесса PID {}: \
-             проверьте доступность /proc/uptime и корректность start_time в /proc/{}/stat",
+             проверьте доступность /proc/uptime и корректность start_time в /proc/{}/stat. \
+             Дополнительная диагностика: 1) Проверьте содержимое /proc/uptime: cat /proc/uptime, \
+             2) Проверьте start_time процесса: cat /proc/{}/stat | awk '{{print $22}}', \
+             3) Проверьте системное время: date +%s",
+            proc.pid(),
             proc.pid(),
             proc.pid()
         )
@@ -1066,9 +1080,13 @@ fn read_cgroup_path(pid: i32) -> Result<Option<String>> {
             tracing::debug!(
                 "Не удалось прочитать /proc/{}/cgroup: {}. \
                  Cgroup может быть недоступен для этого процесса. \
-                 Это может быть вызвано отсутствием прав доступа, отсутствием файла или тем, что процесс завершился",
+                 Это может быть вызвано отсутствием прав доступа, отсутствием файла или тем, что процесс завершился. \
+                 Дополнительная диагностика: 1) Проверьте права доступа: ls -la /proc/{}/cgroup, \
+                 2) Проверьте монтирование cgroup: mount | grep cgroup, \
+                 3) Проверьте версию cgroup: stat -fc %T /sys/fs/cgroup/",
                 pid,
-                e
+                e,
+                pid
             );
             return Ok(None);
         }
@@ -1146,8 +1164,11 @@ fn read_uid_gid(pid: i32) -> Result<(u32, u32)> {
     let path = format!("/proc/{}/status", pid);
     let contents = fs::read_to_string(&path).with_context(|| {
         format!(
-            "Не удалось прочитать /proc/{}/status: проверьте, что процесс существует и доступен для чтения",
-            pid
+            "Не удалось прочитать /proc/{}/status: проверьте, что процесс существует и доступен для чтения. \
+             Дополнительная диагностика: 1) Проверьте права доступа: ls -la /proc/{}/status, \
+             2) Проверьте владельца процесса: ps -o user,pid,cmd | grep {}, \
+             3) Проверьте SELinux контекст: ls -Z /proc/{}/status",
+            pid, pid, pid, pid
         )
     })?;
 
@@ -1945,8 +1966,10 @@ Gid:    1000 1000 1000 1000
         
         // Проверяем, что сообщение содержит практические рекомендации
         assert!(error_msg.contains("проверьте, что процесс существует и доступен для чтения"));
-        // Note: read_uid_gid uses a simpler error message format without the "Попробуйте:" part
-        // The main error handling improvements are in collect_single_process and collect_process_metrics
+        assert!(error_msg.contains("Проверьте права доступа"));
+        assert!(error_msg.contains("Проверьте владельца процесса"));
+        assert!(error_msg.contains("Проверьте SELinux контекст"));
+        // Note: The error handling improvements now include comprehensive troubleshooting steps
     }
 
     #[test]
