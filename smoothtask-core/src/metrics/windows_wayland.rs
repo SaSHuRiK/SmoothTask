@@ -29,6 +29,8 @@ pub enum WaylandCompositorType {
     Sway,
     /// Hyprland
     Hyprland,
+    /// Wayfire
+    Wayfire,
     /// Wlroots-based (общий)
     Wlroots,
     /// Неизвестный или неопределённый
@@ -199,6 +201,10 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             debug!("Detected Hyprland compositor via XDG_CURRENT_DESKTOP");
             return Some(WaylandCompositorType::Hyprland);
         }
+        if desktop_lower.contains("wayfire") {
+            debug!("Detected Wayfire compositor via XDG_CURRENT_DESKTOP");
+            return Some(WaylandCompositorType::Wayfire);
+        }
         if desktop_lower.contains("weston") {
             debug!("Detected Weston compositor via XDG_CURRENT_DESKTOP");
             return Some(WaylandCompositorType::Wlroots);
@@ -220,6 +226,10 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
         if wayland_display.contains("hyprland") {
             debug!("Detected Hyprland compositor via WAYLAND_DISPLAY");
             return Some(WaylandCompositorType::Hyprland);
+        }
+        if wayland_display.contains("wayfire") {
+            debug!("Detected Wayfire compositor via WAYLAND_DISPLAY");
+            return Some(WaylandCompositorType::Wayfire);
         }
         if wayland_display.contains("weston") {
             debug!("Detected Weston compositor via WAYLAND_DISPLAY");
@@ -258,6 +268,10 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
                             if comm == "Hyprland" {
                                 debug!("Detected Hyprland compositor via process name");
                                 return Some(WaylandCompositorType::Hyprland);
+                            }
+                            if comm == "wayfire" {
+                                debug!("Detected Wayfire compositor via process name");
+                                return Some(WaylandCompositorType::Wayfire);
                             }
                             if comm == "weston" {
                                 debug!("Detected Weston compositor via process name");
@@ -328,6 +342,10 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             debug!("Detected Sway compositor via DESKTOP_SESSION");
             return Some(WaylandCompositorType::Sway);
         }
+        if desktop_session_lower.contains("wayfire") {
+            debug!("Detected Wayfire compositor via DESKTOP_SESSION");
+            return Some(WaylandCompositorType::Wayfire);
+        }
     }
 
     // 6. Проверяем системные сервисы (для systemd-систем)
@@ -342,6 +360,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             let systemd_services = [
                 ("/run/user/", "sway"),
                 ("/run/user/", "hyprland"),
+                ("/run/user/", "wayfire"),
                 ("/run/user/", "weston"),
             ];
 
@@ -353,6 +372,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
                         return match *service {
                             "sway" => Some(WaylandCompositorType::Sway),
                             "hyprland" => Some(WaylandCompositorType::Hyprland),
+                            "wayfire" => Some(WaylandCompositorType::Wayfire),
                             "weston" => Some(WaylandCompositorType::Wlroots),
                             _ => Some(WaylandCompositorType::Wlroots),
                         };
@@ -781,7 +801,7 @@ impl WaylandIntrospector {
             // Пробуем определить, поддерживает ли композитор нужный протокол
             if let Some(compositor_type) = &self.compositor_type {
                 match compositor_type {
-                    WaylandCompositorType::Mutter | WaylandCompositorType::KWin => {
+                    WaylandCompositorType::Mutter | WaylandCompositorType::KWin | WaylandCompositorType::Wayfire => {
                         warn!(
                             "Compositor {:?} may not support wlr-foreign-toplevel-management protocol",
                             compositor_type
@@ -914,6 +934,14 @@ impl WaylandIntrospector {
                 WindowState::Focused,
                 Some(3456),
                 0.75,
+            ),
+            Some(WaylandCompositorType::Wayfire) => WindowInfo::new(
+                Some("wayfire".to_string()),
+                Some("Wayfire".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(7890),
+                0.7,
             ),
             Some(WaylandCompositorType::Wlroots) | Some(WaylandCompositorType::Unknown) | None => {
                 WindowInfo::new(
@@ -1443,6 +1471,33 @@ mod tests {
     }
 
     #[test]
+    fn test_wayland_compositor_type_wayfire() {
+        let compositor_type = Some(WaylandCompositorType::Wayfire);
+
+        let window = match compositor_type.as_ref() {
+            Some(WaylandCompositorType::Wayfire) => WindowInfo::new(
+                Some("wayfire".to_string()),
+                Some("Wayfire".to_string()),
+                Some(1),
+                WindowState::Focused,
+                Some(7890),
+                0.7,
+            ),
+            _ => WindowInfo::new(
+                Some("test_app".to_string()),
+                Some("Test Window".to_string()),
+                None,
+                WindowState::Focused,
+                Some(1234),
+                0.5,
+            ),
+        };
+
+        assert_eq!(window.app_id, Some("wayfire".to_string()));
+        assert_eq!(window.title, Some("Wayfire".to_string()));
+    }
+
+    #[test]
     fn test_wayland_compositor_type_unknown() {
         let compositor_type: Option<WaylandCompositorType> = None;
 
@@ -1470,6 +1525,65 @@ mod tests {
     }
 
     #[test]
+    fn test_detect_wayland_compositor_wayfire() {
+        // Тест проверяет обнаружение Wayfire композитора
+        let old_desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
+        let old_display = std::env::var("WAYLAND_DISPLAY").ok();
+        let old_home = std::env::var("HOME").ok();
+        let old_desktop_session = std::env::var("DESKTOP_SESSION").ok();
+        let old_test_flag = std::env::var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK").ok();
+
+        // Очищаем переменные, которые могут повлиять на обнаружение
+        std::env::remove_var("HOME");
+        std::env::remove_var("DESKTOP_SESSION");
+        
+        // Устанавливаем флаг для пропуска проверки процессов
+        std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", "1");
+
+        // Тестируем Wayfire через XDG_CURRENT_DESKTOP
+        std::env::set_var("XDG_CURRENT_DESKTOP", "wayfire");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Wayfire));
+
+        // Тестируем Wayfire через WAYLAND_DISPLAY
+        std::env::remove_var("XDG_CURRENT_DESKTOP");
+        std::env::set_var("WAYLAND_DISPLAY", "wayfire-0");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Wayfire));
+
+        // Тестируем Wayfire через DESKTOP_SESSION
+        std::env::remove_var("WAYLAND_DISPLAY");
+        std::env::set_var("DESKTOP_SESSION", "wayfire");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Wayfire));
+
+        // Восстанавливаем переменные окружения
+        if let Some(val) = old_desktop {
+            std::env::set_var("XDG_CURRENT_DESKTOP", val);
+        } else {
+            std::env::remove_var("XDG_CURRENT_DESKTOP");
+        }
+        if let Some(val) = old_display {
+            std::env::set_var("WAYLAND_DISPLAY", val);
+        } else {
+            std::env::remove_var("WAYLAND_DISPLAY");
+        }
+        if let Some(val) = old_home {
+            std::env::set_var("HOME", val);
+        }
+        if let Some(val) = old_desktop_session {
+            std::env::set_var("DESKTOP_SESSION", val);
+        } else {
+            std::env::remove_var("DESKTOP_SESSION");
+        }
+        if let Some(val) = old_test_flag {
+            std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", val);
+        } else {
+            std::env::remove_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK");
+        }
+    }
+
+    #[test]
     fn test_detect_wayland_compositor_extended_detection() {
         // Тест проверяет расширенное обнаружение композиторов
         let old_desktop = std::env::var("XDG_CURRENT_DESKTOP").ok();
@@ -1479,9 +1593,16 @@ mod tests {
 
         // Очищаем переменные, которые могут повлиять на обнаружение
         std::env::remove_var("HOME");
+        std::env::remove_var("DESKTOP_SESSION");
         
         // Устанавливаем флаг для пропуска проверки процессов
         std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", "1");
+
+        // Тестируем Wayfire
+        std::env::set_var("XDG_CURRENT_DESKTOP", "Wayfire");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Wayfire));
+        std::env::remove_var("XDG_CURRENT_DESKTOP");
 
         // Тестируем Weston
         std::env::set_var("XDG_CURRENT_DESKTOP", "Weston");
@@ -1552,6 +1673,11 @@ mod tests {
         std::env::set_var("DESKTOP_SESSION", "sway");
         let result = detect_wayland_compositor();
         assert_eq!(result, Some(WaylandCompositorType::Sway));
+
+        // Тестируем Wayfire через DESKTOP_SESSION
+        std::env::set_var("DESKTOP_SESSION", "wayfire");
+        let result = detect_wayland_compositor();
+        assert_eq!(result, Some(WaylandCompositorType::Wayfire));
 
         // Восстанавливаем переменные окружения
         if let Some(val) = old_desktop {
