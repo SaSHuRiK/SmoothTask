@@ -974,6 +974,8 @@ mod tests {
             pid: 1234,
             rx_bytes: 1024,
             tx_bytes: 2048,
+            rx_packets: 100,
+            tx_packets: 200,
             tcp_connections: 5,
             udp_connections: 3,
             last_update: SystemTime::now(),

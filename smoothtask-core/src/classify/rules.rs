@@ -1538,6 +1538,14 @@ apps:
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Тест без ML-классификатора
@@ -1616,6 +1624,14 @@ apps:
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         let pattern_db = Arc::new(Mutex::new(db));
@@ -1693,6 +1709,14 @@ apps:
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             },
             ProcessRecord {
                 pid: 1001,
@@ -1741,6 +1765,14 @@ apps:
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             },
         ];
 
@@ -1763,6 +1795,13 @@ apps:
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let pattern_db = Arc::new(Mutex::new(db));
@@ -1841,6 +1880,14 @@ apps:
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         }];
 
         let mut app_groups = vec![AppGroupRecord {
@@ -1862,6 +1909,13 @@ apps:
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
 
         // Тест без ML-классификатора
@@ -1946,6 +2000,14 @@ apps:
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Классификация с ML-классификатором
@@ -2023,6 +2085,14 @@ apps:
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Классификация с ML-классификатором
@@ -2235,6 +2305,14 @@ apps:
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Классификация с пустой базой паттернов
@@ -2274,6 +2352,13 @@ apps:
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         // Классификация группы без процессов
@@ -2365,6 +2450,14 @@ apps:
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             },
             ProcessRecord {
                 pid: 1001,
@@ -2413,6 +2506,14 @@ apps:
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             },
         ];
 
@@ -2435,6 +2536,13 @@ apps:
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         // Классификация группы с разными типами процессов

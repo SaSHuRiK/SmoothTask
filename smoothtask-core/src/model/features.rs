@@ -476,6 +476,14 @@ mod tests {
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             }],
             app_groups: vec![],
             responsiveness: ResponsivenessMetrics {
@@ -512,6 +520,13 @@ mod tests {
             priority_class: Some("INTERACTIVE".to_string()),
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -567,6 +582,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -608,6 +630,13 @@ mod tests {
             priority_class: Some("INTERACTIVE".to_string()),
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -654,6 +683,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -730,6 +766,13 @@ mod tests {
             priority_class: Some("INTERACTIVE".to_string()),
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -778,6 +821,13 @@ mod tests {
             priority_class: Some("INTERACTIVE".to_string()),
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);
@@ -829,6 +879,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         let features = build_features(&snapshot, &app_group);

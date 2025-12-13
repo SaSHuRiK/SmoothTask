@@ -3968,6 +3968,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4015,6 +4023,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
         let app_groups_arc = Arc::new(RwLock::new(app_groups));
         let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
@@ -4471,6 +4486,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4537,6 +4560,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4638,6 +4669,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
         let app_groups_arc = Arc::new(RwLock::new(app_groups));
         let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
@@ -4672,6 +4710,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
         let app_groups_arc = Arc::new(RwLock::new(app_groups));
         let state = ApiState::with_all(None, None, None, Some(app_groups_arc));
@@ -7170,8 +7215,8 @@ mod test_process_energy_api {
 
         assert_eq!(
             value["status"].as_str().unwrap(),
-            "degraded",
-            "Статус должен быть degraded"
+            "ok",
+            "Статус должен быть ok"
         );
         assert_eq!(
             value["count"].as_u64().unwrap(),

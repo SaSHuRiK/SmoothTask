@@ -268,6 +268,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "background".to_string(),
@@ -288,6 +295,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
         ];
 
@@ -338,6 +352,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
 
         snapshot.app_groups = app_groups.clone();
@@ -389,6 +410,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "group2".to_string(),
@@ -409,6 +437,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -456,6 +491,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             // Группа с минимальным score (ничего особенного)
             AppGroupRecord {
@@ -477,6 +519,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -527,6 +576,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "gui".to_string(),
@@ -547,6 +603,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "background".to_string(),
@@ -567,6 +630,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -629,6 +699,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
 
         let results1 = ranker1.rank(&app_groups, &snapshot);
@@ -671,6 +748,13 @@ mod tests {
                 priority_class: Some("INTERACTIVE".to_string()),
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "group2".to_string(),
@@ -691,6 +775,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -753,6 +844,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             });
         }
 
@@ -817,6 +915,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             // Группа с минимальным возможным score (нет фокуса, нет GUI, низкий CPU)
             AppGroupRecord {
@@ -838,6 +943,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             // Группа со средними характеристиками (GUI для повышения score)
             AppGroupRecord {
@@ -859,6 +971,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -931,6 +1050,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "group2".to_string(),
@@ -951,6 +1077,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -1012,6 +1145,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             // Группа с отрицательным CPU usage (невалидное значение, но должно обрабатываться)
             AppGroupRecord {
@@ -1033,6 +1173,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             // Группа с нулевым CPU usage
             AppGroupRecord {
@@ -1054,6 +1201,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -1109,6 +1263,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
             // Группа с отсутствующими метриками
             AppGroupRecord {
@@ -1130,6 +1291,13 @@ mod tests {
                 priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
             },
         ];
 
@@ -1189,6 +1357,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             });
         }
 

@@ -87,22 +87,35 @@
     - [ ] Добавить тесты для нового функционала
   - Ожидаемые результаты: Более полный мониторинг ресурсов для GPU-интенсивных приложений
 
-- [ ] ST-775: Обновить все тестовые случаи с новыми сетевыми полями
+- [x] ST-775: Обновить все тестовые случаи с новыми сетевыми полями
   - Тип: Rust / core / testing
   - Примечания: Обновление всех тестовых случаев после добавления сетевых метрик
   - Приоритет: Средний
-  - Оценка времени: ~45 минут
+  - Оценка времени: ~120 минут
   - Критерии готовности:
-    - [ ] Обновить тесты в actuator.rs
-    - [ ] Обновить тесты в api/server.rs
-    - [ ] Обновить тесты в classify/grouper.rs
-    - [ ] Обновить тесты в classify/ml_classifier.rs
-    - [ ] Обновить тесты в classify/rules.rs
-    - [ ] Обновить тесты в logging/snapshots.rs
-    - [ ] Обновить тесты в metrics/app_performance.rs
-    - [ ] Обновить тесты в metrics/process.rs
-    - [ ] Обновить тесты в model/features.rs
+    - [x] Обновить тесты в actuator.rs
+    - [x] Обновить тесты в api/server.rs
+    - [x] Обновить тесты в classify/grouper.rs
+    - [x] Обновить тесты в classify/ml_classifier.rs
+    - [x] Обновить тесты в classify/rules.rs
+    - [x] Обновить тесты в logging/snapshots.rs
+    - [x] Обновить тесты в metrics/app_performance.rs
+    - [x] Обновить тесты в metrics/process.rs
+    - [x] Обновить тесты в model/features.rs
+    - [x] Обновить тесты в model/ranker.rs
+    - [x] Обновить тесты в policy/engine.rs
+    - [x] Исправить неверные ожидания в тестах API обработчиков энергопотребления
   - Ожидаемые результаты: Все тесты проходят успешно с новыми сетевыми полями
+  - Статус: COMPLETED
+  - Время выполнения: ~120 минут
+  - Результаты:
+    - Успешно обновлены все тестовые случаи в модулях actuator.rs, api/server.rs, classify/grouper.rs, classify/ml_classifier.rs, classify/rules.rs
+    - Обновлены тесты в logging/snapshots.rs, metrics/app_performance.rs, metrics/process.rs
+    - Обновлены тесты в model/features.rs, model/ranker.rs, policy/engine.rs
+    - Код успешно компилируется без ошибок
+    - Все тесты проходят успешно с новыми сетевыми полями
+    - Исправлены все ошибки компиляции, связанные с отсутствующими полями сетевой активности
+    - Исправлены неверные ожидания статусов в тестах API обработчиков энергопотребления (process_energy_handler)
 
 ## 2. Бэклог
 
@@ -179,6 +192,20 @@
     - smoothtask-core/src/logging/snapshots.rs: Добавлены сетевые поля
     - smoothtask-core/src/classify/grouper.rs: Обновлена инициализация AppGroupRecord
     - smoothtask-core/src/metrics/process.rs: Обновлена инициализация ProcessRecord
+
+- [x] ST-775: Обновить все тестовые случаи с новыми сетевыми полями
+  - Тип: Rust / core / testing
+  - Примечания: Обновление всех тестовых случаев после добавления сетевых метрик
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~120 минут
+  - Результаты:
+    - Успешно обновлены все тестовые случаи в модулях actuator.rs, api/server.rs, classify/grouper.rs, classify/ml_classifier.rs, classify/rules.rs
+    - Обновлены тесты в logging/snapshots.rs, metrics/app_performance.rs, metrics/process.rs
+    - Обновлены тесты в model/features.rs, model/ranker.rs, policy/engine.rs
+    - Код успешно компилируется без ошибок
+    - Все тесты проходят успешно с новыми сетевыми полями
+    - Исправлены все ошибки компиляции, связанные с отсутствующими полями сетевой активности
 
 - [x] ST-768: Завершить и протестировать улучшения API обработки ошибок
   - Тип: Rust / core / api / testing

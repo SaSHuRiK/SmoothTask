@@ -2020,6 +2020,14 @@ Gid:    1000 1000 1000 1000
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
         
         cache.cache_record(test_record);
@@ -2223,6 +2231,14 @@ mod cache_tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Сохраняем запись в кэш
@@ -2293,6 +2309,14 @@ mod cache_tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Сохраняем запись в кэш
@@ -2377,6 +2401,14 @@ mod cache_tests {
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             };
 
             cache.cache_record(record);
@@ -2444,6 +2476,14 @@ mod cache_tests {
                 energy_uj: None,
                 power_w: None,
                 energy_timestamp: None,
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             };
 
             cache.cache_record(record);
@@ -2508,6 +2548,14 @@ mod cache_tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         cache.cache_record(record);
@@ -2835,6 +2883,14 @@ mod energy_tests {
             energy_uj: Some(123456),
             power_w: Some(1.23),
             energy_timestamp: Some(1234567890),
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Проверяем, что поля энергопотребления установлены корректно

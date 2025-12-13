@@ -991,6 +991,14 @@ mod tests {
                 energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
                 power_w: Some(0.5), // 0.5 ватта
                 energy_timestamp: Some(1234567890),
+                network_rx_bytes: None,
+                network_tx_bytes: None,
+                network_rx_packets: None,
+                network_tx_packets: None,
+                network_tcp_connections: None,
+                network_udp_connections: None,
+                network_last_update_ns: None,
+                network_data_source: None,
             }],
             app_groups: vec![AppGroupRecord {
                 app_group_id: "test-app".to_string(),
@@ -1011,6 +1019,13 @@ mod tests {
                 priority_class: Some("INTERACTIVE".to_string()),
                 total_energy_uj: Some(2000000), // 2000000 микроджоулей = 2 джоуля
                 total_power_w: Some(1.0), // 1 ватт
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             }],
             responsiveness: ResponsivenessMetrics {
                 sched_latency_p95_ms: Some(5.0),
@@ -1074,6 +1089,14 @@ mod tests {
             energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
             power_w: Some(0.5), // 0.5 ватта
             energy_timestamp: Some(1234567890),
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Тестируем сериализацию
@@ -1105,6 +1128,13 @@ mod tests {
             priority_class: Some("INTERACTIVE".to_string()),
             total_energy_uj: Some(2000000), // 2000000 микроджоулей = 2 джоуля
             total_power_w: Some(1.0), // 1 ватт
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         // Тестируем сериализацию AppGroupRecord
@@ -1166,6 +1196,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         // Проверяем, что поля по умолчанию равны None

@@ -722,6 +722,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -786,6 +793,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         let app_group = AppGroupRecord {
@@ -807,6 +822,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.processes = vec![system_process];
@@ -874,6 +896,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         let app_group = AppGroupRecord {
@@ -895,6 +925,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.processes = vec![audio_process];
@@ -934,6 +971,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -972,6 +1016,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -1008,6 +1059,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -1044,6 +1102,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![app_group.clone()];
@@ -1083,6 +1148,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "normal-app-2".to_string(),
@@ -1103,6 +1175,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
         ];
 
@@ -1178,6 +1257,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         let app_group = AppGroupRecord {
@@ -1199,6 +1286,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.processes = vec![system_process];
@@ -1240,6 +1334,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![app_group];
@@ -1283,6 +1384,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "medium_priority".to_string(),
@@ -1303,6 +1411,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
             AppGroupRecord {
                 app_group_id: "low_priority".to_string(),
@@ -1323,6 +1438,13 @@ mod tests {
                 priority_class: None,
                 total_energy_uj: None,
                 total_power_w: None,
+                total_network_rx_bytes: None,
+                total_network_tx_bytes: None,
+                total_network_rx_packets: None,
+                total_network_tx_packets: None,
+                total_network_tcp_connections: None,
+                total_network_udp_connections: None,
+                network_data_source: None,
             },
         ];
 
@@ -1401,6 +1523,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
 
         snapshot.app_groups = app_groups;
@@ -1444,6 +1573,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
 
         snapshot.app_groups = app_groups;
@@ -1484,6 +1620,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         }];
 
         snapshot.app_groups = app_groups;
@@ -1556,6 +1699,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         let app_group = AppGroupRecord {
@@ -1577,6 +1728,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.processes = vec![terminal_process];
@@ -1618,6 +1776,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         // Группа 2: Системный процесс (должен быть Normal)
@@ -1640,6 +1805,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         // Группа 3: Updater с активным пользователем (должен быть Background)
@@ -1662,6 +1834,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         // Группа 4: Обычный процесс без особых характеристик (должен быть Normal)
@@ -1684,6 +1863,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.app_groups = vec![
@@ -1741,6 +1927,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         snapshot.processes = vec![system_process];
@@ -1809,6 +2003,14 @@ mod tests {
             energy_uj: None,
             power_w: None,
             energy_timestamp: None,
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            network_tcp_connections: None,
+            network_udp_connections: None,
+            network_last_update_ns: None,
+            network_data_source: None,
         };
 
         let app_group = AppGroupRecord {
@@ -1830,6 +2032,13 @@ mod tests {
             priority_class: None,
             total_energy_uj: None,
             total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
         };
 
         snapshot.processes = vec![game_process];
