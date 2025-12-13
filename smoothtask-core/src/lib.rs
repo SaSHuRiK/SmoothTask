@@ -2,6 +2,7 @@ pub mod actuator;
 pub mod api;
 pub mod classify;
 pub mod config;
+pub mod health;
 pub mod logging;
 pub mod metrics;
 pub mod model;

@@ -373,6 +373,18 @@ pub struct ProcessRecord {
     pub network_last_update_ns: Option<u64>,
     /// Сетевая активность: источник данных (proc, ebpf, или none)
     pub network_data_source: Option<String>,
+    /// Использование GPU процессом в процентах (0.0 до 1.0)
+    pub gpu_utilization: Option<f32>,
+    /// Использование памяти GPU процессом в байтах
+    pub gpu_memory_bytes: Option<u64>,
+    /// Время выполнения на GPU в микросекундах
+    pub gpu_time_us: Option<u64>,
+    /// Количество вызовов GPU API
+    pub gpu_api_calls: Option<u64>,
+    /// Последнее обновление метрик GPU (timestamp)
+    pub gpu_last_update_ns: Option<u64>,
+    /// Источник данных GPU (drm, nvidia, amd, или none)
+    pub gpu_data_source: Option<String>,
 }
 
 impl Default for ProcessRecord {
@@ -432,6 +444,12 @@ impl Default for ProcessRecord {
             network_udp_connections: None,
             network_last_update_ns: None,
             network_data_source: None,
+            gpu_utilization: None,
+            gpu_memory_bytes: None,
+            gpu_time_us: None,
+            gpu_api_calls: None,
+            gpu_last_update_ns: None,
+            gpu_data_source: None,
         }
     }
 }
@@ -999,6 +1017,12 @@ mod tests {
                 network_udp_connections: None,
                 network_last_update_ns: None,
                 network_data_source: None,
+                gpu_utilization: None,
+                gpu_memory_bytes: None,
+                gpu_time_us: None,
+                gpu_api_calls: None,
+                gpu_last_update_ns: None,
+                gpu_data_source: None,
             }],
             app_groups: vec![AppGroupRecord {
                 app_group_id: "test-app".to_string(),

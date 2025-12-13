@@ -20,6 +20,10 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info, trace};
 
+// Health module imports
+use crate::health::{create_diagnostic_analyzer, HealthIssueSeverity, HealthMonitorTrait};
+use crate::health::diagnostics::DiagnosticAnalyzer;
+
 /// Состояние API сервера.
 #[derive(Clone)]
 pub struct ApiState {
@@ -43,6 +47,8 @@ pub struct ApiState {
     /// Менеджер уведомлений для отправки уведомлений через API (опционально)
     notification_manager:
         Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>,
+    /// Монитор здоровья для предоставления информации о состоянии демона через API (опционально)
+    health_monitor: Option<Arc<crate::health::HealthMonitorImpl>>,
     /// Кэш для часто запрашиваемых данных (опционально)
     /// Используется для оптимизации производительности API
     cache: Option<Arc<RwLock<ApiCache>>>,
@@ -286,6 +292,7 @@ pub struct ApiStateBuilder {
     pattern_database: Option<Arc<crate::classify::rules::PatternDatabase>>,
     notification_manager:
         Option<Arc<tokio::sync::Mutex<crate::notifications::NotificationManager>>>,
+    health_monitor: Option<Arc<crate::health::HealthMonitorImpl>>,
     cache: Option<Arc<RwLock<ApiCache>>>,
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
@@ -540,6 +547,19 @@ impl ApiStateBuilder {
         self
     }
 
+    /// Устанавливает монитор здоровья для API.
+    ///
+    /// # Параметры
+    ///
+    /// - `health_monitor`: Монитор здоровья для предоставления информации о состоянии демона
+    pub fn with_health_monitor(
+        mut self,
+        health_monitor: Option<Arc<crate::health::HealthMonitorImpl>>,
+    ) -> Self {
+        self.health_monitor = health_monitor;
+        self
+    }
+
     /// Устанавливает кэш для API.
     ///
     /// # Параметры
@@ -663,6 +683,7 @@ impl ApiStateBuilder {
             config_path: self.config_path,
             pattern_database: self.pattern_database,
             notification_manager: self.notification_manager,
+            health_monitor: self.health_monitor,
             cache: self.cache,
             log_storage: self.log_storage,
             performance_metrics: self
@@ -687,7 +708,7 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -707,7 +728,7 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -729,7 +750,7 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -754,7 +775,7 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -780,7 +801,7 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -809,7 +830,7 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -918,6 +939,123 @@ async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<V
             "degraded" => "Major components unavailable, graceful degradation mode",
             _ => "Unknown status"
         }
+    })))
+}
+
+/// Обработчик для endpoint `/api/health/monitoring`.
+///
+/// Возвращает текущее состояние мониторинга здоровья демона.
+async fn health_monitoring_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Получаем текущее состояние мониторинга здоровья
+    let health_monitor = state.health_monitor.as_ref().ok_or_else(|| {
+        error!("Health monitor not available");
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+    
+    let health_status = health_monitor.get_health_status().await
+        .map_err(|e| {
+            error!("Failed to get health status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "health_status": {
+            "overall_status": format!("{:?}", health_status.overall_status),
+            "last_check_time": health_status.last_check_time.map(|t| t.to_rfc3339()),
+            "component_statuses": health_status.component_statuses,
+            "issue_count": health_status.issue_history.len(),
+            "critical_issues": health_status.issue_history.iter()
+                .filter(|issue| issue.severity == HealthIssueSeverity::Critical)
+                .count(),
+            "warning_issues": health_status.issue_history.iter()
+                .filter(|issue| issue.severity == HealthIssueSeverity::Warning)
+                .count()
+        }
+    })))
+}
+
+/// Обработчик для endpoint `/api/health/diagnostics`.
+///
+/// Выполняет диагностику системы и возвращает детальный отчет.
+async fn health_diagnostics_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    let health_monitor = state.health_monitor.as_ref().ok_or_else(|| {
+        error!("Health monitor not available");
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+    
+    let diagnostic_analyzer = create_diagnostic_analyzer(health_monitor.as_ref().clone());
+    
+    let diagnostic_report = diagnostic_analyzer.run_full_diagnostics().await
+        .map_err(|e| {
+            error!("Failed to run diagnostics: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "diagnostic_report": {
+            "timestamp": diagnostic_report.timestamp.to_rfc3339(),
+            "overall_status": format!("{:?}", diagnostic_report.overall_status),
+            "component_diagnostics": diagnostic_report.component_diagnostics,
+            "recommendations": diagnostic_report.recommendations,
+            "system_info": diagnostic_report.system_info
+        }
+    })))
+}
+
+/// Обработчик для endpoint `/api/health/issues`.
+///
+/// Возвращает историю проблем здоровья.
+async fn health_issues_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    let health_monitor = state.health_monitor.as_ref().ok_or_else(|| {
+        error!("Health monitor not available");
+        StatusCode::SERVICE_UNAVAILABLE
+    })?;
+    
+    let health_status = health_monitor.get_health_status().await
+        .map_err(|e| {
+            error!("Failed to get health status: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "issues": health_status.issue_history,
+        "total_issues": health_status.issue_history.len()
+    })))
+}
+
+/// Обработчик для endpoint `/api/gpu/temperature-power`.
+///
+/// Возвращает метрики температуры и энергопотребления для всех GPU устройств.
+async fn gpu_temperature_power_handler() -> Result<Json<Value>, StatusCode> {
+    let gpu_metrics = crate::metrics::process_gpu::collect_global_gpu_temperature_and_power().await
+        .map_err(|e| {
+            error!("Failed to collect GPU temperature and power metrics: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "gpu_metrics": gpu_metrics,
+        "total_gpus": gpu_metrics.len()
+    })))
+}
+
+/// Обработчик для endpoint `/api/gpu/update-temp-power`.
+///
+/// Обновляет метрики температуры и энергопотребления GPU для процессов.
+async fn gpu_update_temp_power_handler() -> Result<Json<Value>, StatusCode> {
+    crate::metrics::process_gpu::update_global_process_gpu_temperature_and_power().await
+        .map_err(|e| {
+            error!("Failed to update GPU temperature and power metrics: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "message": "GPU temperature and power metrics updated successfully"
     })))
 }
 
@@ -1954,6 +2092,11 @@ fn create_router(state: ApiState) -> Router {
     Router::new()
         .route("/health", get(health_handler))
         .route("/api/health", get(health_detailed_handler))
+        .route("/api/health/monitoring", get(health_monitoring_handler))
+        .route("/api/health/diagnostics", get(health_diagnostics_handler))
+        .route("/api/health/issues", get(health_issues_handler))
+        .route("/api/gpu/temperature-power", get(gpu_temperature_power_handler))
+        .route("/api/gpu/update-temp-power", get(gpu_update_temp_power_handler))
         .route("/api/version", get(version_handler))
         .route("/api/endpoints", get(endpoints_handler))
         .route("/api/stats", get(stats_handler))
@@ -3976,6 +4119,12 @@ mod tests {
             network_udp_connections: None,
             network_last_update_ns: None,
             network_data_source: None,
+            gpu_utilization: None,
+            gpu_memory_bytes: None,
+            gpu_time_us: None,
+            gpu_api_calls: None,
+            gpu_last_update_ns: None,
+            gpu_data_source: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4494,6 +4643,12 @@ mod tests {
             network_udp_connections: None,
             network_last_update_ns: None,
             network_data_source: None,
+            gpu_utilization: None,
+            gpu_memory_bytes: None,
+            gpu_time_us: None,
+            gpu_api_calls: None,
+            gpu_last_update_ns: None,
+            gpu_data_source: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -4568,6 +4723,12 @@ mod tests {
             network_udp_connections: None,
             network_last_update_ns: None,
             network_data_source: None,
+            gpu_utilization: None,
+            gpu_memory_bytes: None,
+            gpu_time_us: None,
+            gpu_api_calls: None,
+            gpu_last_update_ns: None,
+            gpu_data_source: None,
         }];
         let processes_arc = Arc::new(RwLock::new(processes));
         let state = ApiState::with_all(None, None, Some(processes_arc), None);
@@ -6219,7 +6380,7 @@ max_candidates: 200
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            cache: None,
+            health_monitor: None,cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
@@ -6261,6 +6422,7 @@ max_candidates: 200
             config_path: None,
             pattern_database: None,
             notification_manager: Some(Arc::clone(&notification_manager)),
+            health_monitor: None,
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
@@ -6310,6 +6472,7 @@ max_candidates: 200
             config_path: None,
             pattern_database: None,
             notification_manager: Some(Arc::clone(&notification_manager)),
+            health_monitor: None,
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
@@ -7979,6 +8142,82 @@ use crate::metrics::ebpf::EbpfMetrics;
         //     json2["cache_info"]["cached"], true,
         //     "Второй вызов должен использовать кэш"
         // );
+    }
+
+    #[tokio::test]
+    async fn test_health_monitoring_handler() {
+        // Тест проверяет обработчик health_monitoring_handler
+        use crate::health::{create_health_monitor, HealthMonitorConfig};
+        
+        let health_monitor = create_health_monitor(HealthMonitorConfig::default());
+        let state = ApiStateBuilder::new()
+            .with_health_monitor(Some(Arc::new(health_monitor)))
+            .build();
+        
+        let result = health_monitoring_handler(State(state)).await;
+        assert!(result.is_ok(), "Health monitoring handler should succeed");
+        
+        let json = result.unwrap();
+        assert_eq!(json["status"], "ok", "Status should be ok");
+        assert!(json["health_status"].is_object(), "Should contain health_status object");
+    }
+
+    #[tokio::test]
+    async fn test_health_diagnostics_handler() {
+        // Тест проверяет обработчик health_diagnostics_handler
+        use crate::health::{create_health_monitor, HealthMonitorConfig};
+        
+        let health_monitor = create_health_monitor(HealthMonitorConfig::default());
+        let state = ApiStateBuilder::new()
+            .with_health_monitor(Some(Arc::new(health_monitor)))
+            .build();
+        
+        let result = health_diagnostics_handler(State(state)).await;
+        assert!(result.is_ok(), "Health diagnostics handler should succeed");
+        
+        let json = result.unwrap();
+        assert_eq!(json["status"], "ok", "Status should be ok");
+        assert!(json["diagnostic_report"].is_object(), "Should contain diagnostic_report object");
+    }
+
+    #[tokio::test]
+    async fn test_health_issues_handler() {
+        // Тест проверяет обработчик health_issues_handler
+        use crate::health::{create_health_monitor, HealthMonitorConfig};
+        
+        let health_monitor = create_health_monitor(HealthMonitorConfig::default());
+        let state = ApiStateBuilder::new()
+            .with_health_monitor(Some(Arc::new(health_monitor)))
+            .build();
+        
+        let result = health_issues_handler(State(state)).await;
+        assert!(result.is_ok(), "Health issues handler should succeed");
+        
+        let json = result.unwrap();
+        assert_eq!(json["status"], "ok", "Status should be ok");
+        assert!(json["issues"].is_array(), "Should contain issues array");
+    }
+
+    #[tokio::test]
+    async fn test_gpu_temperature_power_handler() {
+        // Тест проверяет обработчик gpu_temperature_power_handler
+        let result = gpu_temperature_power_handler().await;
+        assert!(result.is_ok(), "GPU temperature power handler should succeed");
+        
+        let json = result.unwrap();
+        assert_eq!(json["status"], "ok", "Status should be ok");
+        assert!(json["gpu_metrics"].is_array(), "Should contain gpu_metrics array");
+    }
+
+    #[tokio::test]
+    async fn test_gpu_update_temp_power_handler() {
+        // Тест проверяет обработчик gpu_update_temp_power_handler
+        let result = gpu_update_temp_power_handler().await;
+        assert!(result.is_ok(), "GPU update temp power handler should succeed");
+        
+        let json = result.unwrap();
+        assert_eq!(json["status"], "ok", "Status should be ok");
+        assert_eq!(json["message"], "GPU temperature and power metrics updated successfully");
     }
 
 

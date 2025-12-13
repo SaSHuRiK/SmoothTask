@@ -107,6 +107,20 @@ pub struct LogStorage {
     last_error_time: Option<DateTime<Utc>>,
     /// Временная метка последней очистки
     last_cleanup_time: Option<DateTime<Utc>>,
+    /// Флаг включения асинхронного логирования
+    async_logging_enabled: bool,
+    /// Размер batches для асинхронного логирования
+    batch_size: usize,
+    /// Текущий batch для асинхронного логирования
+    current_batch: Vec<LogEntry>,
+    /// Счётчик операций логирования
+    operation_count: usize,
+    /// Общее время, затраченное на операции логирования (в микросекундах)
+    total_logging_time_us: u64,
+    /// Максимальное время операции логирования (в микросекундах)
+    max_logging_time_us: u64,
+    /// Время последней операции очистки (в микросекундах)
+    last_cleanup_time_us: Option<u64>,
 }
 
 impl LogStorage {
@@ -120,6 +134,13 @@ impl LogStorage {
             warning_count: 0,
             last_error_time: None,
             last_cleanup_time: None,
+            async_logging_enabled: false,
+            batch_size: 100,
+            current_batch: Vec::with_capacity(100),
+            operation_count: 0,
+            total_logging_time_us: 0,
+            max_logging_time_us: 0,
+            last_cleanup_time_us: None,
         }
     }
 
@@ -134,6 +155,21 @@ impl LogStorage {
     ///
     /// Новый экземпляр LogStorage
     pub fn new_with_rotation(max_entries: usize, max_age_seconds: u64) -> Self {
+        Self::new_with_rotation_and_batch_size(max_entries, max_age_seconds, 100)
+    }
+    
+    /// Создаёт новое хранилище логов с конфигурацией ротации и размером batches.
+    ///
+    /// # Аргументы
+    ///
+    /// * `max_entries` - максимальное количество хранимых записей
+    /// * `max_age_seconds` - максимальный возраст записей в секундах (0 = без ограничения)
+    /// * `batch_size` - размер batches для асинхронного логирования
+    ///
+    /// # Возвращает
+    ///
+    /// Новый экземпляр LogStorage
+    pub fn new_with_rotation_and_batch_size(max_entries: usize, max_age_seconds: u64, batch_size: usize) -> Self {
         Self {
             max_entries,
             max_age_seconds,
@@ -142,13 +178,87 @@ impl LogStorage {
             warning_count: 0,
             last_error_time: None,
             last_cleanup_time: None,
+            async_logging_enabled: false,
+            batch_size,
+            current_batch: Vec::with_capacity(batch_size),
+            operation_count: 0,
+            total_logging_time_us: 0,
+            max_logging_time_us: 0,
+            last_cleanup_time_us: None,
         }
+    }
+    
+    /// Включает асинхронное логирование.
+    pub fn enable_async_logging(&mut self) {
+        self.async_logging_enabled = true;
+    }
+    
+    /// Отключает асинхронное логирование.
+    pub fn disable_async_logging(&mut self) {
+        self.async_logging_enabled = false;
+        // Очищаем текущий batch
+        self.current_batch.clear();
+    }
+    
+    /// Проверяет, включено ли асинхронное логирование.
+    pub fn is_async_logging_enabled(&self) -> bool {
+        self.async_logging_enabled
+    }
+    
+    /// Возвращает текущий размер batches.
+    pub fn batch_size(&self) -> usize {
+        self.batch_size
+    }
+    
+    /// Устанавливает размер batches.
+    pub fn set_batch_size(&mut self, batch_size: usize) {
+        self.batch_size = batch_size;
+        self.current_batch.reserve(batch_size);
+    }
+    
+    /// Возвращает количество операций логирования.
+    pub fn operation_count(&self) -> usize {
+        self.operation_count
+    }
+    
+    /// Возвращает среднее время операции логирования в микросекундах.
+    pub fn average_logging_time_us(&self) -> f64 {
+        if self.operation_count > 0 {
+            self.total_logging_time_us as f64 / self.operation_count as f64
+        } else {
+            0.0
+        }
+    }
+    
+    /// Возвращает максимальное время операции логирования в микросекундах.
+    pub fn max_logging_time_us(&self) -> u64 {
+        self.max_logging_time_us
+    }
+    
+    /// Возвращает общее время, затраченное на операции логирования в микросекундах.
+    pub fn total_logging_time_us(&self) -> u64 {
+        self.total_logging_time_us
+    }
+    
+    /// Возвращает время последней операции очистки в микросекундах.
+    pub fn last_cleanup_time_us(&self) -> Option<u64> {
+        self.last_cleanup_time_us
+    }
+    
+    /// Сбрасывает счётчики производительности.
+    pub fn reset_performance_counters(&mut self) {
+        self.operation_count = 0;
+        self.total_logging_time_us = 0;
+        self.max_logging_time_us = 0;
+        self.last_cleanup_time_us = None;
     }
 
     /// Добавляет новую запись в хранилище.
     /// Если превышено максимальное количество записей, самая старая запись удаляется.
     /// Также выполняет очистку старых записей, если включено ограничение по возрасту.
     pub fn add_entry(&mut self, entry: LogEntry) {
+        let start_time = std::time::Instant::now();
+        
         // Обновляем счётчики в зависимости от уровня лога
         match entry.level {
             LogLevel::Error => {
@@ -161,14 +271,58 @@ impl LogStorage {
             _ => {}
         }
         
-        // Выполняем очистку старых записей, если включено ограничение по возрасту
+        // Проверяем, включено ли асинхронное логирование
+        if self.async_logging_enabled {
+            self.current_batch.push(entry);
+            
+            // Если batch заполнен, выполняем flush
+            if self.current_batch.len() >= self.batch_size {
+                self.flush_batch();
+            }
+        } else {
+            // Выполняем очистку старых записей, если включено ограничение по возрасту
+            self.cleanup_old_entries();
+            
+            // Применяем ограничение по количеству записей
+            if self.entries.len() >= self.max_entries && self.max_entries > 0 {
+                self.entries.remove(0); // Удаляем самую старую запись
+            }
+            self.entries.push(entry);
+        }
+        
+        // Обновляем счётчики производительности
+        let elapsed = start_time.elapsed();
+        let elapsed_us = elapsed.as_micros() as u64;
+        self.operation_count += 1;
+        self.total_logging_time_us += elapsed_us;
+        if elapsed_us > self.max_logging_time_us {
+            self.max_logging_time_us = elapsed_us;
+        }
+    }
+    
+    /// Выполняет flush текущего batches.
+    pub fn flush_batch(&mut self) {
+        if self.current_batch.is_empty() {
+            return;
+        }
+        
+        let start_time = std::time::Instant::now();
+        
+        // Выполняем очистку старых записей перед добавлением нового batches
         self.cleanup_old_entries();
         
         // Применяем ограничение по количеству записей
-        if self.entries.len() >= self.max_entries && self.max_entries > 0 {
-            self.entries.remove(0); // Удаляем самую старую запись
+        while self.entries.len() + self.current_batch.len() > self.max_entries && self.max_entries > 0 {
+            let to_remove = self.entries.len() + self.current_batch.len() - self.max_entries;
+            self.entries.drain(0..to_remove.min(self.entries.len()));
         }
-        self.entries.push(entry);
+        
+        // Добавляем batch в основной вектор
+        self.entries.extend(self.current_batch.drain(..));
+        
+        // Обновляем счётчики производительности для операции очистки
+        let elapsed = start_time.elapsed();
+        self.last_cleanup_time_us = Some(elapsed.as_micros() as u64);
     }
 
     /// Добавляет новую запись в хранилище с проверкой использования памяти.
@@ -180,6 +334,8 @@ impl LogStorage {
     /// * `entry` - запись лога для добавления
     /// * `memory_limit_bytes` - максимальный размер памяти в байтах (0 = без ограничения)
     pub fn add_entry_with_memory_check(&mut self, entry: LogEntry, memory_limit_bytes: usize) {
+        let start_time = std::time::Instant::now();
+        
         // Обновляем счётчики в зависимости от уровня лога
         match entry.level {
             LogLevel::Error => {
@@ -192,17 +348,64 @@ impl LogStorage {
             _ => {}
         }
         
-        // Выполняем очистку старых записей, если включено ограничение по возрасту
+        // Проверяем, включено ли асинхронное логирование
+        if self.async_logging_enabled {
+            self.current_batch.push(entry);
+            
+            // Если batch заполнен, выполняем flush
+            if self.current_batch.len() >= self.batch_size {
+                self.flush_batch_with_memory_check(memory_limit_bytes);
+            }
+        } else {
+            // Выполняем очистку старых записей, если включено ограничение по возрасту
+            self.cleanup_old_entries();
+            
+            // Выполняем очистку на основе использования памяти
+            self.cleanup_by_memory(memory_limit_bytes);
+            
+            // Применяем ограничение по количеству записей
+            if self.entries.len() >= self.max_entries && self.max_entries > 0 {
+                self.entries.remove(0); // Удаляем самую старую запись
+            }
+            self.entries.push(entry);
+        }
+        
+        // Обновляем счётчики производительности
+        let elapsed = start_time.elapsed();
+        let elapsed_us = elapsed.as_micros() as u64;
+        self.operation_count += 1;
+        self.total_logging_time_us += elapsed_us;
+        if elapsed_us > self.max_logging_time_us {
+            self.max_logging_time_us = elapsed_us;
+        }
+    }
+    
+    /// Выполняет flush текущего batches с проверкой памяти.
+    pub fn flush_batch_with_memory_check(&mut self, memory_limit_bytes: usize) {
+        if self.current_batch.is_empty() {
+            return;
+        }
+        
+        let start_time = std::time::Instant::now();
+        
+        // Выполняем очистку старых записей перед добавлением нового batches
         self.cleanup_old_entries();
         
         // Выполняем очистку на основе использования памяти
         self.cleanup_by_memory(memory_limit_bytes);
         
         // Применяем ограничение по количеству записей
-        if self.entries.len() >= self.max_entries && self.max_entries > 0 {
-            self.entries.remove(0); // Удаляем самую старую запись
+        while self.entries.len() + self.current_batch.len() > self.max_entries && self.max_entries > 0 {
+            let to_remove = self.entries.len() + self.current_batch.len() - self.max_entries;
+            self.entries.drain(0..to_remove.min(self.entries.len()));
         }
-        self.entries.push(entry);
+        
+        // Добавляем batch в основной вектор
+        self.entries.extend(self.current_batch.drain(..));
+        
+        // Обновляем счётчики производительности для операции очистки
+        let elapsed = start_time.elapsed();
+        self.last_cleanup_time_us = Some(elapsed.as_micros() as u64);
     }
 
     /// Выполняет очистку старых записей на основе максимального возраста.
@@ -462,6 +665,42 @@ impl LogStorage {
             "warning".to_string()
         } else {
             "healthy".to_string()
+        }
+    }
+}
+
+/// Статистика производительности логирования.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct LogPerformanceStats {
+    /// Количество операций логирования
+    pub operation_count: usize,
+    /// Среднее время операции логирования в микросекундах
+    pub average_logging_time_us: f64,
+    /// Максимальное время операции логирования в микросекундах
+    pub max_logging_time_us: u64,
+    /// Общее время, затраченное на операции логирования в микросекундах
+    pub total_logging_time_us: u64,
+    /// Время последней операции очистки в микросекундах
+    pub last_cleanup_time_us: Option<u64>,
+    /// Включено ли асинхронное логирование
+    pub async_logging_enabled: bool,
+    /// Размер batches
+    pub batch_size: usize,
+    /// Текущий размер batches
+    pub current_batch_size: usize,
+}
+
+impl Default for LogPerformanceStats {
+    fn default() -> Self {
+        Self {
+            operation_count: 0,
+            average_logging_time_us: 0.0,
+            max_logging_time_us: 0,
+            total_logging_time_us: 0,
+            last_cleanup_time_us: None,
+            async_logging_enabled: false,
+            batch_size: 100,
+            current_batch_size: 0,
         }
     }
 }

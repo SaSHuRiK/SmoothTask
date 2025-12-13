@@ -1140,6 +1140,12 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         network_udp_connections: None,
         network_last_update_ns: None,
         network_data_source: None,
+        gpu_utilization: None,
+        gpu_memory_bytes: None,
+        gpu_time_us: None,
+        gpu_api_calls: None,
+        gpu_last_update_ns: None,
+        gpu_data_source: None,
     };
 
     Ok(Some(record))
