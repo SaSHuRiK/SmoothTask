@@ -1966,62 +1966,17 @@ apps:
 
         let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
-        let mut process = ProcessRecord {
-            pid: 1000,
-            ppid: 1,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("unknown-app".to_string()),
-            cmdline: None,
-            cgroup_path: None,
-            systemd_unit: None,
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 0,
-            uptime_sec: 100,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: None,
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: Vec::new(),
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut process = ProcessRecord::default();
+        process.pid = 1000;
+        process.ppid = 1;
+        process.uid = 1000;
+        process.gid = 1000;
+        process.exe = Some("unknown-app".to_string());
+        process.state = "R".to_string();
+        process.start_time = 0;
+        process.uptime_sec = 100;
+        process.tty_nr = 0;
+        process.has_tty = false;
 
         let pattern_db = Arc::new(Mutex::new(db));
         classify_process(&mut process, &pattern_db, None, None);
@@ -2051,117 +2006,39 @@ apps:
         let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let processes = vec![
-            ProcessRecord {
-                pid: 1000,
-                ppid: 1,
-                uid: 1000,
-                gid: 1000,
-                exe: Some("firefox".to_string()),
-                cmdline: None,
-                cgroup_path: None,
-                systemd_unit: None,
-                app_group_id: Some("group1".to_string()),
-                state: "R".to_string(),
-                start_time: 0,
-                uptime_sec: 100,
-                tty_nr: 0,
-                has_tty: false,
-                cpu_share_1s: None,
-                cpu_share_10s: None,
-                io_read_bytes: None,
-                io_write_bytes: None,
-                io_read_operations: None,
-                io_write_operations: None,
-                io_total_operations: None,
-                io_last_update_ns: None,
-                io_data_source: None,
-                rss_mb: None,
-                swap_mb: None,
-                voluntary_ctx: None,
-                involuntary_ctx: None,
-                has_gui_window: false,
-                is_focused_window: false,
-                window_state: None,
-                env_has_display: false,
-                env_has_wayland: false,
-                env_term: None,
-                env_ssh: false,
-                is_audio_client: false,
-                has_active_stream: false,
-                process_type: Some("browser".to_string()),
-                tags: vec!["browser".to_string(), "gui_interactive".to_string()],
-                nice: 0,
-                ionice_class: None,
-                ionice_prio: None,
-                teacher_priority_class: None,
-                teacher_score: None,
-                energy_uj: None,
-                power_w: None,
-                energy_timestamp: None,
-                network_rx_bytes: None,
-                network_tx_bytes: None,
-                network_rx_packets: None,
-                network_tx_packets: None,
-                network_tcp_connections: None,
-                network_udp_connections: None,
-                network_last_update_ns: None,
-                network_data_source: None,
+            {
+                let mut record = ProcessRecord::default();
+                record.pid = 1000;
+                record.ppid = 1;
+                record.uid = 1000;
+                record.gid = 1000;
+                record.exe = Some("firefox".to_string());
+                record.app_group_id = Some("group1".to_string());
+                record.state = "R".to_string();
+                record.start_time = 0;
+                record.uptime_sec = 100;
+                record.tty_nr = 0;
+                record.has_tty = false;
+                record.process_type = Some("browser".to_string());
+                record.tags = vec!["browser".to_string(), "gui_interactive".to_string()];
+                record
             },
-            ProcessRecord {
-                pid: 1001,
-                ppid: 1000,
-                uid: 1000,
-                gid: 1000,
-                exe: Some("firefox-bin".to_string()),
-                cmdline: None,
-                cgroup_path: None,
-                systemd_unit: None,
-                app_group_id: Some("group1".to_string()),
-                state: "R".to_string(),
-                start_time: 0,
-                uptime_sec: 100,
-                tty_nr: 0,
-                has_tty: false,
-                cpu_share_1s: None,
-                cpu_share_10s: None,
-                io_read_bytes: None,
-                io_write_bytes: None,
-                io_read_operations: None,
-                io_write_operations: None,
-                io_total_operations: None,
-                io_last_update_ns: None,
-                io_data_source: None,
-                rss_mb: None,
-                swap_mb: None,
-                voluntary_ctx: None,
-                involuntary_ctx: None,
-                has_gui_window: false,
-                is_focused_window: false,
-                window_state: None,
-                env_has_display: false,
-                env_has_wayland: false,
-                env_term: None,
-                env_ssh: false,
-                is_audio_client: false,
-                has_active_stream: false,
-                process_type: Some("browser".to_string()),
-                tags: vec!["browser".to_string(), "gui_interactive".to_string()],
-                nice: 0,
-                ionice_class: None,
-                ionice_prio: None,
-                teacher_priority_class: None,
-                teacher_score: None,
-                energy_uj: None,
-                power_w: None,
-                energy_timestamp: None,
-                network_rx_bytes: None,
-                network_tx_bytes: None,
-                network_rx_packets: None,
-                network_tx_packets: None,
-                network_tcp_connections: None,
-                network_udp_connections: None,
-                network_last_update_ns: None,
-                network_data_source: None,
+            {
+                let mut record = ProcessRecord::default();
+                record.pid = 1001;
+                record.ppid = 1000;
+                record.uid = 1000;
+                record.gid = 1000;
+                record.exe = Some("firefox-bin".to_string());
+                record.app_group_id = Some("group1".to_string());
+                record.state = "R".to_string();
+                record.start_time = 0;
+                record.uptime_sec = 100;
+                record.tty_nr = 0;
+                record.has_tty = false;
+                record.process_type = Some("browser".to_string());
+                record.tags = vec!["browser".to_string(), "gui_interactive".to_string()];
+                record
             },
         ];
 
@@ -2222,61 +2099,20 @@ apps:
 
         let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
-        let mut processes = vec![ProcessRecord {
-            pid: 1000,
-            ppid: 1,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("firefox".to_string()),
-            cmdline: None,
-            cgroup_path: None,
-            systemd_unit: None,
-            app_group_id: Some("group1".to_string()),
-            state: "R".to_string(),
-            start_time: 0,
-            uptime_sec: 100,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: None,
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: Vec::new(),
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
+        let mut processes = vec![{
+            let mut record = ProcessRecord::default();
+            record.pid = 1000;
+            record.ppid = 1;
+            record.uid = 1000;
+            record.gid = 1000;
+            record.exe = Some("firefox".to_string());
+            record.app_group_id = Some("group1".to_string());
+            record.state = "R".to_string();
+            record.start_time = 0;
+            record.uptime_sec = 100;
+            record.tty_nr = 0;
+            record.has_tty = false;
+            record
         }];
 
         let mut app_groups = vec![AppGroupRecord {
@@ -2342,62 +2178,18 @@ apps:
         let db = PatternDatabase::load(patterns_dir).expect("load patterns");
         let ml_classifier = StubMLClassifier::new();
 
-        let mut process = ProcessRecord {
-            pid: 1000,
-            ppid: 1,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("firefox".to_string()),
-            cmdline: None,
-            cgroup_path: None,
-            systemd_unit: None,
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 0,
-            uptime_sec: 100,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: Some(0.5), // Высокий CPU для ML-классификации
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: None,
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: Vec::new(),
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut process = ProcessRecord::default();
+        process.pid = 1000;
+        process.ppid = 1;
+        process.uid = 1000;
+        process.gid = 1000;
+        process.exe = Some("firefox".to_string());
+        process.state = "R".to_string();
+        process.start_time = 0;
+        process.uptime_sec = 100;
+        process.tty_nr = 0;
+        process.has_tty = false;
+        process.cpu_share_10s = Some(0.5); // Высокий CPU для ML-классификации
 
         // Классификация с ML-классификатором
         classify_process(&mut process, &mut db, Some(&ml_classifier), None);
@@ -2647,62 +2439,17 @@ apps:
             match_cache: LruCache::new(NonZeroUsize::new(512).unwrap()),
         };
 
-        let mut process = ProcessRecord {
-            pid: 1000,
-            ppid: 1,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("unknown-app".to_string()),
-            cmdline: None,
-            cgroup_path: None,
-            systemd_unit: None,
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 0,
-            uptime_sec: 100,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: None,
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: Vec::new(),
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut process = ProcessRecord::default();
+        process.pid = 1000;
+        process.ppid = 1;
+        process.uid = 1000;
+        process.gid = 1000;
+        process.exe = Some("unknown-app".to_string());
+        process.state = "R".to_string();
+        process.start_time = 0;
+        process.uptime_sec = 100;
+        process.tty_nr = 0;
+        process.has_tty = false;
 
         // Классификация с пустой базой паттернов
         let pattern_db = Arc::new(Mutex::new(db));
@@ -2792,117 +2539,40 @@ apps:
         let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let processes = vec![
-            ProcessRecord {
-                pid: 1000,
-                ppid: 1,
-                uid: 1000,
-                gid: 1000,
-                exe: Some("firefox".to_string()),
-                cmdline: None,
-                cgroup_path: None,
-                systemd_unit: None,
-                app_group_id: Some("mixed_group".to_string()),
-                state: "R".to_string(),
-                start_time: 0,
-                uptime_sec: 100,
-                tty_nr: 0,
-                has_tty: false,
-                cpu_share_1s: None,
-                cpu_share_10s: None,
-                io_read_bytes: None,
-                io_write_bytes: None,
-                io_read_operations: None,
-                io_write_operations: None,
-                io_total_operations: None,
-                io_last_update_ns: None,
-                io_data_source: None,
-                rss_mb: None,
-                swap_mb: None,
-                voluntary_ctx: None,
-                involuntary_ctx: None,
-                has_gui_window: false,
-                is_focused_window: false,
-                window_state: None,
-                env_has_display: false,
-                env_has_wayland: false,
-                env_term: None,
-                env_ssh: false,
-                is_audio_client: false,
-                has_active_stream: false,
-                process_type: Some("browser".to_string()),
-                tags: vec!["browser".to_string()],
-                nice: 0,
-                ionice_class: None,
-                ionice_prio: None,
-                teacher_priority_class: None,
-                teacher_score: None,
-                energy_uj: None,
-                power_w: None,
-                energy_timestamp: None,
-                network_rx_bytes: None,
-                network_tx_bytes: None,
-                network_rx_packets: None,
-                network_tx_packets: None,
-                network_tcp_connections: None,
-                network_udp_connections: None,
-                network_last_update_ns: None,
-                network_data_source: None,
+            {
+                let mut record = ProcessRecord::default();
+                record.pid = 1000;
+                record.ppid = 1;
+                record.uid = 1000;
+                record.gid = 1000;
+                record.exe = Some("firefox".to_string());
+                record.app_group_id = Some("mixed_group".to_string());
+                record.state = "R".to_string();
+                record.start_time = 0;
+                record.uptime_sec = 100;
+                record.tty_nr = 0;
+                record.has_tty = false;
+                record.process_type = Some("browser".to_string());
+                record.tags = vec!["browser".to_string()];
+                record
             },
-            ProcessRecord {
-                pid: 1001,
-                ppid: 1,
-                uid: 1000,
-                gid: 1000,
-                exe: Some("code".to_string()),
-                cmdline: None,
-                cgroup_path: None,
-                systemd_unit: None,
-                app_group_id: Some("mixed_group".to_string()),
-                state: "R".to_string(),
-                start_time: 0,
-                uptime_sec: 100,
-                tty_nr: 0,
-                has_tty: false,
-                cpu_share_1s: None,
-                cpu_share_10s: None,
-                io_read_bytes: None,
-                io_write_bytes: None,
-                io_read_operations: None,
-                io_write_operations: None,
-                io_total_operations: None,
-                io_last_update_ns: None,
-                io_data_source: None,
-                rss_mb: None,
-                swap_mb: None,
-                voluntary_ctx: None,
-                involuntary_ctx: None,
-                has_gui_window: false,
-                is_focused_window: false,
-                window_state: None,
-                env_has_display: false,
-                env_has_wayland: false,
-                env_term: None,
-                env_ssh: false,
-                is_audio_client: false,
-                has_active_stream: false,
-                process_type: Some("ide".to_string()),
-                tags: vec!["ide".to_string()],
-                nice: 0,
-                ionice_class: None,
-                ionice_prio: None,
-                teacher_priority_class: None,
-                teacher_score: None,
-                energy_uj: None,
-                power_w: None,
-                energy_timestamp: None,
-                network_rx_bytes: None,
-                network_tx_bytes: None,
-                network_rx_packets: None,
-                network_tx_packets: None,
-                network_tcp_connections: None,
-                network_udp_connections: None,
-                network_last_update_ns: None,
-                network_data_source: None,
+            {
+                let mut record = ProcessRecord::default();
+                record.pid = 1001;
+                record.ppid = 1;
+                record.uid = 1000;
+                record.gid = 1000;
+                record.exe = Some("code".to_string());
+                record.app_group_id = Some("mixed_group".to_string());
+                record.state = "R".to_string();
+                record.start_time = 0;
+                record.uptime_sec = 100;
+                record.tty_nr = 0;
+                record.has_tty = false;
+                record.process_type = Some("ide".to_string());
+                record.tags = vec!["ide".to_string()];
+                record.nice = 0;
+                record
             },
         ];
 

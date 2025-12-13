@@ -1947,62 +1947,24 @@ Gid:    1000 1000 1000 1000
         let mut cache = ProcessCache::with_config(config);
         
         // Добавляем запись и проверяем, что она истекает
-        let test_record = ProcessRecord {
-            pid: 123,
-            ppid: 456,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("test_exe".to_string()),
-            cmdline: Some("test_cmdline".to_string()),
-            cgroup_path: Some("/test/cgroup".to_string()),
-            systemd_unit: Some("test.service".to_string()),
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 1000,
-            uptime_sec: 60,
-            tty_nr: 1,
-            has_tty: true,
-            cpu_share_1s: Some(10.0),
-            cpu_share_10s: Some(15.0),
-            io_read_bytes: Some(1024),
-            io_write_bytes: Some(2048),
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: Some(50),
-            voluntary_ctx: Some(1000),
-            involuntary_ctx: Some(500),
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: vec![],
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut test_record = ProcessRecord::default();
+        test_record.pid = 123;
+        test_record.ppid = 456;
+        test_record.uid = 1000;
+        test_record.gid = 1000;
+        test_record.exe = Some("test_exe".to_string());
+        test_record.cmdline = Some("test_cmdline".to_string());
+        test_record.cgroup_path = Some("/test/cgroup".to_string());
+        test_record.systemd_unit = Some("test.service".to_string());
+        test_record.state = "R".to_string();
+        test_record.start_time = 1000;
+        test_record.uptime_sec = 60;
+        test_record.tty_nr = 1;
+        test_record.has_tty = true;
+        test_record.cpu_share_1s = Some(10.0);
+        test_record.cpu_share_10s = Some(15.0);
+        test_record.io_read_bytes = Some(1024);
+        test_record.io_write_bytes = Some(2048);
         
         cache.cache_record(test_record);
         assert!(cache.get_cached(123).is_some());
@@ -2158,62 +2120,24 @@ mod cache_tests {
     fn test_cache_record_and_retrieve() {
         let mut cache = ProcessCache::new();
 
-        let test_record = ProcessRecord {
-            pid: 123,
-            ppid: 456,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("test_exe".to_string()),
-            cmdline: Some("test_cmdline".to_string()),
-            cgroup_path: Some("/test/cgroup".to_string()),
-            systemd_unit: Some("test.service".to_string()),
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 1000,
-            uptime_sec: 60,
-            tty_nr: 1,
-            has_tty: true,
-            cpu_share_1s: Some(10.0),
-            cpu_share_10s: Some(15.0),
-            io_read_bytes: Some(1024),
-            io_write_bytes: Some(2048),
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: Some(50),
-            voluntary_ctx: Some(1000),
-            involuntary_ctx: Some(500),
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: vec![],
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut test_record = ProcessRecord::default();
+        test_record.pid = 123;
+        test_record.ppid = 456;
+        test_record.uid = 1000;
+        test_record.gid = 1000;
+        test_record.exe = Some("test_exe".to_string());
+        test_record.cmdline = Some("test_cmdline".to_string());
+        test_record.cgroup_path = Some("/test/cgroup".to_string());
+        test_record.systemd_unit = Some("test.service".to_string());
+        test_record.state = "R".to_string();
+        test_record.start_time = 1000;
+        test_record.uptime_sec = 60;
+        test_record.tty_nr = 1;
+        test_record.has_tty = true;
+        test_record.cpu_share_1s = Some(10.0);
+        test_record.cpu_share_10s = Some(15.0);
+        test_record.io_read_bytes = Some(1024);
+        test_record.io_write_bytes = Some(2048);
 
         // Сохраняем запись в кэш
         cache.cache_record(test_record.clone());
@@ -2236,62 +2160,24 @@ mod cache_tests {
     fn test_cache_expiration() {
         let mut cache = ProcessCache::new();
 
-        let test_record = ProcessRecord {
-            pid: 123,
-            ppid: 456,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("test_exe".to_string()),
-            cmdline: Some("test_cmdline".to_string()),
-            cgroup_path: Some("/test/cgroup".to_string()),
-            systemd_unit: Some("test.service".to_string()),
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 1000,
-            uptime_sec: 60,
-            tty_nr: 1,
-            has_tty: true,
-            cpu_share_1s: Some(10.0),
-            cpu_share_10s: Some(15.0),
-            io_read_bytes: Some(1024),
-            io_write_bytes: Some(2048),
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: Some(50),
-            voluntary_ctx: Some(1000),
-            involuntary_ctx: Some(500),
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: vec![],
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut test_record = ProcessRecord::default();
+        test_record.pid = 123;
+        test_record.ppid = 456;
+        test_record.uid = 1000;
+        test_record.gid = 1000;
+        test_record.exe = Some("test_exe".to_string());
+        test_record.cmdline = Some("test_cmdline".to_string());
+        test_record.cgroup_path = Some("/test/cgroup".to_string());
+        test_record.systemd_unit = Some("test.service".to_string());
+        test_record.state = "R".to_string();
+        test_record.start_time = 1000;
+        test_record.uptime_sec = 60;
+        test_record.tty_nr = 1;
+        test_record.has_tty = true;
+        test_record.cpu_share_1s = Some(10.0);
+        test_record.cpu_share_10s = Some(15.0);
+        test_record.io_read_bytes = Some(1024);
+        test_record.io_write_bytes = Some(2048);
 
         // Сохраняем запись в кэш
         cache.cache_record(test_record.clone());
@@ -2328,62 +2214,24 @@ mod cache_tests {
         // Создаем несколько тестовых записей с небольшими задержками
         // чтобы гарантировать разные временные метки
         for i in 0..5 {
-            let record = ProcessRecord {
-                pid: i,
-                ppid: 0,
-                uid: 1000,
-                gid: 1000,
-                exe: Some(format!("test_exe_{}", i)),
-                cmdline: Some(format!("test_cmdline_{}", i)),
-                cgroup_path: Some(format!("/test/cgroup_{}", i)),
-                systemd_unit: Some(format!("test_{}.service", i)),
-                app_group_id: None,
-                state: "R".to_string(),
-                start_time: 1000,
-                uptime_sec: 60,
-                tty_nr: 1,
-                has_tty: true,
-                cpu_share_1s: Some(10.0),
-                cpu_share_10s: Some(15.0),
-                io_read_bytes: Some(1024),
-                io_write_bytes: Some(2048),
-                io_read_operations: None,
-                io_write_operations: None,
-                io_total_operations: None,
-                io_last_update_ns: None,
-                io_data_source: None,
-                rss_mb: Some(100),
-                swap_mb: Some(50),
-                voluntary_ctx: Some(1000),
-                involuntary_ctx: Some(500),
-                has_gui_window: false,
-                is_focused_window: false,
-                window_state: None,
-                env_has_display: false,
-                env_has_wayland: false,
-                env_term: None,
-                env_ssh: false,
-                is_audio_client: false,
-                has_active_stream: false,
-                process_type: None,
-                tags: vec![],
-                nice: 0,
-                ionice_class: None,
-                ionice_prio: None,
-                teacher_priority_class: None,
-                teacher_score: None,
-                energy_uj: None,
-                power_w: None,
-                energy_timestamp: None,
-                network_rx_bytes: None,
-                network_tx_bytes: None,
-                network_rx_packets: None,
-                network_tx_packets: None,
-                network_tcp_connections: None,
-                network_udp_connections: None,
-                network_last_update_ns: None,
-                network_data_source: None,
-            };
+            let mut record = ProcessRecord::default();
+            record.pid = i;
+            record.ppid = 0;
+            record.uid = 1000;
+            record.gid = 1000;
+            record.exe = Some(format!("test_exe_{}", i));
+            record.cmdline = Some(format!("test_cmdline_{}", i));
+            record.cgroup_path = Some(format!("/test/cgroup_{}", i));
+            record.systemd_unit = Some(format!("test_{}.service", i));
+            record.state = "R".to_string();
+            record.start_time = 1000;
+            record.uptime_sec = 60;
+            record.tty_nr = 1;
+            record.has_tty = true;
+            record.cpu_share_1s = Some(10.0);
+            record.cpu_share_10s = Some(15.0);
+            record.io_read_bytes = Some(1024);
+            record.io_write_bytes = Some(2048);
 
             cache.cache_record(record);
             // Небольшая задержка, чтобы гарантировать разные временные метки
@@ -2403,62 +2251,24 @@ mod cache_tests {
 
         // Добавляем несколько записей
         for i in 0..5 {
-            let record = ProcessRecord {
-                pid: i,
-                ppid: 0,
-                uid: 1000,
-                gid: 1000,
-                exe: Some(format!("test_exe_{}", i)),
-                cmdline: Some(format!("test_cmdline_{}", i)),
-                cgroup_path: Some(format!("/test/cgroup_{}", i)),
-                systemd_unit: Some(format!("test_{}.service", i)),
-                app_group_id: None,
-                state: "R".to_string(),
-                start_time: 1000,
-                uptime_sec: 60,
-                tty_nr: 1,
-                has_tty: true,
-                cpu_share_1s: Some(10.0),
-                cpu_share_10s: Some(15.0),
-                io_read_bytes: Some(1024),
-                io_write_bytes: Some(2048),
-                io_read_operations: None,
-                io_write_operations: None,
-                io_total_operations: None,
-                io_last_update_ns: None,
-                io_data_source: None,
-                rss_mb: Some(100),
-                swap_mb: Some(50),
-                voluntary_ctx: Some(1000),
-                involuntary_ctx: Some(500),
-                has_gui_window: false,
-                is_focused_window: false,
-                window_state: None,
-                env_has_display: false,
-                env_has_wayland: false,
-                env_term: None,
-                env_ssh: false,
-                is_audio_client: false,
-                has_active_stream: false,
-                process_type: None,
-                tags: vec![],
-                nice: 0,
-                ionice_class: None,
-                ionice_prio: None,
-                teacher_priority_class: None,
-                teacher_score: None,
-                energy_uj: None,
-                power_w: None,
-                energy_timestamp: None,
-                network_rx_bytes: None,
-                network_tx_bytes: None,
-                network_rx_packets: None,
-                network_tx_packets: None,
-                network_tcp_connections: None,
-                network_udp_connections: None,
-                network_last_update_ns: None,
-                network_data_source: None,
-            };
+            let mut record = ProcessRecord::default();
+            record.pid = i;
+            record.ppid = 0;
+            record.uid = 1000;
+            record.gid = 1000;
+            record.exe = Some(format!("test_exe_{}", i));
+            record.cmdline = Some(format!("test_cmdline_{}", i));
+            record.cgroup_path = Some(format!("/test/cgroup_{}", i));
+            record.systemd_unit = Some(format!("test_{}.service", i));
+            record.state = "R".to_string();
+            record.start_time = 1000;
+            record.uptime_sec = 60;
+            record.tty_nr = 1;
+            record.has_tty = true;
+            record.cpu_share_1s = Some(10.0);
+            record.cpu_share_10s = Some(15.0);
+            record.io_read_bytes = Some(1024);
+            record.io_write_bytes = Some(2048);
 
             cache.cache_record(record);
         }
@@ -2475,62 +2285,24 @@ mod cache_tests {
         let mut cache = ProcessCache::new();
 
         // Добавляем запись с текущей конфигурацией
-        let record = ProcessRecord {
-            pid: 123,
-            ppid: 456,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("test_exe".to_string()),
-            cmdline: Some("test_cmdline".to_string()),
-            cgroup_path: Some("/test/cgroup".to_string()),
-            systemd_unit: Some("test.service".to_string()),
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 1000,
-            uptime_sec: 60,
-            tty_nr: 1,
-            has_tty: true,
-            cpu_share_1s: Some(10.0),
-            cpu_share_10s: Some(15.0),
-            io_read_bytes: Some(1024),
-            io_write_bytes: Some(2048),
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: Some(50),
-            voluntary_ctx: Some(1000),
-            involuntary_ctx: Some(500),
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: vec![],
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut record = ProcessRecord::default();
+        record.pid = 123;
+        record.ppid = 456;
+        record.uid = 1000;
+        record.gid = 1000;
+        record.exe = Some("test_exe".to_string());
+        record.cmdline = Some("test_cmdline".to_string());
+        record.cgroup_path = Some("/test/cgroup".to_string());
+        record.systemd_unit = Some("test.service".to_string());
+        record.state = "R".to_string();
+        record.start_time = 1000;
+        record.uptime_sec = 60;
+        record.tty_nr = 1;
+        record.has_tty = true;
+        record.cpu_share_1s = Some(10.0);
+        record.cpu_share_10s = Some(15.0);
+        record.io_read_bytes = Some(1024);
+        record.io_write_bytes = Some(2048);
 
         cache.cache_record(record);
         assert_eq!(cache.records.len(), 1);
@@ -2810,62 +2582,27 @@ mod energy_tests {
     #[test]
     fn test_energy_fields_in_process_record() {
         // Тестируем, что ProcessRecord содержит поля энергопотребления
-        let record = ProcessRecord {
-            pid: 123,
-            ppid: 456,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("test_exe".to_string()),
-            cmdline: Some("test_cmdline".to_string()),
-            cgroup_path: Some("/test/cgroup".to_string()),
-            systemd_unit: Some("test.service".to_string()),
-            app_group_id: None,
-            state: "R".to_string(),
-            start_time: 1000,
-            uptime_sec: 60,
-            tty_nr: 1,
-            has_tty: true,
-            cpu_share_1s: Some(10.0),
-            cpu_share_10s: Some(15.0),
-            io_read_bytes: Some(1024),
-            io_write_bytes: Some(2048),
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: Some(50),
-            voluntary_ctx: Some(1000),
-            involuntary_ctx: Some(500),
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: vec![],
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: Some(123456),
-            power_w: Some(1.23),
-            energy_timestamp: Some(1234567890),
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut record = ProcessRecord::default();
+        record.pid = 123;
+        record.ppid = 456;
+        record.uid = 1000;
+        record.gid = 1000;
+        record.exe = Some("test_exe".to_string());
+        record.cmdline = Some("test_cmdline".to_string());
+        record.cgroup_path = Some("/test/cgroup".to_string());
+        record.systemd_unit = Some("test.service".to_string());
+        record.state = "R".to_string();
+        record.start_time = 1000;
+        record.uptime_sec = 60;
+        record.tty_nr = 1;
+        record.has_tty = true;
+        record.cpu_share_1s = Some(10.0);
+        record.cpu_share_10s = Some(15.0);
+        record.io_read_bytes = Some(1024);
+        record.io_write_bytes = Some(2048);
+        record.energy_uj = Some(123456);
+        record.power_w = Some(1.23);
+        record.energy_timestamp = Some(1234567890);
 
         // Проверяем, что поля энергопотребления установлены корректно
         assert_eq!(record.energy_uj, Some(123456));

@@ -855,62 +855,26 @@ mod tests {
 
         snapshot.responsiveness.audio_xruns_delta = Some(5);
 
-        let audio_process = ProcessRecord {
-            pid: 2000,
-            ppid: 1,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("/usr/bin/pulseaudio".to_string()),
-            cmdline: None,
-            cgroup_path: None,
-            systemd_unit: None,
-            app_group_id: Some("pulseaudio".to_string()),
-            state: "R".to_string(),
-            start_time: 0,
-            uptime_sec: 100,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: true,
-            has_active_stream: true,
-            process_type: Some("audio".to_string()),
-            tags: vec!["audio".to_string()],
-            nice: 0,
-            ionice_class: Some(2),
-            ionice_prio: Some(4),
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut audio_process = ProcessRecord::default();
+        audio_process.pid = 2000;
+        audio_process.ppid = 1;
+        audio_process.uid = 1000;
+        audio_process.gid = 1000;
+        audio_process.exe = Some("/usr/bin/pulseaudio".to_string());
+        audio_process.app_group_id = Some("pulseaudio".to_string());
+        audio_process.state = "R".to_string();
+        audio_process.start_time = 0;
+        audio_process.uptime_sec = 100;
+        audio_process.tty_nr = 0;
+        audio_process.has_tty = false;
+        audio_process.rss_mb = Some(100);
+        audio_process.is_audio_client = true;
+        audio_process.has_active_stream = true;
+        audio_process.process_type = Some("audio".to_string());
+        audio_process.tags = vec!["audio".to_string()];
+        audio_process.nice = 0;
+        audio_process.ionice_class = Some(2);
+        audio_process.ionice_prio = Some(4);
 
         let app_group = AppGroupRecord {
             app_group_id: "pulseaudio".to_string(),
@@ -1216,62 +1180,25 @@ mod tests {
         let mut snapshot = create_test_snapshot();
 
         // Системный процесс должен быть защищён, даже если ранкер даст высокий score
-        let system_process = ProcessRecord {
-            pid: 1,
-            ppid: 0,
-            uid: 0,
-            gid: 0,
-            exe: Some("/usr/lib/systemd/systemd".to_string()),
-            cmdline: None,
-            cgroup_path: Some("/system.slice/systemd.service".to_string()),
-            systemd_unit: Some("systemd.service".to_string()),
-            app_group_id: Some("systemd".to_string()),
-            state: "S".to_string(),
-            start_time: 0,
-            uptime_sec: 1000,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(50),
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: Some("daemon".to_string()),
-            tags: vec![],
-            nice: 0,
-            ionice_class: Some(2),
-            ionice_prio: Some(4),
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut system_process = ProcessRecord::default();
+        system_process.pid = 1;
+        system_process.ppid = 0;
+        system_process.uid = 0;
+        system_process.gid = 0;
+        system_process.exe = Some("/usr/lib/systemd/systemd".to_string());
+        system_process.cgroup_path = Some("/system.slice/systemd.service".to_string());
+        system_process.systemd_unit = Some("systemd.service".to_string());
+        system_process.app_group_id = Some("systemd".to_string());
+        system_process.state = "S".to_string();
+        system_process.start_time = 0;
+        system_process.uptime_sec = 1000;
+        system_process.tty_nr = 0;
+        system_process.has_tty = false;
+        system_process.rss_mb = Some(50);
+        system_process.process_type = Some("daemon".to_string());
+        system_process.nice = 0;
+        system_process.ionice_class = Some(2);
+        system_process.ionice_prio = Some(4);
 
         let app_group = AppGroupRecord {
             app_group_id: "systemd".to_string(),
@@ -1658,62 +1585,29 @@ mod tests {
         snapshot.global.user_active = true;
         snapshot.global.time_since_last_input_ms = Some(1000); // 1 секунда назад
 
-        let terminal_process = ProcessRecord {
-            pid: 2000,
-            ppid: 1500,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("/usr/bin/bash".to_string()),
-            cmdline: Some("bash".to_string()),
-            cgroup_path: Some("/user.slice/user-1000.slice/session-1.scope".to_string()),
-            systemd_unit: None,
-            app_group_id: Some("terminal".to_string()),
-            state: "S".to_string(),
-            start_time: 0,
-            uptime_sec: 500,
-            tty_nr: 1,
-            has_tty: true,
-            cpu_share_1s: Some(0.05),
-            cpu_share_10s: Some(0.03),
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(20),
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: Some("xterm-256color".to_string()),
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: Some("cli".to_string()),
-            tags: vec!["terminal".to_string()],
-            nice: 0,
-            ionice_class: Some(2),
-            ionice_prio: Some(4),
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut terminal_process = ProcessRecord::default();
+        terminal_process.pid = 2000;
+        terminal_process.ppid = 1500;
+        terminal_process.uid = 1000;
+        terminal_process.gid = 1000;
+        terminal_process.exe = Some("/usr/bin/bash".to_string());
+        terminal_process.cmdline = Some("bash".to_string());
+        terminal_process.cgroup_path = Some("/user.slice/user-1000.slice/session-1.scope".to_string());
+        terminal_process.app_group_id = Some("terminal".to_string());
+        terminal_process.state = "S".to_string();
+        terminal_process.start_time = 0;
+        terminal_process.uptime_sec = 500;
+        terminal_process.tty_nr = 1;
+        terminal_process.has_tty = true;
+        terminal_process.cpu_share_1s = Some(0.05);
+        terminal_process.cpu_share_10s = Some(0.03);
+        terminal_process.rss_mb = Some(20);
+        terminal_process.env_term = Some("xterm-256color".to_string());
+        terminal_process.process_type = Some("cli".to_string());
+        terminal_process.tags = vec!["terminal".to_string()];
+        terminal_process.nice = 0;
+        terminal_process.ionice_class = Some(2);
+        terminal_process.ionice_prio = Some(4);
 
         let app_group = AppGroupRecord {
             app_group_id: "terminal".to_string(),
@@ -1886,62 +1780,25 @@ mod tests {
         ];
 
         // Добавляем системный процесс для защиты
-        let system_process = ProcessRecord {
-            pid: 1,
-            ppid: 0,
-            uid: 0,
-            gid: 0,
-            exe: Some("/usr/lib/systemd/systemd".to_string()),
-            cmdline: None,
-            cgroup_path: Some("/system.slice/systemd.service".to_string()),
-            systemd_unit: Some("systemd.service".to_string()),
-            app_group_id: Some("systemd".to_string()),
-            state: "S".to_string(),
-            start_time: 0,
-            uptime_sec: 1000,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(50),
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: Some("daemon".to_string()),
-            tags: vec![],
-            nice: 0,
-            ionice_class: Some(2),
-            ionice_prio: Some(4),
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut system_process = ProcessRecord::default();
+        system_process.pid = 1;
+        system_process.ppid = 0;
+        system_process.uid = 0;
+        system_process.gid = 0;
+        system_process.exe = Some("/usr/lib/systemd/systemd".to_string());
+        system_process.cgroup_path = Some("/system.slice/systemd.service".to_string());
+        system_process.systemd_unit = Some("systemd.service".to_string());
+        system_process.app_group_id = Some("systemd".to_string());
+        system_process.state = "S".to_string();
+        system_process.start_time = 0;
+        system_process.uptime_sec = 1000;
+        system_process.tty_nr = 0;
+        system_process.has_tty = false;
+        system_process.rss_mb = Some(50);
+        system_process.process_type = Some("daemon".to_string());
+        system_process.nice = 0;
+        system_process.ionice_class = Some(2);
+        system_process.ionice_prio = Some(4);
 
         snapshot.processes = vec![system_process];
 
@@ -1962,62 +1819,33 @@ mod tests {
 
         snapshot.responsiveness.audio_xruns_delta = Some(3); // Есть XRUN
 
-        let game_process = ProcessRecord {
-            pid: 3000,
-            ppid: 2500,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("/usr/games/supergame".to_string()),
-            cmdline: Some("supergame".to_string()),
-            cgroup_path: Some("/user.slice/user-1000.slice/session-1.scope".to_string()),
-            systemd_unit: None,
-            app_group_id: Some("game".to_string()),
-            state: "S".to_string(),
-            start_time: 0,
-            uptime_sec: 100,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: Some(0.4),
-            cpu_share_10s: Some(0.3),
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(500),
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: true,
-            is_focused_window: true,
-            window_state: None,
-            env_has_display: true,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: true,
-            has_active_stream: true,
-            process_type: Some("gui".to_string()),
-            tags: vec!["game".to_string()],
-            nice: 0,
-            ionice_class: Some(2),
-            ionice_prio: Some(4),
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut game_process = ProcessRecord::default();
+        game_process.pid = 3000;
+        game_process.ppid = 2500;
+        game_process.uid = 1000;
+        game_process.gid = 1000;
+        game_process.exe = Some("/usr/games/supergame".to_string());
+        game_process.cmdline = Some("supergame".to_string());
+        game_process.cgroup_path = Some("/user.slice/user-1000.slice/session-1.scope".to_string());
+        game_process.app_group_id = Some("game".to_string());
+        game_process.state = "S".to_string();
+        game_process.start_time = 0;
+        game_process.uptime_sec = 100;
+        game_process.tty_nr = 0;
+        game_process.has_tty = false;
+        game_process.cpu_share_1s = Some(0.4);
+        game_process.cpu_share_10s = Some(0.3);
+        game_process.rss_mb = Some(500);
+        game_process.has_gui_window = true;
+        game_process.is_focused_window = true;
+        game_process.env_has_display = true;
+        game_process.is_audio_client = true;
+        game_process.has_active_stream = true;
+        game_process.process_type = Some("gui".to_string());
+        game_process.tags = vec!["game".to_string()];
+        game_process.nice = 0;
+        game_process.ionice_class = Some(2);
+        game_process.ionice_prio = Some(4);
 
         let app_group = AppGroupRecord {
             app_group_id: "game".to_string(),

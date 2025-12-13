@@ -1066,62 +1066,37 @@ mod tests {
     #[test]
     fn test_energy_fields_serialization() {
         // Тест проверяет сериализацию и десериализацию новых полей энергопотребления
-        let process = ProcessRecord {
-            pid: 1234,
-            ppid: 1,
-            uid: 1000,
-            gid: 1000,
-            exe: Some("/usr/bin/test".to_string()),
-            cmdline: Some("test --flag".to_string()),
-            cgroup_path: Some("/user.slice/user-1000.slice".to_string()),
-            systemd_unit: None,
-            app_group_id: Some("test-app".to_string()),
-            state: "R".to_string(),
-            start_time: 1000000,
-            uptime_sec: 3600,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: Some(0.1),
-            cpu_share_10s: Some(0.08),
-            io_read_bytes: Some(1024 * 1024),
-            io_write_bytes: Some(512 * 1024),
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: Some(100),
-            swap_mb: None,
-            voluntary_ctx: Some(1000),
-            involuntary_ctx: Some(50),
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: Some("cli_interactive".to_string()),
-            tags: vec!["terminal".to_string()],
-            nice: 0,
-            ionice_class: Some(2),
-            ionice_prio: Some(4),
-            teacher_priority_class: Some("INTERACTIVE".to_string()),
-            teacher_score: Some(0.75),
-            energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
-            power_w: Some(0.5), // 0.5 ватта
-            energy_timestamp: Some(1234567890),
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut process = ProcessRecord::default();
+        process.pid = 1234;
+        process.ppid = 1;
+        process.uid = 1000;
+        process.gid = 1000;
+        process.exe = Some("/usr/bin/test".to_string());
+        process.cmdline = Some("test --flag".to_string());
+        process.cgroup_path = Some("/user.slice/user-1000.slice".to_string());
+        process.app_group_id = Some("test-app".to_string());
+        process.state = "R".to_string();
+        process.start_time = 1000000;
+        process.uptime_sec = 3600;
+        process.tty_nr = 0;
+        process.has_tty = false;
+        process.cpu_share_1s = Some(0.1);
+        process.cpu_share_10s = Some(0.08);
+        process.io_read_bytes = Some(1024 * 1024);
+        process.io_write_bytes = Some(512 * 1024);
+        process.rss_mb = Some(100);
+        process.voluntary_ctx = Some(1000);
+        process.involuntary_ctx = Some(50);
+        process.process_type = Some("cli_interactive".to_string());
+        process.tags = vec!["terminal".to_string()];
+        process.nice = 0;
+        process.ionice_class = Some(2);
+        process.ionice_prio = Some(4);
+        process.teacher_priority_class = Some("INTERACTIVE".to_string());
+        process.teacher_score = Some(0.75);
+        process.energy_uj = Some(1000000); // 1000000 микроджоулей = 1 джоуль
+        process.power_w = Some(0.5); // 0.5 ватта
+        process.energy_timestamp = Some(1234567890);
 
         // Тестируем сериализацию
         let serialized = serde_json::to_string(&process).unwrap();
@@ -1173,62 +1148,12 @@ mod tests {
     #[test]
     fn test_energy_fields_default_values() {
         // Тест проверяет, что новые поля энергопотребления имеют правильные значения по умолчанию
-        let process = ProcessRecord {
-            pid: 1,
-            ppid: 0,
-            uid: 0,
-            gid: 0,
-            exe: None,
-            cmdline: None,
-            cgroup_path: None,
-            systemd_unit: None,
-            app_group_id: None,
-            state: "S".to_string(),
-            start_time: 0,
-            uptime_sec: 0,
-            tty_nr: 0,
-            has_tty: false,
-            cpu_share_1s: None,
-            cpu_share_10s: None,
-            io_read_bytes: None,
-            io_write_bytes: None,
-            io_read_operations: None,
-            io_write_operations: None,
-            io_total_operations: None,
-            io_last_update_ns: None,
-            io_data_source: None,
-            rss_mb: None,
-            swap_mb: None,
-            voluntary_ctx: None,
-            involuntary_ctx: None,
-            has_gui_window: false,
-            is_focused_window: false,
-            window_state: None,
-            env_has_display: false,
-            env_has_wayland: false,
-            env_term: None,
-            env_ssh: false,
-            is_audio_client: false,
-            has_active_stream: false,
-            process_type: None,
-            tags: vec![],
-            nice: 0,
-            ionice_class: None,
-            ionice_prio: None,
-            teacher_priority_class: None,
-            teacher_score: None,
-            energy_uj: None,
-            power_w: None,
-            energy_timestamp: None,
-            network_rx_bytes: None,
-            network_tx_bytes: None,
-            network_rx_packets: None,
-            network_tx_packets: None,
-            network_tcp_connections: None,
-            network_udp_connections: None,
-            network_last_update_ns: None,
-            network_data_source: None,
-        };
+        let mut process = ProcessRecord::default();
+        process.pid = 1;
+        process.ppid = 0;
+        process.uid = 0;
+        process.gid = 0;
+        process.state = "S".to_string();
 
         // Проверяем, что поля по умолчанию равны None
         assert_eq!(process.energy_uj, None);
