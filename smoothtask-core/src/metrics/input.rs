@@ -50,6 +50,7 @@ impl InputMetrics {
 pub struct InputActivityTracker {
     last_event: Option<Instant>,
     idle_threshold: Duration,
+    error_count: u64,
 }
 
 impl InputActivityTracker {
@@ -58,6 +59,7 @@ impl InputActivityTracker {
         Self {
             last_event: None,
             idle_threshold,
+            error_count: 0,
         }
     }
 
@@ -86,6 +88,13 @@ impl InputActivityTracker {
             }
         }
         self.metrics(now)
+    }
+    
+    /// Получить количество ошибок чтения устройств.
+    ///
+    /// Используется для диагностики и мониторинга.
+    pub fn error_count(&self) -> u64 {
+        self.error_count
     }
 
     /// Текущие метрики активности.
@@ -273,6 +282,16 @@ impl InputTracker {
             Self::Simple(tracker) => tracker.set_idle_threshold(new_threshold),
         }
     }
+    
+    /// Получить количество ошибок чтения устройств.
+    ///
+    /// Используется для диагностики и мониторинга.
+    pub fn error_count(&self) -> u64 {
+        match self {
+            Self::Evdev(tracker) => tracker.error_count(),
+            Self::Simple(tracker) => tracker.error_count(),
+        }
+    }
 }
 
 impl EvdevInputTracker {
@@ -402,7 +421,28 @@ impl EvdevInputTracker {
                     // EAGAIN/WouldBlock означает, что больше нет событий (неблокирующий режим)
                     if e.kind() != std::io::ErrorKind::WouldBlock {
                         // Другие ошибки (например, устройство отключено) логируем, но продолжаем
-                        warn!("Error reading from input device: {}", e);
+                        self.activity_tracker.error_count += 1;
+                        
+                        // Улучшенные сообщения об ошибках с практическими рекомендациями
+                        match e.kind() {
+                            std::io::ErrorKind::PermissionDenied => {
+                                warn!("Permission denied reading from input device: {}. Try running as root or adding user to 'input' group. Command: 'sudo usermod -aG input $USER' then reboot", e);
+                            }
+                            std::io::ErrorKind::NotFound => {
+                                warn!("Input device not found: {}. Device may have been disconnected. Check /dev/input/event* devices", e);
+                            }
+                            std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
+                                warn!("Input device connection error: {}. Device may have been disconnected. Check device connections and try reconnecting", e);
+                            }
+                            _ => {
+                                warn!("Error reading from input device: {}. Check device permissions and connections. If issue persists, try restarting the daemon", e);
+                            }
+                        }
+                        
+                        // Логируем количество ошибок для диагностики
+                        if self.activity_tracker.error_count % 10 == 0 {
+                            warn!("Input device error count reached {}: {}", self.activity_tracker.error_count, e);
+                        }
                     }
                 }
             }
@@ -441,10 +481,38 @@ impl EvdevInputTracker {
         let input_dir = Path::new("/dev/input");
         let mut devices = Vec::new();
 
+        // Проверяем существование директории /dev/input
+        if !input_dir.exists() {
+            return Err(anyhow::anyhow!(
+                "Input directory /dev/input does not exist. Check if input devices are properly configured. Try 'ls /dev/input' to verify"
+            ));
+        }
+
         // Читаем все файлы event* в /dev/input
-        let entries = std::fs::read_dir(input_dir)?;
+        let entries = std::fs::read_dir(input_dir).map_err(|e| {
+            match e.kind() {
+                std::io::ErrorKind::PermissionDenied => {
+                    anyhow::anyhow!(
+                        "Permission denied accessing /dev/input: {}. Try running as root or adding user to 'input' group. Command: 'sudo usermod -aG input $USER' then reboot", e
+                    )
+                }
+                std::io::ErrorKind::NotFound => {
+                    anyhow::anyhow!(
+                        "Input directory /dev/input not found: {}. Check if input devices are properly configured", e
+                    )
+                }
+                _ => anyhow::anyhow!(
+                    "Failed to read /dev/input directory: {}. Check device permissions and configuration", e
+                )
+            }
+        })?;
+        
         for entry in entries {
-            let entry = entry?;
+            let entry = entry.map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to read input device entry: {}. Check /dev/input directory permissions", e
+                )
+            })?;
             let path = entry.path();
 
             // Проверяем, что это файл event*
@@ -472,9 +540,24 @@ impl EvdevInputTracker {
                     }
                 }
                 Err(e) => {
-                    debug!("Failed to open device {:?}: {}", path, e);
+                    // Улучшенные сообщения об ошибках с практическими рекомендациями
+                    match e.kind() {
+                        std::io::ErrorKind::PermissionDenied => {
+                            debug!("Permission denied opening device {:?}: {}. Try running as root or adding user to 'input' group", path, e);
+                        }
+                        std::io::ErrorKind::NotFound => {
+                            debug!("Input device {:?} not found: {}. Device may have been disconnected", path, e);
+                        }
+                        _ => {
+                            debug!("Failed to open device {:?}: {}. Check device permissions and connections", path, e);
+                        }
+                    }
                 }
             }
+        }
+
+        if devices.is_empty() {
+            warn!("No suitable input devices found in /dev/input. Check if input devices are connected and have proper permissions. Try 'ls -la /dev/input/event*' to verify");
         }
 
         Ok(devices)
@@ -485,6 +568,13 @@ impl EvdevInputTracker {
     /// Используется для динамической перезагрузки конфигурации.
     pub fn set_idle_threshold(&mut self, new_threshold: Duration) {
         self.activity_tracker.set_idle_threshold(new_threshold);
+    }
+    
+    /// Получить количество ошибок чтения устройств.
+    ///
+    /// Используется для диагностики и мониторинга.
+    pub fn error_count(&self) -> u64 {
+        self.activity_tracker.error_count
     }
 }
 
@@ -1182,5 +1272,47 @@ mod tests {
         let later = now + Duration::from_secs(2);
         let metrics = tracker.metrics(later);
         assert!(!metrics.user_active);
+    }
+    
+    #[test]
+    fn test_input_tracker_error_counting() {
+        // Тест для проверки счетчика ошибок
+        let tracker = InputActivityTracker::new(Duration::from_secs(5));
+        assert_eq!(tracker.error_count(), 0);
+        
+        // Проверяем, что счетчик ошибок доступен через InputTracker
+        let input_tracker = InputTracker::new(Duration::from_secs(5));
+        let error_count = input_tracker.error_count();
+        assert_eq!(error_count, 0);
+    }
+    
+    #[test]
+    fn test_input_tracker_graceful_degradation() {
+        // Тест для проверки graceful degradation
+        // При отсутствии устройств должны возвращаться дефолтные метрики
+        let tracker = InputActivityTracker::new(Duration::from_secs(5));
+        let metrics = tracker.metrics(Instant::now());
+        
+        // При отсутствии событий должны возвращаться дефолтные значения
+        assert!(!metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, None);
+    }
+    
+    #[test]
+    fn test_input_tracker_error_recovery() {
+        // Тест для проверки восстановления после ошибок
+        let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
+        
+        // Симулируем активность
+        let now = Instant::now();
+        let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
+        let metrics = tracker.ingest_events([key].iter(), now);
+        
+        // После активности пользователь должен быть активным
+        assert!(metrics.user_active);
+        assert_eq!(metrics.time_since_last_input_ms, Some(0));
+        
+        // Проверяем, что счетчик ошибок доступен
+        assert_eq!(tracker.error_count(), 0);
     }
 }

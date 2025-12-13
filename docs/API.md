@@ -1038,6 +1038,152 @@ curl http://127.0.0.1:8080/api/processes/1234
 
 ---
 
+### GET /api/processes/gpu
+
+Получение информации об использовании GPU процессами. Требует включения `enable_process_gpu_monitoring` в конфигурации eBPF.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/processes/gpu
+```
+
+**Успешный ответ (если мониторинг GPU доступен):**
+```json
+{
+  "status": "ok",
+  "process_gpu": [
+    {
+      "pid": 1234,
+      "tgid": 1234,
+      "gpu_time_ns": 1500000000,
+      "memory_usage_bytes": 268435456,
+      "compute_units_used": 8,
+      "last_update_ns": 1234567890123456789,
+      "gpu_id": 0,
+      "temperature_celsius": 55,
+      "name": "firefox",
+      "gpu_usage_percent": 45.2
+    },
+    {
+      "pid": 5678,
+      "tgid": 5678,
+      "gpu_time_ns": 400000000,
+      "memory_usage_bytes": 67108864,
+      "compute_units_used": 2,
+      "last_update_ns": 1234567890123456789,
+      "gpu_id": 0,
+      "temperature_celsius": 48,
+      "name": "blender",
+      "gpu_usage_percent": 12.8
+    }
+  ],
+  "count": 2,
+  "total_gpu_time_ns": 1900000000,
+  "total_memory_bytes": 335544320,
+  "total_compute_units": 10,
+  "message": "Process GPU monitoring data retrieved successfully",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "cache_info": {
+    "cached": false,
+    "ttl_seconds": 300
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Ответ (если мониторинг GPU недоступен):**
+```json
+{
+  "status": "degraded",
+  "process_gpu": null,
+  "count": 0,
+  "message": "Process GPU monitoring not available",
+  "suggestion": "Enable process GPU monitoring in configuration and ensure eBPF support",
+  "component_status": {
+    "daemon_stats": true,
+    "system_metrics": true,
+    "processes": true,
+    "app_groups": true,
+    "config": true,
+    "pattern_database": true
+  },
+  "cache_info": {
+    "cached": false,
+    "ttl_seconds": 300
+  },
+  "timestamp": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Поля ответа:**
+- `status` (string) - статус запроса (`ok` или `degraded`)
+- `process_gpu` (array?) - массив объектов с информацией об использовании GPU процессами
+- `count` (integer) - количество процессов с данными о GPU
+- `total_gpu_time_ns` (u64?) - общее время использования GPU всеми процессами в наносекундах
+- `total_memory_bytes` (u64?) - общее использование памяти GPU всеми процессами в байтах
+- `total_compute_units` (u64?) - общее количество использованных вычислительных единиц
+- `message` (string) - сообщение о статусе запроса
+- `suggestion` (string, опционально) - рекомендации по устранению проблем
+- `component_status` (object) - статус доступности основных компонентов
+- `cache_info` (object) - информация о кэшировании
+- `timestamp` (string) - время генерации ответа в формате RFC3339
+
+**Поля объекта process_gpu:**
+- `pid` (u32) - идентификатор процесса
+- `tgid` (u32) - идентификатор потока группы
+- `gpu_time_ns` (u64) - время использования GPU в наносекундах
+- `memory_usage_bytes` (u64) - использование памяти GPU в байтах
+- `compute_units_used` (u64) - количество использованных вычислительных единиц
+- `last_update_ns` (u64) - время последнего обновления в наносекундах
+- `gpu_id` (u32) - идентификатор GPU устройства
+- `temperature_celsius` (u32) - температура GPU в градусах Цельсия
+- `name` (string) - имя процесса
+- `gpu_usage_percent` (f32) - процент использования GPU процессом
+
+**Требования:**
+- Включенный `enable_process_gpu_monitoring` в конфигурации eBPF
+- Поддержка eBPF в ядре Linux (5.4+)
+- Права CAP_BPF или запуск от root
+- Доступ к GPU устройствам
+
+**Ограничения:**
+- Данные собираются только для процессов, активно использующих GPU
+- Точность измерений зависит от драйвера GPU и поддержки eBPF
+- Максимальное количество отслеживаемых процессов: 4096
+
+**Примеры использования:**
+
+**Получение топ процессов по использованию GPU:**
+```bash
+curl -s http://127.0.0.1:8080/api/processes/gpu | \
+  jq '.process_gpu | sort_by(.gpu_usage_percent) | reverse | .[0:5] | {pid, name, gpu_usage_percent, memory_usage_bytes}'
+```
+
+**Мониторинг общего использования GPU:**
+```bash
+curl -s http://127.0.0.1:8080/api/processes/gpu | \
+  jq '{total_gpu_time: .total_gpu_time_ns, total_memory: .total_memory_bytes, processes: .count}'
+```
+
+**Проверка доступности мониторинга GPU:**
+```bash
+curl -s http://127.0.0.1:8080/api/processes/gpu | \
+  jq '{available: (.process_gpu != null), message: .message, suggestion: .suggestion}'
+```
+
+**Статус коды:**
+- `200 OK` - запрос выполнен успешно
+- В случае ошибки возвращается JSON с полем `status: "error"` и описанием ошибки
+
+---
+
 ### GET /api/appgroups
 
 Получение списка последних групп приложений.

@@ -101,6 +101,10 @@ pub struct EbpfConfig {
     pub enable_process_energy_monitoring: bool,
     /// Включить мониторинг использования GPU процессами
     pub enable_process_gpu_monitoring: bool,
+    /// Включить мониторинг использования сети процессами
+    pub enable_process_network_monitoring: bool,
+    /// Включить мониторинг использования диска процессами
+    pub enable_process_disk_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
     /// Включить кэширование метрик для уменьшения накладных расходов
@@ -139,6 +143,8 @@ impl Default for EbpfConfig {
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
             enable_process_gpu_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -398,6 +404,84 @@ pub struct ProcessGpuStat {
     pub gpu_usage_percent: f32,
 }
 
+/// Статистика по использованию сети процессами
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessNetworkStat {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Идентификатор потока
+    pub tgid: u32,
+    /// Количество отправленных пакетов
+    pub packets_sent: u64,
+    /// Количество полученных пакетов
+    pub packets_received: u64,
+    /// Количество отправленных байт
+    pub bytes_sent: u64,
+    /// Количество полученных байт
+    pub bytes_received: u64,
+    /// Время последнего обновления в наносекундах
+    pub last_update_ns: u64,
+    /// Имя процесса
+    pub name: String,
+    /// Общее количество сетевых операций
+    pub total_network_operations: u64,
+}
+
+impl Default for ProcessNetworkStat {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            tgid: 0,
+            packets_sent: 0,
+            packets_received: 0,
+            bytes_sent: 0,
+            bytes_received: 0,
+            last_update_ns: 0,
+            name: String::new(),
+            total_network_operations: 0,
+        }
+    }
+}
+
+/// Статистика по использованию диска процессами
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessDiskStat {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Идентификатор потока
+    pub tgid: u32,
+    /// Количество прочитанных байт
+    pub bytes_read: u64,
+    /// Количество записанных байт
+    pub bytes_written: u64,
+    /// Количество операций чтения
+    pub read_operations: u64,
+    /// Количество операций записи
+    pub write_operations: u64,
+    /// Время последнего обновления в наносекундах
+    pub last_update_ns: u64,
+    /// Имя процесса
+    pub name: String,
+    /// Общее количество операций ввода-вывода
+    pub total_io_operations: u64,
+}
+
+impl Default for ProcessDiskStat {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            tgid: 0,
+            bytes_read: 0,
+            bytes_written: 0,
+            read_operations: 0,
+            write_operations: 0,
+            last_update_ns: 0,
+            name: String::new(),
+            total_io_operations: 0,
+        }
+    }
+}
+
 /// Структура для хранения eBPF метрик
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EbpfMetrics {
@@ -451,6 +535,10 @@ pub struct EbpfMetrics {
     pub process_energy_details: Option<Vec<ProcessEnergyStat>>,
     /// Детализированная статистика по использованию GPU процессами (опционально)
     pub process_gpu_details: Option<Vec<ProcessGpuStat>>,
+    /// Детализированная статистика по использованию сети процессами (опционально)
+    pub process_network_details: Option<Vec<ProcessNetworkStat>>,
+    /// Детализированная статистика по использованию диска процессами (опционально)
+    pub process_disk_details: Option<Vec<ProcessDiskStat>>,
 }
 
 /// Конфигурация порогов для уведомлений eBPF
@@ -900,6 +988,10 @@ pub struct EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     process_gpu_program: Option<Program>,
     #[cfg(feature = "ebpf")]
+    process_network_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
+    process_disk_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
     gpu_program: Option<Program>,
     #[cfg(feature = "ebpf")]
     cpu_temperature_program: Option<Program>,
@@ -921,6 +1013,10 @@ pub struct EbpfMetricsCollector {
     process_energy_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     process_gpu_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    process_network_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    process_disk_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     gpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
@@ -978,6 +1074,10 @@ impl EbpfMetricsCollector {
             #[cfg(feature = "ebpf")]
             process_gpu_program: None,
             #[cfg(feature = "ebpf")]
+            process_network_program: None,
+            #[cfg(feature = "ebpf")]
+            process_disk_program: None,
+            #[cfg(feature = "ebpf")]
             gpu_program: None,
             #[cfg(feature = "ebpf")]
             filesystem_program: None,
@@ -997,6 +1097,10 @@ impl EbpfMetricsCollector {
             process_energy_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             process_gpu_maps: Vec::new(),
+            #[cfg(feature = "ebpf")]
+            process_network_maps: Vec::new(),
+            #[cfg(feature = "ebpf")]
+            process_disk_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             gpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
@@ -1518,6 +1622,42 @@ impl EbpfMetricsCollector {
                         let error_msg = format!("Ошибка загрузки программы мониторинга использования GPU процессами: {}. Проверьте доступ к GPU устройствам и права доступа", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("ProcessGPU: {}", e));
+                        error_count += 1;
+                        self.last_error = Some(error_msg);
+                    }
+                }
+            }
+
+            if self.config.enable_process_network_monitoring {
+                match self.load_process_network_program() {
+                    Ok(_) => {
+                        success_count += 1;
+                        tracing::info!(
+                            "Программа мониторинга использования сети процессами успешно загружена"
+                        );
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Ошибка загрузки программы мониторинга использования сети процессами: {}. Проверьте сетевые интерфейсы и права доступа", e);
+                        tracing::error!("{}", error_msg);
+                        detailed_errors.push(format!("ProcessNetwork: {}", e));
+                        error_count += 1;
+                        self.last_error = Some(error_msg);
+                    }
+                }
+            }
+
+            if self.config.enable_process_disk_monitoring {
+                match self.load_process_disk_program() {
+                    Ok(_) => {
+                        success_count += 1;
+                        tracing::info!(
+                            "Программа мониторинга использования диска процессами успешно загружена"
+                        );
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Ошибка загрузки программы мониторинга использования диска процессами: {}. Проверьте доступ к дискам и права доступа", e);
+                        tracing::error!("{}", error_msg);
+                        detailed_errors.push(format!("ProcessDisk: {}", e));
                         error_count += 1;
                         self.last_error = Some(error_msg);
                     }
@@ -2238,6 +2378,76 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга использования сети процессами
+    #[cfg(feature = "ebpf")]
+    fn load_process_network_program(&mut self) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        use std::path::Path;
+
+        let program_path = Path::new("src/ebpf_programs/process_network.c");
+
+        if !program_path.exists() {
+            tracing::warn!(
+                "eBPF программа для мониторинга использования сети процессами не найдена: {:?}",
+                program_path
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Загрузка eBPF программы для мониторинга использования сети процессами: {:?}",
+            program_path
+        );
+
+        // Загрузка eBPF программы
+        let program = load_ebpf_program_from_file(program_path.to_str().unwrap())?;
+
+        // Сохранение программы
+        self.process_network_program = Some(program);
+
+        // Загрузка карт из программы
+        self.process_network_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "process_network_stats_map")?;
+
+        tracing::info!("eBPF программа для мониторинга использования сети процессами успешно загружена с {} картами", self.process_network_maps.len());
+        Ok(())
+    }
+
+    /// Загрузить eBPF программу для мониторинга использования диска процессами
+    #[cfg(feature = "ebpf")]
+    fn load_process_disk_program(&mut self) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        use std::path::Path;
+
+        let program_path = Path::new("src/ebpf_programs/process_disk.c");
+
+        if !program_path.exists() {
+            tracing::warn!(
+                "eBPF программа для мониторинга использования диска процессами не найдена: {:?}",
+                program_path
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Загрузка eBPF программы для мониторинга использования диска процессами: {:?}",
+            program_path
+        );
+
+        // Загрузка eBPF программы
+        let program = load_ebpf_program_from_file(program_path.to_str().unwrap())?;
+
+        // Сохранение программы
+        self.process_disk_program = Some(program);
+
+        // Загрузка карт из программы
+        self.process_disk_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "process_disk_stats_map")?;
+
+        tracing::info!("eBPF программа для мониторинга использования диска процессами успешно загружена с {} картами", self.process_disk_maps.len());
+        Ok(())
+    }
+
     /// Загрузить eBPF программу для мониторинга файловой системы
     #[cfg(feature = "ebpf")]
     fn load_filesystem_program(&mut self) -> Result<()> {
@@ -2771,6 +2981,18 @@ impl EbpfMetricsCollector {
             None
         };
 
+        let process_network_details = if self.config.enable_process_network_monitoring {
+            self.collect_process_network_stats()?
+        } else {
+            None
+        };
+
+        let process_disk_details = if self.config.enable_process_disk_monitoring {
+            self.collect_process_disk_stats()?
+        } else {
+            None
+        };
+
         // Оптимизация: собираем детализированную статистику параллельно
         let (
             syscall_details,
@@ -2800,6 +3022,9 @@ impl EbpfMetricsCollector {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
+            process_network_details,
+            process_disk_details,
         );
 
         let collection_time = start_time.elapsed();
@@ -2842,6 +3067,7 @@ impl EbpfMetricsCollector {
             filesystem_details,
             process_energy_details,
             process_gpu_details,
+            process_disk_details,
         })
     }
 
@@ -2927,6 +3153,13 @@ impl EbpfMetricsCollector {
                     None
                 }
             }),
+            std::thread::spawn(|| {
+                if self.config.enable_process_network_monitoring {
+                    self.collect_process_network_stats()
+                } else {
+                    None
+                }
+            }),
         ];
 
         let syscall_details = results[0].join().unwrap();
@@ -2938,6 +3171,7 @@ impl EbpfMetricsCollector {
         let filesystem_details = results[6].join().unwrap();
         let process_energy_details = results[7].join().unwrap();
         let process_gpu_details = results[8].join().unwrap();
+        let process_network_details = results[9].join().unwrap();
 
         (
             syscall_details,
@@ -2949,6 +3183,7 @@ impl EbpfMetricsCollector {
             filesystem_details,
             process_energy_details,
             process_gpu_details,
+            process_network_details,
         )
     }
 
@@ -2969,6 +3204,8 @@ impl EbpfMetricsCollector {
         filesystem_details: Option<Vec<FilesystemStat>>,
         process_energy_details: Option<Vec<ProcessEnergyStat>>,
         process_gpu_details: Option<Vec<ProcessGpuStat>>,
+        process_network_details: Option<Vec<ProcessNetworkStat>>,
+        process_disk_details: Option<Vec<ProcessDiskStat>>,
     ) -> (
         Option<Vec<SyscallStat>>,
         Option<Vec<NetworkStat>>,
@@ -2979,6 +3216,8 @@ impl EbpfMetricsCollector {
         Option<Vec<FilesystemStat>>,
         Option<Vec<ProcessEnergyStat>>,
         Option<Vec<ProcessGpuStat>>,
+        Option<Vec<ProcessNetworkStat>>,
+        Option<Vec<ProcessDiskStat>>,
     ) {
         // Ограничиваем количество системных вызовов
         let syscall_details = syscall_details.map(|mut details| {
@@ -3088,6 +3327,30 @@ impl EbpfMetricsCollector {
             details
         });
 
+        // Ограничиваем количество статистик использования сети процессами
+        let process_network_details = process_network_details.map(|mut details| {
+            if details.len() > self.max_cached_details {
+                details.truncate(self.max_cached_details);
+                tracing::debug!(
+                    "Ограничено количество статистик использования сети процессами до {}",
+                    self.max_cached_details
+                );
+            }
+            details
+        });
+
+        // Ограничиваем количество статистик использования диска процессами
+        let process_disk_details = process_disk_details.map(|mut details| {
+            if details.len() > self.max_cached_details {
+                details.truncate(self.max_cached_details);
+                tracing::debug!(
+                    "Ограничено количество статистик использования диска процессами до {}",
+                    self.max_cached_details
+                );
+            }
+            details
+        });
+
         (
             syscall_details,
             network_details,
@@ -3098,6 +3361,8 @@ impl EbpfMetricsCollector {
             filesystem_details,
             process_energy_details,
             process_gpu_details,
+            process_network_details,
+            process_disk_details,
         )
     }
 
@@ -3786,6 +4051,104 @@ impl EbpfMetricsCollector {
             Ok(None)
         } else {
             Ok(Some(gpu_stats))
+        }
+    }
+
+    /// Собрать статистику использования сети процессами из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_process_network_stats(&self) -> Result<Option<Vec<ProcessNetworkStat>>> {
+        use libbpf_rs::Map;
+
+        if !self.config.enable_process_network_monitoring {
+            return Ok(None);
+        }
+
+        // Пробуем получить доступ к картам использования сети процессами
+        if self.process_network_maps.is_empty() {
+            tracing::warn!("Карты использования сети процессами не инициализированы");
+            return Ok(None);
+        }
+
+        let mut network_stats = Vec::new();
+
+        for map in &self.process_network_maps {
+            // Используем функцию итерации по ключам для получения всех записей использования сети
+            match iterate_ebpf_map_keys::<ProcessNetworkStat>(map, 10240) {
+                Ok(stats) => {
+                    for stat in stats {
+                        network_stats.push(ProcessNetworkStat {
+                            pid: stat.pid,
+                            tgid: stat.tgid,
+                            packets_sent: stat.packets_sent,
+                            packets_received: stat.packets_received,
+                            bytes_sent: stat.bytes_sent,
+                            bytes_received: stat.bytes_received,
+                            last_update_ns: stat.last_update_ns,
+                            name: stat.name.clone(),
+                            total_network_operations: stat.packets_sent + stat.packets_received,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по карте использования сети процессами: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        if network_stats.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(network_stats))
+        }
+    }
+
+    /// Собрать статистику использования диска процессами из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_process_disk_stats(&self) -> Result<Option<Vec<ProcessDiskStat>>> {
+        use libbpf_rs::Map;
+
+        if !self.config.enable_process_disk_monitoring {
+            return Ok(None);
+        }
+
+        // Пробуем получить доступ к картам использования диска процессами
+        if self.process_disk_maps.is_empty() {
+            tracing::warn!("Карты использования диска процессами не инициализированы");
+            return Ok(None);
+        }
+
+        let mut disk_stats = Vec::new();
+
+        for map in &self.process_disk_maps {
+            // Используем функцию итерации по ключам для получения всех записей использования диска
+            match iterate_ebpf_map_keys::<ProcessDiskStat>(map, 10240) {
+                Ok(stats) => {
+                    for stat in stats {
+                        disk_stats.push(ProcessDiskStat {
+                            pid: stat.pid,
+                            tgid: stat.tgid,
+                            bytes_read: stat.bytes_read,
+                            bytes_written: stat.bytes_written,
+                            read_operations: stat.read_operations,
+                            write_operations: stat.write_operations,
+                            last_update_ns: stat.last_update_ns,
+                            name: stat.name.clone(),
+                            total_io_operations: stat.read_operations + stat.write_operations,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Ошибка при итерации по карте использования диска процессами: {}", e);
+                    continue;
+                }
+            }
+        }
+
+        if disk_stats.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(disk_stats))
         }
     }
 
@@ -5136,6 +5499,8 @@ mod tests {
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
             enable_process_gpu_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5204,6 +5569,8 @@ mod tests {
             filesystem_details: None,
             process_energy_details: None,
             process_gpu_details: None,
+            process_network_details: None,
+            process_disk_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5547,6 +5914,9 @@ mod tests {
             enable_cpu_temperature_monitoring: false,
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_gpu_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5620,6 +5990,8 @@ mod tests {
             filesystem_details: None,
             process_energy_details: None,
             process_gpu_details: None,
+            process_network_details: None,
+            process_disk_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -5719,6 +6091,9 @@ mod tests {
             enable_cpu_temperature_monitoring: false,
             enable_process_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_gpu_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(2),
             enable_caching: true,
             batch_size: 200,
@@ -5796,6 +6171,8 @@ mod tests {
             filesystem_details: None,
             process_energy_details: None,
             process_gpu_details: None,
+            process_network_details: None,
+            process_disk_details: None,
         };
 
         // Тестируем сериализацию и десериализацию
@@ -6462,7 +6839,10 @@ mod tests {
             enable_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
+            enable_process_gpu_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -6521,8 +6901,11 @@ mod tests {
             enable_network_monitoring: false,
             enable_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
+            enable_process_gpu_monitoring: false,
             enable_filesystem_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             enable_notifications: false,
@@ -6560,9 +6943,12 @@ mod tests {
             enable_syscall_monitoring: false,
             enable_network_monitoring: false,
             enable_gpu_monitoring: false,
+            enable_process_gpu_monitoring: false,
             enable_cpu_temperature_monitoring: false,
             enable_filesystem_monitoring: false,
             enable_process_energy_monitoring: false,
+            enable_process_network_monitoring: false,
+            enable_process_disk_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -7206,6 +7592,9 @@ mod ebpf_memory_optimization_tests {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
+            process_network_details,
+            process_disk_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -7215,6 +7604,9 @@ mod ebpf_memory_optimization_tests {
             metrics.process_details.take(),
             metrics.filesystem_details.take(),
             metrics.process_energy_details.take(),
+            metrics.process_gpu_details.take(),
+            metrics.process_network_details.take(),
+            metrics.process_disk_details.take(),
         );
 
         metrics.syscall_details = syscall_details;
@@ -7330,6 +7722,9 @@ mod ebpf_memory_optimization_tests {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
+            process_network_details,
+            process_disk_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -7339,6 +7734,9 @@ mod ebpf_memory_optimization_tests {
             metrics.process_details.take(),
             metrics.filesystem_details.take(),
             metrics.process_energy_details.take(),
+            metrics.process_gpu_details.take(),
+            metrics.process_network_details.take(),
+            metrics.process_disk_details.take(),
         );
 
         metrics.syscall_details = syscall_details;
@@ -7349,6 +7747,8 @@ mod ebpf_memory_optimization_tests {
         metrics.process_details = process_details;
         metrics.filesystem_details = filesystem_details;
         metrics.process_energy_details = process_energy_details;
+        metrics.process_gpu_details = process_gpu_details;
+        metrics.process_network_details = process_network_details;
 
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.process_details {
@@ -7463,10 +7863,16 @@ mod ebpf_memory_optimization_tests {
             process_details,
             filesystem_details,
             process_energy_details,
+            process_gpu_details,
+            process_network_details,
+            process_disk_details,
         ) = collector.optimize_detailed_stats(
             Some(syscall_details),
             Some(network_details),
             Some(connection_details),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -7639,6 +8045,9 @@ mod test_process_energy {
             _process_details,
             _filesystem_details,
             process_energy_details,
+            process_gpu_details,
+            _process_network_details,
+            _process_disk_details,
         ) = collector.optimize_detailed_stats(
             None,
             None,
@@ -7648,6 +8057,9 @@ mod test_process_energy {
             None,
             None,
             Some(energy_stats),
+            None,
+            None,
+            None,
         );
 
         if let Some(details) = process_energy_details {
@@ -7714,6 +8126,57 @@ mod test_process_energy {
     }
 
     #[test]
+    fn test_process_network_stat_default() {
+        // Тест проверяет, что ProcessNetworkStat::default() возвращает пустые значения
+        let stat = ProcessNetworkStat::default();
+        assert_eq!(stat.pid, 0);
+        assert_eq!(stat.tgid, 0);
+        assert_eq!(stat.packets_sent, 0);
+        assert_eq!(stat.packets_received, 0);
+        assert_eq!(stat.bytes_sent, 0);
+        assert_eq!(stat.bytes_received, 0);
+        assert_eq!(stat.last_update_ns, 0);
+        assert_eq!(stat.name, "");
+        assert_eq!(stat.total_network_operations, 0);
+    }
+
+    #[test]
+    fn test_process_network_stat_with_values() {
+        // Тест проверяет, что ProcessNetworkStat корректно хранит значения
+        let stat = ProcessNetworkStat {
+            pid: 123,
+            tgid: 456,
+            packets_sent: 100,
+            packets_received: 50,
+            bytes_sent: 1024 * 1024,
+            bytes_received: 512 * 1024,
+            last_update_ns: 1000000000,
+            name: "test_process".to_string(),
+            total_network_operations: 150,
+        };
+
+        assert_eq!(stat.pid, 123);
+        assert_eq!(stat.tgid, 456);
+        assert_eq!(stat.packets_sent, 100);
+        assert_eq!(stat.packets_received, 50);
+        assert_eq!(stat.bytes_sent, 1024 * 1024);
+        assert_eq!(stat.bytes_received, 512 * 1024);
+        assert_eq!(stat.last_update_ns, 1000000000);
+        assert_eq!(stat.name, "test_process");
+        assert_eq!(stat.total_network_operations, 150);
+    }
+
+    #[test]
+    fn test_process_network_config() {
+        // Тест проверяет, что конфигурация process_network_monitoring корректно работает
+        let mut config = EbpfConfig::default();
+        assert!(!config.enable_process_network_monitoring);
+
+        config.enable_process_network_monitoring = true;
+        assert!(config.enable_process_network_monitoring);
+    }
+
+    #[test]
     fn test_process_gpu_config() {
         // Тест проверяет, что конфигурация process_gpu_monitoring корректно работает
         let mut config = EbpfConfig::default();
@@ -7751,6 +8214,37 @@ mod test_process_energy {
             assert_eq!(details.len(), 1);
             assert_eq!(details[0].pid, 1);
             assert_eq!(details[0].gpu_time_ns, 1000000);
+        }
+    }
+
+    #[test]
+    fn test_ebpf_metrics_with_process_network() {
+        // Тест проверяет, что EbpfMetrics корректно хранит process_network_details
+        let mut metrics = EbpfMetrics::default();
+        assert!(metrics.process_network_details.is_none(), "По умолчанию должно быть None");
+
+        let network_stats = vec![
+            ProcessNetworkStat {
+                pid: 1,
+                tgid: 1,
+                packets_sent: 100,
+                packets_received: 50,
+                bytes_sent: 1024 * 1024,
+                bytes_received: 512 * 1024,
+                last_update_ns: 1000000000,
+                name: "test_process".to_string(),
+                total_network_operations: 150,
+            },
+        ];
+
+        metrics.process_network_details = Some(network_stats.clone());
+        assert!(metrics.process_network_details.is_some(), "Должно быть Some");
+
+        if let Some(details) = &metrics.process_network_details {
+            assert_eq!(details.len(), 1);
+            assert_eq!(details[0].pid, 1);
+            assert_eq!(details[0].packets_sent, 100);
+            assert_eq!(details[0].packets_received, 50);
         }
     }
 
@@ -7800,6 +8294,8 @@ mod test_process_energy {
             _filesystem_details,
             _process_energy_details,
             process_gpu_details,
+            _process_network_details,
+            _process_disk_details,
         ) = collector.optimize_detailed_stats(
             None,
             None,
@@ -7810,6 +8306,8 @@ mod test_process_energy {
             None,
             None,
             Some(gpu_stats),
+            None,
+            None,
         );
 
         if let Some(details) = process_gpu_details {
@@ -7820,3 +8318,109 @@ mod test_process_energy {
         }
     }
 }
+
+    #[test]
+    fn test_process_disk_stat_default() {
+        // Тест проверяет, что ProcessDiskStat::default() возвращает пустые значения
+        let stat = ProcessDiskStat::default();
+        assert_eq!(stat.pid, 0, "PID по умолчанию должен быть 0");
+        assert_eq!(stat.tgid, 0, "TGID по умолчанию должен быть 0");
+        assert_eq!(stat.bytes_read, 0, "Байты прочитаны по умолчанию должны быть 0");
+        assert_eq!(stat.bytes_written, 0, "Байты записаны по умолчанию должны быть 0");
+        assert_eq!(stat.read_operations, 0, "Операции чтения по умолчанию должны быть 0");
+        assert_eq!(stat.write_operations, 0, "Операции записи по умолчанию должны быть 0");
+        assert_eq!(stat.last_update_ns, 0, "Время последнего обновления по умолчанию должно быть 0");
+        assert_eq!(stat.name, "", "Имя по умолчанию должно быть пустой строкой");
+        assert_eq!(stat.total_io_operations, 0, "Общее количество операций ввода-вывода по умолчанию должно быть 0");
+    }
+
+    #[test]
+    fn test_process_disk_stat_with_values() {
+        // Тест проверяет, что ProcessDiskStat корректно хранит значения
+        let stat = ProcessDiskStat {
+            pid: 123,
+            tgid: 456,
+            bytes_read: 1024,
+            bytes_written: 2048,
+            read_operations: 10,
+            write_operations: 20,
+            last_update_ns: 123456789,
+            name: "test_process".to_string(),
+            total_io_operations: 30,
+        };
+
+        assert_eq!(stat.pid, 123, "PID должен быть 123");
+        assert_eq!(stat.tgid, 456, "TGID должен быть 456");
+        assert_eq!(stat.bytes_read, 1024, "Байты прочитаны должны быть 1024");
+        assert_eq!(stat.bytes_written, 2048, "Байты записаны должны быть 2048");
+        assert_eq!(stat.read_operations, 10, "Операции чтения должны быть 10");
+        assert_eq!(stat.write_operations, 20, "Операции записи должны быть 20");
+        assert_eq!(stat.last_update_ns, 123456789, "Время последнего обновления должно быть 123456789");
+        assert_eq!(stat.name, "test_process", "Имя должно быть test_process");
+        assert_eq!(stat.total_io_operations, 30, "Общее количество операций ввода-вывода должно быть 30");
+    }
+
+    #[test]
+    fn test_optimize_detailed_stats_process_disk() {
+        // Тест проверяет, что optimize_detailed_stats корректно обрабатывает process_disk_details
+        let mut collector = EbpfMetricsCollector::new(EbpfConfig::default());
+        collector.max_cached_details = 1;
+
+        let disk_stats = vec![
+            ProcessDiskStat {
+                pid: 123,
+                tgid: 456,
+                bytes_read: 1024,
+                bytes_written: 2048,
+                read_operations: 10,
+                write_operations: 20,
+                last_update_ns: 123456789,
+                name: "process1".to_string(),
+                total_io_operations: 30,
+            },
+            ProcessDiskStat {
+                pid: 789,
+                tgid: 101,
+                bytes_read: 4096,
+                bytes_written: 8192,
+                read_operations: 50,
+                write_operations: 100,
+                last_update_ns: 987654321,
+                name: "process2".to_string(),
+                total_io_operations: 150,
+            },
+        ];
+
+        let (
+            _syscall_details,
+            _network_details,
+            _connection_details,
+            _gpu_details,
+            _cpu_temperature_details,
+            _process_details,
+            _filesystem_details,
+            _process_energy_details,
+            _process_gpu_details,
+            _process_network_details,
+            process_disk_details,
+        ) = collector.optimize_detailed_stats(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(disk_stats),
+        );
+
+        if let Some(details) = process_disk_details {
+            assert_eq!(details.len(), 1, "Количество статистик использования диска должно быть ограничено до 1");
+            assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
+        } else {
+            panic!("process_disk_details должно быть Some");
+        }
+    }

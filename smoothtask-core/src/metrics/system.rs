@@ -3282,6 +3282,8 @@ SwapFree:        4096000 kB
             filesystem_details: None,
             process_energy_details: None,
             process_gpu_details: None,
+            process_network_details: None,
+            process_disk_details: None,
         };
         metrics.ebpf = Some(ebpf_metrics.clone());
 

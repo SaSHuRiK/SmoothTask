@@ -42,6 +42,10 @@ fn main() -> anyhow::Result<()> {
         enable_cpu_temperature_monitoring: false, // Отключено для примера
         enable_filesystem_monitoring: false, // Отключено для примера
         enable_process_monitoring: false, // Отключено для примера
+        enable_process_energy_monitoring: false, // Отключено для примера
+        enable_process_gpu_monitoring: false, // Отключено для примера
+        enable_process_network_monitoring: false, // Отключено для примера
+        enable_process_disk_monitoring: false, // Отключено для примера
         enable_notifications: false,
         notification_thresholds: EbpfNotificationThresholds::default(),
         filter_config: EbpfFilterConfig::default(),

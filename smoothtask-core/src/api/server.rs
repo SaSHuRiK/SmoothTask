@@ -71,6 +71,10 @@ pub struct ApiCache {
     cached_process_memory_json: Option<(Value, Instant)>,
     /// Кэшированная версия данных об использовании GPU процессами (JSON)
     cached_process_gpu_json: Option<(Value, Instant)>,
+    /// Кэшированная версия данных об использовании сети процессами (JSON)
+    cached_process_network_json: Option<(Value, Instant)>,
+    /// Кэшированная версия данных об использовании диска процессами (JSON)
+    cached_process_disk_json: Option<(Value, Instant)>,
     /// Время жизни кэша (в секундах)
     cache_ttl_seconds: u64,
 }
@@ -98,6 +102,7 @@ impl ApiCache {
         self.cached_process_energy_json = None;
         self.cached_process_memory_json = None;
         self.cached_process_gpu_json = None;
+        self.cached_process_network_json = None;
     }
 }
 
@@ -1678,6 +1683,8 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/processes/energy", get(process_energy_handler))
         .route("/api/processes/memory", get(process_memory_handler))
         .route("/api/processes/gpu", get(process_gpu_handler))
+        .route("/api/processes/network", get(process_network_handler))
+        .route("/api/processes/disk", get(process_disk_handler))
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
@@ -2108,6 +2115,214 @@ async fn process_gpu_handler(State(state): State<ApiState>) -> Result<Json<Value
     // Кэшируем результат
     cache_write.cached_process_gpu_json = Some((result.clone(), Instant::now()));
     trace!("Cached process GPU data (count: {})", result["count"]);
+
+    Ok(Json(result))
+}
+
+/// Обработчик для endpoint `/api/processes/network`.
+///
+/// Возвращает статистику использования сети процессами (если доступны).
+async fn process_network_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+
+    if let Some((cached_json, cache_time)) = &cache_write.cached_process_network_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+
+            trace!("Cache hit for process_network_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+
+    // Пробуем получить данные из eBPF метрик
+    let mut result = json!({
+        "status": "degraded",
+        "process_network": null,
+        "count": 0,
+        "total_packets_sent": 0,
+        "total_packets_received": 0,
+        "total_bytes_sent": 0,
+        "total_bytes_received": 0,
+        "message": "Process network monitoring not available",
+        "suggestion": "Enable process network monitoring in configuration and ensure eBPF support",
+        "component_status": check_component_availability(&state),
+        "cache_info": {
+            "cached": false,
+            "ttl_seconds": cache_write.cache_ttl_seconds
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    });
+
+    // Пробуем получить доступ к eBPF метрикам
+    if let Some(metrics_arc) = &state.metrics {
+        let metrics = metrics_arc.read().await;
+        if let Some(ebpf_metrics) = &metrics.ebpf {
+            if let Some(process_network_details) = &ebpf_metrics.process_network_details {
+                // Конвертируем статистику в JSON
+                let mut process_network_json = Vec::new();
+                let mut total_packets_sent = 0;
+                let mut total_packets_received = 0;
+                let mut total_bytes_sent = 0;
+                let mut total_bytes_received = 0;
+
+                for stat in process_network_details {
+                    let process_info = json!({
+                        "pid": stat.pid,
+                        "tgid": stat.tgid,
+                        "packets_sent": stat.packets_sent,
+                        "packets_received": stat.packets_received,
+                        "bytes_sent": stat.bytes_sent,
+                        "bytes_received": stat.bytes_received,
+                        "last_update_ns": stat.last_update_ns,
+                        "name": stat.name,
+                        "total_network_operations": stat.total_network_operations
+                    });
+                    process_network_json.push(process_info);
+
+                    total_packets_sent += stat.packets_sent;
+                    total_packets_received += stat.packets_received;
+                    total_bytes_sent += stat.bytes_sent;
+                    total_bytes_received += stat.bytes_received;
+                }
+
+                result["status"] = "ok".into();
+                result["process_network"] = process_network_json.into();
+                result["count"] = process_network_details.len().into();
+                result["total_packets_sent"] = total_packets_sent.into();
+                result["total_packets_received"] = total_packets_received.into();
+                result["total_bytes_sent"] = total_bytes_sent.into();
+                result["total_bytes_received"] = total_bytes_received.into();
+                result["message"] = "Process network monitoring data retrieved successfully".into();
+                result["cache_info"]["cached"] = false.into();
+
+                // Кэшируем результат
+                cache_write.cached_process_network_json = Some((result.clone(), Instant::now()));
+            }
+        }
+    }
+
+    trace!("Cached process network data (count: {})", result["count"]);
+
+    Ok(Json(result))
+}
+
+/// Возвращает статистику использования диска процессами (если доступны).
+async fn process_disk_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+    // Начинаем отслеживание производительности
+    let _start_time = Instant::now();
+
+    // Обновляем метрики производительности
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_requests();
+    drop(perf_metrics); // Освобождаем блокировку
+
+    // Пробуем использовать кэш
+    let cache = state.get_or_create_cache();
+    let mut cache_write = cache.write().await;
+
+    if let Some((cached_json, cache_time)) = &cache_write.cached_process_disk_json {
+        if cache_write.is_cache_valid(cache_time) {
+            // Кэш актуален - используем его
+            let mut perf_metrics = state.performance_metrics.write().await;
+            perf_metrics.increment_cache_hits();
+            drop(perf_metrics);
+
+            trace!("Cache hit for process_disk_handler");
+            return Ok(Json(cached_json.clone()));
+        }
+    }
+
+    // Кэш не актуален или отсутствует - получаем свежие данные
+    let mut perf_metrics = state.performance_metrics.write().await;
+    perf_metrics.increment_cache_misses();
+    drop(perf_metrics);
+
+    // Пробуем получить данные из eBPF метрик
+    let mut result = json!({
+        "status": "degraded",
+        "process_disk": null,
+        "count": 0,
+        "total_bytes_read": 0,
+        "total_bytes_written": 0,
+        "total_read_operations": 0,
+        "total_write_operations": 0,
+        "message": "Process disk monitoring not available",
+        "suggestion": "Enable process disk monitoring in configuration and ensure eBPF support",
+        "component_status": check_component_availability(&state),
+        "cache_info": {
+            "cached": false,
+            "ttl_seconds": cache_write.cache_ttl_seconds
+        },
+        "timestamp": Utc::now().to_rfc3339()
+    });
+
+    // Пробуем получить доступ к eBPF метрикам
+    if let Some(metrics_arc) = &state.metrics {
+        let metrics = metrics_arc.read().await;
+        if let Some(ebpf_metrics) = &metrics.ebpf {
+            if let Some(process_disk_details) = &ebpf_metrics.process_disk_details {
+                // Конвертируем статистику в JSON
+                let mut process_disk_json = Vec::new();
+                let mut total_bytes_read = 0;
+                let mut total_bytes_written = 0;
+                let mut total_read_operations = 0;
+                let mut total_write_operations = 0;
+
+                for stat in process_disk_details {
+                    let process_info = json!({
+                        "pid": stat.pid,
+                        "tgid": stat.tgid,
+                        "bytes_read": stat.bytes_read,
+                        "bytes_written": stat.bytes_written,
+                        "read_operations": stat.read_operations,
+                        "write_operations": stat.write_operations,
+                        "last_update_ns": stat.last_update_ns,
+                        "name": stat.name,
+                        "total_io_operations": stat.total_io_operations
+                    });
+                    process_disk_json.push(process_info);
+
+                    total_bytes_read += stat.bytes_read;
+                    total_bytes_written += stat.bytes_written;
+                    total_read_operations += stat.read_operations;
+                    total_write_operations += stat.write_operations;
+                }
+
+                result["status"] = "ok".into();
+                result["process_disk"] = process_disk_json.into();
+                result["count"] = process_disk_details.len().into();
+                result["total_bytes_read"] = total_bytes_read.into();
+                result["total_bytes_written"] = total_bytes_written.into();
+                result["total_read_operations"] = total_read_operations.into();
+                result["total_write_operations"] = total_write_operations.into();
+                result["message"] = "Process disk monitoring data retrieved successfully".into();
+                result["cache_info"]["cached"] = false.into();
+
+                // Кэшируем результат
+                cache_write.cached_process_disk_json = Some((result.clone(), Instant::now()));
+            }
+        }
+    }
+
+    trace!("Cached process disk data (count: {})", result["count"]);
 
     Ok(Json(result))
 }
@@ -3064,6 +3279,7 @@ mod tests {
     // Import notification types for test configurations
     use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
     use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds};
+    use crate::metrics::system::SystemMetrics;
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -3596,6 +3812,8 @@ mod tests {
                 enable_process_monitoring: false,
                 enable_process_energy_monitoring: false,
                 enable_process_gpu_monitoring: false,
+                enable_process_network_monitoring: false,
+                enable_process_disk_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -3702,6 +3920,8 @@ mod tests {
                 enable_process_monitoring: false,
                 enable_process_energy_monitoring: false,
                 enable_process_gpu_monitoring: false,
+                enable_process_network_monitoring: false,
+                enable_process_disk_monitoring: false,
                 collection_interval: Duration::from_secs(1),
                 enable_caching: true,
                 batch_size: 100,
@@ -6476,6 +6696,7 @@ fn is_connection_active(last_activity: u64) -> bool {
 mod test_process_energy_api {
     use super::*;
     use crate::metrics::ebpf::{EbpfMetrics, ProcessEnergyStat, ProcessGpuStat};
+    use crate::metrics::system::SystemMetrics;
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
@@ -6803,6 +7024,332 @@ mod test_process_energy_api {
 
         // Второй вызов - должен использовать кэш
         let response2 = process_gpu_handler(State(state)).await;
+        assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
+
+        let json_response1 = response1.unwrap();
+        let json_response2 = response2.unwrap();
+
+        // Результаты должны быть идентичны
+        assert_eq!(
+            json_response1.0, json_response2.0,
+            "Результаты должны быть идентичны при использовании кэша"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_network_handler_with_no_metrics() {
+        // Тест проверяет, что обработчик корректно работает без доступных метрик
+        let state = ApiState {
+            metrics: None,
+            ..ApiState::default()
+        };
+
+        let response = process_network_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let json_value = json_response.0;
+
+        // Проверяем, что ответ содержит ожидаемые поля
+        assert_eq!(
+            json_value["status"],
+            "degraded",
+            "Статус должен быть degraded при отсутствии метрик"
+        );
+        assert!(
+            json_value["process_network"].is_null(),
+            "Данные об использовании сети должны быть null"
+        );
+        assert_eq!(
+            json_value["count"],
+            0,
+            "Количество процессов должно быть 0"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_network_handler_with_metrics() {
+        // Тест проверяет, что обработчик корректно работает с доступными метриками
+        use crate::metrics::ebpf::ProcessNetworkStat;
+        
+        let network_stats = vec![
+            ProcessNetworkStat {
+                pid: 123,
+                tgid: 456,
+                packets_sent: 100,
+                packets_received: 50,
+                bytes_sent: 1024,
+                bytes_received: 512,
+                last_update_ns: 123456789,
+                name: "test_process".to_string(),
+                total_network_operations: 150,
+            },
+            ProcessNetworkStat {
+                pid: 789,
+                tgid: 1011,
+                packets_sent: 200,
+                packets_received: 100,
+                bytes_sent: 2048,
+                bytes_received: 1024,
+                last_update_ns: 123456790,
+                name: "another_process".to_string(),
+                total_network_operations: 300,
+            },
+        ];
+
+        let mut system_metrics = SystemMetrics::default();
+        let mut ebpf_metrics = EbpfMetrics::default();
+        ebpf_metrics.process_network_details = Some(network_stats.clone());
+        system_metrics.ebpf = Some(ebpf_metrics);
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            ..ApiState::default()
+        };
+
+        let response = process_network_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let json_value = json_response.0;
+
+        // Проверяем, что ответ содержит ожидаемые данные
+        assert_eq!(
+            json_value["status"],
+            "ok",
+            "Статус должен быть ok при наличии метрик"
+        );
+        assert_eq!(
+            json_value["count"],
+            2,
+            "Количество процессов должно быть 2"
+        );
+        assert_eq!(
+            json_value["total_packets_sent"],
+            300,
+            "Общее количество отправленных пакетов должно быть 300"
+        );
+        assert_eq!(
+            json_value["total_packets_received"],
+            150,
+            "Общее количество полученных пакетов должно быть 150"
+        );
+        assert_eq!(
+            json_value["total_bytes_sent"],
+            3072,
+            "Общее количество отправленных байт должно быть 3072"
+        );
+        assert_eq!(
+            json_value["total_bytes_received"],
+            1536,
+            "Общее количество полученных байт должно быть 1536"
+        );
+
+        // Проверяем, что данные о процессах присутствуют
+        let process_network = &json_value["process_network"];
+        assert!(
+            process_network.is_array(),
+            "Данные о процессах должны быть массивом"
+        );
+        assert_eq!(
+            process_network.as_array().unwrap().len(),
+            2,
+            "Должно быть 2 процесса"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_network_handler_cache() {
+        // Тест проверяет, что обработчик корректно использует кэш
+        use crate::metrics::ebpf::ProcessNetworkStat;
+        
+        let network_stats = vec![ProcessNetworkStat {
+            pid: 123,
+            tgid: 456,
+            packets_sent: 100,
+            packets_received: 50,
+            bytes_sent: 1024,
+            bytes_received: 512,
+            last_update_ns: 123456789,
+            name: "test_process".to_string(),
+            total_network_operations: 150,
+        }];
+
+        let mut system_metrics = SystemMetrics::default();
+        let mut ebpf_metrics = EbpfMetrics::default();
+        ebpf_metrics.process_network_details = Some(network_stats.clone());
+        system_metrics.ebpf = Some(ebpf_metrics);
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            cache: Some(Arc::new(RwLock::new(ApiCache {
+                cache_ttl_seconds: 60,
+                ..ApiCache::default()
+            }))),
+            ..ApiState::default()
+        };
+
+        // Первый вызов - кэш должен быть создан
+        let response1 = process_network_handler(State(state.clone())).await;
+        assert!(response1.is_ok(), "Первый вызов должен успешно выполниться");
+
+        // Второй вызов - должен использовать кэш
+        let response2 = process_network_handler(State(state)).await;
+        assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
+
+        let json_response1 = response1.unwrap();
+        let json_response2 = response2.unwrap();
+
+        // Результаты должны быть идентичны
+        assert_eq!(
+            json_response1.0, json_response2.0,
+            "Результаты должны быть идентичны при использовании кэша"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_disk_handler_with_no_metrics() {
+        // Тест проверяет, что обработчик корректно работает без метрик
+        let state = ApiState::default();
+
+        let response = process_disk_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let json_value = json_response.0;
+
+        assert_eq!(
+            json_value["status"], "degraded",
+            "Статус должен быть degraded при отсутствии метрик"
+        );
+        assert_eq!(
+            json_value["count"], 0,
+            "Количество процессов должно быть 0 при отсутствии метрик"
+        );
+        assert_eq!(
+            json_value["total_bytes_read"], 0,
+            "Общее количество прочитанных байт должно быть 0 при отсутствии метрик"
+        );
+        assert_eq!(
+            json_value["total_bytes_written"], 0,
+            "Общее количество записанных байт должно быть 0 при отсутствии метрик"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_disk_handler_with_metrics() {
+        // Тест проверяет, что обработчик корректно работает с метриками
+        use crate::metrics::ebpf::ProcessDiskStat;
+
+        let disk_stats = vec![
+            ProcessDiskStat {
+                pid: 123,
+                tgid: 456,
+                bytes_read: 1024,
+                bytes_written: 2048,
+                read_operations: 10,
+                write_operations: 20,
+                last_update_ns: 123456789,
+                name: "test_process".to_string(),
+                total_io_operations: 30,
+            },
+            ProcessDiskStat {
+                pid: 789,
+                tgid: 1011,
+                bytes_read: 4096,
+                bytes_written: 8192,
+                read_operations: 50,
+                write_operations: 100,
+                last_update_ns: 123456790,
+                name: "another_process".to_string(),
+                total_io_operations: 150,
+            },
+        ];
+
+        let mut system_metrics = SystemMetrics::default();
+        let mut ebpf_metrics = EbpfMetrics::default();
+        ebpf_metrics.process_disk_details = Some(disk_stats.clone());
+        system_metrics.ebpf = Some(ebpf_metrics);
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            ..ApiState::default()
+        };
+
+        let response = process_disk_handler(State(state)).await;
+        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+
+        let json_response = response.unwrap();
+        let json_value = json_response.0;
+
+        assert_eq!(
+            json_value["status"], "ok",
+            "Статус должен быть ok при наличии метрик"
+        );
+        assert_eq!(
+            json_value["count"], 2,
+            "Количество процессов должно быть 2"
+        );
+        assert_eq!(
+            json_value["total_bytes_read"], 5120,
+            "Общее количество прочитанных байт должно быть 5120"
+        );
+        assert_eq!(
+            json_value["total_bytes_written"], 10240,
+            "Общее количество записанных байт должно быть 10240"
+        );
+        assert_eq!(
+            json_value["total_read_operations"], 60,
+            "Общее количество операций чтения должно быть 60"
+        );
+        assert_eq!(
+            json_value["total_write_operations"], 120,
+            "Общее количество операций записи должно быть 120"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_process_disk_handler_cache() {
+        // Тест проверяет, что кэширование работает корректно
+        use crate::metrics::ebpf::ProcessDiskStat;
+
+        let disk_stats = vec![ProcessDiskStat {
+            pid: 123,
+            tgid: 456,
+            bytes_read: 1024,
+            bytes_written: 2048,
+            read_operations: 10,
+            write_operations: 20,
+            last_update_ns: 123456789,
+            name: "test_process".to_string(),
+            total_io_operations: 30,
+        }];
+
+        let mut system_metrics = SystemMetrics::default();
+        let mut ebpf_metrics = EbpfMetrics::default();
+        ebpf_metrics.process_disk_details = Some(disk_stats.clone());
+        system_metrics.ebpf = Some(ebpf_metrics);
+
+        let state = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics))),
+            ..ApiState::default()
+        };
+
+        let response1 = process_disk_handler(State(state)).await;
+
+        // Создаем новый state для второго вызова (кэш должен работать)
+        let mut system_metrics2 = SystemMetrics::default();
+        let mut ebpf_metrics2 = EbpfMetrics::default();
+        ebpf_metrics2.process_disk_details = Some(disk_stats);
+        system_metrics2.ebpf = Some(ebpf_metrics2);
+        
+        let state2 = ApiState {
+            metrics: Some(Arc::new(RwLock::new(system_metrics2))),
+            ..ApiState::default()
+        };
+        let response2 = process_disk_handler(State(state2)).await;
+
+        assert!(response1.is_ok(), "Первый вызов должен успешно выполниться");
         assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
 
         let json_response1 = response1.unwrap();

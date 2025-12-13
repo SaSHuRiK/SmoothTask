@@ -119,6 +119,8 @@ fn test_ebpf_metrics_structure() {
         process_details: None,
         process_energy_details: None,
         process_gpu_details: None,
+        process_network_details: None,
+        process_disk_details: None,
     };
 
     // Проверяем, что структура корректно хранит данные
@@ -171,6 +173,8 @@ fn test_ebpf_metrics_cloning() {
         process_details: None,
         process_energy_details: None,
         process_gpu_details: None,
+        process_network_details: None,
+        process_disk_details: None,
     };
 
     let metrics2 = metrics1.clone();
