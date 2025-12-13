@@ -11,7 +11,43 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-660: Исправить clippy предупреждения в тестах и бенчмарках
+- [x] ST-661: Исправить предупреждения clippy: field_reassign_with_default в api/server.rs
+  - Тип: Rust / core / api
+  - Примечания: Исправление предупреждений clippy для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler (второй случай)
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (второй случай)
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (третий случай)
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Исправление field_reassign_with_default для EbpfMetrics
+  - Результаты: Успешная компиляция без предупреждений clippy в api/server.rs
+
+- [ ] ST-662: Проверить и исправить другие предупреждения clippy в проекте
+  - Тип: Rust / core / code quality
+  - Примечания: Полная проверка проекта на наличие предупреждений clippy
+  - Приоритет: Средний
+  - Статус: TODO
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - ✅ Запуск cargo clippy --all-targets для всего проекта
+    - ✅ Исправление всех найденных предупреждений
+    - ✅ Проверка успешной компиляции без предупреждений
+
+- [ ] ST-663: Обновить документацию с последними изменениями
+  - Тип: Documentation
+  - Примечания: Обновление документации API и архитектуры
+  - Приоритет: Низкий
+  - Статус: TODO
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - ✅ Обновление API.md с последними изменениями
+    - ✅ Обновление ARCHITECTURE.md при необходимости
   - Тип: Rust / core / code quality
   - Примечания: Исправление предупреждений clippy для улучшения качества кода
   - Приоритет: Высокий
@@ -37,6 +73,23 @@
 ## 2. Бэклог
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-661: Исправить предупреждения clippy: field_reassign_with_default в api/server.rs
+  - Тип: Rust / core / api
+  - Примечания: Исправление предупреждений clippy для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_network_handler (второй случай)
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (второй случай)
+    - ✅ Исправление field_reassign_with_default для EbpfMetrics в process_disk_handler (третий случай)
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/src/api/server.rs: Исправление field_reassign_with_default для EbpfMetrics
+  - Результаты: Успешная компиляция без предупреждений clippy в api/server.rs
 
 - [x] ST-660: Исправить clippy предупреждения в тестах и бенчмарках
   - Тип: Rust / core / code quality

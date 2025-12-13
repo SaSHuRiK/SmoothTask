@@ -7079,8 +7079,10 @@ mod test_process_energy_api {
         ];
 
         let mut system_metrics = SystemMetrics::default();
-        let mut ebpf_metrics = EbpfMetrics::default();
-        ebpf_metrics.process_network_details = Some(network_stats.clone());
+        let ebpf_metrics = EbpfMetrics {
+            process_network_details: Some(network_stats.clone()),
+            ..EbpfMetrics::default()
+        };
         system_metrics.ebpf = Some(ebpf_metrics);
 
         let state = ApiState {
@@ -7157,8 +7159,10 @@ mod test_process_energy_api {
         }];
 
         let mut system_metrics = SystemMetrics::default();
-        let mut ebpf_metrics = EbpfMetrics::default();
-        ebpf_metrics.process_network_details = Some(network_stats.clone());
+        let ebpf_metrics = EbpfMetrics {
+            process_network_details: Some(network_stats.clone()),
+            ..EbpfMetrics::default()
+        };
         system_metrics.ebpf = Some(ebpf_metrics);
 
         let state = ApiState {
@@ -7248,8 +7252,10 @@ mod test_process_energy_api {
         ];
 
         let mut system_metrics = SystemMetrics::default();
-        let mut ebpf_metrics = EbpfMetrics::default();
-        ebpf_metrics.process_disk_details = Some(disk_stats.clone());
+        let ebpf_metrics = EbpfMetrics {
+            process_disk_details: Some(disk_stats.clone()),
+            ..EbpfMetrics::default()
+        };
         system_metrics.ebpf = Some(ebpf_metrics);
 
         let state = ApiState {
@@ -7307,8 +7313,10 @@ mod test_process_energy_api {
         }];
 
         let mut system_metrics = SystemMetrics::default();
-        let mut ebpf_metrics = EbpfMetrics::default();
-        ebpf_metrics.process_disk_details = Some(disk_stats.clone());
+        let ebpf_metrics = EbpfMetrics {
+            process_disk_details: Some(disk_stats.clone()),
+            ..EbpfMetrics::default()
+        };
         system_metrics.ebpf = Some(ebpf_metrics);
 
         let state = ApiState {
@@ -7320,8 +7328,10 @@ mod test_process_energy_api {
 
         // Создаем новый state для второго вызова (кэш должен работать)
         let mut system_metrics2 = SystemMetrics::default();
-        let mut ebpf_metrics2 = EbpfMetrics::default();
-        ebpf_metrics2.process_disk_details = Some(disk_stats);
+        let ebpf_metrics2 = EbpfMetrics {
+            process_disk_details: Some(disk_stats),
+            ..EbpfMetrics::default()
+        };
         system_metrics2.ebpf = Some(ebpf_metrics2);
         
         let state2 = ApiState {
