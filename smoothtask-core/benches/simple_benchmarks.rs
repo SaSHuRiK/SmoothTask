@@ -9,7 +9,7 @@ use smoothtask_core::config::config_struct::{
     NotificationConfig, PatternAutoUpdateConfig, Paths, PolicyMode, Thresholds,
 };
 use smoothtask_core::metrics::ebpf::EbpfConfig;
-use smoothtask_core::metrics::process::{collect_process_metrics, collect_process_metrics_legacy};
+use smoothtask_core::metrics::process::collect_process_metrics;
 use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
 use smoothtask_core::metrics::windows::{
     build_pid_to_window_map, get_window_info_by_pid, select_focused_window,
@@ -91,7 +91,7 @@ fn benchmark_system_metrics_collection(c: &mut Criterion) {
 fn benchmark_process_metrics_collection(c: &mut Criterion) {
     c.bench_function("process_metrics_collection", |b| {
         b.iter(|| {
-            let _result = collect_process_metrics_legacy();
+            let _result = collect_process_metrics(None);
         })
     });
 }

@@ -33,10 +33,12 @@ fn test_ebpf_collector_creation() {
 
 #[test]
 fn test_ebpf_collector_with_custom_config() {
-    let mut config = EbpfConfig::default();
-    config.enable_cpu_metrics = false;
-    config.enable_memory_metrics = true;
-    config.collection_interval = Duration::from_secs(5);
+    let config = EbpfConfig {
+        enable_cpu_metrics: false,
+        enable_memory_metrics: true,
+        collection_interval: Duration::from_secs(5),
+        ..Default::default()
+    };
 
     let mut collector = EbpfMetricsCollector::new(config);
     assert!(collector.initialize().is_ok());

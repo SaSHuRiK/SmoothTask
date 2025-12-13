@@ -11,30 +11,55 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-*(На данный момент все запланированные задачи выполнены. Новые задачи будут добавлены по мере необходимости.)*
+- [x] ST-660: Исправить clippy предупреждения в тестах и бенчмарках
+  - Тип: Rust / core / code quality
+  - Примечания: Исправление предупреждений clippy для улучшения качества кода
+  - Приоритет: Высокий
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - ✅ Исправление redundant imports в api_integration_test.rs
+    - ✅ Исправление needless_update в process_metrics_bench.rs
+    - ✅ Исправление unnecessary_map_or в process_parallel_test.rs
+    - ✅ Исправление field_reassign_with_default в ebpf_mock_test.rs
+    - ✅ Исправление deprecated function usage в simple_benchmarks.rs
+    - ✅ Исправление field_reassign_with_default в memory_optimization_bench.rs
+    - ✅ Проверка успешной компиляции без предупреждений clippy
+  - Изменённые файлы:
+    - smoothtask-core/tests/api_integration_test.rs: Исправление redundant imports
+    - smoothtask-core/benches/process_metrics_bench.rs: Исправление needless_update
+    - smoothtask-core/tests/process_parallel_test.rs: Исправление unnecessary_map_or
+    - smoothtask-core/tests/ebpf_mock_test.rs: Исправление field_reassign_with_default
+    - smoothtask-core/benches/simple_benchmarks.rs: Исправление deprecated function usage
+    - smoothtask-core/benches/memory_optimization_bench.rs: Исправление field_reassign_with_default
+  - Результаты: Успешная компиляция без предупреждений clippy, улучшенное качество кода
 
 ## 2. Бэклог
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-659: Исправить проблемы компиляции в бенчмарках
-  - Тип: Rust / core / benches
-  - Примечания: Исправление проблем с импортами и API изменениями в бенчмарках
+- [x] ST-660: Исправить clippy предупреждения в тестах и бенчмарках
+  - Тип: Rust / core / code quality
+  - Примечания: Исправление предупреждений clippy для улучшения качества кода
   - Приоритет: Высокий
   - Статус: COMPLETED
-  - Время выполнения: ~30 минут
+  - Время выполнения: ~60 минут
   - Критерии готовности:
-    - ✅ Исправление missing импортов в simple_benchmarks.rs
-    - ✅ Исправление missing импортов в ebpf_benchmarks.rs
-    - ✅ Исправление unused импортов в process_metrics_bench.rs
-    - ✅ Обновление вызовов collect_process_metrics с новым API
-    - ✅ Исправление unused Result warnings в ebpf_benchmarks.rs
-    - ✅ Успешная компиляция всех бенчмарков без ошибок
+    - ✅ Исправление redundant imports в api_integration_test.rs
+    - ✅ Исправление needless_update в process_metrics_bench.rs
+    - ✅ Исправление unnecessary_map_or в process_parallel_test.rs
+    - ✅ Исправление field_reassign_with_default в ebpf_mock_test.rs
+    - ✅ Исправление deprecated function usage в simple_benchmarks.rs
+    - ✅ Исправление field_reassign_with_default в memory_optimization_bench.rs
+    - ✅ Проверка успешной компиляции без предупреждений clippy
   - Изменённые файлы:
-    - smoothtask-core/benches/simple_benchmarks.rs: Исправление импортов и API вызовов
-    - smoothtask-core/benches/ebpf_benchmarks.rs: Исправление импортов и unused Result warnings
-    - smoothtask-core/benches/process_metrics_bench.rs: Удаление unused импортов
-  - Результаты: Все бенчмарки успешно компилируются с минимальными предупреждениями
+    - smoothtask-core/tests/api_integration_test.rs: Исправление redundant imports
+    - smoothtask-core/benches/process_metrics_bench.rs: Исправление needless_update
+    - smoothtask-core/tests/process_parallel_test.rs: Исправление unnecessary_map_or
+    - smoothtask-core/tests/ebpf_mock_test.rs: Исправление field_reassign_with_default
+    - smoothtask-core/benches/simple_benchmarks.rs: Исправление deprecated function usage
+    - smoothtask-core/benches/memory_optimization_bench.rs: Исправление field_reassign_with_default
+  - Результаты: Успешная компиляция без предупреждений clippy, улучшенное качество кода
 
 - [x] ST-657: Улучшить обработку ошибок в модуле actuator
   - Тип: Rust / core

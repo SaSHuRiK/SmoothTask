@@ -12,8 +12,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 // Импорты для HTTP тестирования
-use reqwest;
-use serde_json;
+use reqwest::Client;
+use serde_json::json;
 
 #[tokio::test]
 async fn test_api_server_creation() {

@@ -112,8 +112,8 @@ fn test_collect_process_metrics_error_handling() {
         assert!(process.pid > 0, "PID должен быть положительным");
         // Некоторые процессы могут не иметь exe или cmdline (например, зомби-процессы)
         // Это нормально, главное что PID корректный
-        if process.exe.as_ref().map_or(false, |e| !e.is_empty())
-            || process.cmdline.as_ref().map_or(false, |c| !c.is_empty())
+        if process.exe.as_ref().is_some_and(|e| !e.is_empty())
+            || process.cmdline.as_ref().is_some_and(|c| !c.is_empty())
         {
             // Если есть exe или cmdline, это хорошо
             tracing::debug!("Процесс PID {} имеет exe или cmdline", process.pid);

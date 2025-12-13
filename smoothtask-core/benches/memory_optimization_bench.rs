@@ -9,38 +9,43 @@ use std::alloc::System;
 static A: System = System;
 
 fn create_large_system_metrics() -> SystemMetrics {
-    let mut metrics = SystemMetrics::default();
-
-    // Add CPU data
-    metrics.cpu_times = CpuTimes {
-        user: 1000000,
-        nice: 500000,
-        system: 2000000,
-        idle: 10000000,
-        iowait: 100000,
-        irq: 50000,
-        softirq: 50000,
-        steal: 0,
-        guest: 0,
-        guest_nice: 0,
-    };
-
-    // Add memory data
-    metrics.memory = MemoryInfo {
-        mem_total_kb: 16_384_256,
-        mem_available_kb: 9_876_543,
-        mem_free_kb: 1_234_567,
-        buffers_kb: 345_678,
-        cached_kb: 2_345_678,
-        swap_total_kb: 8_192_000,
-        swap_free_kb: 4_096_000,
-    };
-
-    // Add load average
-    metrics.load_avg = LoadAvg {
-        one: 1.5,
-        five: 1.2,
-        fifteen: 1.0,
+    let mut metrics = SystemMetrics {
+        cpu_times: CpuTimes {
+            user: 1000000,
+            nice: 500000,
+            system: 2000000,
+            idle: 10000000,
+            iowait: 100000,
+            irq: 50000,
+            softirq: 50000,
+            steal: 0,
+            guest: 0,
+            guest_nice: 0,
+        },
+        memory: MemoryInfo {
+            mem_total_kb: 16_384_256,
+            mem_available_kb: 9_876_543,
+            mem_free_kb: 1_234_567,
+            buffers_kb: 345_678,
+            cached_kb: 2_345_678,
+            swap_total_kb: 8_192_000,
+            swap_free_kb: 4_096_000,
+        },
+        load_avg: LoadAvg {
+            one: 1.5,
+            five: 1.2,
+            fifteen: 1.0,
+        },
+        temperature: TemperatureMetrics {
+            cpu_temperature_c: Some(45.5),
+            gpu_temperature_c: Some(60.2),
+        },
+        power: PowerMetrics {
+            system_power_w: Some(120.5),
+            cpu_power_w: Some(80.3),
+            gpu_power_w: Some(40.1),
+        },
+        ..Default::default()
     };
 
     // Add network interfaces (simulating multiple interfaces)
@@ -67,19 +72,6 @@ fn create_large_system_metrics() -> SystemMetrics {
             io_time: 5000 + i,
         });
     }
-
-    // Add temperature data
-    metrics.temperature = TemperatureMetrics {
-        cpu_temperature_c: Some(45.5),
-        gpu_temperature_c: Some(60.2),
-    };
-
-    // Add power data
-    metrics.power = PowerMetrics {
-        system_power_w: Some(120.5),
-        cpu_power_w: Some(80.3),
-        gpu_power_w: Some(40.1),
-    };
 
     metrics
 }
