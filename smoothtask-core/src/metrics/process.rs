@@ -537,6 +537,47 @@ pub struct ProcessCacheStats {
 ///     }
 /// }
 /// ```
+
+/// Собрать метрики всех процессов с улучшенными данными о дисковом вводе-выводе.
+///
+/// Эта функция собирает базовые метрики процессов и улучшает их данными eBPF,
+/// если они доступны.
+#[cfg(feature = "ebpf")]
+pub fn collect_process_metrics_with_enhanced_io(
+    config: Option<ProcessCacheConfig>,
+    disk_stats_map: Option<&std::collections::HashMap<u32, crate::metrics::ebpf::ProcessDiskStat>>
+) -> Result<Vec<ProcessRecord>> {
+    let mut records = collect_process_metrics(config)?;
+    
+    // Улучшаем записи данными eBPF, если они доступны
+    if let Some(stats_map) = disk_stats_map {
+        for record in &mut records {
+            if let Some(disk_stats) = stats_map.get(&(record.pid as u32)) {
+                *record = enhance_process_with_disk_stats(record.clone(), Some(disk_stats));
+            } else {
+                // Если нет eBPF данных для этого процесса, отмечаем источник
+                record.io_data_source = Some("proc".to_string());
+            }
+        }
+    }
+    
+    Ok(records)
+}
+
+/// Собрать метрики всех процессов с улучшенными данными о дисковом вводе-выводе.
+///
+/// Эта функция собирает базовые метрики процессов и улучшает их данными eBPF,
+/// если они доступны.
+#[cfg(not(feature = "ebpf"))]
+pub fn collect_process_metrics_with_enhanced_io(
+    config: Option<ProcessCacheConfig>,
+    _disk_stats_map: Option<&std::collections::HashMap<u32, crate::metrics::ebpf::ProcessDiskStat>>
+) -> Result<Vec<ProcessRecord>> {
+    // Без eBPF просто возвращаем базовые метрики
+    collect_process_metrics(config)
+}
+
+/// ```
 pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec<ProcessRecord>> {
     // Применяем конфигурацию, если предоставлена
     if let Some(cfg) = config {
@@ -794,6 +835,45 @@ fn collect_process_energy_metrics(pid: i32) -> (Option<u64>, Option<f32>, Option
     (None, None, None)
 }
 
+/// Улучшить запись процесса данными о дисковом вводе-выводе из eBPF.
+///
+/// Эта функция принимает существующую ProcessRecord и опционально данные eBPF,
+/// и возвращает улучшенную запись с дополнительными метриками ввода-вывода.
+#[cfg(feature = "ebpf")]
+pub fn enhance_process_with_disk_stats(
+    mut record: ProcessRecord,
+    disk_stats: Option<&crate::metrics::ebpf::ProcessDiskStat>
+) -> ProcessRecord {
+    if let Some(stats) = disk_stats {
+        // Используем данные eBPF, если они доступны
+        record.io_read_bytes = Some(stats.bytes_read);
+        record.io_write_bytes = Some(stats.bytes_written);
+        record.io_read_operations = Some(stats.read_operations);
+        record.io_write_operations = Some(stats.write_operations);
+        record.io_total_operations = Some(stats.total_io_operations);
+        record.io_last_update_ns = Some(stats.last_update_ns);
+        record.io_data_source = Some("ebpf".to_string());
+    } else {
+        // Если eBPF данные недоступны, отмечаем источник как proc
+        record.io_data_source = Some("proc".to_string());
+    }
+    record
+}
+
+/// Улучшить запись процесса данными о дисковом вводе-выводе из eBPF.
+///
+/// Эта функция принимает существующую ProcessRecord и опционально данные eBPF,
+/// и возвращает улучшенную запись с дополнительными метриками ввода-вывода.
+#[cfg(not(feature = "ebpf"))]
+pub fn enhance_process_with_disk_stats(
+    mut record: ProcessRecord,
+    _disk_stats: Option<&crate::metrics::ebpf::ProcessDiskStat>
+) -> ProcessRecord {
+    // Без eBPF всегда используем данные из /proc
+    record.io_data_source = Some("proc".to_string());
+    record
+}
+
 /// Собрать метрики для одного процесса.
 ///
 /// Возвращает `None`, если процесс завершился или к нему нет доступа.
@@ -943,6 +1023,11 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         cpu_share_10s: None,  // будет вычислено при следующем снапшоте
         io_read_bytes,        // статистика ввода-вывода из /proc/[pid]/io
         io_write_bytes,       // статистика ввода-вывода из /proc/[pid]/io
+        io_read_operations: None,      // будет заполнено из eBPF, если доступно
+        io_write_operations: None,     // будет заполнено из eBPF, если доступно
+        io_total_operations: None,     // будет заполнено из eBPF, если доступно
+        io_last_update_ns: None,        // будет заполнено из eBPF, если доступно
+        io_data_source: None,           // будет заполнено при улучшении
         rss_mb,
         swap_mb,
         voluntary_ctx,

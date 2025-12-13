@@ -165,6 +165,14 @@ impl ProcessGrouper {
                 Some(total_rss_mb)
             };
 
+            // Агрегируем расширенные метрики ввода-вывода
+            let total_io_read_operations = Self::aggregate_io_operations(&processes, |p| p.io_read_operations);
+            let total_io_write_operations = Self::aggregate_io_operations(&processes, |p| p.io_write_operations);
+            let total_io_operations = Self::aggregate_io_operations(&processes, |p| p.io_total_operations);
+            
+            // Определяем источник данных ввода-вывода
+            let io_data_source = Self::determine_io_data_source(&processes);
+            
             app_groups.push(AppGroupRecord {
                 app_group_id: group_id,
                 root_pid,
@@ -173,6 +181,10 @@ impl ProcessGrouper {
                 total_cpu_share,
                 total_io_read_bytes,
                 total_io_write_bytes,
+                total_io_read_operations,
+                total_io_write_operations,
+                total_io_operations,
+                io_data_source,
                 total_rss_mb,
                 has_gui_window,
                 is_focused_group,
@@ -184,6 +196,58 @@ impl ProcessGrouper {
         }
 
         app_groups
+    }
+
+    /// Агрегирует опциональные метрики ввода-вывода из процессов.
+    ///
+    /// Возвращает `Some(sum)` если хотя бы один процесс имеет значение,
+    /// иначе `None`.
+    fn aggregate_io_operations<F>(processes: &[ProcessRecord], get_metric: F) -> Option<u64>
+    where
+        F: Fn(&ProcessRecord) -> Option<u64>,
+    {
+        let mut total = 0u64;
+        let mut has_data = false;
+        
+        for process in processes {
+            if let Some(value) = get_metric(process) {
+                total += value;
+                has_data = true;
+            }
+        }
+        
+        if has_data {
+            Some(total)
+        } else {
+            None
+        }
+    }
+    
+    /// Определяет источник данных ввода-вывода для группы.
+    ///
+    /// Возвращает "ebpf", если хотя бы один процесс имеет eBPF данные,
+    /// "proc" если есть данные из /proc, иначе "none".
+    fn determine_io_data_source(processes: &[ProcessRecord]) -> Option<String> {
+        let mut has_ebpf = false;
+        let mut has_proc = false;
+        
+        for process in processes {
+            if let Some(source) = &process.io_data_source {
+                if source == "ebpf" {
+                    has_ebpf = true;
+                } else if source == "proc" {
+                    has_proc = true;
+                }
+            }
+        }
+        
+        if has_ebpf {
+            Some("ebpf".to_string())
+        } else if has_proc {
+            Some("proc".to_string())
+        } else {
+            Some("none".to_string())
+        }
     }
 
     /// Нормализует cgroup_path, оставляя только до user.slice, session.slice или app.slice.

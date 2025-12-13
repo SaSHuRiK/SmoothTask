@@ -321,6 +321,16 @@ pub struct ProcessRecord {
     pub cpu_share_10s: Option<f64>,
     pub io_read_bytes: Option<u64>,
     pub io_write_bytes: Option<u64>,
+    /// Количество операций чтения с диска (если доступно через eBPF)
+    pub io_read_operations: Option<u64>,
+    /// Количество операций записи на диск (если доступно через eBPF)
+    pub io_write_operations: Option<u64>,
+    /// Общее количество операций ввода-вывода (если доступно через eBPF)
+    pub io_total_operations: Option<u64>,
+    /// Время последнего обновления статистики ввода-вывода (наносекунды)
+    pub io_last_update_ns: Option<u64>,
+    /// Источник данных ввода-вывода (ebpf, proc, или none)
+    pub io_data_source: Option<String>,
     pub rss_mb: Option<u64>,
     pub swap_mb: Option<u64>,
     pub voluntary_ctx: Option<u64>,
@@ -349,6 +359,59 @@ pub struct ProcessRecord {
     pub energy_timestamp: Option<u64>,
 }
 
+impl Default for ProcessRecord {
+    fn default() -> Self {
+        Self {
+            pid: 0,
+            ppid: 0,
+            uid: 0,
+            gid: 0,
+            exe: None,
+            cmdline: None,
+            cgroup_path: None,
+            systemd_unit: None,
+            app_group_id: None,
+            state: "R".to_string(),
+            start_time: 0,
+            uptime_sec: 0,
+            tty_nr: 0,
+            has_tty: false,
+            cpu_share_1s: None,
+            cpu_share_10s: None,
+            io_read_bytes: None,
+            io_write_bytes: None,
+            io_read_operations: None,
+            io_write_operations: None,
+            io_total_operations: None,
+            io_last_update_ns: None,
+            io_data_source: None,
+            rss_mb: None,
+            swap_mb: None,
+            voluntary_ctx: None,
+            involuntary_ctx: None,
+            has_gui_window: false,
+            is_focused_window: false,
+            window_state: None,
+            env_has_display: false,
+            env_has_wayland: false,
+            env_term: None,
+            env_ssh: false,
+            is_audio_client: false,
+            has_active_stream: false,
+            process_type: None,
+            tags: Vec::new(),
+            nice: 0,
+            ionice_class: None,
+            ionice_prio: None,
+            teacher_priority_class: None,
+            teacher_score: None,
+            energy_uj: None,
+            power_w: None,
+            energy_timestamp: None,
+        }
+    }
+}
+
 /// Запись о группе приложений в снапшоте.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppGroupRecord {
@@ -359,6 +422,14 @@ pub struct AppGroupRecord {
     pub total_cpu_share: Option<f64>,
     pub total_io_read_bytes: Option<u64>,
     pub total_io_write_bytes: Option<u64>,
+    /// Общее количество операций чтения для группы (если доступно через eBPF)
+    pub total_io_read_operations: Option<u64>,
+    /// Общее количество операций записи для группы (если доступно через eBPF)
+    pub total_io_write_operations: Option<u64>,
+    /// Общее количество операций ввода-вывода для группы (если доступно через eBPF)
+    pub total_io_operations: Option<u64>,
+    /// Источник данных ввода-вывода для группы
+    pub io_data_source: Option<String>,
     pub total_rss_mb: Option<u64>,
     pub has_gui_window: bool,
     pub is_focused_group: bool,
