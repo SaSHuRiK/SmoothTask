@@ -58,6 +58,9 @@ catboost = { version = "0.1", optional = true }
 ort = { version = "2.0.0-rc.10", features = ["default"], optional = true }
 sha2 = "0.10"  # Для вычисления хэшей моделей
 
+# HTTP клиент для автоматического обновления моделей
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+
 # eBPF поддержка
 libbpf-rs = { version = "0.26.0-beta.1", optional = true }
 

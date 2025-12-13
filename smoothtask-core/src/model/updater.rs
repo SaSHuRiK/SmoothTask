@@ -469,4 +469,103 @@ mod tests {
         assert!(info.contains("v1.0.0"));
         assert!(info.contains("model_v1.0.0.onnx"));
     }
+    
+    /// Компрехенсивный интеграционный тест для полного цикла обновления моделей
+    #[test]
+    fn test_model_updater_full_workflow() {
+        let temp_dir = tempdir().unwrap();
+        let dir_path = temp_dir.path();
+        
+        // Создаём тестовые файлы моделей (имитация локальных версий)
+        let model_file1 = dir_path.join("model_v1.0.0.onnx");
+        let model_file2 = dir_path.join("model_v2.0.0.onnx");
+        
+        fs::write(&model_file1, "dummy content 1").unwrap();
+        fs::write(&model_file2, "dummy content 2").unwrap();
+        
+        let mut config = ModelUpdateConfig::default();
+        config.models_directory = dir_path.to_path_buf();
+        
+        let mut updater = ModelUpdater::new(config);
+        
+        // Тест 1: Загрузка локальных версий
+        updater.load_local_versions().unwrap();
+        assert_eq!(updater.version_manager.version_count(), 2);
+        
+        // Тест 2: Получение информации о версиях
+        let info = updater.get_local_versions_info();
+        assert!(info.contains("v1.0.0"));
+        assert!(info.contains("v2.0.0"));
+        
+        // Тест 3: Сохранение версий в файл
+        let versions_file = dir_path.join("versions.json");
+        updater.save_versions_to_file(&versions_file).unwrap();
+        assert!(versions_file.exists());
+        
+        // Тест 4: Проверка текущей версии
+        let current_version = updater.version_manager.get_current_version();
+        assert!(current_version.is_some());
+        assert!(current_version.unwrap().version_id == "v1.0.0" || 
+                current_version.unwrap().version_id == "v2.0.0");
+        
+        // Тест 5: Откат к предыдущей версии (если есть несколько версий)
+        if updater.version_manager.version_count() > 1 {
+            let initial_version = updater.version_manager.get_current_version().unwrap().version_id.clone();
+            updater.version_manager.rollback();
+            let new_version = updater.version_manager.get_current_version().unwrap().version_id.clone();
+            assert_ne!(initial_version, new_version);
+        }
+        
+        // Тест 6: Проверка сериализации конфигурации
+        let json_config = serde_json::to_string(&updater.config).unwrap();
+        let deserialized_config: ModelUpdateConfig = serde_json::from_str(&json_config).unwrap();
+        assert_eq!(deserialized_config.models_directory, updater.config.models_directory);
+        
+        // Тест 7: Проверка сериализации информации об обновлении
+        let mut metadata = HashMap::new();
+        metadata.insert("accuracy".to_string(), "0.95".to_string());
+        
+        let update_info = ModelUpdateInfo {
+            version_id: "v3.0.0".to_string(),
+            download_url: "https://example.com/model_v3.0.0.onnx".to_string(),
+            format: "onnx".to_string(),
+            model_hash: "abc123def456".to_string(),
+            file_size: 2048,
+            timestamp: "2023-01-01T00:00:00Z".to_string(),
+            metadata,
+        };
+        
+        let json_update = serde_json::to_string(&update_info).unwrap();
+        let deserialized_update: ModelUpdateInfo = serde_json::from_str(&json_update).unwrap();
+        assert_eq!(deserialized_update.version_id, "v3.0.0");
+        assert_eq!(deserialized_update.download_url, "https://example.com/model_v3.0.0.onnx");
+        assert_eq!(deserialized_update.metadata.get("accuracy"), Some(&"0.95".to_string()));
+    }
+    
+    /// Тест для проверки обработки ошибок при загрузке невалидных моделей
+    #[test]
+    fn test_model_updater_error_handling() {
+        let temp_dir = tempdir().unwrap();
+        let dir_path = temp_dir.path();
+        
+        // Создаём невалидный файл модели (пустой файл)
+        let invalid_model_file = dir_path.join("model_invalid.onnx");
+        fs::write(&invalid_model_file, "").unwrap();
+        
+        let mut config = ModelUpdateConfig::default();
+        config.models_directory = dir_path.to_path_buf();
+        
+        let mut updater = ModelUpdater::new(config);
+        
+        // Должно успешно загрузить версии, даже если модель невалидна
+        // (валидация происходит при вычислении хэша, но не прерывает загрузку)
+        updater.load_local_versions().unwrap();
+        
+        // Проверяем, что версия была добавлена
+        assert_eq!(updater.version_manager.version_count(), 1);
+        
+        // Проверяем, что версия невалидна
+        let version = updater.version_manager.get_version("invalid").unwrap();
+        assert!(!version.validate());
+    }
 }

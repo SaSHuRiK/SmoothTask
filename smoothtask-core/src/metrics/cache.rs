@@ -403,7 +403,6 @@ impl OptimizedMetricsCollector {
 mod tests {
     use super::*;
     use tempfile::tempdir;
-    use std::io::Write;
     use std::fs;
     
     #[test]
@@ -629,7 +628,7 @@ mod tests {
             enable_caching: true,
         };
         
-        let collector = OptimizedMetricsCollector::new(config);
+        let _collector = OptimizedMetricsCollector::new(config.clone());
         
         // Даже если кэширование отключено, сбор метрик должен работать
         let mut disabled_config = config.clone();
