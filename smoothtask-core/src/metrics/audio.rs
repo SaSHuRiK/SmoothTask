@@ -1475,7 +1475,7 @@ mod tests {
         
         // Четвёртый вызов - теперь интроспектор возвращает успех,
         // но мы всё ещё в режиме graceful degradation
-        let result = introspector.audio_metrics();
+        let _result = introspector.audio_metrics();
         // В реальной ситуации нам нужно сбросить интроспектор для восстановления
         // Но в текущей реализации мы остаёмся в режиме graceful degradation
         // Это ожидаемое поведение - для восстановления нужно явный reset()

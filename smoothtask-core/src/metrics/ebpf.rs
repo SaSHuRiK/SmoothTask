@@ -5719,7 +5719,8 @@ mod tests {
 
         // Проверяем, что оптимизация памяти работает
         assert!(metrics.cpu_usage >= 0.0);
-        assert!(metrics.memory_usage >= 0);
+        // memory_usage is u64, so it's always >= 0
+        assert!(metrics.memory_usage > 0); // Should have some memory usage
 
         // Проверяем, что детализированные статистики ограничены
         if let Some(syscall_details) = metrics.syscall_details {
@@ -5754,8 +5755,9 @@ mod tests {
 
         // Проверяем, что оценка использования памяти возвращает разумное значение
         let memory_usage = collector.get_memory_usage_estimate();
-        // Memory usage может быть 0 если кэш пустой, поэтому проверяем что он не отрицательный
-        assert!(memory_usage >= 0);
+        // Memory usage может быть 0 если кэш пустой
+        // memory_usage is u64, so it's always >= 0
+        // No assertion needed since it's always true
 
         // Проверяем, что оценка не превышает разумных пределов
         assert!(memory_usage < 1000000); // 1MB - разумный предел для теста
@@ -6816,8 +6818,8 @@ mod tests {
 
         // Тестируем статистику инициализации
         let (success, errors) = collector.get_initialization_stats();
-        assert!(success >= 0);
-        assert!(errors >= 0);
+        // success and errors are usize (unsigned), so they're always >= 0
+        // No assertions needed since they're always true
 
         // Тестируем проверку доступности карт
         assert!(collector.check_maps_availability() || !collector.check_maps_availability());
@@ -6969,7 +6971,8 @@ mod tests {
 
         // Должно быть хотя бы некоторые успешные загрузки
         // В тестовой среде новые программы могут не загрузиться, если файлы не существуют
-        assert!(success_count >= 0); // Хотя бы нет ошибок загрузки
+        // success_count is usize (unsigned), so it's always >= 0
+        // No assertion needed since it's always true
                                      // Ошибки могут быть, если новые программы не найдены
                                      // Это нормально для тестовой среды
         println!(
@@ -7592,9 +7595,9 @@ mod ebpf_memory_optimization_tests {
             process_details,
             filesystem_details,
             process_energy_details,
-            process_gpu_details,
-            process_network_details,
-            process_disk_details,
+            _process_gpu_details,
+            _process_network_details,
+            _process_disk_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -7722,9 +7725,9 @@ mod ebpf_memory_optimization_tests {
             process_details,
             filesystem_details,
             process_energy_details,
-            process_gpu_details,
-            process_network_details,
-            process_disk_details,
+            _process_gpu_details,
+            _process_network_details,
+            _process_disk_details,
         ) = collector.optimize_detailed_stats(
             metrics.syscall_details.take(),
             metrics.network_details.take(),
@@ -7747,8 +7750,7 @@ mod ebpf_memory_optimization_tests {
         metrics.process_details = process_details;
         metrics.filesystem_details = filesystem_details;
         metrics.process_energy_details = process_energy_details;
-        metrics.process_gpu_details = process_gpu_details;
-        metrics.process_network_details = process_network_details;
+        // process_gpu_details, process_network_details, and process_disk_details are intentionally unused in this test
 
         // Проверяем, что количество записей ограничено
         if let Some(details) = metrics.process_details {
@@ -7863,9 +7865,9 @@ mod ebpf_memory_optimization_tests {
             process_details,
             filesystem_details,
             process_energy_details,
-            process_gpu_details,
-            process_network_details,
-            process_disk_details,
+            _process_gpu_details,
+            _process_network_details,
+            _process_disk_details,
         ) = collector.optimize_detailed_stats(
             Some(syscall_details),
             Some(network_details),
@@ -8045,7 +8047,7 @@ mod test_process_energy {
             _process_details,
             _filesystem_details,
             process_energy_details,
-            process_gpu_details,
+            _process_gpu_details,
             _process_network_details,
             _process_disk_details,
         ) = collector.optimize_detailed_stats(

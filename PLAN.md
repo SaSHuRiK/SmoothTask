@@ -11,24 +11,21 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-640: Исправить ошибки компиляции и тестов после последних изменений
-  - Тип: Rust / core / bugfix
-  - Примечания: Исправление ошибок компиляции и тестов, возникших после добавления нового функционала
+- [x] ST-641: Исправить предупреждения компилятора (unused variables и useless comparisons)
+  - Тип: Rust / core / code quality
+  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
   - Приоритет: Высокий
   - Статус: COMPLETED
-  - Время выполнения: ~60 минут
+  - Время выполнения: ~30 минут
   - Критерии готовности:
-    - ✅ Исправление ошибок компиляции в api/server.rs (missing import EbpfNotificationThresholds)
-    - ✅ Исправление ошибок в тестах audio.rs (unused mut, переменные без использования)
-    - ✅ Исправление ошибок в ebpf_real_integration_test.rs (сравнение unsigned значений)
-    - ✅ Исправление unused переменных в ebpf.rs
-    - ✅ Проверка успешной компиляции без ошибок
+    - ✅ Исправление unused переменных в audio.rs (тест graceful degradation)
+    - ✅ Исправление unused переменных в ebpf.rs (process_gpu_details, process_network_details, process_disk_details)
+    - ✅ Исправление useless comparisons для unsigned типов (u64, usize)
+    - ✅ Проверка успешной компиляции без предупреждений
   - Изменённые файлы:
-    - smoothtask-core/src/api/server.rs: Добавлен missing import EbpfNotificationThresholds
-    - smoothtask-core/src/metrics/audio.rs: Исправлены unused mut и переменные без использования
-    - smoothtask-core/tests/ebpf_real_integration_test.rs: Исправлены сравнения unsigned значений
-    - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные
-  - Результаты: Успешная компиляция без ошибок, все тесты проходят
+    - smoothtask-core/src/metrics/audio.rs: Исправлена unused переменная в тесте
+    - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные и useless comparisons
+  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
 
 ## 2. Бэклог
 
@@ -46,24 +43,21 @@
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-640: Исправить ошибки компиляции и тестов после последних изменений
-  - Тип: Rust / core / bugfix
-  - Примечания: Исправление ошибок компиляции и тестов, возникших после добавления нового функционала
+- [x] ST-641: Исправить предупреждения компилятора (unused variables и useless comparisons)
+  - Тип: Rust / core / code quality
+  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
   - Приоритет: Высокий
   - Статус: COMPLETED
-  - Время выполнения: ~60 минут
+  - Время выполнения: ~30 минут
   - Критерии готовности:
-    - ✅ Исправление ошибок компиляции в api/server.rs (missing import EbpfNotificationThresholds)
-    - ✅ Исправление ошибок в тестах audio.rs (unused mut, переменные без использования)
-    - ✅ Исправление ошибок в ebpf_real_integration_test.rs (сравнение unsigned значений)
-    - ✅ Исправление unused переменных в ebpf.rs
-    - ✅ Проверка успешной компиляции без ошибок
+    - ✅ Исправление unused переменных в audio.rs (тест graceful degradation)
+    - ✅ Исправление unused переменных в ebpf.rs (process_gpu_details, process_network_details, process_disk_details)
+    - ✅ Исправление useless comparisons для unsigned типов (u64, usize)
+    - ✅ Проверка успешной компиляции без предупреждений
   - Изменённые файлы:
-    - smoothtask-core/src/api/server.rs: Добавлен missing import EbpfNotificationThresholds
-    - smoothtask-core/src/metrics/audio.rs: Исправлены unused mut и переменные без использования
-    - smoothtask-core/tests/ebpf_real_integration_test.rs: Исправлены сравнения unsigned значений
-    - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные
-  - Результаты: Успешная компиляция без ошибок, все тесты проходят
+    - smoothtask-core/src/metrics/audio.rs: Исправлена unused переменная в тесте
+    - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные и useless comparisons
+  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
 
 - [x] ST-639: Обновить документацию API с последними изменениями
   - Тип: Documentation / API
