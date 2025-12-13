@@ -535,10 +535,37 @@ pub async fn run_daemon(
     // Инициализация хранилища логов для уведомлений и API
     let log_storage: Arc<crate::logging::log_storage::SharedLogStorage> = {
         // Создаём хранилище логов с разумным лимитом (например, 1000 записей)
-        let storage = crate::logging::log_storage::SharedLogStorage::new(1000);
-        info!("Initialized log storage with capacity for 1000 entries");
+        // и конфигурацией ротации (например, 1 час)
+        let storage = crate::logging::log_storage::SharedLogStorage::new_with_rotation(1000, 3600);
+        info!("Initialized log storage with capacity for 1000 entries and 1-hour rotation");
         Arc::new(storage)
     };
+
+    // Инициализация ротатора логов приложения
+    let mut app_log_rotator: Option<crate::logging::app_rotation::AppLogRotator> = None;
+    if !initial_config.paths.log_file_path.is_empty() {
+        info!(
+            "Initializing application log rotator for: {}",
+            initial_config.paths.log_file_path
+        );
+        let rotator = crate::logging::app_rotation::AppLogRotator::new(
+            &initial_config.paths.log_file_path,
+            initial_config.logging.log_max_size_bytes,
+            initial_config.logging.log_max_rotated_files,
+            initial_config.logging.log_compression_enabled,
+            initial_config.logging.log_rotation_interval_sec,
+        );
+        app_log_rotator = Some(rotator);
+        info!(
+            "Application log rotator initialized (size_limit: {} bytes, max_files: {}, compression: {}, interval: {} sec)",
+            initial_config.logging.log_max_size_bytes,
+            initial_config.logging.log_max_rotated_files,
+            initial_config.logging.log_compression_enabled,
+            initial_config.logging.log_rotation_interval_sec
+        );
+    } else {
+        debug!("Application log rotation disabled (log_file_path is empty)");
+    }
 
     // Инициализация системы уведомлений
     // Используем Arc для совместного доступа между основным циклом и API сервером
@@ -912,10 +939,30 @@ pub async fn run_daemon(
                         policy_engine = PolicyEngine::new(config_arc.read().await.clone());
                         info!("Policy engine updated with new configuration");
 
-                        // 4. Конфигурация в API сервере обновляется автоматически,
+                        // 4. Обновляем конфигурацию ротатора логов
+                        let config_guard = config_arc.read().await;
+                        if let Some(ref mut rotator) = app_log_rotator {
+                            rotator.update_config(
+                                config_guard.logging.log_max_size_bytes,
+                                config_guard.logging.log_max_rotated_files,
+                                config_guard.logging.log_compression_enabled,
+                                config_guard.logging.log_rotation_interval_sec,
+                            );
+                            info!("Application log rotator configuration updated");
+                        }
+
+                        // 5. Обновляем конфигурацию хранилища логов
+                        drop(config_guard);
+                        
+                        // Обновляем конфигурацию ротации для LogStorage
+                        // Используем разумные значения: max_entries = 1000, max_age_seconds = 3600 (1 час)
+                        log_storage.update_rotation_config(1000, 3600).await;
+                        info!("Log storage rotation configuration updated");
+
+                        // 6. Конфигурация в API сервере обновляется автоматически,
                         // так как он использует тот же Arc<RwLock<Config>>
 
-                        // 5. Сбрасываем флаг изменения конфигурации
+                        // 7. Сбрасываем флаг изменения конфигурации
                         config_change_receiver.borrow_and_update();
 
                         info!("All components updated with new configuration");
@@ -939,29 +986,44 @@ pub async fn run_daemon(
                 
                 // Уведомляем пользователя, если включено в конфигурации
                 let config_guard = config_arc.read().await;
-                if config_guard.pattern_auto_update.notify_on_update {
-                    if notification_manager.lock().await.is_enabled() {
-                        let notification = Notification::new(
-                            NotificationType::Info,
-                            "Pattern Database Updated",
-                            format!("Pattern database updated: {}", update_result.summary()),
-                        ).with_details(format!(
-                            "Total patterns: {}, Changed: {}, New: {}, Removed: {}",
-                            update_result.patterns_after,
-                            update_result.changed_files,
-                            update_result.new_files,
-                            update_result.removed_files
-                        ));
-                        
-                        if let Err(e) = notification_manager.lock().await.send(&notification).await {
-                            warn!("Failed to send pattern update notification: {}", e);
-                        }
+                if config_guard.pattern_auto_update.notify_on_update
+                    && notification_manager.lock().await.is_enabled() {
+                    let notification = Notification::new(
+                        NotificationType::Info,
+                        "Pattern Database Updated",
+                        format!("Pattern database updated: {}", update_result.summary()),
+                    ).with_details(format!(
+                        "Total patterns: {}, Changed: {}, New: {}, Removed: {}",
+                        update_result.patterns_after,
+                        update_result.changed_files,
+                        update_result.new_files,
+                        update_result.removed_files
+                    ));
+                    
+                    if let Err(e) = notification_manager.lock().await.send(&notification).await {
+                        warn!("Failed to send pattern update notification: {}", e);
                     }
                 }
                 drop(config_guard);
                 
                 // Сбрасываем флаг изменения паттернов
                 // Это будет сделано автоматически при следующем обновлении
+            }
+        }
+
+        // Проверяем и выполняем ротацию логов приложения
+        if let Some(ref mut rotator) = app_log_rotator {
+            if let Ok(current_size) = crate::logging::app_rotation::get_app_log_file_size(rotator.log_path()) {
+                if let Ok(needs_rotation) = rotator.needs_rotation(current_size) {
+                    if needs_rotation {
+                        info!("Performing application log rotation (current_size: {} bytes)", current_size);
+                        if let Err(e) = rotator.rotate_log() {
+                            error!("Failed to rotate application log: {}", e);
+                        } else {
+                            info!("Application log rotation completed successfully");
+                        }
+                    }
+                }
             }
         }
 

@@ -1071,9 +1071,11 @@ mod tests {
 
     #[test]
     fn test_network_traffic_deltas_no_previous_data() {
-        let mut current = ComprehensiveNetworkStats::default();
-        current.total_rx_bytes = 1000;
-        current.total_tx_bytes = 2000;
+        let current = ComprehensiveNetworkStats {
+            total_rx_bytes: 1000,
+            total_tx_bytes: 2000,
+            ..Default::default()
+        };
         
         let previous = ComprehensiveNetworkStats::default();
 
@@ -1173,17 +1175,19 @@ mod tests {
 
     #[test]
     fn test_network_connection_stats_with_data() {
-        let mut stats = NetworkConnectionStats::default();
-        stats.src_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
-        stats.dst_ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
-        stats.src_port = 12345;
-        stats.dst_port = 80;
-        stats.protocol = "TCP".to_string();
-        stats.state = "ESTABLISHED".to_string();
-        stats.pid = Some(1234);
-        stats.process_name = Some("test_process".to_string());
-        stats.bytes_transmitted = 1024;
-        stats.bytes_received = 2048;
+        let stats = NetworkConnectionStats {
+            src_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
+            dst_ip: IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            src_port: 12345,
+            dst_port: 80,
+            protocol: "TCP".to_string(),
+            state: "ESTABLISHED".to_string(),
+            pid: Some(1234),
+            process_name: Some("test_process".to_string()),
+            bytes_transmitted: 1024,
+            bytes_received: 2048,
+            ..Default::default()
+        };
         
         assert!(matches!(stats.src_ip, IpAddr::V4(_)));
         assert!(matches!(stats.dst_ip, IpAddr::V4(_)));
@@ -1203,7 +1207,6 @@ mod tests {
             jitter_ms: 5.2,
             bandwidth_utilization: 0.75,
             stability_score: 0.95,
-            ..Default::default()
         };
         
         assert_eq!(metrics.packet_loss, 0.1);
@@ -1222,7 +1225,6 @@ mod tests {
             bytes_transmitted: 10240,
             bytes_received: 20480,
             processes: vec![1234, 5678],
-            ..Default::default()
         };
         
         assert_eq!(stats.port, 8080);
@@ -1338,72 +1340,81 @@ mod tests {
     #[test]
     fn test_network_interface_stats_edge_cases() {
         // Test edge cases for interface statistics
-        let mut stats = NetworkInterfaceStats::default();
+        let stats_max = NetworkInterfaceStats {
+            rx_bytes: u64::MAX,
+            tx_bytes: u64::MAX,
+            rx_packets: u64::MAX,
+            tx_packets: u64::MAX,
+            ..Default::default()
+        };
         
-        // Test with maximum values
-        stats.rx_bytes = u64::MAX;
-        stats.tx_bytes = u64::MAX;
-        stats.rx_packets = u64::MAX;
-        stats.tx_packets = u64::MAX;
+        assert_eq!(stats_max.rx_bytes, u64::MAX);
+        assert_eq!(stats_max.tx_bytes, u64::MAX);
         
-        assert_eq!(stats.rx_bytes, u64::MAX);
-        assert_eq!(stats.tx_bytes, u64::MAX);
-        
-        // Test with zero values
-        stats.rx_bytes = 0;
-        stats.tx_bytes = 0;
-        assert_eq!(stats.rx_bytes, 0);
-        assert_eq!(stats.tx_bytes, 0);
+        let stats_zero = NetworkInterfaceStats {
+            rx_bytes: 0,
+            tx_bytes: 0,
+            ..Default::default()
+        };
+        assert_eq!(stats_zero.rx_bytes, 0);
+        assert_eq!(stats_zero.tx_bytes, 0);
     }
 
     #[test]
     fn test_network_connection_stats_edge_cases() {
         // Test edge cases for connection statistics
-        let mut stats = NetworkConnectionStats::default();
+        let stats_max_ports = NetworkConnectionStats {
+            src_port: u16::MAX,
+            dst_port: u16::MAX,
+            ..Default::default()
+        };
+        assert_eq!(stats_max_ports.src_port, u16::MAX);
+        assert_eq!(stats_max_ports.dst_port, u16::MAX);
         
-        // Test with maximum port values
-        stats.src_port = u16::MAX;
-        stats.dst_port = u16::MAX;
-        assert_eq!(stats.src_port, u16::MAX);
-        assert_eq!(stats.dst_port, u16::MAX);
+        let stats_zero_ports = NetworkConnectionStats {
+            src_port: 0,
+            dst_port: 0,
+            ..Default::default()
+        };
+        assert_eq!(stats_zero_ports.src_port, 0);
+        assert_eq!(stats_zero_ports.dst_port, 0);
         
-        // Test with zero port values
-        stats.src_port = 0;
-        stats.dst_port = 0;
-        assert_eq!(stats.src_port, 0);
-        assert_eq!(stats.dst_port, 0);
-        
-        // Test with maximum byte values
-        stats.bytes_transmitted = u64::MAX;
-        stats.bytes_received = u64::MAX;
-        assert_eq!(stats.bytes_transmitted, u64::MAX);
-        assert_eq!(stats.bytes_received, u64::MAX);
+        let stats_max_bytes = NetworkConnectionStats {
+            bytes_transmitted: u64::MAX,
+            bytes_received: u64::MAX,
+            ..Default::default()
+        };
+        assert_eq!(stats_max_bytes.bytes_transmitted, u64::MAX);
+        assert_eq!(stats_max_bytes.bytes_received, u64::MAX);
     }
 
     #[test]
     fn test_network_quality_metrics_edge_cases() {
         // Test edge cases for quality metrics
-        let mut metrics = NetworkQualityMetrics::default();
+        let metrics_max = NetworkQualityMetrics {
+            packet_loss: 1.0,
+            latency_ms: f64::MAX,
+            jitter_ms: f64::MAX,
+            bandwidth_utilization: 1.0,
+            stability_score: 1.0,
+        };
         
-        // Test with maximum values
-        metrics.packet_loss = 1.0;
-        metrics.latency_ms = f64::MAX;
-        metrics.jitter_ms = f64::MAX;
-        metrics.bandwidth_utilization = 1.0;
-        metrics.stability_score = 1.0;
+        assert_eq!(metrics_max.packet_loss, 1.0);
+        assert_eq!(metrics_max.latency_ms, f64::MAX);
         
-        assert_eq!(metrics.packet_loss, 1.0);
-        assert_eq!(metrics.latency_ms, f64::MAX);
+        let metrics_zero = NetworkQualityMetrics {
+            packet_loss: 0.0,
+            latency_ms: 0.0,
+            jitter_ms: 0.0,
+            bandwidth_utilization: 0.0,
+            stability_score: 0.0,
+        };
         
-        // Test with zero values
-        metrics.packet_loss = 0.0;
-        metrics.latency_ms = 0.0;
-        metrics.jitter_ms = 0.0;
-        metrics.bandwidth_utilization = 0.0;
-        metrics.stability_score = 0.0;
-        
-        assert_eq!(metrics.packet_loss, 0.0);
-        assert_eq!(metrics.latency_ms, 0.0);
+        assert_eq!(metrics_zero.packet_loss, 0.0);
+        assert_eq!(metrics_zero.latency_ms, 0.0);
+        assert_eq!(metrics_zero.jitter_ms, 0.0);
+        assert_eq!(metrics_zero.bandwidth_utilization, 0.0);
+        assert_eq!(metrics_zero.stability_score, 0.0);
     }
 
     #[test]

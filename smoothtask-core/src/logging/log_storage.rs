@@ -15,6 +15,7 @@ use serde_json::json;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tracing::info;
 
 /// Уровень логирования, совместимый с tracing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, Hash)]
@@ -94,6 +95,8 @@ impl LogEntry {
 pub struct LogStorage {
     /// Максимальное количество хранимых записей
     max_entries: usize,
+    /// Максимальный возраст записей в секундах (0 = без ограничения)
+    max_age_seconds: u64,
     /// Вектор записей логов (самые новые в конце)
     entries: Vec<LogEntry>,
     /// Счётчик ошибок логирования
@@ -102,6 +105,8 @@ pub struct LogStorage {
     warning_count: usize,
     /// Временная метка последней ошибки
     last_error_time: Option<DateTime<Utc>>,
+    /// Временная метка последней очистки
+    last_cleanup_time: Option<DateTime<Utc>>,
 }
 
 impl LogStorage {
@@ -109,15 +114,40 @@ impl LogStorage {
     pub fn new(max_entries: usize) -> Self {
         Self {
             max_entries,
+            max_age_seconds: 0, // По умолчанию без ограничения по возрасту
             entries: Vec::with_capacity(max_entries),
             error_count: 0,
             warning_count: 0,
             last_error_time: None,
+            last_cleanup_time: None,
+        }
+    }
+
+    /// Создаёт новое хранилище логов с конфигурацией ротации.
+    ///
+    /// # Аргументы
+    ///
+    /// * `max_entries` - максимальное количество хранимых записей
+    /// * `max_age_seconds` - максимальный возраст записей в секундах (0 = без ограничения)
+    ///
+    /// # Возвращает
+    ///
+    /// Новый экземпляр LogStorage
+    pub fn new_with_rotation(max_entries: usize, max_age_seconds: u64) -> Self {
+        Self {
+            max_entries,
+            max_age_seconds,
+            entries: Vec::with_capacity(max_entries),
+            error_count: 0,
+            warning_count: 0,
+            last_error_time: None,
+            last_cleanup_time: None,
         }
     }
 
     /// Добавляет новую запись в хранилище.
     /// Если превышено максимальное количество записей, самая старая запись удаляется.
+    /// Также выполняет очистку старых записей, если включено ограничение по возрасту.
     pub fn add_entry(&mut self, entry: LogEntry) {
         // Обновляем счётчики в зависимости от уровня лога
         match entry.level {
@@ -131,10 +161,124 @@ impl LogStorage {
             _ => {}
         }
         
+        // Выполняем очистку старых записей, если включено ограничение по возрасту
+        self.cleanup_old_entries();
+        
+        // Применяем ограничение по количеству записей
         if self.entries.len() >= self.max_entries && self.max_entries > 0 {
             self.entries.remove(0); // Удаляем самую старую запись
         }
         self.entries.push(entry);
+    }
+
+    /// Добавляет новую запись в хранилище с проверкой использования памяти.
+    /// Если превышено максимальное количество записей или лимит памяти, самая старая запись удаляется.
+    /// Также выполняет очистку старых записей, если включено ограничение по возрасту.
+    ///
+    /// # Аргументы
+    ///
+    /// * `entry` - запись лога для добавления
+    /// * `memory_limit_bytes` - максимальный размер памяти в байтах (0 = без ограничения)
+    pub fn add_entry_with_memory_check(&mut self, entry: LogEntry, memory_limit_bytes: usize) {
+        // Обновляем счётчики в зависимости от уровня лога
+        match entry.level {
+            LogLevel::Error => {
+                self.error_count += 1;
+                self.last_error_time = Some(Utc::now());
+            }
+            LogLevel::Warn => {
+                self.warning_count += 1;
+            }
+            _ => {}
+        }
+        
+        // Выполняем очистку старых записей, если включено ограничение по возрасту
+        self.cleanup_old_entries();
+        
+        // Выполняем очистку на основе использования памяти
+        self.cleanup_by_memory(memory_limit_bytes);
+        
+        // Применяем ограничение по количеству записей
+        if self.entries.len() >= self.max_entries && self.max_entries > 0 {
+            self.entries.remove(0); // Удаляем самую старую запись
+        }
+        self.entries.push(entry);
+    }
+
+    /// Выполняет очистку старых записей на основе максимального возраста.
+    /// Удаляет записи, которые старше max_age_seconds.
+    fn cleanup_old_entries(&mut self) {
+        if self.max_age_seconds == 0 {
+            return; // Очистка по возрасту отключена
+        }
+
+        let now = Utc::now();
+        let cutoff_time = now - chrono::Duration::seconds(self.max_age_seconds as i64);
+
+        // Находим индекс первой записи, которая должна остаться
+        let first_valid_index = self.entries.iter().position(|entry| {
+            entry.timestamp >= cutoff_time
+        });
+
+        // Удаляем все записи до первой валидной
+        if let Some(index) = first_valid_index {
+            if index > 0 {
+                self.entries.drain(0..index);
+            }
+        } else {
+            // Все записи слишком старые, очищаем всё
+            self.entries.clear();
+        }
+
+        // Обновляем время последней очистки
+        self.last_cleanup_time = Some(Utc::now());
+    }
+
+    /// Выполняет очистку на основе использования памяти.
+    /// Удаляет старые записи, если использование памяти превышает лимит.
+    ///
+    /// # Аргументы
+    ///
+    /// * `memory_limit_bytes` - максимальный размер памяти в байтах
+    fn cleanup_by_memory(&mut self, memory_limit_bytes: usize) {
+        if memory_limit_bytes == 0 {
+            return; // Очистка по памяти отключена
+        }
+
+        // Оцениваем текущее использование памяти
+        // Используем приблизительную оценку: каждая запись занимает около 200-300 байт
+        let estimated_memory_per_entry = 250; // байт на запись
+        let estimated_current_memory = self.entries.len() * estimated_memory_per_entry;
+
+        if estimated_current_memory <= memory_limit_bytes {
+            return; // Память не превышена
+        }
+
+        // Вычисляем, сколько записей нужно удалить
+        let target_entries = memory_limit_bytes / estimated_memory_per_entry;
+        if target_entries >= self.entries.len() {
+            return; // Уже в пределах лимита
+        }
+
+        // Удаляем старые записи, чтобы освободить память
+        let entries_to_remove = self.entries.len() - target_entries;
+        if entries_to_remove > 0 {
+            self.entries.drain(0..entries_to_remove);
+            info!(
+                "Memory cleanup: removed {} old entries to stay within {} bytes limit",
+                entries_to_remove, memory_limit_bytes
+            );
+        }
+
+        // Обновляем время последней очистки
+        self.last_cleanup_time = Some(Utc::now());
+    }
+
+    /// Возвращает оценку текущего использования памяти в байтах.
+    pub fn estimate_memory_usage(&self) -> usize {
+        // Приблизительная оценка: каждая запись занимает около 200-300 байт
+        let estimated_memory_per_entry = 250; // байт на запись
+        self.entries.len() * estimated_memory_per_entry
     }
 
     /// Возвращает все записи логов.
@@ -199,6 +343,29 @@ impl LogStorage {
         self.last_error_time
     }
 
+    /// Возвращает временную метку последней очистки.
+    pub fn last_cleanup_time(&self) -> Option<DateTime<Utc>> {
+        self.last_cleanup_time
+    }
+
+    /// Возвращает максимальный возраст записей в секундах.
+    pub fn max_age_seconds(&self) -> u64 {
+        self.max_age_seconds
+    }
+
+    /// Обновляет конфигурацию ротации.
+    ///
+    /// # Аргументы
+    ///
+    /// * `max_entries` - новое максимальное количество записей
+    /// * `max_age_seconds` - новый максимальный возраст записей в секундах
+    pub fn update_rotation_config(&mut self, max_entries: usize, max_age_seconds: u64) {
+        self.max_entries = max_entries;
+        self.max_age_seconds = max_age_seconds;
+        // Выполняем очистку сразу после обновления конфигурации
+        self.cleanup_old_entries();
+    }
+
     /// Возвращает статистику по уровням логов.
     pub fn get_level_statistics(&self) -> HashMap<LogLevel, usize> {
         let mut stats = HashMap::new();
@@ -217,9 +384,12 @@ impl LogStorage {
         json!({
             "total_entries": self.entries.len(),
             "max_capacity": self.max_entries,
+            "max_age_seconds": self.max_age_seconds,
+            "estimated_memory_usage_bytes": self.estimate_memory_usage(),
             "error_count": self.error_count,
             "warning_count": self.warning_count,
             "last_error_time": self.last_error_time.map(|t| t.to_rfc3339()),
+            "last_cleanup_time": self.last_cleanup_time.map(|t| t.to_rfc3339()),
             "level_distribution": {
                 "error": level_stats.get(&LogLevel::Error).unwrap_or(&0),
                 "warn": level_stats.get(&LogLevel::Warn).unwrap_or(&0),
@@ -261,10 +431,37 @@ impl SharedLogStorage {
         }
     }
 
+    /// Создаёт новое потокобезопасное хранилище логов с конфигурацией ротации.
+    ///
+    /// # Аргументы
+    ///
+    /// * `max_entries` - максимальное количество хранимых записей
+    /// * `max_age_seconds` - максимальный возраст записей в секундах (0 = без ограничения)
+    ///
+    /// # Возвращает
+    ///
+    /// Новый экземпляр SharedLogStorage
+    pub fn new_with_rotation(max_entries: usize, max_age_seconds: u64) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(LogStorage::new_with_rotation(max_entries, max_age_seconds))),
+        }
+    }
+
     /// Добавляет новую запись в хранилище.
     pub async fn add_entry(&self, entry: LogEntry) {
         let mut storage = self.inner.write().await;
         storage.add_entry(entry);
+    }
+
+    /// Добавляет новую запись в хранилище с проверкой использования памяти.
+    ///
+    /// # Аргументы
+    ///
+    /// * `entry` - запись лога для добавления
+    /// * `memory_limit_bytes` - максимальный размер памяти в байтах (0 = без ограничения)
+    pub async fn add_entry_with_memory_check(&self, entry: LogEntry, memory_limit_bytes: usize) {
+        let mut storage = self.inner.write().await;
+        storage.add_entry_with_memory_check(entry, memory_limit_bytes);
     }
 
     /// Возвращает все записи логов.
@@ -307,6 +504,29 @@ impl SharedLogStorage {
     pub async fn max_entries(&self) -> usize {
         let storage = self.inner.read().await;
         storage.max_entries()
+    }
+
+    /// Возвращает максимальный возраст записей в секундах.
+    pub async fn max_age_seconds(&self) -> u64 {
+        let storage = self.inner.read().await;
+        storage.max_age_seconds()
+    }
+
+    /// Обновляет конфигурацию ротации.
+    ///
+    /// # Аргументы
+    ///
+    /// * `max_entries` - новое максимальное количество записей
+    /// * `max_age_seconds` - новый максимальный возраст записей в секундах
+    pub async fn update_rotation_config(&self, max_entries: usize, max_age_seconds: u64) {
+        let mut storage = self.inner.write().await;
+        storage.update_rotation_config(max_entries, max_age_seconds);
+    }
+
+    /// Возвращает временную метку последней очистки.
+    pub async fn last_cleanup_time(&self) -> Option<DateTime<Utc>> {
+        let storage = self.inner.read().await;
+        storage.last_cleanup_time()
     }
 
     /// Возвращает количество ошибок в логах.
@@ -684,6 +904,225 @@ mod tests {
         // Add error
         storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error"));
         assert_eq!(storage.get_health_status(), "critical");
+    }
+
+    #[test]
+    fn test_log_storage_rotation_by_age() {
+        let mut storage = LogStorage::new_with_rotation(100, 10); // Максимум 10 секунд для теста
+        
+        // Добавляем записи
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Message 1"));
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Message 2"));
+        
+        assert_eq!(storage.len(), 2);
+        
+        // Имитируем прохождение времени (11 секунд назад)
+        let eleven_seconds_ago = Utc::now() - chrono::Duration::seconds(11);
+        let old_entry = LogEntry {
+            timestamp: eleven_seconds_ago,
+            level: LogLevel::Info,
+            target: "test".to_string(),
+            message: "Old message".to_string(),
+            fields: None,
+        };
+        
+        // Добавляем старую запись
+        storage.entries.insert(0, old_entry);
+        assert_eq!(storage.len(), 3);
+        
+        // Вручную вызываем очистку
+        storage.cleanup_old_entries();
+        
+        // Проверяем, что старая запись удалена
+        assert_eq!(storage.len(), 2);
+        assert_eq!(storage.entries[0].message, "Message 1");
+        assert_eq!(storage.entries[1].message, "Message 2");
+    }
+
+    #[test]
+    fn test_log_storage_rotation_config_update() {
+        let mut storage = LogStorage::new(10);
+        
+        // Добавляем записи
+        for i in 1..=5 {
+            storage.add_entry(LogEntry::new(LogLevel::Info, "test", format!("Message {}", i)));
+        }
+        
+        assert_eq!(storage.len(), 5);
+        assert_eq!(storage.max_age_seconds(), 0);
+        
+        // Обновляем конфигурацию с ограничением по возрасту
+        storage.update_rotation_config(10, 10); // 10 секунд
+        
+        assert_eq!(storage.max_age_seconds(), 10);
+        
+        // Добавляем старую запись
+        let old_entry = LogEntry {
+            timestamp: Utc::now() - chrono::Duration::seconds(11),
+            level: LogLevel::Info,
+            target: "test".to_string(),
+            message: "Old message".to_string(),
+            fields: None,
+        };
+        storage.entries.insert(0, old_entry);
+        
+        // Вручную вызываем очистку
+        storage.cleanup_old_entries();
+        
+        // Старая запись должна быть удалена
+        assert_eq!(storage.len(), 5);
+        assert_eq!(storage.entries[0].message, "Message 1");
+    }
+
+    #[test]
+    fn test_log_storage_monitoring_metrics_with_rotation() {
+        let mut storage = LogStorage::new_with_rotation(100, 3600);
+        
+        storage.add_entry(LogEntry::new(LogLevel::Error, "test", "Error"));
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning"));
+        
+        let metrics = storage.get_monitoring_metrics();
+        
+        assert_eq!(metrics["total_entries"], 2);
+        assert_eq!(metrics["max_capacity"], 100);
+        assert_eq!(metrics["max_age_seconds"], 3600);
+        assert_eq!(metrics["error_count"], 1);
+        assert_eq!(metrics["warning_count"], 1);
+        assert!(metrics["last_error_time"].is_string());
+        assert!(metrics["last_cleanup_time"].is_string());
+    }
+
+    #[test]
+    fn test_log_storage_cleanup_time_tracking() {
+        let mut storage = LogStorage::new_with_rotation(100, 1);
+        
+        assert!(storage.last_cleanup_time().is_none());
+        
+        // Добавляем запись, что должно вызвать очистку
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Message"));
+        
+        assert!(storage.last_cleanup_time().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_shared_log_storage_rotation() {
+        let storage = SharedLogStorage::new_with_rotation(100, 2);
+        
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Message 1")).await;
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Message 2")).await;
+        
+        assert_eq!(storage.len().await, 2);
+        assert_eq!(storage.max_age_seconds().await, 2);
+        
+        // Обновляем конфигурацию
+        storage.update_rotation_config(50, 1).await;
+        assert_eq!(storage.max_age_seconds().await, 1);
+    }
+
+    #[test]
+    fn test_log_storage_memory_cleanup() {
+        let mut storage = LogStorage::new(1000);
+        
+        // Добавляем много записей
+        for i in 0..500 {
+            storage.add_entry(LogEntry::new(LogLevel::Info, "test", format!("Message {}", i)));
+        }
+        
+        assert_eq!(storage.len(), 500);
+        
+        // Выполняем очистку по памяти (лимит 100 КБ = 100_000 байт)
+        // При 250 байт на запись, 100_000 / 250 = 400 записей
+        storage.cleanup_by_memory(100_000);
+        
+        // Должно остаться около 400 записей
+        assert!(storage.len() <= 400);
+        assert!(storage.len() > 350); // Не должно быть слишком агрессивным
+    }
+
+    #[test]
+    fn test_log_storage_memory_estimation() {
+        let mut storage = LogStorage::new(100);
+        
+        assert_eq!(storage.estimate_memory_usage(), 0);
+        
+        // Добавляем записи
+        for i in 0..10 {
+            storage.add_entry(LogEntry::new(LogLevel::Info, "test", format!("Message {}", i)));
+        }
+        
+        // Ожидаем около 2500 байт (10 записей * 250 байт)
+        let memory_usage = storage.estimate_memory_usage();
+        assert!(memory_usage >= 2000);
+        assert!(memory_usage <= 3000);
+    }
+
+    #[test]
+    fn test_log_storage_add_entry_with_memory_check() {
+        let mut storage = LogStorage::new(100);
+        
+        // Добавляем записи с проверкой памяти (лимит 1 КБ = 1000 байт)
+        // При 250 байт на запись, 1000 / 250 = 4 записи
+        for i in 0..10 {
+            storage.add_entry_with_memory_check(
+                LogEntry::new(LogLevel::Info, "test", format!("Message {}", i)),
+                1000
+            );
+        }
+        
+        // Должно остаться около 4 записей (может быть немного больше из-за точности оценки)
+        assert!(storage.len() <= 6);
+        assert!(!storage.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_shared_log_storage_memory_cleanup() {
+        let storage = SharedLogStorage::new(1000);
+        
+        // Добавляем много записей
+        for i in 0..500 {
+            storage.add_entry(LogEntry::new(LogLevel::Info, "test", format!("Message {}", i))).await;
+        }
+        
+        assert_eq!(storage.len().await, 500);
+        
+        // Выполняем очистку по памяти
+        let mut storage_guard = storage.inner.write().await;
+        storage_guard.cleanup_by_memory(100_000);
+        
+        // Должно остаться около 400 записей
+        assert!(storage_guard.len() <= 400);
+    }
+
+    #[tokio::test]
+    async fn test_shared_log_storage_add_entry_with_memory_check() {
+        let storage = SharedLogStorage::new(100);
+        
+        // Добавляем записи с проверкой памяти
+        for i in 0..10 {
+            storage.add_entry_with_memory_check(
+                LogEntry::new(LogLevel::Info, "test", format!("Message {}", i)),
+                1000
+            ).await;
+        }
+        
+        // Должно остаться около 4 записей (может быть немного больше из-за точности оценки)
+        assert!(storage.len().await <= 6);
+    }
+
+    #[test]
+    fn test_log_storage_monitoring_metrics_with_memory() {
+        let mut storage = LogStorage::new(100);
+        
+        // Добавляем записи
+        for i in 0..10 {
+            storage.add_entry(LogEntry::new(LogLevel::Info, "test", format!("Message {}", i)));
+        }
+        
+        let metrics = storage.get_monitoring_metrics();
+        
+        assert_eq!(metrics["total_entries"], 10);
+        assert!(metrics["estimated_memory_usage_bytes"].as_u64().unwrap() >= 2000);
+        assert!(metrics["estimated_memory_usage_bytes"].as_u64().unwrap() <= 3000);
     }
 
     #[tokio::test]

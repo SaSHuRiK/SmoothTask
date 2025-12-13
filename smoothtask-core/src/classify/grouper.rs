@@ -166,12 +166,12 @@ impl ProcessGrouper {
             };
 
             // Агрегируем расширенные метрики ввода-вывода
-            let total_io_read_operations = Self::aggregate_io_operations(&processes, |p| p.io_read_operations);
-            let total_io_write_operations = Self::aggregate_io_operations(&processes, |p| p.io_write_operations);
-            let total_io_operations = Self::aggregate_io_operations(&processes, |p| p.io_total_operations);
+            let total_io_read_operations = Self::aggregate_io_operations(processes, |p| p.io_read_operations);
+            let total_io_write_operations = Self::aggregate_io_operations(processes, |p| p.io_write_operations);
+            let total_io_operations = Self::aggregate_io_operations(processes, |p| p.io_total_operations);
             
             // Определяем источник данных ввода-вывода
-            let io_data_source = Self::determine_io_data_source(&processes);
+            let io_data_source = Self::determine_io_data_source(processes);
             
             app_groups.push(AppGroupRecord {
                 app_group_id: group_id,

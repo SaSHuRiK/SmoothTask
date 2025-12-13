@@ -4116,6 +4116,7 @@ mod tests {
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -4225,6 +4226,7 @@ mod tests {
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -4370,6 +4372,7 @@ mod tests {
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5063,6 +5066,7 @@ apps:
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5144,6 +5148,7 @@ apps:
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5218,6 +5223,7 @@ apps:
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5298,6 +5304,7 @@ apps:
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5501,6 +5508,7 @@ apps:
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5626,6 +5634,7 @@ notifications:
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: crate::config::config_struct::Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5732,6 +5741,7 @@ max_candidates: 200
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: crate::config::config_struct::Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -5887,6 +5897,7 @@ max_candidates: 200
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -6015,6 +6026,7 @@ max_candidates: 200
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),
@@ -6100,6 +6112,7 @@ max_candidates: 200
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),

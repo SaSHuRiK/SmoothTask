@@ -798,7 +798,7 @@ impl PatternDatabase {
     /// - `*firefox*` соответствует `firefox`, `firefox-bin`, `something-firefox-bin`
     /// - `firefox-?-bin` соответствует `firefox-a-bin`, `firefox-1-bin`
     /// - `firefox-*-bin` соответствует `firefox-esr-bin`, `firefox-123-bin`
-    fn matches_pattern(text: &str, pattern: &str) -> bool {
+    pub fn matches_pattern(text: &str, pattern: &str) -> bool {
         // Если паттерн не содержит wildcard символов, используем точное совпадение
         if !pattern.contains('*') && !pattern.contains('?') {
             return text == pattern;
@@ -1489,7 +1489,7 @@ apps:
 "#,
         );
 
-        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let mut process = ProcessRecord {
             pid: 1000,
@@ -1567,7 +1567,7 @@ apps:
 "#,
         );
 
-        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let mut process = ProcessRecord {
             pid: 1000,
@@ -1792,7 +1792,7 @@ apps:
 "#,
         );
 
-        let mut db = PatternDatabase::load(patterns_dir).expect("load patterns");
+        let db = PatternDatabase::load(patterns_dir).expect("load patterns");
 
         let mut processes = vec![ProcessRecord {
             pid: 1000,
@@ -2182,7 +2182,7 @@ apps:
         let _patterns_dir = temp_dir.path();
 
         // Создаем базу с пустыми паттернами
-        let mut db = PatternDatabase {
+        let db = PatternDatabase {
             patterns_by_category: HashMap::new(),
             all_patterns: Vec::new(),
             match_cache: LruCache::new(NonZeroUsize::new(512).unwrap()),

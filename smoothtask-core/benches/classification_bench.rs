@@ -6,7 +6,7 @@
 //! - Кэширования результатов
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use smoothtask_core::classify::rules::{PatternDatabase, PatternCategory, AppPattern};
+use smoothtask_core::classify::rules::PatternDatabase;
 use smoothtask_core::logging::snapshots::ProcessRecord;
 use std::path::Path;
 use tempfile::TempDir;
@@ -79,7 +79,7 @@ apps:
     );
     
     // Загружаем базу паттернов
-    let mut pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
+    let pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
     
     // Тестовые процессы
     let test_processes = vec![
@@ -130,10 +130,10 @@ apps:
         b.iter(|| {
             for process in &test_processes {
                 let mut proc = process.clone();
-                let mut db = pattern_db.clone();
+                let db_arc = std::sync::Arc::new(std::sync::Mutex::new(pattern_db.clone()));
                 smoothtask_core::classify::rules::classify_process(
                     &mut proc,
-                    &mut db,
+                    &db_arc,
                     None,
                     None,
                 );
@@ -146,9 +146,10 @@ apps:
         b.iter(|| {
             for process in &test_processes {
                 let mut proc = process.clone();
+                let db_arc = std::sync::Arc::new(std::sync::Mutex::new(pattern_db.clone()));
                 smoothtask_core::classify::rules::classify_process(
                     &mut proc,
-                    &mut pattern_db,
+                    &db_arc,
                     None,
                     None,
                 );
@@ -202,7 +203,7 @@ apps:
     );
     
     // Загружаем базу паттернов
-    let mut pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
+    let pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
     
     // Создаем большой набор тестовых процессов
     let mut processes = Vec::new();
@@ -231,9 +232,10 @@ apps:
         b.iter(|| {
             for process in &processes {
                 let mut proc = process.clone();
+                let db_arc = std::sync::Arc::new(std::sync::Mutex::new(pattern_db.clone()));
                 smoothtask_core::classify::rules::classify_process(
                     &mut proc,
-                    &mut pattern_db,
+                    &db_arc,
                     None,
                     None,
                 );
@@ -283,9 +285,12 @@ apps:
     // Тестируем кэширование разных запросов
     group.bench_function("mixed pattern matching", |b| {
         b.iter(|| {
-            let matches1 = pattern_db.match_process(Some("app1"), None, None);
-            let matches2 = pattern_db.match_process(Some("app2"), None, None);
-            let matches3 = pattern_db.match_process(Some("app1-bin"), None, None);
+            let mut db1 = pattern_db.clone();
+            let mut db2 = pattern_db.clone();
+            let mut db3 = pattern_db.clone();
+            let matches1 = db1.match_process(Some("app1"), None, None);
+            let matches2 = db2.match_process(Some("app2"), None, None);
+            let matches3 = db3.match_process(Some("app1-bin"), None, None);
             black_box((matches1, matches2, matches3));
         })
     });

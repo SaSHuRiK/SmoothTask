@@ -81,6 +81,7 @@ fn test_config_includes_cache_intervals() {
             log_rotation_interval_sec: 0,
         },
         paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
             snapshot_db_path: "/tmp/test.db".to_string(),
             patterns_dir: "/tmp/patterns".to_string(),
             api_listen_addr: None,
@@ -439,6 +440,7 @@ fn test_cache_configuration_integration() {
             log_rotation_interval_sec: 0,
         },
         paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
             snapshot_db_path: "/var/lib/smoothtask/snapshots.db".to_string(),
             patterns_dir: "/etc/smoothtask/patterns".to_string(),
             api_listen_addr: Some("127.0.0.1:8080".to_string()),

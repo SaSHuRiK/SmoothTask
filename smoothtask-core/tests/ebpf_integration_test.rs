@@ -312,7 +312,7 @@ fn test_cpu_temperature_notification_thresholds() {
     };
     
     // Создаем коллектор eBPF метрик
-    let mut collector = EbpfMetricsCollector::new(config);
+    let collector = EbpfMetricsCollector::new(config);
     
     // Проверяем, что пороги уведомлений для температуры CPU настроены корректно
     let config = collector.get_config();

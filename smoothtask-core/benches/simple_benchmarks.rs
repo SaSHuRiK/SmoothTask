@@ -305,6 +305,7 @@ fn benchmark_config_creation(c: &mut Criterion) {
                 paths: Paths {
                     snapshot_db_path: "/var/log/smoothtask/snapshots.db".to_string(),
                     patterns_dir: "/etc/smoothtask/patterns".to_string(),
+                    log_file_path: "smoothtask.log".to_string(),
                     api_listen_addr: Some("127.0.0.1:8080".to_string()),
                 },
                 cache_intervals: CacheIntervals {
@@ -354,6 +355,7 @@ fn benchmark_config_serialization(c: &mut Criterion) {
         paths: Paths {
             snapshot_db_path: "/var/log/smoothtask/snapshots.db".to_string(),
             patterns_dir: "/etc/smoothtask/patterns".to_string(),
+            log_file_path: "smoothtask.log".to_string(),
             api_listen_addr: Some("127.0.0.1:8080".to_string()),
         },
         cache_intervals: CacheIntervals {

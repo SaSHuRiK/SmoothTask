@@ -122,6 +122,7 @@ fn test_config_creation_performance() {
                 log_rotation_interval_sec: 0,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/var/log/smoothtask/snapshots.db".to_string(),
                 patterns_dir: "/etc/smoothtask/patterns".to_string(),
                 api_listen_addr: Some("127.0.0.1:8080".to_string()),

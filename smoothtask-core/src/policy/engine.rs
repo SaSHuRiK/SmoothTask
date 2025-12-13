@@ -580,6 +580,7 @@ mod tests {
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: None,
@@ -633,6 +634,7 @@ mod tests {
                 ui_loop_p95_threshold_ms: 16.67,
             },
             paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
                 snapshot_db_path: "/tmp/test.db".to_string(),
                 patterns_dir: "/tmp/patterns".to_string(),
                 api_listen_addr: None,

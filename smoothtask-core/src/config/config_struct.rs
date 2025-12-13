@@ -900,10 +900,23 @@ pub(crate) fn default_notification_config() -> NotificationConfig {
 pub struct Paths {
     pub snapshot_db_path: String,
     pub patterns_dir: String,
+    /// Путь к файлу лога приложения.
+    /// Если не указан, ротация логов приложения отключена.
+    /// По умолчанию: "smoothtask.log" в текущей директории.
+    #[serde(default = "default_log_file_path")]
+    pub log_file_path: String,
     /// Адрес для прослушивания API сервера (например, "127.0.0.1:8080").
     /// Если не указан, API сервер не запускается.
     #[serde(default = "default_api_listen_addr")]
     pub api_listen_addr: Option<String>,
+}
+
+/// Возвращает дефолтное значение для `log_file_path`.
+///
+/// По умолчанию используется "smoothtask.log" в текущей директории.
+/// Это значение применяется автоматически при загрузке конфигурации.
+pub(crate) fn default_log_file_path() -> String {
+    "smoothtask.log".to_string()
 }
 
 /// Возвращает дефолтное значение для `api_listen_addr`.
@@ -1485,6 +1498,7 @@ impl Default for Paths {
         Self {
             snapshot_db_path: default_snapshot_db_path(),
             patterns_dir: default_patterns_dir(),
+            log_file_path: default_log_file_path(),
             api_listen_addr: default_api_listen_addr(),
         }
     }
