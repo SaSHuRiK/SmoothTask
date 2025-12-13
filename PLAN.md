@@ -11,35 +11,30 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-641: Исправить предупреждения компилятора (unused variables и useless comparisons)
-  - Тип: Rust / core / code quality
-  - Примечания: Исправление предупреждений компилятора для улучшения качества кода
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~30 минут
-  - Критерии готовности:
-    - ✅ Исправление unused переменных в audio.rs (тест graceful degradation)
-    - ✅ Исправление unused переменных в ebpf.rs (process_gpu_details, process_network_details, process_disk_details)
-    - ✅ Исправление useless comparisons для unsigned типов (u64, usize)
-    - ✅ Проверка успешной компиляции без предупреждений
-  - Изменённые файлы:
-    - smoothtask-core/src/metrics/audio.rs: Исправлена unused переменная в тесте
-    - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные и useless comparisons
-  - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
-
-## 2. Бэклог
-
-- [ ] ST-633: Добавить поддержку мониторинга температуры процессора через eBPF
+- [x] ST-633: Добавить поддержку мониторинга температуры процессора через eBPF
   - Тип: Rust / core / metrics / eBPF
   - Примечания: Реализация мониторинга температуры процессора с использованием eBPF
-  - Приоритет: Низкий
-  - Статус: TODO
-  - Оценка времени: ~60 минут
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
   - Критерии готовности:
-    - eBPF программа для мониторинга температуры процессора
-    - Интеграция с системными метриками
-    - Новый API endpoint для мониторинга температуры
-    - Тесты для нового функционала
+    - ✅ eBPF программа для мониторинга температуры процессора (cpu_temperature.c)
+    - ✅ Интеграция с системными метриками в ebpf.rs
+    - ✅ Новый API endpoint /api/cpu/temperature с обработчиком cpu_temperature_handler
+    - ✅ Комплексные тесты для нового функционала (ebpf_integration_test.rs, api_integration_test.rs)
+    - ✅ Конфигурация enable_cpu_temperature_monitoring в EbpfConfig
+    - ✅ Структура CpuTemperatureStat для хранения детализированной статистики
+    - ✅ Функции collect_cpu_temperature_data и collect_cpu_temperature_from_maps
+    - ✅ Кэширование и обработка ошибок
+  - Изменённые файлы:
+    - smoothtask-core/src/ebpf_programs/cpu_temperature.c: eBPF программа для мониторинга температуры CPU
+    - smoothtask-core/src/metrics/ebpf.rs: Интеграция мониторинга температуры CPU с eBPF
+    - smoothtask-core/src/api/server.rs: Добавлен обработчик cpu_temperature_handler и маршрут /api/cpu/temperature
+    - smoothtask-core/tests/ebpf_integration_test.rs: Комплексные тесты для функционала мониторинга температуры CPU
+    - smoothtask-core/tests/api_integration_test.rs: Тесты для API endpoint температуры CPU
+  - Результаты: Полная реализация мониторинга температуры процессора через eBPF с поддержкой детализированной статистики по каждому CPU ядру, API endpoint для мониторинга и комплексными тестами
+
+## 2. Бэклог
 
 ## 3. Недавно сделано (Recently Done)
 
@@ -58,6 +53,28 @@
     - smoothtask-core/src/metrics/audio.rs: Исправлена unused переменная в тесте
     - smoothtask-core/src/metrics/ebpf.rs: Исправлены unused переменные и useless comparisons
   - Результаты: Успешная компиляция без предупреждений, улучшенное качество кода
+
+- [x] ST-633: Добавить поддержку мониторинга температуры процессора через eBPF
+  - Тип: Rust / core / metrics / eBPF
+  - Примечания: Реализация мониторинга температуры процессора с использованием eBPF
+  - Приоритет: Средний
+  - Статус: COMPLETED
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - ✅ eBPF программа для мониторинга температуры процессора (cpu_temperature.c)
+    - ✅ Интеграция с системными метриками в ebpf.rs
+    - ✅ Новый API endpoint /api/cpu/temperature с обработчиком cpu_temperature_handler
+    - ✅ Комплексные тесты для нового функционала
+    - ✅ Конфигурация enable_cpu_temperature_monitoring в EbpfConfig
+    - ✅ Структура CpuTemperatureStat для хранения детализированной статистики
+    - ✅ Кэширование и обработка ошибок
+  - Изменённые файлы:
+    - smoothtask-core/src/ebpf_programs/cpu_temperature.c: eBPF программа для мониторинга температуры CPU
+    - smoothtask-core/src/metrics/ebpf.rs: Интеграция мониторинга температуры CPU с eBPF
+    - smoothtask-core/src/api/server.rs: Добавлен обработчик cpu_temperature_handler и маршрут /api/cpu/temperature
+    - smoothtask-core/tests/ebpf_integration_test.rs: Комплексные тесты для функционала мониторинга температуры CPU
+    - smoothtask-core/tests/api_integration_test.rs: Тесты для API endpoint температуры CPU
+  - Результаты: Полная реализация мониторинга температуры процессора через eBPF с поддержкой детализированной статистики по каждому CPU ядру, API endpoint для мониторинга и комплексными тестами
 
 - [x] ST-639: Обновить документацию API с последними изменениями
   - Тип: Documentation / API
