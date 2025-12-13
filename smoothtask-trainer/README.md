@@ -270,6 +270,27 @@ uv run smoothtask_trainer.export_model \
 - `--validate`: Выполнять валидацию модели перед экспортом (по умолчанию: true)
 - `--no-validate`: Отключить валидацию модели
 
+##### Расширенный экспорт с метаданными
+
+Новая версия поддерживает экспорт с метаданными и валидацию:
+
+```bash
+uv run smoothtask_trainer.export_model \
+    --model model.json \
+    --format onnx \
+    --output model.onnx \
+    --metadata '{"version": "1.0.0", "description": "Модель для SmoothTask", "author": "My Team"}' \
+    --validate
+```
+
+Параметры:
+- `--model`: Путь к исходной модели (JSON или CBM)
+- `--format`: Формат экспорта (onnx, json, cbm)
+- `--output`: Путь для сохранения экспортированной модели
+- `--metadata`: Опциональные метаданные в формате JSON (необязательно)
+- `--validate`: Выполнять валидацию модели перед экспортом (по умолчанию: true)
+- `--no-validate`: Отключить валидацию модели
+
 ##### Примеры использования
 
 1. **Экспорт с метаданными:**

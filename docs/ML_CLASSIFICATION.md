@@ -1,4 +1,4 @@
-# ML-классификация процессов и обучение моделей
+# ML-классификация процессов и обучение моделей в SmoothTask
 
 ## Обзор
 
@@ -31,9 +31,11 @@ pub struct MLClassificationResult {
 - `tags`: Теги, предсказанные ML-моделью
 - `confidence`: Уверенность модели в предсказании (0.0 - 1.0)
 
-### 3. Заглушка для тестирования
+### 3. Реализации классификаторов
 
-`StubMLClassifier` предоставляет простую реализацию для тестирования и разработки. Он использует эвристики для классификации процессов:
+#### StubMLClassifier
+
+Заглушка для тестирования и разработки. Использует эвристики для классификации процессов:
 
 - **GUI процессы**: `has_gui_window = true` → тип "gui", теги ["gui", "interactive"], уверенность 0.8
 - **Высокий CPU**: `cpu_share_10s > 0.3` → тип "cpu_intensive", тег "high_cpu", уверенность 0.7
@@ -41,12 +43,25 @@ pub struct MLClassificationResult {
 - **Аудио клиенты**: `is_audio_client = true` → тип "audio", теги ["audio", "realtime"], уверенность 0.9
 - **Фокусные окна**: `is_focused_window = true` → тип "focused", теги ["focused", "interactive"], уверенность 0.9
 
+#### CatBoostMLClassifier
+
+Реализация для загрузки и использования CatBoost моделей:
+
+```rust
+pub struct CatBoostMLClassifier {
+    model: CatBoostModel,
+    feature_names: Vec<String>,
+}
+```
+
+Поддерживает загрузку моделей из JSON и ONNX форматов.
+
 ## Интеграция с системой классификации
 
 ML-классификатор интегрирован в функцию `classify_process` и может использоваться вместе с паттерн-классификацией:
 
 ```rust
-use smoothtask_core::classify::ml_classifier::StubMLClassifier;
+use smoothtask_core::classify::ml_classifier::{CatBoostMLClassifier, StubMLClassifier};
 use smoothtask_core::classify::rules::{PatternDatabase, classify_process};
 ```
 
@@ -328,32 +343,6 @@ print(f"Загружено {len(df)} записей")
 2. **Валидация**: Всегда валидируйте данные перед обучением
 3. **Метаданные**: Добавляйте метаданные для отслеживания версий и параметров
 4. **Тестирование**: Проверяйте модели на тестовых данных перед использованием в продакшене
-use smoothtask_core::logging::snapshots::ProcessRecord;
-
-// Загрузка паттернов
-let pattern_db = PatternDatabase::load("configs/patterns").expect("load patterns");
-
-// Создание ML-классификатора
-let ml_classifier = StubMLClassifier::new();
-
-// Создание процесса
-let mut process = ProcessRecord {
-    pid: 1000,
-    exe: Some("firefox".to_string()),
-    has_gui_window: true,
-    cpu_share_10s: Some(0.5),
-    // ... остальные поля
-    process_type: None,
-    tags: Vec::new(),
-};
-
-// Классификация с использованием паттернов и ML
-classify_process(&mut process, &pattern_db, Some(&ml_classifier), None);
-
-// Результаты
-println!("Type: {:?}", process.process_type);  // Может быть "browser" или "gui"
-println!("Tags: {:?}", process.tags);          // Теги из паттернов и ML
-```
 
 ## Алгоритм интеграции
 

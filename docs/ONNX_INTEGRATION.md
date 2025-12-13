@@ -68,6 +68,40 @@ python -m smoothtask_trainer.export_model \
     --output-path models/ranker.onnx
 ```
 
+### 4. Экспорт с метаданными
+
+Новая функциональность поддерживает экспорт моделей с метаданными:
+
+```bash
+python -m smoothtask_trainer.export_model \
+    --model-path models/ranker.json \
+    --format onnx \
+    --output-path models/ranker.onnx \
+    --metadata '{"version": "1.0.0", "description": "Модель для SmoothTask", "features": ["cpu", "memory", "io"]}' \
+    --validate
+```
+
+Метаданные сохраняются в отдельном JSON файле рядом с моделью:
+- Для ONNX: `model.onnx.metadata.json`
+- Для JSON: `model.json.metadata.json`
+- Для CBM: `model.cbm.metadata.json`
+
+Пример содержимого метаданных:
+
+```json
+{
+  "version": "1.0.0",
+  "description": "Модель для ранжирования процессов в SmoothTask",
+  "author": "SmoothTask Team",
+  "dataset_size": 1000,
+  "features": ["cpu_usage", "memory_usage", "io_wait", "gpu_usage"],
+  "training_date": "2024-01-15",
+  "model_type": "CatBoostRanker",
+  "export_format": "onnx",
+  "export_timestamp": 1705324800.123456
+}
+```
+
 ## Конфигурация ONNX ранкера
 
 ### 1. Базовая конфигурация
