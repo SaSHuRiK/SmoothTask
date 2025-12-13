@@ -324,6 +324,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
 
         snapshot.app_groups = app_groups.clone();
@@ -369,6 +371,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "group2".to_string(),
@@ -383,6 +387,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -424,6 +430,8 @@ mod tests {
                 is_focused_group: true,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             // Группа с минимальным score (ничего особенного)
             AppGroupRecord {
@@ -439,6 +447,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -483,6 +493,8 @@ mod tests {
                 is_focused_group: true,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "gui".to_string(),
@@ -497,6 +509,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "background".to_string(),
@@ -511,6 +525,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -567,6 +583,8 @@ mod tests {
             is_focused_group: false,
             tags: vec![],
             priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
         }];
 
         let results1 = ranker1.rank(&app_groups, &snapshot);
@@ -603,6 +621,8 @@ mod tests {
                 is_focused_group: true,
                 tags: vec!["browser".to_string()],
                 priority_class: Some("INTERACTIVE".to_string()),
+                total_energy_uj: None,
+                total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "group2".to_string(),
@@ -617,6 +637,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -673,6 +695,8 @@ mod tests {
                 is_focused_group: is_focused,
                 tags: vec![format!("tag{}", i % 5)],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             });
         }
 
@@ -731,6 +755,8 @@ mod tests {
                 is_focused_group: true,
                 tags: vec!["critical".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             // Группа с минимальным возможным score (нет фокуса, нет GUI, низкий CPU)
             AppGroupRecord {
@@ -746,6 +772,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             // Группа со средними характеристиками (GUI для повышения score)
             AppGroupRecord {
@@ -761,6 +789,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["normal".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -827,6 +857,8 @@ mod tests {
                 is_focused_group: true,
                 tags: vec!["browser".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             AppGroupRecord {
                 app_group_id: "group2".to_string(),
@@ -841,6 +873,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["editor".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -896,6 +930,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["stress".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             // Группа с отрицательным CPU usage (невалидное значение, но должно обрабатываться)
             AppGroupRecord {
@@ -911,6 +947,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["invalid".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             // Группа с нулевым CPU usage
             AppGroupRecord {
@@ -926,6 +964,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["idle".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -975,6 +1015,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec![],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
             // Группа с отсутствующими метриками
             AppGroupRecord {
@@ -990,6 +1032,8 @@ mod tests {
                 is_focused_group: false,
                 tags: vec!["no_metrics".to_string()],
                 priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
             },
         ];
 
@@ -1043,6 +1087,8 @@ mod tests {
                 is_focused_group: is_focused,
                 tags: vec![format!("tag_{}", i % 5)],
                 priority_class: None,
+                total_energy_uj: None,
+                total_power_w: None,
             });
         }
 
