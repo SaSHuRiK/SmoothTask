@@ -884,7 +884,7 @@ impl PatternDatabase {
 pub fn classify_process(
     process: &mut ProcessRecord,
     pattern_db: &PatternDatabase,
-    ml_classifier: Option<&dyn MLClassifier>,
+    ml_classifier: Option<&mut dyn MLClassifier>,
     desktop_id: Option<&str>,
 ) {
     debug!(

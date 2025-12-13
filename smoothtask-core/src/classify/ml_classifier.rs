@@ -9,6 +9,7 @@ use crate::logging::snapshots::ProcessRecord;
 use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::Path;
+use std::time::Instant;
 use tracing::{debug, info, warn};
 
 #[cfg(feature = "catboost")]
@@ -16,6 +17,142 @@ use catboost::CatBoostClassifier;
 
 #[cfg(feature = "onnx")]
 use ort::Session;
+
+/// Метрики производительности ML-модели.
+#[derive(Debug, Clone, Default)]
+pub struct MLPerformanceMetrics {
+    /// Общее количество классификаций.
+    pub total_classifications: u64,
+    /// Количество успешных классификаций.
+    pub successful_classifications: u64,
+    /// Количество ошибок классификации.
+    pub classification_errors: u64,
+    /// Суммарное время классификации в микросекундах.
+    pub total_classification_time_us: u128,
+    /// Минимальное время классификации в микросекундах.
+    pub min_classification_time_us: Option<u128>,
+    /// Максимальное время классификации в микросекундах.
+    pub max_classification_time_us: Option<u128>,
+    /// Суммарная уверенность всех классификаций.
+    pub total_confidence: f64,
+    /// Количество классификаций с высокой уверенностью (> 0.8).
+    pub high_confidence_classifications: u64,
+    /// Количество классификаций со средней уверенностью (0.5 - 0.8).
+    pub medium_confidence_classifications: u64,
+    /// Количество классификаций с низкой уверенностью (< 0.5).
+    pub low_confidence_classifications: u64,
+}
+
+impl MLPerformanceMetrics {
+    /// Создать новые метрики производительности.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Зарегистрировать успешную классификацию.
+    pub fn record_successful_classification(&mut self, duration: u128, confidence: f64) {
+        self.total_classifications += 1;
+        self.successful_classifications += 1;
+        self.total_classification_time_us += duration;
+        self.total_confidence += confidence;
+
+        // Обновить минимальное и максимальное время
+        if let Some(min_time) = self.min_classification_time_us {
+            if duration < min_time {
+                self.min_classification_time_us = Some(duration);
+            }
+        } else {
+            self.min_classification_time_us = Some(duration);
+        }
+
+        if let Some(max_time) = self.max_classification_time_us {
+            if duration > max_time {
+                self.max_classification_time_us = Some(duration);
+            }
+        } else {
+            self.max_classification_time_us = Some(duration);
+        }
+
+        // Категоризировать по уверенности
+        if confidence > 0.8 {
+            self.high_confidence_classifications += 1;
+        } else if confidence > 0.5 {
+            self.medium_confidence_classifications += 1;
+        } else {
+            self.low_confidence_classifications += 1;
+        }
+    }
+
+    /// Зарегистрировать ошибку классификации.
+    pub fn record_classification_error(&mut self) {
+        self.total_classifications += 1;
+        self.classification_errors += 1;
+    }
+
+    /// Получить среднее время классификации в микросекундах.
+    pub fn average_classification_time_us(&self) -> Option<f64> {
+        if self.successful_classifications > 0 {
+            Some(self.total_classification_time_us as f64 / self.successful_classifications as f64)
+        } else {
+            None
+        }
+    }
+
+    /// Получить среднюю уверенность.
+    pub fn average_confidence(&self) -> Option<f64> {
+        if self.successful_classifications > 0 {
+            Some(self.total_confidence / self.successful_classifications as f64)
+        } else {
+            None
+        }
+    }
+
+    /// Получить процент успешных классификаций.
+    pub fn success_rate(&self) -> Option<f64> {
+        if self.total_classifications > 0 {
+            Some(self.successful_classifications as f64 / self.total_classifications as f64)
+        } else {
+            None
+        }
+    }
+
+    /// Сбросить метрики.
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
+    /// Логировать сводку метрик.
+    pub fn log_summary(&self) {
+        info!("ML Performance Metrics Summary:");
+        info!("  Total classifications: {}", self.total_classifications);
+        info!("  Successful classifications: {}", self.successful_classifications);
+        info!("  Classification errors: {}", self.classification_errors);
+        
+        if let Some(success_rate) = self.success_rate() {
+            info!("  Success rate: {:.2}%", success_rate * 100.0);
+        }
+        
+        if let Some(avg_time) = self.average_classification_time_us() {
+            info!("  Average classification time: {:.2} μs", avg_time);
+        }
+        
+        if let Some(min_time) = self.min_classification_time_us {
+            info!("  Min classification time: {} μs", min_time);
+        }
+        
+        if let Some(max_time) = self.max_classification_time_us {
+            info!("  Max classification time: {} μs", max_time);
+        }
+        
+        if let Some(avg_confidence) = self.average_confidence() {
+            info!("  Average confidence: {:.3}", avg_confidence);
+        }
+        
+        info!("  High confidence (>0.8): {}", self.high_confidence_classifications);
+        info!("  Medium confidence (0.5-0.8): {}", self.medium_confidence_classifications);
+        info!("  Low confidence (<0.5): {}", self.low_confidence_classifications);
+    }
+}
 
 /// Результат классификации от ML-модели.
 #[derive(Debug, Clone)]
@@ -42,7 +179,22 @@ pub trait MLClassifier: Send + Sync + std::fmt::Debug {
     /// # Возвращает
     ///
     /// Результат классификации с предсказанным типом, тегами и уверенностью.
-    fn classify(&self, process: &ProcessRecord) -> MLClassificationResult;
+    fn classify(&mut self, process: &ProcessRecord) -> MLClassificationResult;
+
+    /// Получить текущие метрики производительности.
+    ///
+    /// # Возвращает
+    ///
+    /// Клон текущих метрик производительности.
+    fn get_performance_metrics(&self) -> MLPerformanceMetrics;
+
+    /// Сбросить метрики производительности.
+    fn reset_performance_metrics(&mut self);
+
+    /// Логировать сводку метрик производительности.
+    fn log_performance_summary(&self) {
+        self.get_performance_metrics().log_summary();
+    }
 }
 
 /// Создать ML-классификатор на основе конфигурации.
@@ -94,12 +246,17 @@ pub fn create_ml_classifier(config: MLClassifierConfig) -> Result<Box<dyn MLClas
 /// - Процессы с высоким CPU получают тип "cpu_intensive"
 /// - Процессы с высоким IO получают тип "io_intensive"
 #[derive(Debug)]
-pub struct StubMLClassifier;
+pub struct StubMLClassifier {
+    /// Метрики производительности.
+    performance_metrics: MLPerformanceMetrics,
+}
 
 impl StubMLClassifier {
     /// Создать новый заглушку ML-классификатора.
     pub fn new() -> Self {
-        Self
+        Self {
+            performance_metrics: MLPerformanceMetrics::new(),
+        }
     }
 }
 
@@ -110,7 +267,8 @@ impl Default for StubMLClassifier {
 }
 
 impl MLClassifier for StubMLClassifier {
-    fn classify(&self, process: &ProcessRecord) -> MLClassificationResult {
+    fn classify(&mut self, process: &ProcessRecord) -> MLClassificationResult {
+        let start_time = Instant::now();
         let mut tags = HashSet::new();
         let mut process_type = None;
         let mut confidence: f64 = 0.5;
@@ -179,11 +337,24 @@ impl MLClassifier for StubMLClassifier {
             confidence = 0.3;
         }
 
+        let duration = start_time.elapsed().as_micros();
+        
+        // Зарегистрировать успешную классификацию
+        self.performance_metrics.record_successful_classification(duration, confidence);
+        
         MLClassificationResult {
             process_type,
             tags: tags.into_iter().collect(),
             confidence,
         }
+    }
+
+    fn get_performance_metrics(&self) -> MLPerformanceMetrics {
+        self.performance_metrics.clone()
+    }
+
+    fn reset_performance_metrics(&mut self) {
+        self.performance_metrics.reset();
     }
 }
 
@@ -195,6 +366,8 @@ impl MLClassifier for StubMLClassifier {
 pub struct CatBoostMLClassifier {
     /// Внутренняя модель CatBoost
     model: CatBoostModel,
+    /// Метрики производительности
+    performance_metrics: MLPerformanceMetrics,
 }
 
 /// Внутреннее представление модели CatBoost
@@ -235,7 +408,10 @@ impl CatBoostMLClassifier {
             CatBoostModel::Stub
         };
 
-        Ok(Self { model })
+        Ok(Self {
+            model,
+            performance_metrics: MLPerformanceMetrics::new(),
+        })
     }
 
     /// Загрузить модель из файла.
@@ -389,17 +565,35 @@ impl CatBoostMLClassifier {
 }
 
 impl MLClassifier for CatBoostMLClassifier {
-    fn classify(&self, process: &ProcessRecord) -> MLClassificationResult {
-        match &self.model {
+    fn classify(&mut self, process: &ProcessRecord) -> MLClassificationResult {
+        let start_time = Instant::now();
+        
+        let result = match &self.model {
             #[cfg(feature = "catboost")]
             CatBoostModel::Json(model) => self.classify_with_catboost(model, process),
             #[cfg(feature = "onnx")]
             CatBoostModel::Onnx(session) => self.classify_with_onnx(session, process),
             CatBoostModel::Stub => {
                 debug!("ML-классификатор отключен, используется заглушка");
-                StubMLClassifier::new().classify(process)
+                let mut stub = StubMLClassifier::new();
+                stub.classify(process)
             }
-        }
+        };
+        
+        let duration = start_time.elapsed().as_micros();
+        
+        // Зарегистрировать успешную классификацию
+        self.performance_metrics.record_successful_classification(duration, result.confidence);
+        
+        result
+    }
+
+    fn get_performance_metrics(&self) -> MLPerformanceMetrics {
+        self.performance_metrics.clone()
+    }
+
+    fn reset_performance_metrics(&mut self) {
+        self.performance_metrics.reset();
     }
 }
 
@@ -490,6 +684,9 @@ impl CatBoostMLClassifier {
                     "Ошибка при предсказании с использованием CatBoost модели: {}",
                     e
                 );
+                // Зарегистрировать ошибку классификации
+                let mut metrics = self.performance_metrics.clone();
+                metrics.record_classification_error();
                 MLClassificationResult {
                     process_type: Some("unknown".to_string()),
                     tags: vec!["ml_error".to_string()],
@@ -601,6 +798,10 @@ impl CatBoostMLClassifier {
             }
         }
 
+        // Зарегистрировать ошибку классификации
+        let mut metrics = self.performance_metrics.clone();
+        metrics.record_classification_error();
+
         MLClassificationResult {
             process_type: Some("unknown".to_string()),
             tags: vec!["ml_error".to_string()],
@@ -659,7 +860,7 @@ mod tests {
 
     #[test]
     fn test_stub_ml_classifier_gui_process() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let mut process = create_test_process();
         process.has_gui_window = true;
 
@@ -673,7 +874,7 @@ mod tests {
 
     #[test]
     fn test_stub_ml_classifier_high_cpu_process() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let mut process = create_test_process();
         process.cpu_share_10s = Some(0.5);
 
@@ -686,7 +887,7 @@ mod tests {
 
     #[test]
     fn test_stub_ml_classifier_high_io_process() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let mut process = create_test_process();
         process.io_read_bytes = Some(2 * 1024 * 1024); // 2MB
 
@@ -699,7 +900,7 @@ mod tests {
 
     #[test]
     fn test_stub_ml_classifier_audio_process() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let mut process = create_test_process();
         process.is_audio_client = true;
 
@@ -713,7 +914,7 @@ mod tests {
 
     #[test]
     fn test_stub_ml_classifier_focused_process() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let mut process = create_test_process();
         process.is_focused_window = true;
 
@@ -726,8 +927,124 @@ mod tests {
     }
 
     #[test]
+    fn test_performance_metrics_initialization() {
+        let metrics = MLPerformanceMetrics::new();
+        assert_eq!(metrics.total_classifications, 0);
+        assert_eq!(metrics.successful_classifications, 0);
+        assert_eq!(metrics.classification_errors, 0);
+        assert_eq!(metrics.total_classification_time_us, 0);
+        assert!(metrics.min_classification_time_us.is_none());
+        assert!(metrics.max_classification_time_us.is_none());
+        assert_eq!(metrics.total_confidence, 0.0);
+        assert_eq!(metrics.high_confidence_classifications, 0);
+        assert_eq!(metrics.medium_confidence_classifications, 0);
+        assert_eq!(metrics.low_confidence_classifications, 0);
+    }
+
+    #[test]
+    fn test_performance_metrics_successful_classification() {
+        let mut metrics = MLPerformanceMetrics::new();
+        metrics.record_successful_classification(100, 0.9);
+        
+        assert_eq!(metrics.total_classifications, 1);
+        assert_eq!(metrics.successful_classifications, 1);
+        assert_eq!(metrics.classification_errors, 0);
+        assert_eq!(metrics.total_classification_time_us, 100);
+        assert_eq!(metrics.min_classification_time_us, Some(100));
+        assert_eq!(metrics.max_classification_time_us, Some(100));
+        assert_eq!(metrics.total_confidence, 0.9);
+        assert_eq!(metrics.high_confidence_classifications, 1);
+        assert_eq!(metrics.medium_confidence_classifications, 0);
+        assert_eq!(metrics.low_confidence_classifications, 0);
+        
+        assert_eq!(metrics.average_classification_time_us(), Some(100.0));
+        assert_eq!(metrics.average_confidence(), Some(0.9));
+        assert_eq!(metrics.success_rate(), Some(1.0));
+    }
+
+    #[test]
+    fn test_performance_metrics_multiple_classifications() {
+        let mut metrics = MLPerformanceMetrics::new();
+        metrics.record_successful_classification(100, 0.9);  // high confidence
+        metrics.record_successful_classification(200, 0.6);  // medium confidence
+        metrics.record_successful_classification(150, 0.4);  // low confidence
+        
+        assert_eq!(metrics.total_classifications, 3);
+        assert_eq!(metrics.successful_classifications, 3);
+        assert_eq!(metrics.classification_errors, 0);
+        assert_eq!(metrics.total_classification_time_us, 450);
+        assert_eq!(metrics.min_classification_time_us, Some(100));
+        assert_eq!(metrics.max_classification_time_us, Some(200));
+        assert_eq!(metrics.total_confidence, 1.9);
+        assert_eq!(metrics.high_confidence_classifications, 1);
+        assert_eq!(metrics.medium_confidence_classifications, 1);
+        assert_eq!(metrics.low_confidence_classifications, 1);
+        
+        assert_eq!(metrics.average_classification_time_us(), Some(150.0));
+        assert_eq!(metrics.average_confidence(), Some(1.9 / 3.0));
+        assert_eq!(metrics.success_rate(), Some(1.0));
+    }
+
+    #[test]
+    fn test_performance_metrics_with_errors() {
+        let mut metrics = MLPerformanceMetrics::new();
+        metrics.record_successful_classification(100, 0.8);
+        metrics.record_classification_error();
+        metrics.record_successful_classification(200, 0.7);
+        
+        assert_eq!(metrics.total_classifications, 3);
+        assert_eq!(metrics.successful_classifications, 2);
+        assert_eq!(metrics.classification_errors, 1);
+        assert_eq!(metrics.total_classification_time_us, 300);
+        assert_eq!(metrics.success_rate(), Some(2.0 / 3.0));
+        assert_eq!(metrics.average_classification_time_us(), Some(150.0));
+    }
+
+    #[test]
+    fn test_performance_metrics_reset() {
+        let mut metrics = MLPerformanceMetrics::new();
+        metrics.record_successful_classification(100, 0.9);
+        metrics.record_classification_error();
+        
+        assert_eq!(metrics.total_classifications, 2);
+        
+        metrics.reset();
+        
+        assert_eq!(metrics.total_classifications, 0);
+        assert_eq!(metrics.successful_classifications, 0);
+        assert_eq!(metrics.classification_errors, 0);
+        assert_eq!(metrics.total_classification_time_us, 0);
+    }
+
+    #[test]
+    fn test_stub_classifier_performance_metrics() {
+        let mut classifier = StubMLClassifier::new();
+        let process = create_test_process();
+        
+        // Initial metrics should be empty
+        let initial_metrics = classifier.get_performance_metrics();
+        assert_eq!(initial_metrics.total_classifications, 0);
+        
+        // Classify a process
+        let result = classifier.classify(&process);
+        
+        // Metrics should now show one classification
+        let metrics = classifier.get_performance_metrics();
+        assert_eq!(metrics.total_classifications, 1);
+        assert_eq!(metrics.successful_classifications, 1);
+        assert_eq!(metrics.classification_errors, 0);
+        assert!(metrics.average_classification_time_us().is_some());
+        assert_eq!(metrics.average_confidence(), Some(result.confidence));
+        
+        // Reset and verify
+        classifier.reset_performance_metrics();
+        let reset_metrics = classifier.get_performance_metrics();
+        assert_eq!(reset_metrics.total_classifications, 0);
+    }
+
+    #[test]
     fn test_stub_ml_classifier_unknown_process() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let process = create_test_process();
 
         let result = classifier.classify(&process);
@@ -738,7 +1055,7 @@ mod tests {
 
     #[test]
     fn test_stub_ml_classifier_multiple_features() {
-        let classifier = StubMLClassifier::new();
+        let mut classifier = StubMLClassifier::new();
         let mut process = create_test_process();
         process.has_gui_window = true;
         process.cpu_share_10s = Some(0.4);
@@ -772,7 +1089,7 @@ mod tests {
         assert!(classifier.is_ok());
 
         // Должен вернуть StubMLClassifier
-        let classifier = classifier.unwrap();
+        let mut classifier = classifier.unwrap();
         let result = classifier.classify(&create_test_process());
         assert_eq!(result.process_type, Some("unknown".to_string()));
     }
