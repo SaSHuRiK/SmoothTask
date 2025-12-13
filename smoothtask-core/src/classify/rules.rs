@@ -17,7 +17,7 @@ use lru::LruCache;
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
 
-
+use crate::classify::pattern_watcher::PatternUpdateResult;
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
 /// Категория паттернов (browser, ide, terminal, batch, и т.д.).

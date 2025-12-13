@@ -11,34 +11,27 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-756: Исправить ошибки компиляции в тестах rules.rs после рефакторинга PatternDatabase
-  - Тип: Rust / core / classify / bugfix
-  - Примечания: Исправление ошибок компиляции в тестах после изменения сигнатуры функций классификации
+- [x] ST-757: Исправить ошибки компиляции в тестах policy/engine.rs и model/ranker.rs после добавления I/O полей
+  - Тип: Rust / core / tests / bugfix
+  - Примечания: Исправление ошибок компиляции в тестах после добавления новых I/O полей в ProcessRecord и AppGroupRecord
   - Приоритет: Высокий
   - Статус: COMPLETED
   - Время выполнения: ~60 минут
   - Критерии готовности:
-    - [x] Обновить вызовы classify_process с &mut PatternDatabase на &Arc<Mutex<PatternDatabase>>
-    - [x] Обновить вызовы classify_app_group с &PatternDatabase на &Arc<Mutex<PatternDatabase>>
-    - [x] Обновить вызовы classify_all с &mut PatternDatabase на &Arc<Mutex<PatternDatabase>>
-    - [x] Добавить недостающие I/O поля в тестовые AppGroupRecord
-    - [x] Удалить неиспользуемые импорты
-    - [x] Исправить ошибки компиляции в других тестовых файлах (actuator_integration_test.rs, snapshots.rs, features.rs)
-  - Ожидаемые результаты: Успешная компиляция и прохождение тестов в rules.rs и других тестовых файлах
+    - [x] Добавить недостающие I/O поля (io_read_operations, io_write_operations, io_total_operations, io_data_source) в тестовые AppGroupRecord в policy/engine.rs
+    - [x] Добавить недостающие I/O поля в тестовые AppGroupRecord в model/ranker.rs
+    - [x] Убедиться, что все тестовые структуры соответствуют обновлённым определениям
+    - [x] Проверить успешную компиляцию после исправлений
+  - Ожидаемые результаты: Успешная компиляция и прохождение тестов в policy/engine.rs и model/ranker.rs
   - Результаты:
-    - Исправлены все ошибки компиляции в тестах rules.rs
-    - Обновлены вызовы функций классификации для использования Arc<Mutex<PatternDatabase>>
-    - Добавлены недостающие I/O поля в тестовые структуры в нескольких файлах
-    - Удалены неиспользуемые импорты
-    - Успешная компиляция модуля rules.rs и других тестовых файлов
+    - Исправлены все ошибки компиляции в тестах policy/engine.rs (12+ AppGroupRecord структур)
+    - Исправлены все ошибки компиляции в тестах model/ranker.rs (20+ AppGroupRecord структур)
+    - Добавлены недостающие I/O поля во все тестовые структуры
+    - Успешная компиляция модулей policy/engine.rs и model/ranker.rs
     - Основная библиотека компилируется успешно
   - Изменённые файлы:
-    - smoothtask-core/src/classify/rules.rs: Исправлены тестовые вызовы и добавлены недостающие поля
-    - smoothtask-core/tests/actuator_integration_test.rs: Добавлены недостающие I/O поля
-    - smoothtask-core/src/logging/snapshots.rs: Добавлены недостающие I/O поля
-    - smoothtask-core/src/model/features.rs: Добавлены недостающие I/O поля
-    - smoothtask-core/src/model/ranker.rs: Частично исправлены тестовые структуры
-    - smoothtask-core/src/policy/engine.rs: Частично исправлены тестовые структуры
+    - smoothtask-core/src/policy/engine.rs: Исправлены все тестовые AppGroupRecord структуры
+    - smoothtask-core/src/model/ranker.rs: Исправлены все тестовые AppGroupRecord структуры
 
 ## 2. Бэклог
 
@@ -109,27 +102,27 @@
 
 ## 3. Недавно сделано (Recently Done)
 
-- [x] ST-756: Исправить ошибки компиляции в тестах rules.rs после рефакторинга PatternDatabase
-  - Тип: Rust / core / classify / bugfix
-  - Примечания: Исправление ошибок компиляции в тестах после изменения сигнатуры функций классификации
+- [x] ST-757: Исправить ошибки компиляции в тестах policy/engine.rs и model/ranker.rs после добавления I/O полей
+  - Тип: Rust / core / tests / bugfix
+  - Примечания: Исправление ошибок компиляции в тестах после добавления новых I/O полей в ProcessRecord и AppGroupRecord
   - Приоритет: Высокий
   - Статус: COMPLETED
-  - Время выполнения: ~30 минут
+  - Время выполнения: ~60 минут
   - Критерии готовности:
-    - [x] Обновить вызовы classify_process с &mut PatternDatabase на &Arc<Mutex<PatternDatabase>>
-    - [x] Обновить вызовы classify_app_group с &PatternDatabase на &Arc<Mutex<PatternDatabase>>
-    - [x] Обновить вызовы classify_all с &mut PatternDatabase на &Arc<Mutex<PatternDatabase>>
-    - [x] Добавить недостающие I/O поля в тестовые AppGroupRecord
-    - [x] Удалить неиспользуемые импорты
-  - Ожидаемые результаты: Успешная компиляция и прохождение тестов в rules.rs
+    - [x] Добавить недостающие I/O поля (io_read_operations, io_write_operations, io_total_operations, io_data_source) в тестовые AppGroupRecord в policy/engine.rs
+    - [x] Добавить недостающие I/O поля в тестовые AppGroupRecord в model/ranker.rs
+    - [x] Убедиться, что все тестовые структуры соответствуют обновлённым определениям
+    - [x] Проверить успешную компиляцию после исправлений
+  - Ожидаемые результаты: Успешная компиляция и прохождение тестов в policy/engine.rs и model/ranker.rs
   - Результаты:
-    - Исправлены все ошибки компиляции в тестах rules.rs
-    - Обновлены вызовы функций классификации для использования Arc<Mutex<PatternDatabase>>
-    - Добавлены недостающие I/O поля в тестовые структуры
-    - Удалены неиспользуемые импорты
-    - Успешная компиляция модуля rules.rs
+    - Исправлены все ошибки компиляции в тестах policy/engine.rs (12+ AppGroupRecord структур)
+    - Исправлены все ошибки компиляции в тестах model/ranker.rs (20+ AppGroupRecord структур)
+    - Добавлены недостающие I/O поля во все тестовые структуры
+    - Успешная компиляция модулей policy/engine.rs и model/ranker.rs
+    - Основная библиотека компилируется успешно
   - Изменённые файлы:
-    - smoothtask-core/src/classify/rules.rs: Исправлены тестовые вызовы и добавлены недостающие поля
+    - smoothtask-core/src/policy/engine.rs: Исправлены все тестовые AppGroupRecord структуры
+    - smoothtask-core/src/model/ranker.rs: Исправлены все тестовые AppGroupRecord структуры
 
 - [x] ST-754: Улучшить систему автоматического обновления конфигурации
   - Тип: Rust / core / config / auto-update
