@@ -151,21 +151,22 @@ impl NvmlHandle {
         Ok(Self { _private: () })
     }
     
-    fn shutdown(&self) {
-        info!("Завершение работы NVML библиотеки");
-        // In a real implementation, we would call nvmlShutdown()
-    }
+
 }
 
 /// Global NVML handle (lazy initialized)
 fn get_nvml_handle() -> Result<NvmlHandle> {
-    static mut NVML_HANDLE: Option<NvmlHandle> = None;
+    use once_cell::sync::OnceCell;
+    
+    static NVML_HANDLE: OnceCell<NvmlHandle> = OnceCell::new();
     static INIT: std::sync::Once = std::sync::Once::new();
 
     INIT.call_once(|| {
         match NvmlHandle::new() {
             Ok(handle) => {
-                unsafe { NVML_HANDLE = Some(handle); }
+                if let Err(_e) = NVML_HANDLE.set(handle) {
+                    error!("Не удалось установить NVML handle");
+                }
             }
             Err(e) => {
                 error!(
@@ -176,7 +177,7 @@ fn get_nvml_handle() -> Result<NvmlHandle> {
         }
     });
 
-    match unsafe { NVML_HANDLE.as_ref() } {
+    match NVML_HANDLE.get() {
         Some(handle) => Ok(handle.clone()),
         None => Err(anyhow!(
             "NVML не инициализирован. \n            Это может быть вызвано:\n            1) Ошибкой инициализации NVML\n            2) Отсутствием NVIDIA GPU в системе\n            3) Проблемами с драйверами NVIDIA\n            Рекомендации:\n            - Проверьте наличие NVIDIA GPU: lspci | grep -i nvidia\n            - Проверьте загрузку драйверов: nvidia-smi\n            - Проверьте системные логи: sudo dmesg | grep nvidia\n            - Попробуйте перезагрузить систему"

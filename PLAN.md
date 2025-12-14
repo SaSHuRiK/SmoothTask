@@ -16,19 +16,17 @@
   - Примечания: Remove unused imports and fix warnings in the codebase
   - Приоритет: Высокий
   - Оценка времени: ~30 минут
-  - Время выполнения: ~30 минут
+  - Время выполнения: ~45 минут
   - Критерии готовности:
-    - [x] Remove unused imports from config_struct.rs
-    - [x] Remove unused imports from health modules
-    - [x] Remove unused imports from metrics modules
-    - [x] Fix static_mut_refs warnings
-    - [x] Fix unreachable code in config watcher
-    - [x] Fix unused mutable variables
-    - [x] Fix unused variables
-    - [x] Fix unused doc comments for lazy_static macros
-    - [x] Verify all tests still pass
+    - [x] Remove unused function detect_by_command_line_arguments from rules.rs
+    - [x] Remove unused function collect_process_energy_metrics from process.rs
+    - [x] Remove unused function read_io_stats from process.rs
+    - [x] Remove unused shutdown method from nvml_wrapper.rs
+    - [x] Fix static mutable reference warning in nvml_wrapper.rs by using OnceCell
+    - [x] Update tests to use read_io_stats_enhanced instead of read_io_stats
+    - [x] Verify compilation succeeds with reduced warnings
   - Ожидаемые результаты: Clean codebase with minimal warnings
-  - Результаты: Reduced warnings from 12 to 7 (remaining warnings are for unused functions kept for compatibility)
+  - Результаты: Reduced warnings from 7 to 3 (remaining warnings are for eBPF functions used when feature is enabled and one unused variant that's actually used in match statements)
 
 - [x] ST-832: Add comprehensive documentation for new features
   - Тип: Documentation

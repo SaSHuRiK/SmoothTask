@@ -918,70 +918,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 /// - eBPF мониторинг (если включен)
 /// - RAPL интерфейсы (если доступны)
 ///
-/// Возвращает (energy_uj, power_w, energy_timestamp) или (None, None, None), если данные недоступны.
-async fn collect_process_energy_metrics(pid: i32) -> (Option<u64>, Option<f32>, Option<u64>) {
-    // Пробуем прочитать из /proc/[pid]/power/energy_uj (если доступно)
-    // Это экспериментальный интерфейс, доступный на некоторых системах
-    let energy_path = format!("/proc/{}/power/energy_uj", pid);
-    
-    if let Ok(energy_content) = std::fs::read_to_string(&energy_path) {
-        if let Ok(energy_uj) = energy_content.trim().parse::<u64>() {
-            // Конвертируем в ватты (упрощенная конвертация)
-            // Для точного расчета нужны два измерения с известным интервалом
-            let power_w = energy_uj as f32 / 1_000_000.0;
-            let energy_timestamp = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .ok()
-                .map(|d| d.as_secs());
-            
-            tracing::debug!(
-                "Энергопотребление процесса PID {}: {} мкДж ({} Вт)",
-                pid,
-                energy_uj,
-                power_w
-            );
-            
-            return (Some(energy_uj), Some(power_w), energy_timestamp);
-        }
-    }
-    
-    // Если /proc/[pid]/power/energy_uj недоступен, используем ProcessEnergyMonitor
-    // который обрабатывает RAPL, eBPF и другие источники автоматически
-    // В будущем можно добавить более тесную интеграцию с eBPF или другими источниками
-    
-    tracing::debug!(
-        "Энергопотребление для процесса PID {} недоступно: все источники не найдены или нечитаемы",
-        pid
-    );
-    
-    // Используем новый модуль process_energy для сбора метрик
-    match crate::metrics::process_energy::GlobalProcessEnergyMonitor::collect_process_energy(pid).await {
-        Ok(Some(stats)) => {
-            tracing::debug!(
-                "Энергопотребление процесса PID {}: {} мкДж ({} Вт) [источник: {:?}]",
-                pid,
-                stats.energy_uj,
-                stats.power_w,
-                stats.source
-            );
-            (Some(stats.energy_uj), Some(stats.power_w), Some(stats.timestamp))
-        }
-        Ok(None) => {
-            tracing::debug!(
-                "Энергопотребление для процесса PID {} недоступно: все источники не найдены или нечитаемы",
-                pid
-            );
-            (None, None, None)
-        }
-        Err(e) => {
-            tracing::warn!(
-                "Ошибка при сборе метрик энергопотребления для процесса PID {}: {}",
-                pid, e
-            );
-            (None, None, None)
-        }
-    }
-}
+
 
 /// Улучшить запись процесса данными о дисковом вводе-выводе из eBPF.
 ///
@@ -1411,47 +1348,6 @@ fn read_env_vars(pid: i32) -> Result<(bool, bool, Option<String>, bool)> {
     Ok((has_display, has_wayland, term, ssh))
 }
 
-/// Читает статистику ввода-вывода процесса из /proc/[pid]/io.
-/// Эта операция может быть тяжелой, поэтому используется опционально.
-fn read_io_stats(pid: i32) -> Result<(Option<u64>, Option<u64>)> {
-    let io_path = format!("/proc/{}/io", pid);
-    let io_content = match fs::read_to_string(&io_path) {
-        Ok(c) => c,
-        Err(e) => {
-            // Не критичная ошибка - io статистика может быть недоступна
-            tracing::debug!(
-                "Не удалось прочитать /proc/{}/io: {}. 
-                 Статистика ввода-вывода может быть недоступна для этого процесса",
-                pid,
-                e
-            );
-            return Ok((None, None));
-        }
-    };
-
-    let mut read_bytes = None;
-    let mut write_bytes = None;
-
-    for line in io_content.lines() {
-        if let Some(value) = line.strip_prefix("read_bytes: ") {
-            if let Ok(bytes) = value.trim().parse::<u64>() {
-                read_bytes = Some(bytes);
-            }
-        } else if let Some(value) = line.strip_prefix("write_bytes: ") {
-            if let Ok(bytes) = value.trim().parse::<u64>() {
-                write_bytes = Some(bytes);
-            }
-        }
-
-        // Если нашли оба значения, можно прекратить парсинг
-        if read_bytes.is_some() && write_bytes.is_some() {
-            break;
-        }
-    }
-
-    Ok((read_bytes, write_bytes))
-}
-
 /// Улучшенная версия read_io_stats, которая также читает количество операций ввода-вывода.
 /// Читает статистику ввода-вывода процесса из /proc/[pid]/io, включая операции.
 fn read_io_stats_enhanced(pid: i32) -> Result<(Option<u64>, Option<u64>, Option<u64>, Option<u64>)> {
@@ -1590,11 +1486,13 @@ mod tests {
     #[test]
     fn test_read_io_stats_missing_file() {
         // Тестируем обработку ошибок, когда файл /proc/[pid]/io отсутствует
-        let result = read_io_stats(99999);
+        let result = read_io_stats_enhanced(99999);
         assert!(result.is_ok());
-        let (read_bytes, write_bytes) = result.unwrap();
+        let (read_bytes, write_bytes, read_ops, write_ops) = result.unwrap();
         assert_eq!(read_bytes, None);
         assert_eq!(write_bytes, None);
+        assert_eq!(read_ops, None);
+        assert_eq!(write_ops, None);
     }
 
     #[test]

@@ -1127,48 +1127,7 @@ impl PatternDatabase {
         matches
     }
 
-    /// Обнаружение по аргументам командной строки.
-    ///
-    /// # Аргументы
-    ///
-    /// * `cmdline` - командная строка процесса
-    ///
-    /// # Возвращает
-    ///
-    /// Список совпадающих паттернов с их категориями.
-    fn detect_by_command_line_arguments(
-        &self,
-        cmdline: &str,
-    ) -> Vec<(&PatternCategory, &AppPattern)> {
-        let mut matches = Vec::new();
 
-        // Извлекаем аргументы из командной строки
-        let args: Vec<&str> = cmdline.split_whitespace().collect();
-
-        // Пытаемся найти совпадения в аргументах
-        for arg in args {
-            // Пропускаем аргументы, которые являются флагами или путями
-            if arg.starts_with('-') || arg.starts_with('/') {
-                continue;
-            }
-
-            // Пытаемся сопоставить аргумент с паттернами
-            for (category, pattern) in &self.all_patterns {
-                for exe_pattern in &pattern.exe_patterns {
-                    if Self::matches_pattern(arg, exe_pattern) {
-                        matches.push((category, pattern));
-                        break;
-                    }
-                }
-            }
-
-            if !matches.is_empty() {
-                break;
-            }
-        }
-
-        matches
-    }
 
     /// Проверяет, соответствует ли строка паттерну.
     ///
