@@ -1039,6 +1039,86 @@ fn collect_amdgpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     Ok(metrics)
 }
 
+/// Collect GPU metrics using Intel sysfs interface
+fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let mut metrics = GpuMetrics {
+        device: device.clone(),
+        utilization: GpuUtilization::default(),
+        memory: GpuMemory::default(),
+        temperature: GpuTemperature::default(),
+        power: GpuPower::default(),
+        clocks: GpuClocks::default(),
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let device_path = &device.device_path;
+
+    // Collect GPU utilization
+    if let Ok(gpu_busy) = read_sysfs_u32(device_path, "gpu_busy_percent") {
+        metrics.utilization.gpu_util = gpu_busy as f32 / 100.0;
+        debug!("  Intel GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    }
+
+    // Collect memory metrics
+    if let Ok(total_mem) = read_sysfs_u64(device_path, "mem_total_bytes") {
+        metrics.memory.total_bytes = total_mem;
+    }
+
+    if let Ok(used_mem) = read_sysfs_u64(device_path, "mem_used_bytes") {
+        metrics.memory.used_bytes = used_mem;
+    }
+
+    if metrics.memory.total_bytes > 0 {
+        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        debug!(
+            "  Intel GPU memory: {}/{} MB used",
+            metrics.memory.used_bytes / 1024 / 1024,
+            metrics.memory.total_bytes / 1024 / 1024
+        );
+    }
+
+    // Collect temperature
+    let hwmon_dir = device_path.join("hwmon");
+    if hwmon_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&hwmon_dir) {
+            for entry in entries.flatten() {
+                let hwmon_path = entry.path();
+                if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
+                    for temp_file in temp_files.flatten() {
+                        let temp_path = temp_file.path();
+                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name.ends_with("_input") && file_name.contains("temp") {
+                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                                    metrics.temperature.temperature_c = Some(temp_c);
+                                    debug!("  Intel GPU temperature: {:.1}°C", temp_c);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Collect power
+    if let Ok(power_w) = read_sysfs_u32(device_path, "power_avg") {
+        metrics.power.power_w = Some(power_w as f32);
+        debug!("  Intel GPU power: {:.1}W", power_w as f32);
+    }
+
+    // Collect clocks
+    if let Ok(core_clock) = read_sysfs_u32(device_path, "gt_cur_freq_mhz") {
+        metrics.clocks.core_clock_mhz = Some(core_clock);
+        debug!("  Intel GPU core clock: {} MHz", core_clock);
+    }
+
+    Ok(metrics)
+}
+
 /// Try to collect GPU metrics using vendor-specific APIs
 fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Try NVML first for NVIDIA devices
@@ -1064,6 +1144,19 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
             }
             Err(e) => {
                 debug!("Failed to collect AMDGPU metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // Try Intel for Intel devices
+    if device.driver.as_deref() == Some("i915") {
+        match collect_intel_gpu_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected Intel GPU metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect Intel GPU metrics for device {}: {}", device.name, e);
             }
         }
     }
@@ -1456,6 +1549,23 @@ mod tests {
 
         memory.free_bytes = memory.total_bytes.saturating_sub(memory.used_bytes);
         assert_eq!(memory.free_bytes, 0);
+    }
+
+    #[test]
+    fn test_intel_gpu_metrics_collection() {
+        // Create a mock Intel GPU device
+        let device = GpuDevice {
+            name: "card0".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:02.0/drm/card0/device"),
+            vendor_id: Some("0x8086".to_string()),
+            device_id: Some("0x1234".to_string()),
+            driver: Some("i915".to_string()),
+        };
+
+        // This test would need a real system with Intel GPU devices
+        // For now, we just test that the function doesn't panic
+        let result = collect_intel_gpu_metrics(&device);
+        assert!(result.is_ok());
     }
 
     #[test]

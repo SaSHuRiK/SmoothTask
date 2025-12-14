@@ -402,6 +402,79 @@ enum CatBoostModel {
 struct FeatureCache {
     /// Кэш фич: PID -> Vec<f32>
     cache: Mutex<lru::LruCache<u32, Vec<f32>>>,
+    /// Статистика кэша
+    stats: Mutex<CacheStats>,
+}
+
+/// Статистика кэша
+#[derive(Debug, Clone, Default)]
+struct CacheStats {
+    /// Общее количество запросов к кэшу
+    total_requests: u64,
+    /// Количество хитов кэша
+    cache_hits: u64,
+    /// Количество миссов кэша
+    cache_misses: u64,
+    /// Общее количество добавленных элементов
+    total_insertions: u64,
+    /// Общее количество удаленных элементов
+    total_evictions: u64,
+    /// Суммарное время, сэкономленное благодаря кэшу (в микросекундах)
+    total_time_saved_us: u128,
+}
+
+impl CacheStats {
+    /// Зарегистрировать хит кэша
+    fn record_hit(&mut self) {
+        self.total_requests += 1;
+        self.cache_hits += 1;
+    }
+    
+    /// Зарегистрировать мисс кэша
+    fn record_miss(&mut self) {
+        self.total_requests += 1;
+        self.cache_misses += 1;
+    }
+    
+    /// Зарегистрировать добавление элемента
+    fn record_insertion(&mut self) {
+        self.total_insertions += 1;
+    }
+    
+    /// Зарегистрировать удаление элемента
+    fn record_eviction(&mut self) {
+        self.total_evictions += 1;
+    }
+    
+    /// Зарегистрировать сэкономленное время
+    fn record_time_saved(&mut self, time_saved_us: u128) {
+        self.total_time_saved_us += time_saved_us;
+    }
+    
+    /// Получить процент хитов кэша
+    fn hit_rate(&self) -> Option<f64> {
+        if self.total_requests > 0 {
+            Some(self.cache_hits as f64 / self.total_requests as f64)
+        } else {
+            None
+        }
+    }
+    
+    /// Логировать сводку статистики кэша
+    fn log_summary(&self) {
+        info!("Feature Cache Statistics Summary:");
+        info!("  Total requests: {}", self.total_requests);
+        info!("  Cache hits: {}", self.cache_hits);
+        info!("  Cache misses: {}", self.cache_misses);
+        
+        if let Some(hit_rate) = self.hit_rate() {
+            info!("  Hit rate: {:.2}%", hit_rate * 100.0);
+        }
+        
+        info!("  Total insertions: {}", self.total_insertions);
+        info!("  Total evictions: {}", self.total_evictions);
+        info!("  Total time saved: {} μs", self.total_time_saved_us);
+    }
 }
 
 impl FeatureCache {
@@ -409,6 +482,7 @@ impl FeatureCache {
     fn new(capacity: usize) -> Self {
         Self {
             cache: Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(capacity).unwrap())),
+            stats: Mutex::new(CacheStats::default()),
         }
     }
     
@@ -419,24 +493,73 @@ impl FeatureCache {
     {
         let mut cache = self.cache.lock().unwrap();
         if let Some(features) = cache.get(&pid) {
+            let mut stats = self.stats.lock().unwrap();
+            stats.record_hit();
             return features.clone();
         }
         
         let features = compute_fn();
         cache.put(pid, features.clone());
+        
+        let mut stats = self.stats.lock().unwrap();
+        stats.record_miss();
+        stats.record_insertion();
+        
         features
     }
     
     /// Очистить кэш.
     fn clear(&self) {
         let mut cache = self.cache.lock().unwrap();
+        let mut stats = self.stats.lock().unwrap();
+        stats.total_evictions += cache.len() as u64;
         cache.clear();
     }
     
     /// Установить новую емкость кэша.
     fn set_capacity(&self, capacity: usize) {
         let mut cache = self.cache.lock().unwrap();
+        let mut stats = self.stats.lock().unwrap();
+        stats.total_evictions += cache.len() as u64;
         *cache = lru::LruCache::new(std::num::NonZeroUsize::new(capacity).unwrap());
+    }
+    
+    /// Получить текущую статистику кэша.
+    fn get_stats(&self) -> CacheStats {
+        let stats = self.stats.lock().unwrap();
+        stats.clone()
+    }
+    
+    /// Логировать сводку статистики кэша.
+    fn log_stats_summary(&self) {
+        let stats = self.get_stats();
+        stats.log_summary();
+    }
+    
+    /// Настроить емкость кэша на основе давления памяти.
+    /// Уменьшает емкость кэша при высоком давлении памяти.
+    fn adjust_capacity_for_memory_pressure(&self, memory_pressure: f32) {
+        let mut cache = self.cache.lock().unwrap();
+        let current_capacity = cache.cap().get();
+        
+        // Уменьшаем емкость кэша при высоком давлении памяти
+        if memory_pressure > 0.8 {
+            let new_capacity = (current_capacity as f32 * 0.7) as usize;
+            if new_capacity > 0 {
+                let mut stats = self.stats.lock().unwrap();
+                stats.total_evictions += cache.len() as u64;
+                *cache = lru::LruCache::new(std::num::NonZeroUsize::new(new_capacity).unwrap());
+                info!("Уменьшена емкость кэша до {} из-за высокого давления памяти ({:.1}%)", new_capacity, memory_pressure * 100.0);
+            }
+        } else if memory_pressure < 0.3 {
+            // Увеличиваем емкость кэша при низком давлении памяти
+            let new_capacity = (current_capacity as f32 * 1.3) as usize;
+            if new_capacity > current_capacity {
+                let mut stats = self.stats.lock().unwrap();
+                *cache = lru::LruCache::new(std::num::NonZeroUsize::new(new_capacity).unwrap());
+                info!("Увеличена емкость кэша до {} из-за низкого давления памяти ({:.1}%)", new_capacity, memory_pressure * 100.0);
+            }
+        }
     }
 }
 
@@ -799,6 +922,31 @@ impl CatBoostMLClassifier {
     /// Рекомендуемые значения: 512-2048 для большинства систем.
     pub fn set_feature_cache_capacity(capacity: usize) {
         GLOBAL_FEATURE_CACHE.set_capacity(capacity);
+    }
+    
+    /// Возвращает текущую емкость кэша фич.
+    pub fn get_feature_cache_capacity() -> usize {
+        let cache = GLOBAL_FEATURE_CACHE.cache.lock().unwrap();
+        cache.cap().get()
+    }
+    
+    /// Возвращает текущую статистику кэша фич.
+    pub fn get_feature_cache_stats() -> CacheStats {
+        GLOBAL_FEATURE_CACHE.get_stats()
+    }
+    
+    /// Логирует сводку статистики кэша фич.
+    pub fn log_feature_cache_stats() {
+        GLOBAL_FEATURE_CACHE.log_stats_summary();
+    }
+    
+    /// Настраивает емкость кэша на основе давления памяти.
+    ///
+    /// # Аргументы
+    ///
+    /// * `memory_pressure` - уровень давления памяти (0.0 - 1.0)
+    pub fn adjust_feature_cache_for_memory_pressure(memory_pressure: f32) {
+        GLOBAL_FEATURE_CACHE.adjust_capacity_for_memory_pressure(memory_pressure);
     }
     
     /// Оптимизирует извлечение фич для лучшей производительности.
@@ -2135,5 +2283,78 @@ mod tests {
         
         // Результаты должны быть одинаковыми
         assert_eq!(features1, features3);
+    }
+    
+    #[test]
+    fn test_cache_statistics() {
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
+        
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        
+        let mut process = create_test_process();
+        process.pid = 10000; // Уникальный PID
+        
+        // Первое извлечение - cache miss
+        let _features1 = classifier.process_to_features(&process);
+        
+        // Второе извлечение - cache hit
+        let _features2 = classifier.process_to_features(&process);
+        
+        // Третье извлечение - cache hit
+        let _features3 = classifier.process_to_features(&process);
+        
+        // Получаем статистику кэша
+        let stats = CatBoostMLClassifier::get_feature_cache_stats();
+        
+        // Должно быть 3 запроса, 1 мисс и 2 хита
+        assert_eq!(stats.total_requests, 3);
+        assert_eq!(stats.cache_hits, 2);
+        assert_eq!(stats.cache_misses, 1);
+        assert_eq!(stats.total_insertions, 1);
+        
+        // Проверяем процент хитов
+        if let Some(hit_rate) = stats.hit_rate() {
+            assert!(hit_rate > 0.5 && hit_rate <= 1.0);
+        }
+    }
+    
+    #[test]
+    fn test_cache_capacity_adjustment() {
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
+        
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        
+        // Получаем текущую емкость кэша
+        let initial_capacity = CatBoostMLClassifier::get_feature_cache_capacity();
+        
+        // Устанавливаем новую емкость
+        CatBoostMLClassifier::set_feature_cache_capacity(512);
+        
+        // Проверяем, что емкость изменилась
+        let new_capacity = CatBoostMLClassifier::get_feature_cache_capacity();
+        assert_eq!(new_capacity, 512);
+        
+        // Восстанавливаем исходную емкость
+        CatBoostMLClassifier::set_feature_cache_capacity(initial_capacity);
     }
 }
