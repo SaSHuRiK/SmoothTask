@@ -5047,3 +5047,451 @@ watch -n 1 'curl -s "http://127.0.0.1:8080/api/logs?level=warning&limit=5" | jq 
 ```
 
 Новые функции ML-классификации, автообновления паттернов и мониторинга производительности приложений значительно расширяют возможности SmoothTask по оптимизации работы системы и обеспечению лучшего пользовательского опыта.
+
+## Примеры интеграции
+
+### Мониторинг системы с Prometheus
+
+SmoothTask API можно интегрировать с Prometheus для долговременного мониторинга:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: 'smoothtask'
+    scrape_interval: 15s
+    metrics_path: '/api/metrics'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+### Интеграция с Grafana
+
+Создайте дашборд в Grafana с использованием SmoothTask API как источника данных:
+
+```json
+{
+  "title": "SmoothTask System Monitoring",
+  "panels": [
+    {
+      "title": "CPU Usage",
+      "type": "graph",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "smoothtask_cpu_usage",
+          "legendFormat": "CPU {{cpu_id}}"
+        }
+      ]
+    }
+  ]
+}
+```
+
+### Автоматизация с помощью скриптов
+
+Пример скрипта на Python для мониторинга критических процессов:
+
+```python
+import requests
+import time
+
+def monitor_critical_processes():
+    while True:
+        try:
+            response = requests.get('http://127.0.0.1:8080/api/processes')
+            data = response.json()
+            
+            if data['status'] == 'ok':
+                critical_processes = [p for p in data['processes'] 
+                                    if p.get('priority_class') == 'LATENCY_CRITICAL']
+                print(f"Critical processes: {len(critical_processes)}")
+                for proc in critical_processes:
+                    print(f"  PID {proc['pid']}: {proc['name']} ({proc['cpu_usage']:.1f}% CPU)")
+        except Exception as e:
+            print(f"Error: {e}")
+        
+        time.sleep(10)
+
+if __name__ == "__main__":
+    monitor_critical_processes()
+```
+
+### Интеграция с системными уведомлениями
+
+Пример использования API для отправки уведомлений:
+
+```bash
+#!/bin/bash
+
+# Получение текущего состояния системы
+SYSTEM_STATUS=$(curl -s http://127.0.0.1:8080/api/system | jq -r '.status')
+
+if [ "$SYSTEM_STATUS" != "ok" ]; then
+    # Отправка уведомления
+    curl -X POST http://127.0.0.1:8080/api/notifications/test 
+    -H "Content-Type: application/json" 
+    -d '{"message": "System status is not OK!"}'
+fi
+```
+
+## Расширенные сценарии использования
+
+### Мониторинг производительности приложений
+
+```bash
+# Получение производительности конкретного приложения
+curl -s "http://127.0.0.1:8080/api/app/performance?app_name=firefox" | jq '.performance_metrics'
+
+# Сравнение производительности нескольких приложений
+APPS=("firefox" "chrome" "code")
+for app in "${APPS[@]}"; do
+    echo "Performance for $app:"
+    curl -s "http://127.0.0.1:8080/api/app/performance?app_name=$app" | jq '.performance_metrics.cpu_usage'
+done
+```
+
+### Анализ сетевой активности
+
+```bash
+# Получение топ-10 процессов по сетевой активности
+curl -s http://127.0.0.1:8080/api/processes/network | 
+  jq '.processes | sort_by(.network_bytes) | reverse | .[0:10] | .[] | "PID \(.pid): \(.name) - \(.network_bytes) bytes"'
+
+# Мониторинг сетевых соединений в реальном времени
+watch -n 2 'curl -s http://127.0.0.1:8080/api/network/connections | jq ".connections | length"'
+```
+
+### Управление конфигурацией через API
+
+```bash
+# Получение текущей конфигурации
+curl -s http://127.0.0.1:8080/api/config | jq '.config'
+
+# Перезагрузка конфигурации
+curl -X POST http://127.0.0.1:8080/api/config/reload
+
+# Проверка статуса уведомлений
+curl -s http://127.0.0.1:8080/api/notifications/status | jq '.status'
+```
+
+## Лучшие практики
+
+### Оптимизация производительности API
+
+1. **Используйте кэширование**: Включите кэширование в конфигурации для часто запрашиваемых данных
+2. **Ограничивайте количество данных**: Используйте параметры `limit` для больших наборов данных
+3. **Фильтруйте данные**: Используйте параметры фильтрации для получения только необходимых данных
+4. **Используйте сжатие**: Настройте прокси-сервер (nginx, apache) для сжатия JSON-ответов
+
+### Обработка ошибок
+
+```python
+import requests
+
+def safe_api_call(endpoint):
+    try:
+        response = requests.get(f'http://127.0.0.1:8080{endpoint}', timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        
+        if data.get('status') == 'error':
+            print(f"API Error: {data.get('error', 'Unknown error')}")
+            return None
+        
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"Request failed: {e}")
+        return None
+    except ValueError as e:
+        print(f"JSON parsing failed: {e}")
+        return None
+```
+
+### Безопасность
+
+1. **Ограничьте доступ**: Настройте фаервол для разрешения доступа только с доверенных IP
+2. **Используйте HTTPS**: Настройте обратный прокси с SSL-терминацией
+3. **Ограничьте привилегии**: Запускайте демон с минимально необходимыми правами
+4. **Мониторьте доступ**: Включите логирование доступа к API
+
+## Конфигурационные примеры
+
+### Базовая конфигурация для разработки
+
+```yaml
+# configs/smoothtask-development.yml
+paths:
+  api_listen_addr: "127.0.0.1:8080"
+  config_path: "configs/smoothtask-development.yml"
+  patterns_path: "configs/patterns"
+  snapshot_db_path: "data/snapshots.db"
+  log_path: "logs/smoothtask.log"
+
+polling_interval_ms: 1000
+max_candidates: 1000
+
+metrics:
+  ebpf:
+    enable_network_connections: true
+    enable_network_monitoring: true
+    enable_high_performance_mode: false
+
+ml_classifier:
+  enabled: false
+  model_path: "models/process_classifier.json"
+  confidence_threshold: 0.7
+
+logging:
+  max_file_size_bytes: 10485760
+  max_files: 5
+  compress_old_files: true
+```
+
+### Конфигурация для производственной среды
+
+```yaml
+# configs/smoothtask-production.yml
+paths:
+  api_listen_addr: "0.0.0.0:8080"
+  config_path: "/etc/smoothtask/smoothtask.yml"
+  patterns_path: "/etc/smoothtask/patterns"
+  snapshot_db_path: "/var/lib/smoothtask/snapshots.db"
+  log_path: "/var/log/smoothtask/smoothtask.log"
+
+polling_interval_ms: 500
+max_candidates: 5000
+
+metrics:
+  ebpf:
+    enable_network_connections: true
+    enable_network_monitoring: true
+    enable_high_performance_mode: true
+    filter_config:
+      enable_kernel_filtering: true
+      active_connections_threshold: 50
+      network_traffic_threshold: 10240
+
+ml_classifier:
+  enabled: true
+  model_path: "/usr/share/smoothtask/models/process_classifier.onnx"
+  confidence_threshold: 0.8
+  model_type: "Onnx"
+
+pattern_auto_update:
+  enabled: true
+  interval_sec: 3600
+  notify_on_update: true
+
+notifications:
+  enabled: true
+  backend: "Libnotify"
+  app_name: "SmoothTask"
+  min_level: "Warning"
+
+logging:
+  max_file_size_bytes: 52428800
+  max_files: 10
+  compress_old_files: true
+
+cache_intervals:
+  system_metrics: 60
+  process_metrics: 30
+  app_groups: 60
+  responsiveness_metrics: 120
+```
+
+### Конфигурация для игровых систем
+
+```yaml
+# configs/smoothtask-gaming.yml
+paths:
+  api_listen_addr: "127.0.0.1:8080"
+  config_path: "configs/smoothtask-gaming.yml"
+  patterns_path: "configs/patterns"
+  snapshot_db_path: "data/snapshots.db"
+  log_path: "logs/smoothtask.log"
+
+polling_interval_ms: 250
+max_candidates: 2000
+
+metrics:
+  ebpf:
+    enable_network_connections: true
+    enable_network_monitoring: true
+    enable_high_performance_mode: true
+
+ml_classifier:
+  enabled: true
+  model_path: "models/process_classifier_gaming.json"
+  confidence_threshold: 0.65
+
+thresholds:
+  crit_interactive_percentile: 95
+  interactive_percentile: 85
+  normal_percentile: 70
+  background_percentile: 50
+
+priority_classes:
+  - name: "GAME"
+    latency_nice: -20
+    nice: -20
+    cpu_weight: 200
+    io_class: "BE"
+    io_priority: 0
+  - name: "LATENCY_CRITICAL"
+    latency_nice: -10
+    nice: -10
+    cpu_weight: 150
+    io_class: "BE"
+    io_priority: 1
+```
+
+## Устранение неполадок
+
+### Общие проблемы и решения
+
+**Проблема**: API не отвечает на порту 8080
+
+**Решения**:
+1. Проверьте, запущен ли демон: `systemctl status smoothtaskd`
+2. Проверьте конфигурацию: `grep api_listen_addr /etc/smoothtask/smoothtask.yml`
+3. Проверьте логи: `journalctl -u smoothtaskd -n 50`
+4. Проверьте фаервол: `sudo ufw status`
+
+**Проблема**: Ошибки доступа при запросе к API
+
+**Решения**:
+1. Проверьте права доступа к сокету/порту
+2. Убедитесь, что демон запущен от правильного пользователя
+3. Проверьте SELinux/AppArmor настройки
+
+**Проблема**: Пустые ответы от API
+
+**Решения**:
+1. Дайте демону время для сбора данных (1-2 цикла опроса)
+2. Проверьте, что демон имеет доступ к системным ресурсам (/proc, /sys)
+3. Проверьте логи демона на ошибки сбора данных
+
+### Диагностические команды
+
+```bash
+# Проверка доступности API
+curl -I http://127.0.0.1:8080/health
+
+# Проверка сбора метрик
+curl -s http://127.0.0.1:8080/api/stats | jq '.metrics_collection'
+
+# Проверка состояния демона
+curl -s http://127.0.0.1:8080/api/health | jq '.daemon_status'
+
+# Проверка доступности eBPF
+curl -s http://127.0.0.1:8080/api/health | jq '.ebpf_status'
+```
+
+## Миграция и обновление
+
+### Обновление с предыдущих версий
+
+```bash
+# Остановка старого демона
+sudo systemctl stop smoothtaskd
+
+# Резервное копирование конфигурации
+sudo cp /etc/smoothtask/smoothtask.yml /etc/smoothtask/smoothtask.yml.bak
+
+# Обновление бинарника
+sudo cp target/release/smoothtaskd /usr/local/bin/
+
+# Обновление конфигурации
+# Сравните старую и новую конфигурацию, перенесите необходимые настройки
+
+# Запуск нового демона
+sudo systemctl start smoothtaskd
+
+# Проверка обновления
+curl -s http://127.0.0.1:8080/api/version | jq '.version'
+```
+
+### Перенос данных
+
+```bash
+# Экспорт данных из старой версии
+curl -s http://127.0.0.1:8080/api/logs?limit=1000 > old_logs.json
+
+# Импорт в новую версию
+# Используйте API новой версии для импорта данных
+
+# Перенос базы данных снапшотов
+sudo cp /var/lib/smoothtask/snapshots.db /var/lib/smoothtask/snapshots.db.bak
+```
+
+## Разработка и тестирование
+
+### Локальная разработка
+
+```bash
+# Запуск демона в режиме разработки
+RUST_LOG=debug cargo run --bin smoothtaskd -- --config configs/smoothtask-development.yml
+
+# Тестирование API
+curl -v http://127.0.0.1:8080/api/health
+
+# Запуск тестов
+cargo test --package smoothtask-core
+```
+
+### Тестирование производительности
+
+```bash
+# Тестирование времени ответа API
+for i in {1..100}; do
+    curl -s -o /dev/null -w "%{time_total}\n" http://127.0.0.1:8080/api/health
+done | awk '{sum+=$1; count++} END {print "Average: " sum/count " seconds"}'
+
+# Тестирование под нагрузкой
+ab -n 1000 -c 50 http://127.0.0.1:8080/api/health
+```
+
+### Отладка
+
+```bash
+# Включение детального логирования
+RUST_LOG=trace cargo run --bin smoothtaskd
+
+# Просмотр логов в реальном времени
+journalctl -u smoothtaskd -f
+
+# Анализ производительности
+perf top -p $(pgrep smoothtaskd)
+```
+
+## Сообщество и поддержка
+
+### Получение помощи
+
+1. **Документация**: Проверьте официальную документацию и примеры
+2. **Исходный код**: Изучите код и комментарии для понимания внутренней работы
+3. **Логи**: Анализируйте логи демона для диагностики проблем
+4. **Сообщество**: Задайте вопрос в issue tracker проекта
+
+### Сообщение об ошибках
+
+При сообщении об ошибках предоставьте:
+1. Версию SmoothTask (`/api/version`)
+2. Конфигурационный файл (без чувствительных данных)
+3. Логи демона (`journalctl -u smoothtaskd`)
+4. Шаги для воспроизведения
+5. Ожидаемое и фактическое поведение
+
+### Вклад в проект
+
+1. **Документация**: Улучшение и расширение документации
+2. **Тесты**: Добавление новых тестов и улучшение покрытия
+3. **Фичи**: Реализация новых функций и улучшений
+4. **Баги**: Исправление ошибок и улучшение стабильности
+
+## Заключение
+
+SmoothTask Control API предоставляет мощный и гибкий интерфейс для мониторинга и управления системой. С помощью этого API вы можете интегрировать SmoothTask с существующими системами мониторинга, создавать кастомные дашборды и автоматизировать управление системными ресурсами.
+
+Для получения дополнительной информации обратитесь к официальной документации и исходному коду проекта.
