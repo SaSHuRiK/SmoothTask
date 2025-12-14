@@ -194,7 +194,6 @@ impl FilesystemMonitor {
             EventKind::Access(_) => FileChangeType::Accessed,
             EventKind::Any => FileChangeType::Modified,
             EventKind::Other => FileChangeType::AttributeChanged,
-            _ => FileChangeType::Modified,
         };
 
         Some(FileChangeEvent {
