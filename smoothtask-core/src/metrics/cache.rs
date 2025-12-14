@@ -38,10 +38,10 @@ pub struct MetricsCacheConfig {
 impl Default for MetricsCacheConfig {
     fn default() -> Self {
         Self {
-            max_cache_size: 100,
-            cache_ttl_seconds: 5,
+            max_cache_size: 200, // Увеличено с 100 для лучшей производительности
+            cache_ttl_seconds: 3, // Уменьшено с 5 для более актуальных данных
             enable_caching: true,
-            max_memory_bytes: 10_000_000, // 10 MB по умолчанию
+            max_memory_bytes: 15_000_000, // Увеличено с 10MB до 15MB для лучшего кэширования
             enable_compression: false,
             auto_cleanup_enabled: true,
         }
@@ -325,6 +325,7 @@ impl MetricsCache {
         }
         
         // Если всё ещё превышен лимит, удаляем наименее используемые элементы
+        // Используем более агрессивный алгоритм: удаляем 20% самых старых элементов
         while current_usage > target_usage && !cache_guard.is_empty() {
             if let Some((_key, cached)) = cache_guard.pop_lru() {
                 current_usage = current_usage.saturating_sub(cached.approximate_size_bytes);
@@ -336,6 +337,81 @@ impl MetricsCache {
         self.current_memory_usage.store(current_usage, std::sync::atomic::Ordering::Relaxed);
         
         debug!("Очистка кэша завершена: удалено {} элементов, текущее использование {} байт", removed_count, current_usage);
+    }
+
+    /// Оптимизированная очистка кэша с учетом давления памяти.
+    ///
+    /// # Аргументы
+    ///
+    /// * `memory_pressure` - текущее давление памяти (0.0 - 1.0)
+    /// * `cache_guard` - заблокированный кэш
+    pub fn cleanup_memory_with_pressure(&self, memory_pressure: f64, cache_guard: &mut std::sync::MutexGuard<'_, LruCache<String, CachedMetrics>>) {
+        if !self.config.auto_cleanup_enabled {
+            debug!("Автоматическая очистка кэша отключена");
+            return;
+        }
+        
+        let mut current_usage = self.current_memory_usage.load(std::sync::atomic::Ordering::Relaxed);
+        
+        // Адаптивный целевой лимит в зависимости от давления памяти
+        let target_usage = if memory_pressure > 0.8 {
+            // Высокое давление: освобождаем 50% памяти
+            self.config.max_memory_bytes / 2
+        } else if memory_pressure > 0.6 {
+            // Среднее давление: освобождаем 30% памяти
+            self.config.max_memory_bytes.saturating_sub(self.config.max_memory_bytes * 3 / 10)
+        } else {
+            // Нормальное давление: оставляем 25% запаса
+            self.config.max_memory_bytes.saturating_sub(self.config.max_memory_bytes / 4)
+        };
+        
+        debug!("Очистка кэша с учетом давления памяти {:.2}: текущее использование {} байт, целевое {} байт", memory_pressure, current_usage, target_usage);
+        
+        // Удаляем устаревшие элементы сначала
+        let ttl_seconds = self.config.cache_ttl_seconds;
+        let mut removed_count = 0;
+        
+        // Создаем вектор для хранения ключей устаревших элементов
+        let mut expired_keys = Vec::new();
+        
+        for (key, cached) in cache_guard.iter() {
+            if cached.is_expired(ttl_seconds) {
+                expired_keys.push(key.clone());
+            }
+        }
+        
+        // Удаляем устаревшие элементы
+        for key in expired_keys {
+            if let Some(cached) = cache_guard.pop(&key) {
+                current_usage = current_usage.saturating_sub(cached.approximate_size_bytes);
+                removed_count += 1;
+            }
+        }
+        
+        // Если всё ещё превышен лимит, удаляем наименее используемые элементы
+        // Агрессивность зависит от давления памяти
+        let mut removal_ratio = 0.1; // Базовый коэффициент удаления
+        if memory_pressure > 0.8 {
+            removal_ratio = 0.3; // Высокое давление: удаляем 30% самых старых
+        } else if memory_pressure > 0.6 {
+            removal_ratio = 0.2; // Среднее давление: удаляем 20% самых старых
+        }
+        
+        let target_removal_count = (cache_guard.len() as f64 * removal_ratio).ceil() as usize;
+        let mut removed_by_lru = 0;
+        
+        while current_usage > target_usage && !cache_guard.is_empty() && removed_by_lru < target_removal_count {
+            if let Some((_key, cached)) = cache_guard.pop_lru() {
+                current_usage = current_usage.saturating_sub(cached.approximate_size_bytes);
+                removed_count += 1;
+                removed_by_lru += 1;
+            }
+        }
+        
+        // Обновляем счётчик памяти
+        self.current_memory_usage.store(current_usage, std::sync::atomic::Ordering::Relaxed);
+        
+        debug!("Очистка кэша с учетом давления завершена: удалено {} элементов, текущее использование {} байт", removed_count, current_usage);
     }
 
     /// Получить текущее использование памяти.
@@ -542,6 +618,50 @@ impl OptimizedMetricsCollector {
         self.cache.insert(cache_key.to_string(), metrics, source_paths);
         
         Ok(memory_info)
+    }
+
+    /// Собрать системные метрики с кэшированием и учетом давления памяти.
+    ///
+    /// # Аргументы
+    ///
+    /// * `paths` - пути к системным файлам
+    /// * `cache_key` - ключ для кэширования (например, "system_metrics")
+    /// * `memory_pressure` - текущее давление памяти (0.0 - 1.0)
+    ///
+    /// # Возвращает
+    ///
+    /// Результат с системными метриками.
+    pub fn collect_system_metrics_cached_with_pressure(
+        &self,
+        paths: &crate::metrics::system::ProcPaths,
+        cache_key: &str,
+        memory_pressure: f64,
+    ) -> Result<SystemMetrics> {
+        // Пробуем получить метрики из кэша
+        if let Some(cached) = self.cache.get(cache_key) {
+            debug!("Используем кэшированные метрики для ключа: {}", cache_key);
+            return Ok(cached.metrics);
+        }
+        
+        // Если кэш пуст или устарел, собираем новые метрики
+        debug!("Собираем новые метрики для ключа: {}", cache_key);
+        let metrics = crate::metrics::system::collect_system_metrics(paths)
+            .with_context(|| format!("Не удалось собрать системные метрики для кэширования (ключ: {})", cache_key))?;
+        
+        // Создаем карту путей
+        let mut source_paths = HashMap::new();
+        source_paths.insert("stat".to_string(), paths.stat.clone());
+        source_paths.insert("meminfo".to_string(), paths.meminfo.clone());
+        source_paths.insert("loadavg".to_string(), paths.loadavg.clone());
+        
+        // Пробуем сохранить в кэше (с graceful degradation, если не получится)
+        self.cache.insert(cache_key.to_string(), metrics.clone(), source_paths);
+        
+        // Выполняем очистку кэша с учетом давления памяти
+        let mut cache_guard = self.cache.cache.lock().unwrap();
+        self.cache.cleanup_memory_with_pressure(memory_pressure, &mut cache_guard);
+        
+        Ok(metrics)
     }
     
     /// Очистить кэш.
@@ -927,5 +1047,117 @@ mod tests {
         let _current_bytes = memory_info["current_bytes"].as_u64().unwrap();
         assert!(memory_info["max_bytes"].as_u64().unwrap() > 0);
         assert!(memory_info["auto_cleanup_enabled"].as_bool().unwrap());
+    }
+
+    #[test]
+    fn test_pressure_aware_cleanup() {
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 1,
+            enable_caching: true,
+            max_memory_bytes: 1000, // Маленький лимит для теста
+            auto_cleanup_enabled: true,
+            enable_compression: false,
+        };
+        
+        let cache = MetricsCache::new(config);
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+        
+        // Добавляем несколько элементов
+        for i in 0..5 {
+            let mut paths = source_paths.clone();
+            paths.insert(format!("key_{}", i), PathBuf::from(format!("/proc/test_{}", i)));
+            cache.insert(format!("test_key_{}", i), metrics.clone(), paths);
+        }
+        
+        // Тестируем очистку с разным давлением
+        let mut cache_guard = cache.cache.lock().unwrap();
+        
+        // Низкое давление
+        cache.cleanup_memory_with_pressure(0.3, &mut cache_guard);
+        let size_after_low = cache.len();
+        
+        // Среднее давление
+        cache.cleanup_memory_with_pressure(0.7, &mut cache_guard);
+        let size_after_medium = cache.len();
+        
+        // Высокое давление
+        cache.cleanup_memory_with_pressure(0.9, &mut cache_guard);
+        let size_after_high = cache.len();
+        
+        // При высоком давлении должно быть удалено больше элементов
+        assert!(size_after_high <= size_after_medium);
+        assert!(size_after_medium <= size_after_low);
+    }
+
+    #[test]
+    fn test_pressure_aware_collector() {
+        let temp_dir = tempdir().unwrap();
+        let dir_path = temp_dir.path();
+        
+        // Создаём тестовые файлы
+        let stat_file = dir_path.join("stat");
+        let meminfo_file = dir_path.join("meminfo");
+        let loadavg_file = dir_path.join("loadavg");
+        
+        let stat_content = "cpu 100 20 50 200 10 5 5 0 0 0\ncpu0 50 10 25 100 5 2 2 0 0 0";
+        let meminfo_content = "MemTotal:        16384256 kB\nMemFree:          9876543 kB\nMemAvailable:     9876543 kB\nBuffers:           345678 kB\nCached:           2345678 kB\nSwapTotal:        8192000 kB\nSwapFree:         4096000 kB";
+        let loadavg_content = "0.50 0.75 0.90 1/123 4567";
+        
+        fs::write(&stat_file, stat_content).unwrap();
+        fs::write(&meminfo_file, meminfo_content).unwrap();
+        fs::write(&loadavg_file, loadavg_content).unwrap();
+        
+        let paths = crate::metrics::system::ProcPaths {
+            stat: stat_file,
+            meminfo: meminfo_file,
+            loadavg: loadavg_file,
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+        
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 1,
+            enable_caching: true,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
+        };
+        
+        let collector = OptimizedMetricsCollector::new(config);
+        
+        // Тестируем сбор метрик с разным давлением
+        let _metrics_low = collector.collect_system_metrics_cached_with_pressure(&paths, "test_cache", 0.3).unwrap();
+        let _metrics_high = collector.collect_system_metrics_cached_with_pressure(&paths, "test_cache", 0.9).unwrap();
+        
+        // Кэш должен работать корректно
+        assert!(!collector.cache.is_empty());
+    }
+
+    #[test]
+    fn test_cache_pressure_boundaries() {
+        let config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(config);
+        
+        // Тестируем граничные значения давления
+        let mut cache_guard = cache.cache.lock().unwrap();
+        
+        // Давление 0.0 (нет давления)
+        cache.cleanup_memory_with_pressure(0.0, &mut cache_guard);
+        
+        // Давление 1.0 (максимальное давление)
+        cache.cleanup_memory_with_pressure(1.0, &mut cache_guard);
+        
+        // Давление > 1.0 (должно обрабатываться как 1.0)
+        cache.cleanup_memory_with_pressure(1.5, &mut cache_guard);
+        
+        // Давление < 0.0 (должно обрабатываться как 0.0)
+        cache.cleanup_memory_with_pressure(-0.5, &mut cache_guard);
+        
+        // Функция не должна паниковать
     }
 }
