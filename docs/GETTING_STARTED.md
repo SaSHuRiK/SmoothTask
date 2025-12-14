@@ -335,6 +335,222 @@ curl http://127.0.0.1:8080/api/health
 - Все изменения конфигурации применяются немедленно
 - Для сложных сценариев используйте комбинацию API и конфигурационных файлов
 
+## 💻 Мониторинг аппаратных устройств
+
+SmoothTask предоставляет расширенные возможности мониторинга аппаратных устройств, которые можно использовать для диагностики и оптимизации системы.
+
+### Включение мониторинга аппаратных устройств
+
+По умолчанию мониторинг аппаратных устройств включен. Вы можете настроить его в конфигурационном файле:
+
+```yaml
+metrics:
+  hardware:
+    enable_pci_monitoring: true
+    enable_usb_monitoring: true
+    enable_storage_monitoring: true
+    enable_temperature_monitoring: true
+    enable_power_monitoring: true
+```
+
+### Примеры использования
+
+#### Просмотр информации о PCI устройствах
+
+```bash
+# Получение информации о всех аппаратных устройствах
+curl http://127.0.0.1:8080/api/system | jq '.system_metrics.hardware.pci_devices'
+
+# Фильтрация по температуре
+curl http://127.0.0.1:8080/api/system | jq '.system_metrics.hardware.pci_devices[] | select(.temperature_c > 70)'
+```
+
+#### Мониторинг температуры устройств
+
+```bash
+#!/bin/bash
+
+# Мониторинг температуры устройств
+while true; do
+    clear
+    echo "=== Device Temperature Monitor ==="
+    
+    # PCI устройства
+    echo -e "\nPCI Devices:"
+    curl -s http://127.0.0.1:8080/api/system | \
+        jq -r '.system_metrics.hardware.pci_devices[] | select(.temperature_c) | "  \(.device_id): \(.temperature_c)°C"'
+    
+    # USB устройства
+    echo -e "\nUSB Devices:"
+    curl -s http://127.0.0.1:8080/api/system | \
+        jq -r '.system_metrics.hardware.usb_devices[] | select(.temperature_c) | "  \(.device_id): \(.temperature_c)°C"'
+    
+    # Устройства хранения
+    echo -e "\nStorage Devices:"
+    curl -s http://127.0.0.1:8080/api/system | \
+        jq -r '.system_metrics.hardware.storage_devices[] | select(.temperature_c) | "  \(.device_id): \(.temperature_c)°C"'
+    
+    sleep 5
+done
+```
+
+#### Проверка состояния здоровья устройств хранения
+
+```bash
+#!/bin/bash
+
+# Проверка состояния здоровья устройств хранения
+response=$(curl -s http://127.0.0.1:8080/api/system)
+
+if [ $? -eq 0 ]; then
+    echo "Storage Device Health Check:"
+    echo "$response" | jq -r '.system_metrics.hardware.storage_devices[] | "\(.device_id) (\(.model)): \(.health_status // "unknown")"'
+    
+    # Проверка на проблемы
+    unhealthy=$(echo "$response" | jq -r '.system_metrics.hardware.storage_devices[] | select(.health_status != "good" and .health_status != null) | .device_id')
+    
+    if [ -n "$unhealthy" ]; then
+        echo -e "\nWARNING: Unhealthy devices detected:"
+        echo "$unhealthy"
+    else
+        echo -e "\nAll devices are healthy!"
+    fi
+else
+    echo "Failed to fetch storage health information"
+fi
+```
+
+### Интеграция с системами мониторинга
+
+#### Prometheus + Grafana
+
+1. **Настройка Prometheus** (`prometheus.yml`):
+
+```yaml
+scrape_configs:
+  - job_name: 'smoothtask'
+    scrape_interval: 15s
+    metrics_path: '/api/system'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+2. **Создание дашборда Grafana**:
+
+- Добавьте панель для отображения температуры устройств
+- Создайте алерты для высоких температур (например, > 80°C)
+- Настройте панель для отображения состояния здоровья устройств
+
+#### Python скрипт для мониторинга
+
+```python
+import requests
+import time
+import json
+
+def monitor_hardware():
+    """Мониторинг аппаратных устройств"""
+    
+    while True:
+        try:
+            response = requests.get("http://127.0.0.1:8080/api/system")
+            if response.status_code == 200:
+                data = response.json()
+                hardware = data.get("system_metrics", {}).get("hardware", {})
+                
+                # Проверка температуры
+                devices = []
+                
+                for pci in hardware.get("pci_devices", []):
+                    if "temperature_c" in pci:
+                        devices.append({
+                            "type": "PCI",
+                            "id": pci["device_id"],
+                            "temp": pci["temperature_c"],
+                            "critical": pci["temperature_c"] > 80
+                        })
+                
+                for usb in hardware.get("usb_devices", []):
+                    if "temperature_c" in usb:
+                        devices.append({
+                            "type": "USB",
+                            "id": usb["device_id"],
+                            "temp": usb["temperature_c"],
+                            "critical": usb["temperature_c"] > 60
+                        })
+                
+                for storage in hardware.get("storage_devices", []):
+                    if "temperature_c" in storage:
+                        devices.append({
+                            "type": "Storage",
+                            "id": storage["device_id"],
+                            "temp": storage["temperature_c"],
+                            "critical": storage["temperature_c"] > 65
+                        })
+                
+                # Вывод информации
+                print(f"\n=== Hardware Monitor ({time.strftime('%H:%M:%S')}) ===")
+                for device in sorted(devices, key=lambda x: x["temp"], reverse=True):
+                    status = "⚠️ CRITICAL" if device["critical"] else "✅ OK"
+                    print(f"{device['type']} {device['id']}: {device['temp']}°C {status}")
+                
+                # Проверка на критическое состояние
+                critical_devices = [d for d in devices if d["critical"]]
+                if critical_devices:
+                    print(f"\n⚠️  WARNING: {len(critical_devices)} devices in critical state!")
+                else:
+                    print("\n✅ All devices are within safe temperature ranges")
+            else:
+                print(f"Error: HTTP {response.status_code}")
+        except Exception as e:
+            print(f"Monitoring error: {e}")
+        
+        time.sleep(10)
+
+if __name__ == "__main__":
+    monitor_hardware()
+```
+
+### Рекомендации по использованию
+
+1. **Регулярный мониторинг**: Настройте регулярный мониторинг температуры устройств для предотвращения перегрева
+2. **Алерты**: Создайте алерты для критических значений температуры (например, > 80°C для PCI, > 65°C для хранилища)
+3. **Анализ трендов**: Храните исторические данные для анализа трендов и прогнозирования проблем
+4. **Интеграция**: Интегрируйте мониторинг аппаратных устройств с существующими системами мониторинга
+5. **Оптимизация**: Используйте информацию о температуре и состоянии здоровья для оптимизации размещения рабочих нагрузок
+
+### Устранение проблем с аппаратным мониторингом
+
+#### Нет данных о температуре
+
+```bash
+# Проверьте доступность sysfs
+ls /sys/class/thermal/
+
+# Проверьте права доступа
+sudo chmod a+r /sys/class/thermal/thermal_zone*/temp
+```
+
+#### Нет данных о PCI устройствах
+
+```bash
+# Проверьте доступность PCI информации
+lspci -v
+
+# Проверьте права доступа
+sudo chmod a+r /sys/bus/pci/devices/*/power
+```
+
+#### Нет данных о устройствах хранения
+
+```bash
+# Проверьте доступность SMART данных
+sudo smartctl --info /dev/sda
+
+# Установите необходимые пакеты
+sudo apt install smartmontools
+```
+
 ## 🚨 Устранение неполадок
 
 ### Частые проблемы

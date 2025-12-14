@@ -6497,6 +6497,275 @@ else
 fi
 ```
 
+### Расширенные системные метрики
+
+SmoothTask предоставляет расширенные системные метрики, включая информацию о системных вызовах, использовании inode и детальной информации о swap пространстве.
+
+#### Структуры данных
+
+##### Метрики системных вызовов
+
+```json
+{
+  "total_calls": 125000,
+  "calls_per_second": 1250.5,
+  "error_count": 45,
+  "error_percentage": 0.036,
+  "total_time_ms": 2500
+}
+```
+
+**Поля:**
+- `total_calls`: Общее количество системных вызовов
+- `calls_per_second`: Количество системных вызовов в секунду (опционально)
+- `error_count`: Количество ошибок системных вызовов
+- `error_percentage`: Процент ошибок системных вызовов (опционально)
+- `total_time_ms`: Время, затраченное на системные вызовы в миллисекундах (опционально)
+
+##### Метрики использования inode
+
+```json
+{
+  "total_inodes": 1000000,
+  "free_inodes": 850000,
+  "used_inodes": 150000,
+  "usage_percentage": 15.0,
+  "reserved_inodes": 50000
+}
+```
+
+**Поля:**
+- `total_inodes`: Общее количество inode в системе
+- `free_inodes`: Количество свободных inode
+- `used_inodes`: Количество использованных inode
+- `usage_percentage`: Процент использования inode (опционально)
+- `reserved_inodes`: Количество inode в резерве для root (опционально)
+
+##### Расширенные метрики swap
+
+```json
+{
+  "total_kb": 8388608,
+  "free_kb": 6291456,
+  "used_kb": 2097152,
+  "usage_percentage": 25.0,
+  "pages_in": 1024,
+  "pages_out": 512,
+  "activity": 15.36
+}
+```
+
+**Поля:**
+- `total_kb`: Общий объем swap в килобайтах
+- `free_kb`: Свободный объем swap в килобайтах
+- `used_kb`: Использованный объем swap в килобайтах
+- `usage_percentage`: Процент использования swap (опционально)
+- `pages_in`: Количество страниц в swap (опционально)
+- `pages_out`: Количество страниц из swap (опционально)
+- `activity`: Текущая активность swap в страницах в секунду (опционально)
+
+#### Доступ к расширенным метрикам
+
+Расширенные системные метрики доступны через основной endpoint `/api/system`:
+
+```bash
+curl http://127.0.0.1:8080/api/system
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "system_metrics": {
+    "cpu": {...},
+    "memory": {...},
+    "disk": {...},
+    "network": {...},
+    "system_calls": {
+      "total_calls": 125000,
+      "calls_per_second": 1250.5,
+      "error_count": 45,
+      "error_percentage": 0.036,
+      "total_time_ms": 2500
+    },
+    "inode": {
+      "total_inodes": 1000000,
+      "free_inodes": 850000,
+      "used_inodes": 150000,
+      "usage_percentage": 15.0,
+      "reserved_inodes": 50000
+    },
+    "swap": {
+      "total_kb": 8388608,
+      "free_kb": 6291456,
+      "used_kb": 2097152,
+      "usage_percentage": 25.0,
+      "pages_in": 1024,
+      "pages_out": 512,
+      "activity": 15.36
+    }
+  }
+}
+```
+
+#### Примеры использования
+
+##### Python пример
+
+```python
+import requests
+
+def get_enhanced_system_metrics():
+    try:
+        response = requests.get("http://127.0.0.1:8080/api/system")
+        if response.status_code == 200:
+            data = response.json()
+            if data["status"] == "ok" and "system_metrics" in data:
+                metrics = data["system_metrics"]
+                
+                # Системные вызовы
+                system_calls = metrics.get("system_calls", {})
+                print("System Calls:")
+                print(f"  Total calls: {system_calls.get('total_calls', 0)}")
+                print(f"  Calls per second: {system_calls.get('calls_per_second', 0):.1f}")
+                print(f"  Error rate: {system_calls.get('error_percentage', 0):.2f}%")
+                
+                # Inode
+                inode = metrics.get("inode", {})
+                print(f"\nInode Usage:")
+                print(f"  Used: {inode.get('used_inodes', 0)} / {inode.get('total_inodes', 0)}")
+                print(f"  Usage: {inode.get('usage_percentage', 0):.1f}%")
+                
+                # Swap
+                swap = metrics.get("swap", {})
+                print(f"\nSwap Usage:")
+                print(f"  Used: {swap.get('used_kb', 0) / 1024:.1f} MB / {swap.get('total_kb', 0) / 1024:.1f} MB")
+                print(f"  Usage: {swap.get('usage_percentage', 0):.1f}%")
+                print(f"  Activity: {swap.get('activity', 0):.1f} pages/sec")
+                
+                # Проверка на высокое использование swap
+                if swap.get('usage_percentage', 0) > 80:
+                    print("\nWARNING: High swap usage detected!")
+                
+                # Проверка на высокое использование inode
+                if inode.get('usage_percentage', 0) > 90:
+                    print("WARNING: High inode usage detected!")
+            else:
+                print(f"Error: {data.get('message', 'Unknown error')}")
+        else:
+            print(f"HTTP Error: {response.status_code}")
+    except Exception as e:
+        print(f"Request failed: {e}")
+
+if __name__ == "__main__":
+    get_enhanced_system_metrics()
+```
+
+##### Bash пример
+
+```bash
+#!/bin/bash
+
+# Получение расширенных системных метрик
+response=$(curl -s http://127.0.0.1:8080/api/system)
+
+if [ $? -eq 0 ]; then
+    status=$(echo "$response" | jq -r '.status')
+    if [ "$status" = "ok" ]; then
+        echo "=== Enhanced System Metrics ==="
+        
+        # Системные вызовы
+        echo -e "\nSystem Calls:"
+        total_calls=$(echo "$response" | jq -r '.system_metrics.system_calls.total_calls')
+        calls_per_second=$(echo "$response" | jq -r '.system_metrics.system_calls.calls_per_second')
+        error_percentage=$(echo "$response" | jq -r '.system_metrics.system_calls.error_percentage')
+        echo "  Total calls: $total_calls"
+        echo "  Calls per second: $calls_per_second"
+        echo "  Error rate: $error_percentage%"
+        
+        # Inode
+        echo -e "\nInode Usage:"
+        used_inodes=$(echo "$response" | jq -r '.system_metrics.inode.used_inodes')
+        total_inodes=$(echo "$response" | jq -r '.system_metrics.inode.total_inodes')
+        usage_percentage=$(echo "$response" | jq -r '.system_metrics.inode.usage_percentage')
+        echo "  Used: $used_inodes / $total_inodes"
+        echo "  Usage: $usage_percentage%"
+        
+        # Swap
+        echo -e "\nSwap Usage:"
+        used_kb=$(echo "$response" | jq -r '.system_metrics.swap.used_kb')
+        total_kb=$(echo "$response" | jq -r '.system_metrics.swap.total_kb')
+        usage_percentage=$(echo "$response" | jq -r '.system_metrics.swap.usage_percentage')
+        activity=$(echo "$response" | jq -r '.system_metrics.swap.activity')
+        used_mb=$(echo "scale=1; $used_kb / 1024" | bc)
+        total_mb=$(echo "scale=1; $total_kb / 1024" | bc)
+        echo "  Used: ${used_mb} MB / ${total_mb} MB"
+        echo "  Usage: $usage_percentage%"
+        echo "  Activity: $activity pages/sec"
+        
+        # Проверка на высокое использование swap
+        if (( $(echo "$usage_percentage > 80" | bc -l) )); then
+            echo -e "\nWARNING: High swap usage detected!"
+        fi
+        
+        # Проверка на высокое использование inode
+        if (( $(echo "$usage_percentage > 90" | bc -l) )); then
+            echo -e "\nWARNING: High inode usage detected!"
+        fi
+    else
+        echo "Error: $(echo "$response" | jq -r '.message')"
+    fi
+else
+    echo "Failed to fetch enhanced system metrics"
+fi
+```
+
+### Рекомендации по использованию
+
+1. **Мониторинг системных вызовов**: Отслеживайте количество и частоту системных вызовов для выявления аномальной активности
+2. **Анализ ошибок**: Высокий процент ошибок системных вызовов может указывать на проблемы с приложениями или системой
+3. **Контроль inode**: Регулярно проверяйте использование inode, особенно на файловой системе с большим количеством мелких файлов
+4. **Мониторинг swap**: Отслеживайте использование и активность swap для предотвращения деградации производительности
+5. **Интеграция с алертами**: Настройте алерты на основе критических значений использования ресурсов
+6. **Долговременный анализ**: Храните исторические данные для анализа трендов и прогнозирования проблем
+
+### Обработка ошибок
+
+Если расширенные системные метрики недоступны, API возвращает значения по умолчанию:
+
+```json
+{
+  "status": "ok",
+  "system_metrics": {
+    "system_calls": {
+      "total_calls": 0,
+      "calls_per_second": null,
+      "error_count": 0,
+      "error_percentage": null,
+      "total_time_ms": null
+    },
+    "inode": {
+      "total_inodes": 0,
+      "free_inodes": 0,
+      "used_inodes": 0,
+      "usage_percentage": null,
+      "reserved_inodes": null
+    },
+    "swap": {
+      "total_kb": 0,
+      "free_kb": 0,
+      "used_kb": 0,
+      "usage_percentage": null,
+      "pages_in": null,
+      "pages_out": null,
+      "activity": null
+    }
+  }
+}
+```
+
+Это позволяет клиентам продолжать работу даже при временной недоступности расширенных метрик.
+
 ---
 
 ### GET /api/system/disk
@@ -7056,6 +7325,321 @@ else
     echo "Failed to update cache configuration"
 fi
 ```
+
+## Мониторинг аппаратных устройств
+
+SmoothTask предоставляет расширенные возможности мониторинга аппаратных устройств, включая PCI, USB и устройства хранения. Эти метрики доступны через основные системные метрики и предоставляют детальную информацию о состоянии и производительности аппаратных компонентов.
+
+### Структуры данных аппаратных метрик
+
+#### PCI устройства
+
+```json
+{
+  "device_id": "0000:00:02.0",
+  "vendor_id": "8086",
+  "device_class": "Display controller",
+  "status": "active",
+  "bandwidth_usage_percent": 45.2,
+  "temperature_c": 65.5,
+  "power_w": 25.7
+}
+```
+
+**Поля:**
+- `device_id`: Идентификатор PCI устройства
+- `vendor_id`: Идентификатор производителя
+- `device_class`: Класс устройства
+- `status`: Состояние устройства (active/inactive)
+- `bandwidth_usage_percent`: Использование пропускной способности (опционально)
+- `temperature_c`: Температура устройства (опционально)
+- `power_w`: Потребляемая мощность (опционально)
+
+#### USB устройства
+
+```json
+{
+  "device_id": "1-1.2",
+  "vendor_id": "046d",
+  "product_id": "c52b",
+  "speed": "USB 3.0",
+  "status": "connected",
+  "power_mw": 500,
+  "temperature_c": 35.0
+}
+```
+
+**Поля:**
+- `device_id`: Идентификатор USB устройства
+- `vendor_id`: Идентификатор производителя
+- `product_id`: Идентификатор продукта
+- `speed`: Скорость USB (1.0, 2.0, 3.0, 3.1, 3.2, 4.0)
+- `status`: Состояние устройства (connected/disconnected)
+- `power_mw`: Потребляемая мощность в милливаттах (опционально)
+- `temperature_c`: Температура устройства (опционально)
+
+#### Устройства хранения (SATA/NVMe)
+
+```json
+{
+  "device_id": "sda",
+  "device_type": "SATA",
+  "model": "Samsung SSD 870 EVO",
+  "serial_number": "S5XANE0R123456",
+  "temperature_c": 42.0,
+  "health_status": "good",
+  "total_capacity_bytes": 1000204886016,
+  "used_capacity_bytes": 450123456789,
+  "read_speed_bps": 550000000,
+  "write_speed_bps": 520000000
+}
+```
+
+**Поля:**
+- `device_id`: Идентификатор устройства
+- `device_type`: Тип устройства (SATA, NVMe)
+- `model`: Модель устройства
+- `serial_number`: Серийный номер
+- `temperature_c`: Температура устройства (опционально)
+- `health_status`: Состояние здоровья (опционально)
+- `total_capacity_bytes`: Общий объем устройства (опционально)
+- `used_capacity_bytes`: Используемый объем (опционально)
+- `read_speed_bps`: Скорость чтения в байтах/сек (опционально)
+- `write_speed_bps`: Скорость записи в байтах/сек (опционально)
+
+### Доступ к аппаратным метрикам
+
+Метрики аппаратных устройств включены в основные системные метрики и доступны через следующие endpoints:
+
+#### GET /api/system
+
+Возвращает полные системные метрики, включая аппаратные устройства:
+
+```bash
+curl http://127.0.0.1:8080/api/system
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "system_metrics": {
+    "cpu": {...},
+    "memory": {...},
+    "disk": {...},
+    "network": {...},
+    "hardware": {
+      "pci_devices": [
+        {
+          "device_id": "0000:00:02.0",
+          "vendor_id": "8086",
+          "device_class": "Display controller",
+          "status": "active",
+          "bandwidth_usage_percent": 45.2,
+          "temperature_c": 65.5,
+          "power_w": 25.7
+        }
+      ],
+      "usb_devices": [
+        {
+          "device_id": "1-1.2",
+          "vendor_id": "046d",
+          "product_id": "c52b",
+          "speed": "USB 3.0",
+          "status": "connected",
+          "power_mw": 500,
+          "temperature_c": 35.0
+        }
+      ],
+      "storage_devices": [
+        {
+          "device_id": "sda",
+          "device_type": "SATA",
+          "model": "Samsung SSD 870 EVO",
+          "serial_number": "S5XANE0R123456",
+          "temperature_c": 42.0,
+          "health_status": "good",
+          "total_capacity_bytes": 1000204886016,
+          "used_capacity_bytes": 450123456789,
+          "read_speed_bps": 550000000,
+          "write_speed_bps": 520000000
+        }
+      ]
+    }
+  }
+}
+```
+
+#### GET /api/system/cpu
+
+Возвращает метрики CPU, включая температуру и информацию о PCI устройствах:
+
+```bash
+curl http://127.0.0.1:8080/api/system/cpu
+```
+
+**Ответ:**
+```json
+{
+  "status": "ok",
+  "cpu_metrics": {
+    "usage_percent": 25.5,
+    "temperature_c": 55.0,
+    "frequency_mhz": 3500,
+    "pci_devices": [
+      {
+        "device_id": "0000:00:02.0",
+        "vendor_id": "8086",
+        "device_class": "Display controller",
+        "status": "active",
+        "bandwidth_usage_percent": 45.2,
+        "temperature_c": 65.5,
+        "power_w": 25.7
+      }
+    ]
+  }
+}
+```
+
+### Примеры использования
+
+#### Python пример
+
+```python
+import requests
+import json
+
+def get_hardware_metrics():
+    try:
+        response = requests.get("http://127.0.0.1:8080/api/system")
+        if response.status_code == 200:
+            data = response.json()
+            if data["status"] == "ok" and "system_metrics" in data:
+                hardware = data["system_metrics"].get("hardware", {})
+                
+                print("PCI Devices:")
+                for device in hardware.get("pci_devices", []):
+                    print(f"  {device['device_id']}: {device['device_class']} ({device['vendor_id']})")
+                    if 'temperature_c' in device:
+                        print(f"    Temperature: {device['temperature_c']}°C")
+                    if 'power_w' in device:
+                        print(f"    Power: {device['power_w']}W")
+                
+                print("\nUSB Devices:")
+                for device in hardware.get("usb_devices", []):
+                    print(f"  {device['device_id']}: {device['speed']} ({device['vendor_id']}:{device['product_id']})")
+                    if 'power_mw' in device:
+                        print(f"    Power: {device['power_mw']}mW")
+                
+                print("\nStorage Devices:")
+                for device in hardware.get("storage_devices", []):
+                    print(f"  {device['device_id']}: {device['model']} ({device['device_type']})")
+                    if 'temperature_c' in device:
+                        print(f"    Temperature: {device['temperature_c']}°C")
+                    if 'health_status' in device:
+                        print(f"    Health: {device['health_status']}")
+                    if 'used_capacity_bytes' in device and 'total_capacity_bytes' in device:
+                        usage = device['used_capacity_bytes'] / device['total_capacity_bytes'] * 100
+                        print(f"    Usage: {usage:.1f}%")
+            else:
+                print(f"Error: {data.get('message', 'Unknown error')}")
+        else:
+            print(f"HTTP Error: {response.status_code}")
+    except Exception as e:
+        print(f"Request failed: {e}")
+
+if __name__ == "__main__":
+    get_hardware_metrics()
+```
+
+#### Bash пример
+
+```bash
+#!/bin/bash
+
+# Получение аппаратных метрик
+response=$(curl -s http://127.0.0.1:8080/api/system)
+
+if [ $? -eq 0 ]; then
+    status=$(echo "$response" | jq -r '.status')
+    if [ "$status" = "ok" ]; then
+        echo "=== Hardware Metrics ==="
+        
+        echo -e "\nPCI Devices:"
+        echo "$response" | jq -r '.system_metrics.hardware.pci_devices[] | "  \(.device_id): \(.device_class) (Vendor: \(.vendor_id))"'
+        
+        echo -e "\nUSB Devices:"
+        echo "$response" | jq -r '.system_metrics.hardware.usb_devices[] | "  \(.device_id): \(.speed) (Vendor: \(.vendor_id), Product: \(.product_id))"'
+        
+        echo -e "\nStorage Devices:"
+        echo "$response" | jq -r '.system_metrics.hardware.storage_devices[] | "  \(.device_id): \(.model) [\(.device_type)]"'
+        
+        # Показать температуру устройств
+        echo -e "\nDevice Temperatures:"
+        echo "$response" | jq -r '.system_metrics.hardware.pci_devices[] | select(.temperature_c) | "  PCI \(.device_id): \(.temperature_c)°C"'
+        echo "$response" | jq -r '.system_metrics.hardware.usb_devices[] | select(.temperature_c) | "  USB \(.device_id): \(.temperature_c)°C"'
+        echo "$response" | jq -r '.system_metrics.hardware.storage_devices[] | select(.temperature_c) | "  Storage \(.device_id): \(.temperature_c)°C"'
+        
+        # Показать использование хранилища
+        echo -e "\nStorage Usage:"
+        echo "$response" | jq -r '.system_metrics.hardware.storage_devices[] | select(.total_capacity_bytes and .used_capacity_bytes) | "  \(.device_id): \((.used_capacity_bytes / .total_capacity_bytes * 100 | round)%) used"'
+    else
+        echo "Error: $(echo "$response" | jq -r '.message')"
+    fi
+else
+    echo "Failed to fetch hardware metrics"
+fi
+```
+
+### Интеграция с системами мониторинга
+
+#### Prometheus
+
+Для интеграции с Prometheus вы можете использовать следующий конфигурационный файл:
+
+```yaml
+scrape_configs:
+  - job_name: 'smoothtask_hardware'
+    scrape_interval: 15s
+    metrics_path: '/api/system'
+    static_configs:
+      - targets: ['localhost:8080']
+```
+
+#### Grafana
+
+Создайте дашборд в Grafana с панелями для отображения:
+- Температуры устройств
+- Использования пропускной способности PCI
+- Состояния здоровья устройств хранения
+- Потребления мощности
+
+### Рекомендации по использованию
+
+1. **Мониторинг температуры**: Отслеживайте температуру устройств для предотвращения перегрева
+2. **Анализ производительности**: Используйте метрики пропускной способности для оптимизации использования PCI устройств
+3. **Контроль состояния**: Регулярно проверяйте состояние здоровья устройств хранения
+4. **Интеграция с алертами**: Настройте алерты на основе критических значений температуры или состояния здоровья
+5. **Долговременный анализ**: Храните исторические данные для анализа трендов и прогнозирования отказов
+
+### Обработка ошибок
+
+Если метрики аппаратных устройств недоступны, API возвращает пустые массивы вместо ошибки:
+
+```json
+{
+  "status": "ok",
+  "system_metrics": {
+    "hardware": {
+      "pci_devices": [],
+      "usb_devices": [],
+      "storage_devices": []
+    }
+  }
+}
+```
+
+Это позволяет клиентам продолжать работу даже при временной недоступности аппаратных метрик.
 
 ## Заключение
 
