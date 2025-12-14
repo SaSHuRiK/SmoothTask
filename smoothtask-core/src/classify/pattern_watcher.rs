@@ -227,7 +227,7 @@ impl PatternWatcher {
             let interval = Duration::from_secs(config.interval_sec);
             let timeout = time::sleep(interval);
 
-            // Используем select! без явного pinning для избежания PhantomPinned ошибок
+            // Используем select! с двумя ветками: таймаут и обработка событий
             tokio::select! {
                 // Периодическая проверка изменений
                 _ = timeout => {
@@ -252,6 +252,7 @@ impl PatternWatcher {
             }
 
             // Обработка событий файловой системы с использованием неблокирующего recv
+            // и небольшой задержкой для избежания зависания
             match rx.try_recv() {
                 Ok(Ok(event)) => {
                     // Проверяем, что событие относится к нашей директории с паттернами
@@ -330,7 +331,8 @@ impl PatternWatcher {
                     // Продолжаем работу, не завершаем мониторинг
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {
-                    // Нет событий, продолжаем работу
+                    // Нет событий, небольшая задержка для избежания busy waiting
+                    time::sleep(Duration::from_millis(10)).await;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     error!("Filesystem watcher channel disconnected");

@@ -103,7 +103,7 @@ impl ConfigWatcher {
         config_path: String,
         change_sender: watch::Sender<bool>,
     ) -> Result<()> {
-        use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+        use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 
         let path = Path::new(&config_path);
         let parent_dir = path.parent().with_context(|| {
@@ -127,21 +127,56 @@ impl ConfigWatcher {
         tracing::info!("Started watching config file for changes: {}", config_path);
 
         // Основной цикл обработки событий
-        while let Ok(event) = rx.recv() {
-            match event {
-                Ok(Event {
-                    kind: EventKind::Modify(modify_kind),
-                    paths,
-                    ..
-                }) => {
-                    // Проверяем, что событие относится к нашему конфигурационному файлу
-                    if let Some(event_path) = paths.first() {
-                        if event_path == path {
-                            // Игнорируем события модификации, которые не являются изменением содержимого
-                            // (например, изменение метаданных)
-                            match modify_kind {
-                                notify::event::ModifyKind::Data(_) => {
-                                    tracing::info!("Config file changed: {}", config_path);
+        loop {
+            // Используем try_recv для избежания зависания
+            match rx.try_recv() {
+                Ok(Ok(event)) => {
+                    match event.kind {
+                        EventKind::Modify(modify_kind) => {
+                            // Проверяем, что событие относится к нашему конфигурационному файлу
+                            if let Some(event_path) = event.paths.first() {
+                                if event_path == path {
+                                    // Игнорируем события модификации, которые не являются изменением содержимого
+                                    // (например, изменение метаданных)
+                                    match modify_kind {
+                                        notify::event::ModifyKind::Data(_) => {
+                                            tracing::info!("Config file changed: {}", config_path);
+
+                                            // Отправляем сигнал об изменении
+                                            if change_sender.send(true).is_err() {
+                                                tracing::warn!(
+                                                    "Failed to send config change notification - no active receivers"
+                                                );
+                                            }
+                                        }
+                                        _ => {
+                                            // Игнорируем другие типы модификаций
+                                            tracing::debug!(
+                                                "Ignoring non-data modification event for config file: {}",
+                                                config_path
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        EventKind::Remove(_) => {
+                            // Если файл был удалён, это критическая ситуация
+                            if let Some(event_path) = event.paths.first() {
+                                if event_path == path {
+                                    tracing::error!("Config file was removed: {}", config_path);
+                                    anyhow::bail!(
+                                        "Config file was removed during monitoring: {}",
+                                        config_path
+                                    );
+                                }
+                            }
+                        }
+                        EventKind::Create(_) => {
+                            // Если файл был создан (например, после удаления и повторного создания)
+                            if let Some(event_path) = event.paths.first() {
+                                if event_path == path {
+                                    tracing::info!("Config file was recreated: {}", config_path);
 
                                     // Отправляем сигнал об изменении
                                     if change_sender.send(true).is_err() {
@@ -150,62 +185,28 @@ impl ConfigWatcher {
                                         );
                                     }
                                 }
-                                _ => {
-                                    // Игнорируем другие типы модификаций
-                                    tracing::debug!(
-                                        "Ignoring non-data modification event for config file: {}",
-                                        config_path
-                                    );
-                                }
                             }
                         }
-                    }
-                }
-                Ok(Event {
-                    kind: EventKind::Remove(_),
-                    paths,
-                    ..
-                }) => {
-                    // Если файл был удалён, это критическая ситуация
-                    if let Some(event_path) = paths.first() {
-                        if event_path == path {
-                            tracing::error!("Config file was removed: {}", config_path);
-                            anyhow::bail!(
-                                "Config file was removed during monitoring: {}",
+                        _ => {
+                            // Игнорируем другие типы событий
+                            tracing::debug!(
+                                "Ignoring unrelated filesystem event for config file: {}",
                                 config_path
                             );
                         }
                     }
                 }
-                Ok(Event {
-                    kind: EventKind::Create(_),
-                    paths,
-                    ..
-                }) => {
-                    // Если файл был создан (например, после удаления и повторного создания)
-                    if let Some(event_path) = paths.first() {
-                        if event_path == path {
-                            tracing::info!("Config file was recreated: {}", config_path);
-
-                            // Отправляем сигнал об изменении
-                            if change_sender.send(true).is_err() {
-                                tracing::warn!(
-                                    "Failed to send config change notification - no active receivers"
-                                );
-                            }
-                        }
-                    }
-                }
-                Ok(_) => {
-                    // Игнорируем другие типы событий
-                    tracing::debug!(
-                        "Ignoring unrelated filesystem event for config file: {}",
-                        config_path
-                    );
-                }
-                Err(e) => {
+                Ok(Err(e)) => {
                     tracing::error!("Error receiving filesystem event: {}", e);
                     anyhow::bail!("Filesystem watcher error: {}", e);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {
+                    // Нет событий, небольшая задержка для избежания busy waiting
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    tracing::error!("Filesystem watcher channel disconnected");
+                    return Ok(());
                 }
             }
         }
