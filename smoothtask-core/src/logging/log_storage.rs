@@ -88,6 +88,138 @@ impl LogEntry {
         self.fields = Some(fields);
         self
     }
+
+    /// Создаёт запись лога в формате JSON (структурированное логирование).
+    ///
+    /// # Аргументы
+    ///
+    /// * `level` - уровень логирования
+    /// * `target` - модуль или компонент
+    /// * `message` - основное сообщение
+    /// * `json_data` - дополнительные данные в формате JSON
+    ///
+    /// # Возвращает
+    ///
+    /// Новая запись лога с JSON-полями
+    pub fn new_json(
+        level: LogLevel,
+        target: impl Into<String>,
+        message: impl Into<String>,
+        json_data: serde_json::Value,
+    ) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            level,
+            target: target.into(),
+            message: message.into(),
+            fields: Some(json_data),
+        }
+    }
+
+    /// Создаёт запись лога в формате Key-Value (структурированное логирование).
+    ///
+    /// # Аргументы
+    ///
+    /// * `level` - уровень логирования
+    /// * `target` - модуль или компонент
+    /// * `message` - основное сообщение
+    /// * `key_value_pairs` - пары ключ-значение для структурированного логирования
+    ///
+    /// # Возвращает
+    ///
+    /// Новая запись лога с полями в формате Key-Value
+    pub fn new_key_value(
+        level: LogLevel,
+        target: impl Into<String>,
+        message: impl Into<String>,
+        key_value_pairs: HashMap<String, serde_json::Value>,
+    ) -> Self {
+        Self {
+            timestamp: Utc::now(),
+            level,
+            target: target.into(),
+            message: message.into(),
+            fields: Some(serde_json::to_value(key_value_pairs).unwrap_or(serde_json::Value::Null)),
+        }
+    }
+
+    /// Преобразует запись лога в формат JSON.
+    ///
+    /// # Возвращает
+    ///
+    /// JSON-представление записи лога
+    pub fn to_json(&self) -> serde_json::Value {
+        let mut log_json = json!({
+            "timestamp": self.timestamp.to_rfc3339(),
+            "level": format!("{}", self.level),
+            "target": self.target,
+            "message": self.message,
+        });
+
+        if let Some(fields) = &self.fields {
+            log_json["fields"] = fields.clone();
+        }
+
+        log_json
+    }
+
+    /// Преобразует запись лога в формат Key-Value.
+    ///
+    /// # Возвращает
+    ///
+    /// HashMap с парами ключ-значение
+    pub fn to_key_value(&self) -> HashMap<String, serde_json::Value> {
+        let mut map = HashMap::new();
+        map.insert("timestamp".to_string(), serde_json::Value::String(self.timestamp.to_rfc3339()));
+        map.insert("level".to_string(), serde_json::Value::String(format!("{}", self.level)));
+        map.insert("target".to_string(), serde_json::Value::String(self.target.clone()));
+        map.insert("message".to_string(), serde_json::Value::String(self.message.clone()));
+
+        if let Some(fields) = &self.fields {
+            if let serde_json::Value::Object(fields_map) = fields {
+                for (key, value) in fields_map {
+                    map.insert(key.clone(), value.clone());
+                }
+            }
+        }
+
+        map
+    }
+
+    /// Проверяет, содержит ли запись лога структурированные данные.
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если запись содержит структурированные данные, `false` в противном случае
+    pub fn has_structured_data(&self) -> bool {
+        self.fields.is_some()
+    }
+
+    /// Извлекает значение из структурированных данных по ключу.
+    ///
+    /// # Аргументы
+    ///
+    /// * `key` - ключ для поиска
+    ///
+    /// # Возвращает
+    ///
+    /// `Option<&serde_json::Value>` - значение, если найдено, иначе `None`
+    pub fn get_field(&self, key: &str) -> Option<&serde_json::Value> {
+        self.fields.as_ref().and_then(|fields| fields.get(key))
+    }
+
+    /// Проверяет, содержит ли запись лога поле с указанным ключом.
+    ///
+    /// # Аргументы
+    ///
+    /// * `key` - ключ для проверки
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если поле существует, `false` в противном случае
+    pub fn has_field(&self, key: &str) -> bool {
+        self.fields.as_ref().map_or(false, |fields| fields.get(key).is_some())
+    }
 }
 
 /// Хранилище логов.
@@ -556,6 +688,97 @@ impl LogStorage {
             .collect()
     }
 
+    /// Возвращает записи логов, содержащие структурированные данные.
+    pub fn get_entries_with_structured_data(&self) -> Vec<LogEntry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.has_structured_data())
+            .cloned()
+            .collect()
+    }
+
+    /// Возвращает записи логов, содержащие указанное поле в структурированных данных.
+    ///
+    /// # Аргументы
+    ///
+    /// * `field_name` - имя поля для поиска
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор записей логов, содержащих указанное поле
+    pub fn get_entries_with_field(&self, field_name: &str) -> Vec<LogEntry> {
+        self.entries
+            .iter()
+            .filter(|entry| entry.has_field(field_name))
+            .cloned()
+            .collect()
+    }
+
+    /// Фильтрует записи логов по значению поля в структурированных данных.
+    ///
+    /// # Аргументы
+    ///
+    /// * `field_name` - имя поля для фильтрации
+    /// * `field_value` - значение поля для сравнения
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор записей логов, соответствующих фильтру
+    pub fn filter_entries_by_field_value(
+        &self,
+        field_name: &str,
+        field_value: &serde_json::Value,
+    ) -> Vec<LogEntry> {
+        self.entries
+            .iter()
+            .filter(|entry| {
+                entry
+                    .get_field(field_name)
+                    .map_or(false, |value| value == field_value)
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Поиск записей логов по ключевому слову в сообщении или структурированных данных.
+    ///
+    /// # Аргументы
+    ///
+    /// * `keyword` - ключевое слово для поиска
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор записей логов, содержащих ключевое слово
+    pub fn search_entries(&self, keyword: &str) -> Vec<LogEntry> {
+        let keyword_lower = keyword.to_lowercase();
+        self.entries
+            .iter()
+            .filter(|entry| {
+                // Поиск в сообщении
+                let message_match = entry.message.to_lowercase().contains(&keyword_lower);
+
+                // Поиск в структурированных данных
+                let fields_match = entry
+                    .fields
+                    .as_ref()
+                    .map_or(false, |fields| {
+                        fields
+                            .as_object()
+                            .map_or(false, |obj| {
+                                obj.values().any(|value| {
+                                    value
+                                        .as_str()
+                                        .map_or(false, |s| s.to_lowercase().contains(&keyword_lower))
+                                })
+                            })
+                    });
+
+                message_match || fields_match
+            })
+            .cloned()
+            .collect()
+    }
+
     /// Возвращает последние N записей.
     pub fn get_recent_entries(&self, limit: usize) -> Vec<LogEntry> {
         if limit == 0 {
@@ -777,6 +1000,59 @@ impl SharedLogStorage {
     pub async fn get_entries_by_level(&self, min_level: LogLevel) -> Vec<LogEntry> {
         let storage = self.inner.read().await;
         storage.get_entries_by_level(min_level)
+    }
+
+    /// Возвращает записи логов, содержащие структурированные данные.
+    pub async fn get_entries_with_structured_data(&self) -> Vec<LogEntry> {
+        let storage = self.inner.read().await;
+        storage.get_entries_with_structured_data()
+    }
+
+    /// Возвращает записи логов, содержащие указанное поле в структурированных данных.
+    ///
+    /// # Аргументы
+    ///
+    /// * `field_name` - имя поля для поиска
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор записей логов, содержащих указанное поле
+    pub async fn get_entries_with_field(&self, field_name: &str) -> Vec<LogEntry> {
+        let storage = self.inner.read().await;
+        storage.get_entries_with_field(field_name)
+    }
+
+    /// Фильтрует записи логов по значению поля в структурированных данных.
+    ///
+    /// # Аргументы
+    ///
+    /// * `field_name` - имя поля для фильтрации
+    /// * `field_value` - значение поля для сравнения
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор записей логов, соответствующих фильтру
+    pub async fn filter_entries_by_field_value(
+        &self,
+        field_name: &str,
+        field_value: serde_json::Value,
+    ) -> Vec<LogEntry> {
+        let storage = self.inner.read().await;
+        storage.filter_entries_by_field_value(field_name, &field_value)
+    }
+
+    /// Поиск записей логов по ключевому слову в сообщении или структурированных данных.
+    ///
+    /// # Аргументы
+    ///
+    /// * `keyword` - ключевое слово для поиска
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор записей логов, содержащих ключевое слово
+    pub async fn search_entries(&self, keyword: &str) -> Vec<LogEntry> {
+        let storage = self.inner.read().await;
+        storage.search_entries(keyword)
     }
 
     /// Возвращает последние N записей.
@@ -1523,5 +1799,255 @@ mod tests {
 
         // Should now be warning status
         assert_eq!(storage.get_health_status(), "warning");
+    }
+
+    #[test]
+    fn test_log_entry_structured_json() {
+        // Тестируем создание записи лога с JSON-данными
+        let json_data = json!({
+            "request_id": "12345",
+            "user_id": "user123",
+            "duration_ms": 150
+        });
+
+        let entry = LogEntry::new_json(
+            LogLevel::Info,
+            "api.request",
+            "Request processed successfully",
+            json_data.clone(),
+        );
+
+        assert_eq!(entry.level, LogLevel::Info);
+        assert_eq!(entry.target, "api.request");
+        assert_eq!(entry.message, "Request processed successfully");
+        assert!(entry.has_structured_data());
+        assert_eq!(entry.get_field("request_id").unwrap(), &json_data["request_id"]);
+        assert_eq!(entry.get_field("user_id").unwrap(), &json_data["user_id"]);
+        assert_eq!(entry.get_field("duration_ms").unwrap(), &json_data["duration_ms"]);
+    }
+
+    #[test]
+    fn test_log_entry_structured_key_value() {
+        // Тестируем создание записи лога с парами ключ-значение
+        let mut key_value_pairs = HashMap::new();
+        key_value_pairs.insert("request_id".to_string(), serde_json::Value::String("12345".to_string()));
+        key_value_pairs.insert("user_id".to_string(), serde_json::Value::String("user123".to_string()));
+        key_value_pairs.insert("duration_ms".to_string(), serde_json::Value::Number(serde_json::Number::from(150)));
+
+        let entry = LogEntry::new_key_value(
+            LogLevel::Info,
+            "api.request",
+            "Request processed successfully",
+            key_value_pairs.clone(),
+        );
+
+        assert_eq!(entry.level, LogLevel::Info);
+        assert_eq!(entry.target, "api.request");
+        assert_eq!(entry.message, "Request processed successfully");
+        assert!(entry.has_structured_data());
+        assert!(entry.has_field("request_id"));
+        assert!(entry.has_field("user_id"));
+        assert!(entry.has_field("duration_ms"));
+    }
+
+    #[test]
+    fn test_log_entry_to_json() {
+        // Тестируем преобразование записи лога в JSON
+        let mut key_value_pairs = HashMap::new();
+        key_value_pairs.insert("request_id".to_string(), serde_json::Value::String("12345".to_string()));
+        key_value_pairs.insert("user_id".to_string(), serde_json::Value::String("user123".to_string()));
+
+        let entry = LogEntry::new_key_value(
+            LogLevel::Info,
+            "api.request",
+            "Request processed successfully",
+            key_value_pairs,
+        );
+
+        let json_output = entry.to_json();
+        
+        assert!(json_output["timestamp"].is_string());
+        assert_eq!(json_output["level"], "INFO");
+        assert_eq!(json_output["target"], "api.request");
+        assert_eq!(json_output["message"], "Request processed successfully");
+        assert!(json_output["fields"].is_object());
+        assert_eq!(json_output["fields"]["request_id"], "12345");
+        assert_eq!(json_output["fields"]["user_id"], "user123");
+    }
+
+    #[test]
+    fn test_log_entry_to_key_value() {
+        // Тестируем преобразование записи лога в формат Key-Value
+        let mut key_value_pairs = HashMap::new();
+        key_value_pairs.insert("request_id".to_string(), serde_json::Value::String("12345".to_string()));
+        key_value_pairs.insert("user_id".to_string(), serde_json::Value::String("user123".to_string()));
+
+        let entry = LogEntry::new_key_value(
+            LogLevel::Info,
+            "api.request",
+            "Request processed successfully",
+            key_value_pairs,
+        );
+
+        let key_value_output = entry.to_key_value();
+        
+        assert!(key_value_output.contains_key("timestamp"));
+        assert_eq!(key_value_output["level"], "INFO");
+        assert_eq!(key_value_output["target"], "api.request");
+        assert_eq!(key_value_output["message"], "Request processed successfully");
+        assert_eq!(key_value_output["request_id"], "12345");
+        assert_eq!(key_value_output["user_id"], "user123");
+    }
+
+    #[test]
+    fn test_log_storage_structured_filtering() {
+        // Тестируем фильтрацию структурированных логов
+        let mut storage = LogStorage::new(100);
+
+        // Добавляем обычные записи
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Normal log entry 1"));
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Normal log entry 2"));
+
+        // Добавляем структурированные записи
+        let mut fields1 = HashMap::new();
+        fields1.insert("request_id".to_string(), serde_json::Value::String("req123".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Structured log 1", fields1));
+
+        let mut fields2 = HashMap::new();
+        fields2.insert("request_id".to_string(), serde_json::Value::String("req456".to_string()));
+        fields2.insert("user_id".to_string(), serde_json::Value::String("user789".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Structured log 2", fields2));
+
+        // Проверяем фильтрацию по структурированным данным
+        let structured_entries = storage.get_entries_with_structured_data();
+        assert_eq!(structured_entries.len(), 2);
+        assert!(structured_entries.iter().all(|entry| entry.has_structured_data()));
+
+        // Проверяем фильтрацию по полю
+        let entries_with_request_id = storage.get_entries_with_field("request_id");
+        assert_eq!(entries_with_request_id.len(), 2);
+
+        let entries_with_user_id = storage.get_entries_with_field("user_id");
+        assert_eq!(entries_with_user_id.len(), 1);
+    }
+
+    #[test]
+    fn test_log_storage_field_value_filtering() {
+        // Тестируем фильтрацию по значению поля
+        let mut storage = LogStorage::new(100);
+
+        let mut fields1 = HashMap::new();
+        fields1.insert("request_id".to_string(), serde_json::Value::String("req123".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Request 1", fields1));
+
+        let mut fields2 = HashMap::new();
+        fields2.insert("request_id".to_string(), serde_json::Value::String("req456".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Request 2", fields2));
+
+        let mut fields3 = HashMap::new();
+        fields3.insert("request_id".to_string(), serde_json::Value::String("req123".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Request 3", fields3));
+
+        // Фильтруем по значению "req123"
+        let filtered_entries = storage.filter_entries_by_field_value(
+            "request_id",
+            &serde_json::Value::String("req123".to_string()),
+        );
+        
+        assert_eq!(filtered_entries.len(), 2);
+        assert!(filtered_entries.iter().all(|entry| 
+            entry.get_field("request_id").unwrap() == "req123"));
+    }
+
+    #[test]
+    fn test_log_storage_search_functionality() {
+        // Тестируем функцию поиска
+        let mut storage = LogStorage::new(100);
+
+        // Добавляем записи с разными сообщениями и структурированными данными
+        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Error occurred during processing"));
+        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning: high memory usage"));
+
+        let mut fields1 = HashMap::new();
+        fields1.insert("error_code".to_string(), serde_json::Value::String("E001".to_string()));
+        fields1.insert("details".to_string(), serde_json::Value::String("Database connection failed".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Error, "db", "Database error", fields1));
+
+        let mut fields2 = HashMap::new();
+        fields2.insert("error_code".to_string(), serde_json::Value::String("E002".to_string()));
+        fields2.insert("details".to_string(), serde_json::Value::String("Network timeout".to_string()));
+        storage.add_entry(LogEntry::new_key_value(LogLevel::Error, "network", "Network error", fields2));
+
+        // Поиск по ключевому слову "error"
+        let error_results = storage.search_entries("error");
+        assert_eq!(error_results.len(), 3); // "Error occurred", "Database error", "Network error"
+
+        // Поиск по ключевому слову "database"
+        let database_results = storage.search_entries("database");
+        assert_eq!(database_results.len(), 1); // Только "Database connection failed"
+
+        // Поиск по ключевому слову "E001"
+        let e001_results = storage.search_entries("E001");
+        assert_eq!(e001_results.len(), 1); // Только запись с error_code: "E001"
+    }
+
+    #[test]
+    fn test_structured_logging_integration() {
+        // Тестируем интеграцию структурированного логирования
+        let mut storage = LogStorage::new(100);
+
+        // Создаем структурированные логи разных типов
+        let json_log = LogEntry::new_json(
+            LogLevel::Info,
+            "api.request",
+            "Request completed",
+            json!({
+                "request_id": "abc123",
+                "status": "success",
+                "duration_ms": 250
+            }),
+        );
+
+        let mut kv_pairs = HashMap::new();
+        kv_pairs.insert("operation".to_string(), serde_json::Value::String("database_query".to_string()));
+        kv_pairs.insert("rows_affected".to_string(), serde_json::Value::Number(serde_json::Number::from(42)));
+        let kv_log = LogEntry::new_key_value(
+            LogLevel::Debug,
+            "db.operation",
+            "Query executed",
+            kv_pairs,
+        );
+
+        // Добавляем логи в хранилище
+        storage.add_entry(json_log);
+        storage.add_entry(kv_log);
+
+        // Проверяем, что логи успешно добавлены
+        assert_eq!(storage.len(), 2);
+
+        // Проверяем фильтрацию
+        let structured_logs = storage.get_entries_with_structured_data();
+        assert_eq!(structured_logs.len(), 2);
+
+        // Проверяем поиск
+        let request_logs = storage.search_entries("request");
+        assert_eq!(request_logs.len(), 1);
+
+        let database_logs = storage.search_entries("database");
+        assert_eq!(database_logs.len(), 1);
+
+        // Проверяем преобразование в JSON
+        let all_entries = storage.get_all_entries();
+        for entry in all_entries {
+            let json_output = entry.to_json();
+            assert!(json_output["timestamp"].is_string());
+            assert!(json_output["level"].is_string());
+            assert!(json_output["target"].is_string());
+            assert!(json_output["message"].is_string());
+            
+            if entry.has_structured_data() {
+                assert!(json_output["fields"].is_object());
+            }
+        }
     }
 }
