@@ -107,6 +107,8 @@ pub struct EbpfConfig {
     pub enable_process_disk_monitoring: bool,
     /// Включить мониторинг использования памяти процессами
     pub enable_process_memory_monitoring: bool,
+    /// Включить мониторинг производительности приложений
+    pub enable_application_performance_monitoring: bool,
     /// Интервал сбора метрик
     pub collection_interval: Duration,
     /// Включить кэширование метрик для уменьшения накладных расходов
@@ -148,6 +150,7 @@ impl Default for EbpfConfig {
             enable_process_network_monitoring: false,
             enable_process_disk_monitoring: false,
             enable_process_memory_monitoring: false,
+            enable_application_performance_monitoring: false,
             collection_interval: Duration::from_secs(1),
             enable_caching: true,
             batch_size: 100,
@@ -503,6 +506,59 @@ pub struct ProcessMemoryStat {
     pub name: String,
 }
 
+/// Статистика по производительности приложений
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ApplicationPerformanceStat {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Идентификатор потока
+    pub tgid: u32,
+    /// Время выполнения в наносекундах
+    pub execution_time_ns: u64,
+    /// Время ожидания ввода-вывода в наносекундах
+    pub io_wait_time_ns: u64,
+    /// Время ожидания CPU в наносекундах
+    pub cpu_wait_time_ns: u64,
+    /// Время ожидания блокировок в наносекундах
+    pub lock_wait_time_ns: u64,
+    /// Время ожидания сети в наносекундах
+    pub network_wait_time_ns: u64,
+    /// Время ожидания диска в наносекундах
+    pub disk_wait_time_ns: u64,
+    /// Время ожидания памяти в наносекундах
+    pub memory_wait_time_ns: u64,
+    /// Время ожидания GPU в наносекундах
+    pub gpu_wait_time_ns: u64,
+    /// Время ожидания других ресурсов в наносекундах
+    pub other_wait_time_ns: u64,
+    /// Общее время выполнения в наносекундах
+    pub total_time_ns: u64,
+    /// Время последнего обновления в наносекундах
+    pub last_update_ns: u64,
+    /// Имя процесса
+    pub name: String,
+    /// Процент времени выполнения
+    pub execution_percent: f32,
+    /// Процент времени ожидания
+    pub wait_percent: f32,
+    /// Процент времени ожидания ввода-вывода
+    pub io_wait_percent: f32,
+    /// Процент времени ожидания CPU
+    pub cpu_wait_percent: f32,
+    /// Процент времени ожидания блокировок
+    pub lock_wait_percent: f32,
+    /// Процент времени ожидания сети
+    pub network_wait_percent: f32,
+    /// Процент времени ожидания диска
+    pub disk_wait_percent: f32,
+    /// Процент времени ожидания памяти
+    pub memory_wait_percent: f32,
+    /// Процент времени ожидания GPU
+    pub gpu_wait_percent: f32,
+    /// Процент времени ожидания других ресурсов
+    pub other_wait_percent: f32,
+}
+
 /// Структура для хранения eBPF метрик
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct EbpfMetrics {
@@ -562,6 +618,8 @@ pub struct EbpfMetrics {
     pub process_disk_details: Option<Vec<ProcessDiskStat>>,
     /// Детализированная статистика по использованию памяти процессами (опционально)
     pub process_memory_details: Option<Vec<ProcessMemoryStat>>,
+    /// Детализированная статистика по производительности приложений (опционально)
+    pub application_performance_details: Option<Vec<ApplicationPerformanceStat>>,
 }
 
 /// Конфигурация порогов для уведомлений eBPF
@@ -1038,6 +1096,8 @@ pub struct EbpfMetricsCollector {
     #[cfg(feature = "ebpf")]
     filesystem_program: Option<Program>,
     #[cfg(feature = "ebpf")]
+    application_performance_program: Option<Program>,
+    #[cfg(feature = "ebpf")]
     cpu_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     memory_maps: Vec<Map>,
@@ -1065,6 +1125,8 @@ pub struct EbpfMetricsCollector {
     cpu_temperature_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     filesystem_maps: Vec<Map>,
+    #[cfg(feature = "ebpf")]
+    application_performance_maps: Vec<Map>,
     #[cfg(feature = "ebpf")]
     program_cache: EbpfProgramCache,
     initialized: bool,
@@ -1135,6 +1197,8 @@ impl EbpfMetricsCollector {
             #[cfg(feature = "ebpf")]
             filesystem_program: None,
             #[cfg(feature = "ebpf")]
+            application_performance_program: None,
+            #[cfg(feature = "ebpf")]
             cpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             memory_maps: Vec::new(),
@@ -1158,6 +1222,8 @@ impl EbpfMetricsCollector {
             gpu_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             filesystem_maps: Vec::new(),
+            #[cfg(feature = "ebpf")]
+            application_performance_maps: Vec::new(),
             #[cfg(feature = "ebpf")]
             program_cache: EbpfProgramCache::new(),
             initialized: false,
@@ -1807,6 +1873,24 @@ impl EbpfMetricsCollector {
                         let error_msg = format!("Ошибка загрузки программы мониторинга использования памяти процессами: {}. Проверьте доступ к памяти и права доступа", e);
                         tracing::error!("{}", error_msg);
                         detailed_errors.push(format!("ProcessMemory: {}", e));
+                        error_count += 1;
+                        self.last_error = Some(error_msg);
+                    }
+                }
+            }
+
+            if self.config.enable_application_performance_monitoring {
+                match self.load_application_performance_program() {
+                    Ok(_) => {
+                        success_count += 1;
+                        tracing::info!(
+                            "Программа мониторинга производительности приложений успешно загружена"
+                        );
+                    }
+                    Err(e) => {
+                        let error_msg = format!("Ошибка загрузки программы мониторинга производительности приложений: {}. Проверьте доступ к информации о производительности и права доступа", e);
+                        tracing::error!("{}", error_msg);
+                        detailed_errors.push(format!("ApplicationPerformance: {}", e));
                         error_count += 1;
                         self.last_error = Some(error_msg);
                     }
@@ -2720,6 +2804,44 @@ impl EbpfMetricsCollector {
         Ok(())
     }
 
+    /// Загрузить eBPF программу для мониторинга производительности приложений
+    #[cfg(feature = "ebpf")]
+    fn load_application_performance_program(&mut self) -> Result<()> {
+        use libbpf_rs::{Map, Program};
+        use std::path::Path;
+
+        let program_path = Path::new("src/ebpf_programs/application_performance.c");
+
+        if !program_path.exists() {
+            tracing::warn!(
+                "eBPF программа для мониторинга производительности приложений не найдена: {:?}",
+                program_path
+            );
+            return Ok(());
+        }
+
+        tracing::info!(
+            "Загрузка eBPF программы для мониторинга производительности приложений: {:?}",
+            program_path
+        );
+
+        // Загрузка eBPF программы
+        let program = load_ebpf_program_from_file(program_path.to_str().unwrap())?;
+
+        // Сохранение программы
+        self.application_performance_program = Some(program);
+
+        // Загрузка карт из программы
+        self.application_performance_maps =
+            self.load_maps_from_program(program_path.to_str().unwrap(), "application_performance_map")?;
+
+        tracing::info!(
+            "eBPF программа для мониторинга производительности приложений успешно загружена с {} картами",
+            self.application_performance_maps.len()
+        );
+        Ok(())
+    }
+
     /// Собрать детализированную статистику по системным вызовам
     #[cfg(feature = "ebpf")]
     fn collect_syscall_details(&self) -> Option<Vec<SyscallStat>> {
@@ -3221,6 +3343,12 @@ impl EbpfMetricsCollector {
             None
         };
 
+        let application_performance_details = if self.config.enable_application_performance_monitoring {
+            self.collect_application_performance_stats()?
+        } else {
+            None
+        };
+
         // Оптимизация: собираем детализированную статистику параллельно
         let (
             syscall_details,
@@ -3234,6 +3362,7 @@ impl EbpfMetricsCollector {
             process_gpu_details,
             process_network_details,
             process_memory_details,
+            application_performance_details,
         ) = self.collect_detailed_stats_parallel();
 
         // Оптимизируем детализированную статистику для уменьшения использования памяти
@@ -3306,6 +3435,7 @@ impl EbpfMetricsCollector {
             process_gpu_details,
             process_disk_details,
             process_memory_details,
+            application_performance_details,
         })
     }
 
@@ -3407,6 +3537,13 @@ impl EbpfMetricsCollector {
                     None
                 }
             }),
+            std::thread::spawn(|| {
+                if self.config.enable_application_performance_monitoring {
+                    self.collect_application_performance_stats()
+                } else {
+                    None
+                }
+            }),
         ];
 
         let syscall_details = results[0].join().unwrap();
@@ -3420,6 +3557,7 @@ impl EbpfMetricsCollector {
         let process_gpu_details = results[8].join().unwrap();
         let process_network_details = results[9].join().unwrap();
         let process_memory_details = results[10].join().unwrap();
+        let application_performance_details = results[11].join().unwrap();
 
         (
             syscall_details,
@@ -3433,6 +3571,7 @@ impl EbpfMetricsCollector {
             process_gpu_details,
             process_network_details,
             process_memory_details,
+            application_performance_details,
         )
     }
 
@@ -3456,6 +3595,7 @@ impl EbpfMetricsCollector {
         process_network_details: Option<Vec<ProcessNetworkStat>>,
         process_disk_details: Option<Vec<ProcessDiskStat>>,
         process_memory_details: Option<Vec<ProcessMemoryStat>>,
+        application_performance_details: Option<Vec<ApplicationPerformanceStat>>,
     ) -> (
         Option<Vec<SyscallStat>>,
         Option<Vec<NetworkStat>>,
@@ -3469,6 +3609,7 @@ impl EbpfMetricsCollector {
         Option<Vec<ProcessNetworkStat>>,
         Option<Vec<ProcessDiskStat>>,
         Option<Vec<ProcessMemoryStat>>,
+        Option<Vec<ApplicationPerformanceStat>>,
     ) {
         // Ограничиваем количество системных вызовов
         let syscall_details = syscall_details.map(|mut details| {
@@ -3602,6 +3743,18 @@ impl EbpfMetricsCollector {
             details
         });
 
+        // Ограничиваем количество статистик производительности приложений
+        let application_performance_details = application_performance_details.map(|mut details| {
+            if details.len() > self.max_cached_details {
+                details.truncate(self.max_cached_details);
+                tracing::debug!(
+                    "Ограничено количество статистик производительности приложений до {}",
+                    self.max_cached_details
+                );
+            }
+            details
+        });
+
         (
             syscall_details,
             network_details,
@@ -3615,6 +3768,7 @@ impl EbpfMetricsCollector {
             process_network_details,
             process_disk_details,
             process_memory_details,
+            application_performance_details,
         )
     }
 
@@ -4470,6 +4624,134 @@ impl EbpfMetricsCollector {
             Ok(None)
         } else {
             Ok(Some(memory_stats))
+        }
+    }
+
+    /// Собрать статистику производительности приложений из eBPF карт
+    #[cfg(feature = "ebpf")]
+    fn collect_application_performance_stats(&self) -> Result<Option<Vec<ApplicationPerformanceStat>>> {
+        use libbpf_rs::Map;
+
+        if !self.config.enable_application_performance_monitoring {
+            return Ok(None);
+        }
+
+        // Пробуем получить доступ к картам производительности приложений
+        if self.application_performance_maps.is_empty() {
+            tracing::warn!("Карты производительности приложений не инициализированы");
+            return Ok(None);
+        }
+
+        let mut performance_stats = Vec::new();
+
+        for map in &self.application_performance_maps {
+            // Используем функцию итерации по ключам для получения всех записей производительности
+            match iterate_ebpf_map_keys::<ApplicationPerformanceStat>(map, 10240) {
+                Ok(stats) => {
+                    for stat in stats {
+                        // Вычисляем проценты
+                        let total_time = stat.execution_time_ns + stat.io_wait_time_ns + stat.cpu_wait_time_ns +
+                            stat.lock_wait_time_ns + stat.network_wait_time_ns + stat.disk_wait_time_ns +
+                            stat.memory_wait_time_ns + stat.gpu_wait_time_ns + stat.other_wait_time_ns;
+                        
+                        let execution_percent = if total_time > 0 {
+                            (stat.execution_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let wait_percent = 100.0 - execution_percent;
+                        
+                        let io_wait_percent = if total_time > 0 {
+                            (stat.io_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let cpu_wait_percent = if total_time > 0 {
+                            (stat.cpu_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let lock_wait_percent = if total_time > 0 {
+                            (stat.lock_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let network_wait_percent = if total_time > 0 {
+                            (stat.network_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let disk_wait_percent = if total_time > 0 {
+                            (stat.disk_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let memory_wait_percent = if total_time > 0 {
+                            (stat.memory_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let gpu_wait_percent = if total_time > 0 {
+                            (stat.gpu_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        let other_wait_percent = if total_time > 0 {
+                            (stat.other_wait_time_ns as f32 / total_time as f32) * 100.0
+                        } else {
+                            0.0
+                        };
+                        
+                        performance_stats.push(ApplicationPerformanceStat {
+                            pid: stat.pid,
+                            tgid: stat.tgid,
+                            execution_time_ns: stat.execution_time_ns,
+                            io_wait_time_ns: stat.io_wait_time_ns,
+                            cpu_wait_time_ns: stat.cpu_wait_time_ns,
+                            lock_wait_time_ns: stat.lock_wait_time_ns,
+                            network_wait_time_ns: stat.network_wait_time_ns,
+                            disk_wait_time_ns: stat.disk_wait_time_ns,
+                            memory_wait_time_ns: stat.memory_wait_time_ns,
+                            gpu_wait_time_ns: stat.gpu_wait_time_ns,
+                            other_wait_time_ns: stat.other_wait_time_ns,
+                            total_time_ns: total_time,
+                            last_update_ns: stat.last_update_ns,
+                            name: stat.name.clone(),
+                            execution_percent,
+                            wait_percent,
+                            io_wait_percent,
+                            cpu_wait_percent,
+                            lock_wait_percent,
+                            network_wait_percent,
+                            disk_wait_percent,
+                            memory_wait_percent,
+                            gpu_wait_percent,
+                            other_wait_percent,
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(
+                        "Ошибка при итерации по карте производительности приложений: {}",
+                        e
+                    );
+                    continue;
+                }
+            }
+        }
+
+        if performance_stats.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(performance_stats))
         }
     }
 
@@ -9429,4 +9711,303 @@ fn test_gpu_integration_with_other_metrics() {
     let _cpu_usage = metrics.cpu_usage;
     let _memory_usage = metrics.memory_usage;
     let _gpu_usage = metrics.gpu_usage;
+}
+
+#[cfg(test)]
+mod test_application_performance {
+    use super::*;
+
+    #[test]
+    fn test_application_performance_stat_default() {
+        // Тест проверяет, что ApplicationPerformanceStat корректно создается с значениями по умолчанию
+        let stat = ApplicationPerformanceStat {
+            pid: 123,
+            tgid: 456,
+            execution_time_ns: 1000000,
+            io_wait_time_ns: 500000,
+            cpu_wait_time_ns: 300000,
+            lock_wait_time_ns: 200000,
+            network_wait_time_ns: 400000,
+            disk_wait_time_ns: 600000,
+            memory_wait_time_ns: 150000,
+            gpu_wait_time_ns: 100000,
+            other_wait_time_ns: 50000,
+            total_time_ns: 3300000,
+            last_update_ns: 123456789,
+            name: "test_app".to_string(),
+            execution_percent: 30.3,
+            wait_percent: 69.7,
+            io_wait_percent: 15.15,
+            cpu_wait_percent: 9.09,
+            lock_wait_percent: 6.06,
+            network_wait_percent: 12.12,
+            disk_wait_percent: 18.18,
+            memory_wait_percent: 4.55,
+            gpu_wait_percent: 3.03,
+            other_wait_percent: 1.52,
+        };
+
+        assert_eq!(stat.pid, 123);
+        assert_eq!(stat.tgid, 456);
+        assert_eq!(stat.execution_time_ns, 1000000);
+        assert_eq!(stat.total_time_ns, 3300000);
+        assert_eq!(stat.name, "test_app");
+        assert_eq!(stat.execution_percent, 30.3);
+        assert_eq!(stat.wait_percent, 69.7);
+    }
+
+    #[test]
+    fn test_application_performance_stat_serialization() {
+        // Тест проверяет, что ApplicationPerformanceStat корректно сериализуется
+        let stat = ApplicationPerformanceStat {
+            pid: 123,
+            tgid: 456,
+            execution_time_ns: 1000000,
+            io_wait_time_ns: 500000,
+            cpu_wait_time_ns: 300000,
+            lock_wait_time_ns: 200000,
+            network_wait_time_ns: 400000,
+            disk_wait_time_ns: 600000,
+            memory_wait_time_ns: 150000,
+            gpu_wait_time_ns: 100000,
+            other_wait_time_ns: 50000,
+            total_time_ns: 3300000,
+            last_update_ns: 123456789,
+            name: "test_app".to_string(),
+            execution_percent: 30.3,
+            wait_percent: 69.7,
+            io_wait_percent: 15.15,
+            cpu_wait_percent: 9.09,
+            lock_wait_percent: 6.06,
+            network_wait_percent: 12.12,
+            disk_wait_percent: 18.18,
+            memory_wait_percent: 4.55,
+            gpu_wait_percent: 3.03,
+            other_wait_percent: 1.52,
+        };
+
+        let json = serde_json::to_string(&stat).expect("Сериализация должна работать");
+        let deserialized: ApplicationPerformanceStat =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
+
+        assert_eq!(deserialized.pid, 123);
+        assert_eq!(deserialized.tgid, 456);
+        assert_eq!(deserialized.execution_time_ns, 1000000);
+        assert_eq!(deserialized.total_time_ns, 3300000);
+        assert_eq!(deserialized.name, "test_app");
+        assert_eq!(deserialized.execution_percent, 30.3);
+        assert_eq!(deserialized.wait_percent, 69.7);
+    }
+
+    #[test]
+    fn test_application_performance_config() {
+        // Тест проверяет, что конфигурация application_performance_monitoring корректно работает
+        let mut config = EbpfConfig::default();
+        assert!(
+            !config.enable_application_performance_monitoring,
+            "По умолчанию должно быть отключено"
+        );
+
+        config.enable_application_performance_monitoring = true;
+        assert!(config.enable_application_performance_monitoring, "Должно включаться");
+    }
+
+    #[test]
+    fn test_ebpf_metrics_with_application_performance() {
+        // Тест проверяет, что EbpfMetrics корректно хранит application_performance_details
+        let mut metrics = EbpfMetrics::default();
+        assert!(
+            metrics.application_performance_details.is_none(),
+            "По умолчанию должно быть None"
+        );
+
+        let performance_stats = vec![
+            ApplicationPerformanceStat {
+                pid: 123,
+                tgid: 456,
+                execution_time_ns: 1000000,
+                io_wait_time_ns: 500000,
+                cpu_wait_time_ns: 300000,
+                lock_wait_time_ns: 200000,
+                network_wait_time_ns: 400000,
+                disk_wait_time_ns: 600000,
+                memory_wait_time_ns: 150000,
+                gpu_wait_time_ns: 100000,
+                other_wait_time_ns: 50000,
+                total_time_ns: 3300000,
+                last_update_ns: 123456789,
+                name: "test_app".to_string(),
+                execution_percent: 30.3,
+                wait_percent: 69.7,
+                io_wait_percent: 15.15,
+                cpu_wait_percent: 9.09,
+                lock_wait_percent: 6.06,
+                network_wait_percent: 12.12,
+                disk_wait_percent: 18.18,
+                memory_wait_percent: 4.55,
+                gpu_wait_percent: 3.03,
+                other_wait_percent: 1.52,
+            },
+            ApplicationPerformanceStat {
+                pid: 789,
+                tgid: 101112,
+                execution_time_ns: 2000000,
+                io_wait_time_ns: 1000000,
+                cpu_wait_time_ns: 600000,
+                lock_wait_time_ns: 400000,
+                network_wait_time_ns: 800000,
+                disk_wait_time_ns: 1200000,
+                memory_wait_time_ns: 300000,
+                gpu_wait_time_ns: 200000,
+                other_wait_time_ns: 100000,
+                total_time_ns: 6600000,
+                last_update_ns: 123456790,
+                name: "another_app".to_string(),
+                execution_percent: 30.3,
+                wait_percent: 69.7,
+                io_wait_percent: 15.15,
+                cpu_wait_percent: 9.09,
+                lock_wait_percent: 6.06,
+                network_wait_percent: 12.12,
+                disk_wait_percent: 18.18,
+                memory_wait_percent: 4.55,
+                gpu_wait_percent: 3.03,
+                other_wait_percent: 1.52,
+            },
+        ];
+
+        metrics.application_performance_details = Some(performance_stats.clone());
+        assert!(metrics.application_performance_details.is_some(), "Должно быть Some");
+
+        if let Some(details) = &metrics.application_performance_details {
+            assert_eq!(details.len(), 2, "Должно быть 2 записи");
+            assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
+            assert_eq!(details[1].pid, 789, "Второй процесс должен иметь PID 789");
+        }
+    }
+
+    #[test]
+    fn test_application_performance_optimization() {
+        // Тест проверяет, что optimize_detailed_stats корректно обрабатывает application_performance_details
+        let mut collector = EbpfMetricsCollector::new(EbpfConfig {
+            enable_application_performance_monitoring: false,
+            ..Default::default()
+        });
+        collector.max_cached_details = 1;
+
+        let performance_stats = vec![
+            ApplicationPerformanceStat {
+                pid: 123,
+                tgid: 456,
+                execution_time_ns: 1000000,
+                io_wait_time_ns: 500000,
+                cpu_wait_time_ns: 300000,
+                lock_wait_time_ns: 200000,
+                network_wait_time_ns: 400000,
+                disk_wait_time_ns: 600000,
+                memory_wait_time_ns: 150000,
+                gpu_wait_time_ns: 100000,
+                other_wait_time_ns: 50000,
+                total_time_ns: 3300000,
+                last_update_ns: 123456789,
+                name: "test_app".to_string(),
+                execution_percent: 30.3,
+                wait_percent: 69.7,
+                io_wait_percent: 15.15,
+                cpu_wait_percent: 9.09,
+                lock_wait_percent: 6.06,
+                network_wait_percent: 12.12,
+                disk_wait_percent: 18.18,
+                memory_wait_percent: 4.55,
+                gpu_wait_percent: 3.03,
+                other_wait_percent: 1.52,
+            },
+            ApplicationPerformanceStat {
+                pid: 789,
+                tgid: 101112,
+                execution_time_ns: 2000000,
+                io_wait_time_ns: 1000000,
+                cpu_wait_time_ns: 600000,
+                lock_wait_time_ns: 400000,
+                network_wait_time_ns: 800000,
+                disk_wait_time_ns: 1200000,
+                memory_wait_time_ns: 300000,
+                gpu_wait_time_ns: 200000,
+                other_wait_time_ns: 100000,
+                total_time_ns: 6600000,
+                last_update_ns: 123456790,
+                name: "another_app".to_string(),
+                execution_percent: 30.3,
+                wait_percent: 69.7,
+                io_wait_percent: 15.15,
+                cpu_wait_percent: 9.09,
+                lock_wait_percent: 6.06,
+                network_wait_percent: 12.12,
+                disk_wait_percent: 18.18,
+                memory_wait_percent: 4.55,
+                gpu_wait_percent: 3.03,
+                other_wait_percent: 1.52,
+            },
+        ];
+
+        let optimized = collector.optimize_detailed_stats(
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(performance_stats.clone()),
+        );
+
+        if let Some((_, _, _, _, _, _, _, _, _, _, _, performance_details)) = optimized {
+            assert_eq!(performance_details.len(), 1, "Должно быть ограничено до 1 записи");
+            assert_eq!(performance_details[0].pid, 123, "Должна остаться первая запись");
+        }
+    }
+
+    #[test]
+    fn test_application_performance_percent_calculation() {
+        // Тест проверяет корректность расчета процентов
+        let execution_time = 1000000u64;
+        let io_wait = 500000u64;
+        let cpu_wait = 300000u64;
+        let lock_wait = 200000u64;
+        let network_wait = 400000u64;
+        let disk_wait = 600000u64;
+        let memory_wait = 150000u64;
+        let gpu_wait = 100000u64;
+        let other_wait = 50000u64;
+        
+        let total_time = execution_time + io_wait + cpu_wait + lock_wait + network_wait + 
+                       disk_wait + memory_wait + gpu_wait + other_wait;
+        
+        let execution_percent = (execution_time as f32 / total_time as f32) * 100.0;
+        let wait_percent = 100.0 - execution_percent;
+        let io_wait_percent = (io_wait as f32 / total_time as f32) * 100.0;
+        let cpu_wait_percent = (cpu_wait as f32 / total_time as f32) * 100.0;
+        let lock_wait_percent = (lock_wait as f32 / total_time as f32) * 100.0;
+        let network_wait_percent = (network_wait as f32 / total_time as f32) * 100.0;
+        let disk_wait_percent = (disk_wait as f32 / total_time as f32) * 100.0;
+        let memory_wait_percent = (memory_wait as f32 / total_time as f32) * 100.0;
+        let gpu_wait_percent = (gpu_wait as f32 / total_time as f32) * 100.0;
+        let other_wait_percent = (other_wait as f32 / total_time as f32) * 100.0;
+
+        assert_eq!(total_time, 3300000);
+        assert!((execution_percent - 30.303).abs() < 0.01);
+        assert!((wait_percent - 69.697).abs() < 0.01);
+        assert!((io_wait_percent - 15.152).abs() < 0.01);
+        assert!((cpu_wait_percent - 9.091).abs() < 0.01);
+        assert!((lock_wait_percent - 6.061).abs() < 0.01);
+        assert!((network_wait_percent - 12.121).abs() < 0.01);
+        assert!((disk_wait_percent - 18.182).abs() < 0.01);
+        assert!((memory_wait_percent - 4.545).abs() < 0.01);
+        assert!((gpu_wait_percent - 3.030).abs() < 0.01);
+        assert!((other_wait_percent - 1.515).abs() < 0.01);
+    }
 }
