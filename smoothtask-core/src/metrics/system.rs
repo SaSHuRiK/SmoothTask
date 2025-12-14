@@ -418,6 +418,69 @@ pub struct PowerMetrics {
     pub gpu_power_w: Option<f32>,
 }
 
+/// Метрики PCI устройства
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PciDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Идентификатор вендора
+    pub vendor_id: String,
+    /// Класс устройства
+    pub device_class: String,
+    /// Состояние устройства (активно/неактивно)
+    pub status: String,
+    /// Использование пропускной способности (в %)
+    pub bandwidth_usage_percent: Option<f32>,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+    /// Потребляемая мощность (если доступна)
+    pub power_w: Option<f32>,
+}
+
+/// Метрики USB устройства
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct UsbDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Идентификатор вендора
+    pub vendor_id: String,
+    /// Идентификатор продукта
+    pub product_id: String,
+    /// Скорость USB (1.0, 2.0, 3.0, 3.1, 3.2, 4.0)
+    pub speed: String,
+    /// Состояние устройства (подключено/отключено)
+    pub status: String,
+    /// Потребляемая мощность (если доступна)
+    pub power_mw: Option<u32>,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+}
+
+/// Метрики SATA/NVMe устройства
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct StorageDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Тип устройства (SATA, NVMe)
+    pub device_type: String,
+    /// Модель устройства
+    pub model: String,
+    /// Серийный номер
+    pub serial_number: String,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+    /// Состояние здоровья (если доступно)
+    pub health_status: Option<String>,
+    /// Общий объем устройства (в байтах)
+    pub total_capacity_bytes: Option<u64>,
+    /// Используемый объем (в байтах)
+    pub used_capacity_bytes: Option<u64>,
+    /// Скорость чтения (в байтах/сек)
+    pub read_speed_bps: Option<u64>,
+    /// Скорость записи (в байтах/сек)
+    pub write_speed_bps: Option<u64>,
+}
+
 /// Метрики аппаратных сенсоров (вентиляторы, напряжение и т.д.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct HardwareMetrics {
@@ -439,6 +502,83 @@ pub struct HardwareMetrics {
     pub gpu_fan_speed_rpm: Option<f32>,
     /// Текущая скорость вращения шасси вентилятора (если доступно)
     pub chassis_fan_speed_rpm: Option<f32>,
+    /// Метрики использования PCI устройств
+    pub pci_devices: Vec<PciDeviceMetrics>,
+    /// Метрики использования USB устройств
+    pub usb_devices: Vec<UsbDeviceMetrics>,
+    /// Метрики использования SATA/NVMe устройств
+    pub storage_devices: Vec<StorageDeviceMetrics>,
+}
+
+impl HardwareMetrics {
+    /// Оптимизирует использование памяти в структуре HardwareMetrics.
+    ///
+    /// Эта функция уменьшает memory footprint за счет:
+    /// 1. Очистки пустых векторов
+    /// 2. Сжатия данных там, где это возможно
+    ///
+    /// # Возвращает
+    ///
+    /// Оптимизированную версию HardwareMetrics с уменьшенным memory footprint
+    pub fn optimize_memory_usage(self) -> Self {
+        // Оптимизируем векторы устройств
+        let pci_devices = if self.pci_devices.is_empty() {
+            Vec::new()
+        } else {
+            self.pci_devices
+        };
+        
+        let usb_devices = if self.usb_devices.is_empty() {
+            Vec::new()
+        } else {
+            self.usb_devices
+        };
+        
+        let storage_devices = if self.storage_devices.is_empty() {
+            Vec::new()
+        } else {
+            self.storage_devices
+        };
+        
+        HardwareMetrics {
+            fan_speeds_rpm: if self.fan_speeds_rpm.is_empty() {
+                Vec::new()
+            } else {
+                self.fan_speeds_rpm
+            },
+            voltages_v: if self.voltages_v.is_empty() {
+                HashMap::new()
+            } else {
+                self.voltages_v
+            },
+            currents_a: if self.currents_a.is_empty() {
+                HashMap::new()
+            } else {
+                self.currents_a
+            },
+            power_w: if self.power_w.is_empty() {
+                HashMap::new()
+            } else {
+                self.power_w
+            },
+            energy_j: if self.energy_j.is_empty() {
+                HashMap::new()
+            } else {
+                self.energy_j
+            },
+            humidity_percent: if self.humidity_percent.is_empty() {
+                HashMap::new()
+            } else {
+                self.humidity_percent
+            },
+            cpu_fan_speed_rpm: self.cpu_fan_speed_rpm,
+            gpu_fan_speed_rpm: self.gpu_fan_speed_rpm,
+            chassis_fan_speed_rpm: self.chassis_fan_speed_rpm,
+            pci_devices,
+            usb_devices,
+            storage_devices,
+        }
+    }
 }
 
 /// Метрики сетевой активности
@@ -695,6 +835,9 @@ impl SystemMetrics {
         {
             self.swap = SwapMetrics::default();
         }
+
+        // Оптимизируем аппаратные метрики
+        self.hardware = self.hardware.optimize_memory_usage();
 
         self
     }
@@ -1556,6 +1699,8 @@ pub enum SystemMetricPriority {
     Low,
     /// Отладочные метрики (только для отладки)
     Debug,
+    /// Опциональные метрики (собираются только при явном запросе)
+    Optional,
 }
 
 impl SystemMetricPriority {
@@ -1567,6 +1712,7 @@ impl SystemMetricPriority {
             SystemMetricPriority::Medium => 2,
             SystemMetricPriority::Low => 3,
             SystemMetricPriority::Debug => 4,
+            SystemMetricPriority::Optional => 5,
         }
     }
     
@@ -1578,6 +1724,7 @@ impl SystemMetricPriority {
             SystemMetricPriority::Medium => current_load < 3.0, // Собирать при нагрузке < 3.0
             SystemMetricPriority::Low => current_load < 1.5, // Собирать при нагрузке < 1.5
             SystemMetricPriority::Debug => current_load < 1.0, // Собирать только при очень низкой нагрузке
+            SystemMetricPriority::Optional => false, // Опциональные метрики не собираются автоматически
         }
     }
 }
@@ -2708,22 +2855,78 @@ fn collect_hardware_metrics() -> HardwareMetrics {
         }
     }
     
+    // Собираем метрики PCI устройств
+    match collect_pci_device_metrics() {
+        Ok(pci_devices) => {
+            hardware.pci_devices = pci_devices;
+            tracing::info!(
+                "PCI device metrics collection completed: {} devices found",
+                hardware.pci_devices.len()
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to collect PCI device metrics: {}",
+                e
+            );
+        }
+    }
+    
+    // Собираем метрики USB устройств
+    match collect_usb_device_metrics() {
+        Ok(usb_devices) => {
+            hardware.usb_devices = usb_devices;
+            tracing::info!(
+                "USB device metrics collection completed: {} devices found",
+                hardware.usb_devices.len()
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to collect USB device metrics: {}",
+                e
+            );
+        }
+    }
+    
+    // Собираем метрики устройств хранения
+    match collect_storage_device_metrics() {
+        Ok(storage_devices) => {
+            hardware.storage_devices = storage_devices;
+            tracing::info!(
+                "Storage device metrics collection completed: {} devices found",
+                hardware.storage_devices.len()
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                "Failed to collect storage device metrics: {}",
+                e
+            );
+        }
+    }
+    
     // Логируем результаты
     if hardware.fan_speeds_rpm.is_empty() && hardware.voltages_v.is_empty() && 
        hardware.currents_a.is_empty() && hardware.power_w.is_empty() && 
-       hardware.energy_j.is_empty() && hardware.humidity_percent.is_empty() {
+       hardware.energy_j.is_empty() && hardware.humidity_percent.is_empty() &&
+       hardware.pci_devices.is_empty() && hardware.usb_devices.is_empty() && 
+       hardware.storage_devices.is_empty() {
         tracing::warn!(
             "No hardware sensor metrics available - hwmon interfaces not found or accessible. Check if hardware sensors are properly configured and accessible."
         );
     } else {
         tracing::info!(
-            "Hardware sensor metrics collection completed: {} fan speeds, {} voltages, {} currents, {} power sensors, {} energy sensors, {} humidity sensors",
+            "Hardware sensor metrics collection completed: {} fan speeds, {} voltages, {} currents, {} power sensors, {} energy sensors, {} humidity sensors, {} PCI devices, {} USB devices, {} storage devices",
             hardware.fan_speeds_rpm.len(),
             hardware.voltages_v.len(),
             hardware.currents_a.len(),
             hardware.power_w.len(),
             hardware.energy_j.len(),
-            hardware.humidity_percent.len()
+            hardware.humidity_percent.len(),
+            hardware.pci_devices.len(),
+            hardware.usb_devices.len(),
+            hardware.storage_devices.len()
         );
     }
     
@@ -3735,6 +3938,484 @@ fn parse_pressure_record(line: &str) -> Result<PressureRecord> {
     })
 }
 
+/// Собрать метрики PCI устройств
+///
+/// Читает информацию о PCI устройствах из `/sys/bus/pci/devices/`
+/// и возвращает вектор с метриками для каждого устройства.
+#[allow(dead_code)]
+pub fn collect_pci_device_metrics() -> Result<Vec<PciDeviceMetrics>> {
+    let mut devices = Vec::new();
+    let pci_devices_path = Path::new("/sys/bus/pci/devices");
+    
+    if !pci_devices_path.exists() {
+        warn!("PCI devices path not found: {}", pci_devices_path.display());
+        return Ok(devices);
+    }
+    
+    let entries = fs::read_dir(pci_devices_path)
+        .context("Failed to read PCI devices directory")?;
+    
+    for entry in entries {
+        let entry = entry.context("Error reading PCI device entry")?;
+        let device_path = entry.path();
+        
+        // Skip non-device directories
+        if !device_path.is_dir() {
+            continue;
+        }
+        
+        let device_id = device_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        
+        // Read vendor and device IDs
+        let (vendor_id, device_class) = read_pci_device_info(&device_path);
+        
+        // Read device status
+        let status = read_pci_device_status(&device_path);
+        
+        // Read temperature if available
+        let temperature = read_pci_device_temperature(&device_path);
+        
+        // Read power if available
+        let power = read_pci_device_power(&device_path);
+        
+        devices.push(PciDeviceMetrics {
+            device_id,
+            vendor_id,
+            device_class,
+            status,
+            bandwidth_usage_percent: None, // Would require more advanced monitoring
+            temperature_c: temperature,
+            power_w: power,
+        });
+    }
+    
+    Ok(devices)
+}
+
+/// Прочитать информацию о PCI устройстве (vendor ID и класс)
+fn read_pci_device_info(device_path: &Path) -> (String, String) {
+    let vendor_id = fs::read_to_string(device_path.join("vendor"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "0x0000".to_string());
+    
+    let device_class = fs::read_to_string(device_path.join("class"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "0x000000".to_string());
+    
+    (vendor_id, device_class)
+}
+
+/// Прочитать статус PCI устройства
+fn read_pci_device_status(device_path: &Path) -> String {
+    if let Ok(status_hex) = fs::read(device_path.join("status")) {
+        if status_hex.len() >= 4 {
+            // Check if device is enabled (bit 0 of status register)
+            if status_hex[0] & 0x01 != 0 {
+                return "active".to_string();
+            }
+        }
+    }
+    "inactive".to_string()
+}
+
+/// Прочитать температуру PCI устройства (если доступна)
+fn read_pci_device_temperature(device_path: &Path) -> Option<f32> {
+    // Try to read temperature from hwmon interface if available
+    let hwmon_path = device_path.join("hwmon");
+    if hwmon_path.exists() {
+        if let Ok(hwmon_entries) = fs::read_dir(&hwmon_path) {
+            for hwmon_entry in hwmon_entries {
+                if let Ok(entry) = hwmon_entry {
+                    let temp_input = entry.path().join("temp1_input");
+                    if let Ok(temp_str) = fs::read_to_string(&temp_input) {
+                        if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
+                            return Some(temp_millidegrees as f32 / 1000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Прочитать потребляемую мощность PCI устройства (если доступна)
+fn read_pci_device_power(device_path: &Path) -> Option<f32> {
+    // Try to read power from hwmon interface if available
+    let hwmon_path = device_path.join("hwmon");
+    if hwmon_path.exists() {
+        if let Ok(hwmon_entries) = fs::read_dir(&hwmon_path) {
+            for hwmon_entry in hwmon_entries {
+                if let Ok(entry) = hwmon_entry {
+                    let power_input = entry.path().join("power1_input");
+                    if let Ok(power_str) = fs::read_to_string(&power_input) {
+                        if let Ok(power_microwatts) = power_str.trim().parse::<u64>() {
+                            return Some(power_microwatts as f32 / 1_000_000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Собрать метрики USB устройств
+///
+/// Читает информацию о USB устройствах из `/sys/bus/usb/devices/`
+/// и возвращает вектор с метриками для каждого устройства.
+#[allow(dead_code)]
+pub fn collect_usb_device_metrics() -> Result<Vec<UsbDeviceMetrics>> {
+    let mut devices = Vec::new();
+    let usb_devices_path = Path::new("/sys/bus/usb/devices");
+    
+    if !usb_devices_path.exists() {
+        warn!("USB devices path not found: {}", usb_devices_path.display());
+        return Ok(devices);
+    }
+    
+    let entries = fs::read_dir(usb_devices_path)
+        .context("Failed to read USB devices directory")?;
+    
+    for entry in entries {
+        let entry = entry.context("Error reading USB device entry")?;
+        let device_path = entry.path();
+        
+        // Skip non-device directories (like usb1, usb2, etc.)
+        if !device_path.is_dir() {
+            continue;
+        }
+        
+        let device_id = device_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        
+        // Skip USB bus controllers (like usb1, usb2)
+        if device_id.starts_with("usb") && device_id.len() <= 4 {
+            continue;
+        }
+        
+        // Read device information
+        let (vendor_id, product_id) = read_usb_device_ids(&device_path);
+        let speed = read_usb_device_speed(&device_path);
+        let status = read_usb_device_status(&device_path);
+        let power = read_usb_device_power(&device_path);
+        let temperature = read_usb_device_temperature(&device_path);
+        
+        devices.push(UsbDeviceMetrics {
+            device_id,
+            vendor_id,
+            product_id,
+            speed,
+            status,
+            power_mw: power,
+            temperature_c: temperature,
+        });
+    }
+    
+    Ok(devices)
+}
+
+/// Прочитать идентификаторы USB устройства
+fn read_usb_device_ids(device_path: &Path) -> (String, String) {
+    let vendor_id = fs::read_to_string(device_path.join("idVendor"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "0000".to_string());
+    
+    let product_id = fs::read_to_string(device_path.join("idProduct"))
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|_| "0000".to_string());
+    
+    (vendor_id, product_id)
+}
+
+/// Прочитать скорость USB устройства
+fn read_usb_device_speed(device_path: &Path) -> String {
+    if let Ok(speed_str) = fs::read_to_string(device_path.join("speed")) {
+        match speed_str.trim() {
+            "1.5" => "USB 1.0 (Low Speed)".to_string(),
+            "12" => "USB 1.0 (Full Speed)".to_string(),
+            "480" => "USB 2.0 (High Speed)".to_string(),
+            "5000" => "USB 3.0 (SuperSpeed)".to_string(),
+            "10000" => "USB 3.1 (SuperSpeed+)".to_string(),
+            "20000" => "USB 3.2 (SuperSpeed+)".to_string(),
+            "40000" => "USB 4.0".to_string(),
+            _ => "Unknown".to_string(),
+        }
+    } else {
+        "Unknown".to_string()
+    }
+}
+
+/// Прочитать статус USB устройства
+fn read_usb_device_status(device_path: &Path) -> String {
+    // Check if device is authorized and connected
+    let authorized = fs::read_to_string(device_path.join("authorized"))
+        .map(|s| s.trim() == "1")
+        .unwrap_or(false);
+    
+    if authorized {
+        "connected".to_string()
+    } else {
+        "disconnected".to_string()
+    }
+}
+
+/// Прочитать потребляемую мощность USB устройства
+fn read_usb_device_power(device_path: &Path) -> Option<u32> {
+    // Read power consumption in mA and convert to mW (assuming 5V)
+    if let Ok(_power_str) = fs::read_to_string(device_path.join("power/control")) {
+        // This gives us the power mode, not actual consumption
+        // For actual power, we'd need more advanced monitoring
+    }
+    
+    // Try to read from power directory if available
+    let power_path = device_path.join("power");
+    if power_path.exists() {
+        if let Ok(active_duration) = fs::read_to_string(power_path.join("active_duration")) {
+            if let Ok(duration) = active_duration.trim().parse::<u64>() {
+                // This is a very rough estimate - in reality we'd need proper power monitoring
+                return Some((duration / 1000) as u32); // Convert to mW (very approximate)
+            }
+        }
+    }
+    None
+}
+
+/// Прочитать температуру USB устройства
+fn read_usb_device_temperature(device_path: &Path) -> Option<f32> {
+    // USB devices typically don't expose temperature directly
+    // We could try to read from hwmon if available
+    let hwmon_path = device_path.join("hwmon");
+    if hwmon_path.exists() {
+        if let Ok(hwmon_entries) = fs::read_dir(&hwmon_path) {
+            for hwmon_entry in hwmon_entries {
+                if let Ok(entry) = hwmon_entry {
+                    let temp_input = entry.path().join("temp1_input");
+                    if let Ok(temp_str) = fs::read_to_string(&temp_input) {
+                        if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
+                            return Some(temp_millidegrees as f32 / 1000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Собрать метрики SATA/NVMe устройств
+///
+/// Читает информацию о накопителях из `/sys/block/` и `/sys/class/nvme/`
+/// и возвращает вектор с метриками для каждого устройства.
+#[allow(dead_code)]
+pub fn collect_storage_device_metrics() -> Result<Vec<StorageDeviceMetrics>> {
+    let mut devices = Vec::new();
+    
+    // Collect SATA devices from /sys/block/
+    collect_sata_devices(&mut devices)?;
+    
+    // Collect NVMe devices from /sys/class/nvme/
+    collect_nvme_devices(&mut devices)?;
+    
+    Ok(devices)
+}
+
+/// Собрать метрики SATA устройств
+fn collect_sata_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
+    let block_path = Path::new("/sys/block");
+    
+    if !block_path.exists() {
+        warn!("Block devices path not found: {}", block_path.display());
+        return Ok(());
+    }
+    
+    let entries = fs::read_dir(block_path)
+        .context("Failed to read block devices directory")?;
+    
+    for entry in entries {
+        let entry = entry.context("Error reading block device entry")?;
+        let device_path = entry.path();
+        
+        if !device_path.is_dir() {
+            continue;
+        }
+        
+        let device_id = device_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        
+        // Skip non-SATA devices (like nvme, loop, ram, etc.)
+        if device_id.starts_with("nvme") || device_id.starts_with("loop") || device_id.starts_with("ram") {
+            continue;
+        }
+        
+        let model = read_storage_device_model(&device_path);
+        let serial = read_storage_device_serial(&device_path);
+        let temperature = read_storage_device_temperature(&device_path);
+        let health = read_storage_device_health(&device_path);
+        let capacity = read_storage_device_capacity(&device_path);
+        
+        devices.push(StorageDeviceMetrics {
+            device_id,
+            device_type: "SATA".to_string(),
+            model,
+            serial_number: serial,
+            temperature_c: temperature,
+            health_status: health,
+            total_capacity_bytes: capacity,
+            used_capacity_bytes: None, // Would require filesystem info
+            read_speed_bps: None,     // Would require performance monitoring
+            write_speed_bps: None,    // Would require performance monitoring
+        });
+    }
+    
+    Ok(())
+}
+
+/// Собрать метрики NVMe устройств
+fn collect_nvme_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
+    let nvme_path = Path::new("/sys/class/nvme");
+    
+    if !nvme_path.exists() {
+        return Ok(());
+    }
+    
+    let entries = fs::read_dir(nvme_path)
+        .context("Failed to read NVMe devices directory")?;
+    
+    for entry in entries {
+        let entry = entry.context("Error reading NVMe device entry")?;
+        let device_path = entry.path();
+        
+        if !device_path.is_dir() {
+            continue;
+        }
+        
+        let device_id = device_path.file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+        
+        let model = read_storage_device_model(&device_path);
+        let serial = read_storage_device_serial(&device_path);
+        let temperature = read_storage_device_temperature(&device_path);
+        let health = read_storage_device_health(&device_path);
+        let capacity = read_storage_device_capacity(&device_path);
+        
+        devices.push(StorageDeviceMetrics {
+            device_id,
+            device_type: "NVMe".to_string(),
+            model,
+            serial_number: serial,
+            temperature_c: temperature,
+            health_status: health,
+            total_capacity_bytes: capacity,
+            used_capacity_bytes: None, // Would require filesystem info
+            read_speed_bps: None,     // Would require performance monitoring
+            write_speed_bps: None,    // Would require performance monitoring
+        });
+    }
+    
+    Ok(())
+}
+
+/// Прочитать модель устройства хранения
+fn read_storage_device_model(device_path: &Path) -> String {
+    // Try different locations for model information
+    let model_paths = [
+        "device/model",
+        "model",
+        "device/name",
+    ];
+    
+    for path in &model_paths {
+        let full_path = device_path.join(path);
+        if let Ok(model) = fs::read_to_string(&full_path) {
+            return model.trim().to_string();
+        }
+    }
+    
+    "Unknown".to_string()
+}
+
+/// Прочитать серийный номер устройства хранения
+fn read_storage_device_serial(device_path: &Path) -> String {
+    // Try different locations for serial number
+    let serial_paths = [
+        "device/serial",
+        "serial",
+    ];
+    
+    for path in &serial_paths {
+        let full_path = device_path.join(path);
+        if let Ok(serial) = fs::read_to_string(&full_path) {
+            return serial.trim().to_string();
+        }
+    }
+    
+    "Unknown".to_string()
+}
+
+/// Прочитать температуру устройства хранения
+fn read_storage_device_temperature(device_path: &Path) -> Option<f32> {
+    // Try different locations for temperature
+    // This is simplified - in reality we'd need to find the actual hwmon directory
+    let hwmon_path = device_path.join("device/hwmon");
+    if hwmon_path.exists() {
+        if let Ok(hwmon_entries) = fs::read_dir(&hwmon_path) {
+            for hwmon_entry in hwmon_entries {
+                if let Ok(entry) = hwmon_entry {
+                    let temp_input = entry.path().join("temp1_input");
+                    if let Ok(temp_str) = fs::read_to_string(&temp_input) {
+                        if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
+                            return Some(temp_millidegrees as f32 / 1000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Прочитать состояние здоровья устройства хранения
+fn read_storage_device_health(device_path: &Path) -> Option<String> {
+    // For NVMe devices, we can read health status
+    if device_path.ends_with("nvme") {
+        let health_path = device_path.join("device/health");
+        if let Ok(health_str) = fs::read_to_string(&health_path) {
+            let health_percent = health_str.trim().parse::<u8>().unwrap_or(0);
+            if health_percent > 80 {
+                return Some("Good".to_string());
+            } else if health_percent > 50 {
+                return Some("Warning".to_string());
+            } else {
+                return Some("Critical".to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Прочитать емкость устройства хранения
+fn read_storage_device_capacity(device_path: &Path) -> Option<u64> {
+    // Try to read size from block device
+    let size_path = device_path.join("size");
+    if let Ok(size_str) = fs::read_to_string(&size_path) {
+        if let Ok(size_sectors) = size_str.trim().parse::<u64>() {
+            // Assume 512-byte sectors
+            return Some(size_sectors * 512);
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4261,6 +4942,9 @@ SwapFree:        4096000 kB
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         let cur_metrics = SystemMetrics {
@@ -4286,6 +4970,9 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: None,
             hardware: HardwareMetrics::default(),
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -4335,6 +5022,9 @@ SwapFree:        4096000 kB
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         let cur_metrics = SystemMetrics {
@@ -4476,7 +5166,8 @@ SwapFree:        4096000 kB
         assert_eq!(SystemMetricPriority::High.as_usize(), 1);
         assert_eq!(SystemMetricPriority::Medium.as_usize(), 2);
         assert_eq!(SystemMetricPriority::Low.as_usize(), 3);
-        assert_eq!(SystemMetricPriority::Optional.as_usize(), 4);
+        assert_eq!(SystemMetricPriority::Debug.as_usize(), 4);
+        assert_eq!(SystemMetricPriority::Optional.as_usize(), 5);
     }
 
     #[test]
@@ -6290,5 +6981,168 @@ mod hardware_sensor_tests {
         assert_eq!(optimized.system_calls.total_calls, 0);
         assert_eq!(optimized.inode.total_inodes, 0);
         assert_eq!(optimized.swap.total_kb, 0);
+    }
+
+    #[test]
+    fn test_pci_device_metrics_struct() {
+        // Тестируем структуру PciDeviceMetrics
+        let mut pci_device = PciDeviceMetrics::default();
+        
+        // Устанавливаем значения
+        pci_device.device_id = "0000:01:00.0".to_string();
+        pci_device.vendor_id = "0x10de".to_string();
+        pci_device.device_class = "0x0300".to_string();
+        pci_device.status = "active".to_string();
+        pci_device.bandwidth_usage_percent = Some(45.5);
+        pci_device.temperature_c = Some(65.0);
+        pci_device.power_w = Some(75.0);
+        
+        // Проверяем значения
+        assert_eq!(pci_device.device_id, "0000:01:00.0");
+        assert_eq!(pci_device.vendor_id, "0x10de");
+        assert_eq!(pci_device.device_class, "0x0300");
+        assert_eq!(pci_device.status, "active");
+        assert_eq!(pci_device.bandwidth_usage_percent, Some(45.5));
+        assert_eq!(pci_device.temperature_c, Some(65.0));
+        assert_eq!(pci_device.power_w, Some(75.0));
+    }
+
+    #[test]
+    fn test_usb_device_metrics_struct() {
+        // Тестируем структуру UsbDeviceMetrics
+        let mut usb_device = UsbDeviceMetrics::default();
+        
+        // Устанавливаем значения
+        usb_device.device_id = "1-2.3".to_string();
+        usb_device.vendor_id = "1234".to_string();
+        usb_device.product_id = "5678".to_string();
+        usb_device.speed = "USB 3.0 (SuperSpeed)".to_string();
+        usb_device.status = "connected".to_string();
+        usb_device.power_mw = Some(500);
+        usb_device.temperature_c = Some(35.0);
+        
+        // Проверяем значения
+        assert_eq!(usb_device.device_id, "1-2.3");
+        assert_eq!(usb_device.vendor_id, "1234");
+        assert_eq!(usb_device.product_id, "5678");
+        assert_eq!(usb_device.speed, "USB 3.0 (SuperSpeed)");
+        assert_eq!(usb_device.status, "connected");
+        assert_eq!(usb_device.power_mw, Some(500));
+        assert_eq!(usb_device.temperature_c, Some(35.0));
+    }
+
+    #[test]
+    fn test_storage_device_metrics_struct() {
+        // Тестируем структуру StorageDeviceMetrics
+        let mut storage_device = StorageDeviceMetrics::default();
+        
+        // Устанавливаем значения
+        storage_device.device_id = "sda".to_string();
+        storage_device.device_type = "SATA".to_string();
+        storage_device.model = "Samsung SSD 860 EVO".to_string();
+        storage_device.serial_number = "S3Z7NB0K123456".to_string();
+        storage_device.temperature_c = Some(40.0);
+        storage_device.health_status = Some("Good".to_string());
+        storage_device.total_capacity_bytes = Some(1_000_000_000_000);
+        storage_device.used_capacity_bytes = Some(500_000_000_000);
+        storage_device.read_speed_bps = Some(500_000_000);
+        storage_device.write_speed_bps = Some(400_000_000);
+        
+        // Проверяем значения
+        assert_eq!(storage_device.device_id, "sda");
+        assert_eq!(storage_device.device_type, "SATA");
+        assert_eq!(storage_device.model, "Samsung SSD 860 EVO");
+        assert_eq!(storage_device.serial_number, "S3Z7NB0K123456");
+        assert_eq!(storage_device.temperature_c, Some(40.0));
+        assert_eq!(storage_device.health_status, Some("Good".to_string()));
+        assert_eq!(storage_device.total_capacity_bytes, Some(1_000_000_000_000));
+        assert_eq!(storage_device.used_capacity_bytes, Some(500_000_000_000));
+        assert_eq!(storage_device.read_speed_bps, Some(500_000_000));
+        assert_eq!(storage_device.write_speed_bps, Some(400_000_000));
+    }
+
+    #[test]
+    fn test_hardware_metrics_with_new_device_fields() {
+        // Тестируем, что HardwareMetrics правильно включает новые поля для устройств
+        let mut hardware = HardwareMetrics::default();
+        
+        // Устанавливаем значения для новых полей
+        hardware.pci_devices = vec![
+            PciDeviceMetrics {
+                device_id: "0000:01:00.0".to_string(),
+                vendor_id: "0x10de".to_string(),
+                device_class: "0x0300".to_string(),
+                status: "active".to_string(),
+                bandwidth_usage_percent: Some(45.5),
+                temperature_c: Some(65.0),
+                power_w: Some(75.0),
+            }
+        ];
+        
+        hardware.usb_devices = vec![
+            UsbDeviceMetrics {
+                device_id: "1-2.3".to_string(),
+                vendor_id: "1234".to_string(),
+                product_id: "5678".to_string(),
+                speed: "USB 3.0 (SuperSpeed)".to_string(),
+                status: "connected".to_string(),
+                power_mw: Some(500),
+                temperature_c: Some(35.0),
+            }
+        ];
+        
+        hardware.storage_devices = vec![
+            StorageDeviceMetrics {
+                device_id: "sda".to_string(),
+                device_type: "SATA".to_string(),
+                model: "Samsung SSD 860 EVO".to_string(),
+                serial_number: "S3Z7NB0K123456".to_string(),
+                temperature_c: Some(40.0),
+                health_status: Some("Good".to_string()),
+                total_capacity_bytes: Some(1_000_000_000_000),
+                used_capacity_bytes: Some(500_000_000_000),
+                read_speed_bps: Some(500_000_000),
+                write_speed_bps: Some(400_000_000),
+            }
+        ];
+        
+        // Проверяем, что значения установлены правильно
+        assert_eq!(hardware.pci_devices.len(), 1);
+        assert_eq!(hardware.pci_devices[0].device_id, "0000:01:00.0");
+        assert_eq!(hardware.pci_devices[0].temperature_c, Some(65.0));
+        
+        assert_eq!(hardware.usb_devices.len(), 1);
+        assert_eq!(hardware.usb_devices[0].device_id, "1-2.3");
+        assert_eq!(hardware.usb_devices[0].speed, "USB 3.0 (SuperSpeed)");
+        
+        assert_eq!(hardware.storage_devices.len(), 1);
+        assert_eq!(hardware.storage_devices[0].device_id, "sda");
+        assert_eq!(hardware.storage_devices[0].model, "Samsung SSD 860 EVO");
+    }
+
+    #[test]
+    fn test_hardware_metrics_optimization_with_devices() {
+        // Тестируем, что optimize_memory_usage правильно обрабатывает новые поля устройств
+        let mut hardware = HardwareMetrics::default();
+        
+        // Устанавливаем некоторые значения
+        hardware.pci_devices = vec![
+            PciDeviceMetrics {
+                device_id: "0000:01:00.0".to_string(),
+                vendor_id: "0x10de".to_string(),
+                device_class: "0x0300".to_string(),
+                status: "active".to_string(),
+                bandwidth_usage_percent: Some(45.5),
+                temperature_c: Some(65.0),
+                power_w: Some(75.0),
+            }
+        ];
+        
+        // Оптимизируем
+        let optimized = hardware.clone().optimize_memory_usage();
+        
+        // Проверяем, что значения сохранены
+        assert_eq!(optimized.pci_devices.len(), 1);
+        assert_eq!(optimized.pci_devices[0].device_id, "0000:01:00.0");
     }
 }

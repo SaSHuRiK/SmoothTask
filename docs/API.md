@@ -6305,6 +6305,758 @@ echo "Success: $response_body" | jq .
 6. **Безопасность**: Используйте HTTPS и аутентификацию для защиты API
 7. **Валидация**: Проверяйте входные данные перед отправкой на сервер
 
+## Новые Endpoints для мониторинга системы
+
+### GET /api/system/cpu
+
+Получение детальной информации о CPU системе.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/system/cpu
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "cpu": {
+    "model": "Intel(R) Core(TM) i7-9700K CPU @ 3.60GHz",
+    "cores": 8,
+    "logical_cpus": 8,
+    "architecture": "x86_64",
+    "cache_size": 12288,
+    "mhz": 3600.0,
+    "vendor_id": "GenuineIntel",
+    "bogomips": 7200.0,
+    "flags": ["fpu", "vme", "de", "pse", "tsc", "msr", "pae", "mce"],
+    "usage": {
+      "user": 25.5,
+      "nice": 0.1,
+      "system": 5.2,
+      "idle": 69.2,
+      "iowait": 0.0,
+      "irq": 0.0,
+      "softirq": 0.0,
+      "steal": 0.0,
+      "guest": 0.0,
+      "guest_nice": 0.0
+    },
+    "load_avg": [1.23, 1.15, 1.08],
+    "uptime": 123456.78
+  }
+}
+```
+
+**Поля ответа:**
+- `model`: Модель процессора
+- `cores`: Количество физических ядер
+- `logical_cpus`: Количество логических процессоров
+- `architecture`: Архитектура процессора
+- `cache_size`: Размер кэша в КБ
+- `mhz`: Частота процессора в МГц
+- `vendor_id`: Идентификатор производителя
+- `bogomips`: Bogomips процессора
+- `flags`: Флаги возможностей процессора
+- `usage`: Использование CPU по категориям (в процентах)
+- `load_avg`: Средняя нагрузка за 1, 5 и 15 минут
+- `uptime`: Время работы системы в секундах
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `500 Internal Server Error` - Ошибка при сборе информации о CPU
+
+**Пример использования в Python:**
+```python
+import requests
+import json
+
+response = requests.get("http://127.0.0.1:8080/api/system/cpu")
+if response.status_code == 200:
+    cpu_data = response.json()
+    print(f"CPU Model: {cpu_data['cpu']['model']}")
+    print(f"CPU Usage: {cpu_data['cpu']['usage']['user']}% user, {cpu_data['cpu']['usage']['system']}% system")
+    print(f"Load Average: {cpu_data['cpu']['load_avg']}")
+else:
+    print(f"Error: {response.status_code} - {response.text}")
+```
+
+**Пример использования в Bash:**
+```bash
+#!/bin/bash
+
+# Получение информации о CPU
+CPU_DATA=$(curl -s http://127.0.0.1:8080/api/system/cpu)
+
+if [ $? -eq 0 ]; then
+    CPU_MODEL=$(echo "$CPU_DATA" | jq -r '.cpu.model')
+    CPU_USAGE_USER=$(echo "$CPU_DATA" | jq -r '.cpu.usage.user')
+    CPU_USAGE_SYSTEM=$(echo "$CPU_DATA" | jq -r '.cpu.usage.system')
+    LOAD_AVG=$(echo "$CPU_DATA" | jq -r '.cpu.load_avg | join(", ")')
+    
+    echo "CPU Model: $CPU_MODEL"
+    echo "CPU Usage: ${CPU_USAGE_USER}% user, ${CPU_USAGE_SYSTEM}% system"
+    echo "Load Average: $LOAD_AVG"
+else
+    echo "Failed to get CPU information"
+fi
+```
+
+---
+
+### GET /api/system/memory
+
+Получение детальной информации о памяти системы.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/system/memory
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "memory": {
+    "total": 32768000,
+    "free": 8192000,
+    "available": 12345678,
+    "buffers": 512000,
+    "cached": 10240000,
+    "swap": {
+      "total": 4096000,
+      "free": 2048000
+    },
+    "usage_percent": 75.2,
+    "available_percent": 37.8
+  }
+}
+```
+
+**Поля ответа:**
+- `total`: Общий объем памяти в КБ
+- `free`: Свободная память в КБ
+- `available`: Доступная память в КБ (с учетом кэша)
+- `buffers`: Память, используемая буферами в КБ
+- `cached`: Память, используемая кэшем в КБ
+- `swap`: Информация о swap пространстве
+- `usage_percent`: Процент использования памяти
+- `available_percent`: Процент доступной памяти
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `500 Internal Server Error` - Ошибка при сборе информации о памяти
+
+**Пример использования в Python:**
+```python
+import requests
+
+response = requests.get("http://127.0.0.1:8080/api/system/memory")
+if response.status_code == 200:
+    mem_data = response.json()
+    total_mem_gb = mem_data['memory']['total'] / 1024 / 1024
+    free_mem_gb = mem_data['memory']['free'] / 1024 / 1024
+    usage_percent = mem_data['memory']['usage_percent']
+    
+    print(f"Total Memory: {total_mem_gb:.2f} GB")
+    print(f"Free Memory: {free_mem_gb:.2f} GB")
+    print(f"Memory Usage: {usage_percent:.1f}%")
+    
+    # Проверка на низкую память
+    if usage_percent > 90:
+        print("WARNING: High memory usage detected!")
+else:
+    print(f"Error: {response.status_code}")
+```
+
+**Пример использования в Bash:**
+```bash
+#!/bin/bash
+
+# Получение информации о памяти
+MEM_DATA=$(curl -s http://127.0.0.1:8080/api/system/memory)
+
+if [ $? -eq 0 ]; then
+    TOTAL_MEM_KB=$(echo "$MEM_DATA" | jq -r '.memory.total')
+    FREE_MEM_KB=$(echo "$MEM_DATA" | jq -r '.memory.free')
+    USAGE_PERCENT=$(echo "$MEM_DATA" | jq -r '.memory.usage_percent')
+    
+    TOTAL_MEM_GB=$(echo "scale=2; $TOTAL_MEM_KB / 1024 / 1024" | bc)
+    FREE_MEM_GB=$(echo "scale=2; $FREE_MEM_KB / 1024 / 1024" | bc)
+    
+    echo "Total Memory: ${TOTAL_MEM_GB} GB"
+    echo "Free Memory: ${FREE_MEM_GB} GB"
+    echo "Memory Usage: ${USAGE_PERCENT}%"
+    
+    # Проверка на низкую память
+    if (( $(echo "$USAGE_PERCENT > 90" | bc -l) )); then
+        echo "WARNING: High memory usage detected!"
+    fi
+else
+    echo "Failed to get memory information"
+fi
+```
+
+---
+
+### GET /api/system/disk
+
+Получение информации о дисковой подсистеме.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/system/disk
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "disk": {
+    "disks": [
+      {
+        "device": "sda",
+        "major": "8",
+        "minor": "0",
+        "reads_completed": "123456",
+        "reads_merged": "7890",
+        "sectors_read": "2345678",
+        "time_spent_reading": "567890",
+        "writes_completed": "98765",
+        "writes_merged": "4321",
+        "sectors_written": "1234567",
+        "time_spent_writing": "345678",
+        "io_in_progress": "2",
+        "time_spent_io": "123456",
+        "weighted_io_time": "78901"
+      },
+      {
+        "device": "nvme0n1",
+        "major": "259",
+        "minor": "0",
+        "reads_completed": "567890",
+        "reads_merged": "1234",
+        "sectors_read": "9876543",
+        "time_spent_reading": "234567",
+        "writes_completed": "345678",
+        "writes_merged": "8901",
+        "sectors_written": "5678901",
+        "time_spent_writing": "890123",
+        "io_in_progress": "1",
+        "time_spent_io": "456789",
+        "weighted_io_time": "34567"
+      }
+    ],
+    "total_space": 1000000000,
+    "free_space": 500000000,
+    "used_space": 500000000,
+    "usage_percent": 50.0
+  }
+}
+```
+
+**Поля ответа:**
+- `disks`: Массив объектов с информацией о каждом диске
+- `device`: Имя устройства
+- `major`: Major номер устройства
+- `minor`: Minor номер устройства
+- `reads_completed`: Количество завершенных операций чтения
+- `reads_merged`: Количество объединенных операций чтения
+- `sectors_read`: Количество прочитанных секторов
+- `time_spent_reading`: Время, потраченное на чтение (в миллисекундах)
+- `writes_completed`: Количество завершенных операций записи
+- `writes_merged`: Количество объединенных операций записи
+- `sectors_written`: Количество записанных секторов
+- `time_spent_writing`: Время, потраченное на запись (в миллисекундах)
+- `io_in_progress`: Количество операций ввода-вывода в процессе
+- `time_spent_io`: Время, потраченное на ввод-вывод (в миллисекундах)
+- `weighted_io_time`: Взвешенное время ввода-вывода
+- `total_space`: Общий объем дискового пространства в байтах
+- `free_space`: Свободное дискового пространство в байтах
+- `used_space`: Используемое дискового пространство в байтах
+- `usage_percent`: Процент использования дискового пространства
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `500 Internal Server Error` - Ошибка при сборе информации о дисках
+
+**Пример использования в Python:**
+```python
+import requests
+
+response = requests.get("http://127.0.0.1:8080/api/system/disk")
+if response.status_code == 200:
+    disk_data = response.json()
+    
+    print("Disk Usage Summary:")
+    print(f"Total Space: {disk_data['disk']['total_space'] / 1024 / 1024 / 1024:.2f} GB")
+    print(f"Free Space: {disk_data['disk']['free_space'] / 1024 / 1024 / 1024:.2f} GB")
+    print(f"Used Space: {disk_data['disk']['used_space'] / 1024 / 1024 / 1024:.2f} GB")
+    print(f"Usage: {disk_data['disk']['usage_percent']:.1f}%")
+    
+    print("\nDisk Details:")
+    for disk in disk_data['disk']['disks']:
+        device = disk['device']
+        reads = int(disk['reads_completed'])
+        writes = int(disk['writes_completed'])
+        read_time = int(disk['time_spent_reading'])
+        write_time = int(disk['time_spent_writing'])
+        
+        print(f"\nDevice: {device}")
+        print(f"  Reads: {reads}, Writes: {writes}")
+        print(f"  Read Time: {read_time}ms, Write Time: {write_time}ms")
+        
+        # Проверка на высокую нагрузку на диск
+        if reads + writes > 10000 and (read_time + write_time) > 1000:
+            print(f"  WARNING: High disk activity detected on {device}!")
+else:
+    print(f"Error: {response.status_code}")
+```
+
+**Пример использования в Bash:**
+```bash
+#!/bin/bash
+
+# Получение информации о дисках
+DISK_DATA=$(curl -s http://127.0.0.1:8080/api/system/disk)
+
+if [ $? -eq 0 ]; then
+    TOTAL_SPACE=$(echo "$DISK_DATA" | jq -r '.disk.total_space')
+    FREE_SPACE=$(echo "$DISK_DATA" | jq -r '.disk.free_space')
+    USED_SPACE=$(echo "$DISK_DATA" | jq -r '.disk.used_space')
+    USAGE_PERCENT=$(echo "$DISK_DATA" | jq -r '.disk.usage_percent')
+    
+    TOTAL_SPACE_GB=$(echo "scale=2; $TOTAL_SPACE / 1024 / 1024 / 1024" | bc)
+    FREE_SPACE_GB=$(echo "scale=2; $FREE_SPACE / 1024 / 1024 / 1024" | bc)
+    USED_SPACE_GB=$(echo "scale=2; $USED_SPACE / 1024 / 1024 / 1024" | bc)
+    
+    echo "Disk Usage Summary:"
+    echo "Total Space: ${TOTAL_SPACE_GB} GB"
+    echo "Free Space: ${FREE_SPACE_GB} GB"
+    echo "Used Space: ${USED_SPACE_GB} GB"
+    echo "Usage: ${USAGE_PERCENT}%"
+    
+    # Проверка на высокую нагрузку на диск
+    if (( $(echo "$USAGE_PERCENT > 90" | bc -l) )); then
+        echo "WARNING: High disk usage detected!"
+    fi
+    
+    echo -e "\nDisk Details:"
+    DISK_COUNT=$(echo "$DISK_DATA" | jq '.disk.disks | length')
+    for ((i=0; i<DISK_COUNT; i++)); do
+        DISK=$(echo "$DISK_DATA" | jq -r ".disk.disks[$i]")
+        DEVICE=$(echo "$DISK" | jq -r '.device')
+        READS=$(echo "$DISK" | jq -r '.reads_completed')
+        WRITES=$(echo "$DISK" | jq -r '.writes_completed')
+        READ_TIME=$(echo "$DISK" | jq -r '.time_spent_reading')
+        WRITE_TIME=$(echo "$DISK" | jq -r '.time_spent_writing')
+        
+        echo -e "\nDevice: $DEVICE"
+        echo "  Reads: $READS, Writes: $WRITES"
+        echo "  Read Time: ${READ_TIME}ms, Write Time: ${WRITE_TIME}ms"
+        
+        # Проверка на высокую нагрузку на диск
+        TOTAL_IO=$(($READS + $WRITES))
+        TOTAL_TIME=$(($READ_TIME + $WRITE_TIME))
+        if [ $TOTAL_IO -gt 10000 ] && [ $TOTAL_TIME -gt 1000 ]; then
+            echo "  WARNING: High disk activity detected on $DEVICE!"
+        fi
+    done
+else
+    echo "Failed to get disk information"
+fi
+```
+
+---
+
+### GET /api/system/network
+
+Получение информации о сетевых интерфейсах.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/system/network
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "network": {
+    "interfaces": [
+      {
+        "name": "eth0",
+        "rx_bytes": 123456789,
+        "rx_packets": 456789,
+        "rx_errors": 123,
+        "rx_dropped": 45,
+        "tx_bytes": 987654321,
+        "tx_packets": 789012,
+        "tx_errors": 67,
+        "tx_dropped": 23
+      },
+      {
+        "name": "wlan0",
+        "rx_bytes": 567890123,
+        "rx_packets": 234567,
+        "rx_errors": 89,
+        "rx_dropped": 12,
+        "tx_bytes": 345678901,
+        "tx_packets": 345678,
+        "tx_errors": 34,
+        "tx_dropped": 8
+      }
+    ],
+    "total_rx_bytes": 691346852,
+    "total_tx_bytes": 1333333222,
+    "total_rx_packets": 691356,
+    "total_tx_packets": 1134690
+  }
+}
+```
+
+**Поля ответа:**
+- `interfaces`: Массив объектов с информацией о каждом сетевом интерфейсе
+- `name`: Имя интерфейса
+- `rx_bytes`: Количество полученных байт
+- `rx_packets`: Количество полученных пакетов
+- `rx_errors`: Количество ошибок при приеме
+- `rx_dropped`: Количество потерянных пакетов при приеме
+- `tx_bytes`: Количество отправленных байт
+- `tx_packets`: Количество отправленных пакетов
+- `tx_errors`: Количество ошибок при отправке
+- `tx_dropped`: Количество потерянных пакетов при отправке
+- `total_rx_bytes`: Общее количество полученных байт
+- `total_tx_bytes`: Общее количество отправленных байт
+- `total_rx_packets`: Общее количество полученных пакетов
+- `total_tx_packets`: Общее количество отправленных пакетов
+
+**Статус коды:**
+- `200 OK` - Успешный запрос
+- `500 Internal Server Error` - Ошибка при сборе информации о сети
+
+**Пример использования в Python:**
+```python
+import requests
+
+response = requests.get("http://127.0.0.1:8080/api/system/network")
+if response.status_code == 200:
+    net_data = response.json()
+    
+    print("Network Traffic Summary:")
+    print(f"Total RX: {net_data['network']['total_rx_bytes'] / 1024 / 1024:.2f} MB")
+    print(f"Total TX: {net_data['network']['total_tx_bytes'] / 1024 / 1024:.2f} MB")
+    print(f"Total Packets RX: {net_data['network']['total_rx_packets']}")
+    print(f"Total Packets TX: {net_data['network']['total_tx_packets']}")
+    
+    print("\nInterface Details:")
+    for interface in net_data['network']['interfaces']:
+        name = interface['name']
+        rx_mb = interface['rx_bytes'] / 1024 / 1024
+        tx_mb = interface['tx_bytes'] / 1024 / 1024
+        rx_packets = interface['rx_packets']
+        tx_packets = interface['tx_packets']
+        rx_errors = interface['rx_errors']
+        tx_errors = interface['tx_errors']
+        
+        print(f"\nInterface: {name}")
+        print(f"  RX: {rx_mb:.2f} MB ({rx_packets} packets)")
+        print(f"  TX: {tx_mb:.2f} MB ({tx_packets} packets)")
+        print(f"  Errors: RX={rx_errors}, TX={tx_errors}")
+        
+        # Проверка на высокий трафик
+        if rx_mb + tx_mb > 100:
+            print(f"  WARNING: High network traffic on {name}!")
+        
+        # Проверка на ошибки
+        if rx_errors + tx_errors > 10:
+            print(f"  WARNING: High error rate on {name}!")
+else:
+    print(f"Error: {response.status_code}")
+```
+
+**Пример использования в Bash:**
+```bash
+#!/bin/bash
+
+# Получение информации о сети
+NET_DATA=$(curl -s http://127.0.0.1:8080/api/system/network)
+
+if [ $? -eq 0 ]; then
+    TOTAL_RX_BYTES=$(echo "$NET_DATA" | jq -r '.network.total_rx_bytes')
+    TOTAL_TX_BYTES=$(echo "$NET_DATA" | jq -r '.network.total_tx_bytes')
+    TOTAL_RX_PACKETS=$(echo "$NET_DATA" | jq -r '.network.total_rx_packets')
+    TOTAL_TX_PACKETS=$(echo "$NET_DATA" | jq -r '.network.total_tx_packets')
+    
+    TOTAL_RX_MB=$(echo "scale=2; $TOTAL_RX_BYTES / 1024 / 1024" | bc)
+    TOTAL_TX_MB=$(echo "scale=2; $TOTAL_TX_BYTES / 1024 / 1024" | bc)
+    
+    echo "Network Traffic Summary:"
+    echo "Total RX: ${TOTAL_RX_MB} MB"
+    echo "Total TX: ${TOTAL_TX_MB} MB"
+    echo "Total Packets RX: ${TOTAL_RX_PACKETS}"
+    echo "Total Packets TX: ${TOTAL_TX_PACKETS}"
+    
+    echo -e "\nInterface Details:"
+    IFACE_COUNT=$(echo "$NET_DATA" | jq '.network.interfaces | length')
+    for ((i=0; i<IFACE_COUNT; i++)); do
+        IFACE=$(echo "$NET_DATA" | jq -r ".network.interfaces[$i]")
+        NAME=$(echo "$IFACE" | jq -r '.name')
+        RX_BYTES=$(echo "$IFACE" | jq -r '.rx_bytes')
+        TX_BYTES=$(echo "$IFACE" | jq -r '.tx_bytes')
+        RX_PACKETS=$(echo "$IFACE" | jq -r '.rx_packets')
+        TX_PACKETS=$(echo "$IFACE" | jq -r '.tx_packets')
+        RX_ERRORS=$(echo "$IFACE" | jq -r '.rx_errors')
+        TX_ERRORS=$(echo "$IFACE" | jq -r '.tx_errors')
+        
+        RX_MB=$(echo "scale=2; $RX_BYTES / 1024 / 1024" | bc)
+        TX_MB=$(echo "scale=2; $TX_BYTES / 1024 / 1024" | bc)
+        
+        echo -e "\nInterface: $NAME"
+        echo "  RX: ${RX_MB} MB (${RX_PACKETS} packets)"
+        echo "  TX: ${TX_MB} MB (${TX_PACKETS} packets)"
+        echo "  Errors: RX=${RX_ERRORS}, TX=${TX_ERRORS}"
+        
+        # Проверка на высокий трафик
+        TOTAL_MB=$(echo "$RX_MB + $TX_MB" | bc)
+        if (( $(echo "$TOTAL_MB > 100" | bc -l) )); then
+            echo "  WARNING: High network traffic on $NAME!"
+        fi
+        
+        # Проверка на ошибки
+        TOTAL_ERRORS=$(($RX_ERRORS + $TX_ERRORS))
+        if [ $TOTAL_ERRORS -gt 10 ]; then
+            echo "  WARNING: High error rate on $NAME!"
+        fi
+    done
+else
+    echo "Failed to get network information"
+fi
+```
+
+## Новые Endpoints для управления конфигурацией
+
+### POST /api/config
+
+Обновление основных параметров конфигурации демона.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "polling_interval_ms": 1000,
+    "max_candidates": 50,
+    "dry_run_default": false,
+    "policy_mode": "hybrid",
+    "enable_snapshot_logging": true
+  }'
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "message": "Configuration updated successfully",
+  "updated_fields": [
+    "polling_interval_ms",
+    "max_candidates",
+    "dry_run_default",
+    "policy_mode",
+    "enable_snapshot_logging"
+  ],
+  "current_config": {
+    "polling_interval_ms": 1000,
+    "max_candidates": 50,
+    "dry_run_default": false,
+    "policy_mode": "hybrid",
+    "enable_snapshot_logging": true
+  }
+}
+```
+
+**Параметры запроса:**
+- `polling_interval_ms` (опционально): Интервал опроса метрик в миллисекундах (100-60000)
+- `max_candidates` (опционально): Максимальное количество кандидатов для обработки (10-1000)
+- `dry_run_default` (опционально): Режим dry run по умолчанию (boolean)
+- `policy_mode` (опционально): Режим политики (`rules-only` или `hybrid`)
+- `enable_snapshot_logging` (опционально): Включить логирование снапшотов (boolean)
+
+**Ошибки:**
+- `400 Bad Request` - Некорректные данные запроса (недопустимые значения или типы)
+- `500 Internal Server Error` - Ошибка при обновлении конфигурации
+
+**Пример использования в Python:**
+```python
+import requests
+import json
+
+# Обновление конфигурации
+config_update = {
+    "polling_interval_ms": 2000,
+    "max_candidates": 100,
+    "policy_mode": "hybrid"
+}
+
+response = requests.post(
+    "http://127.0.0.1:8080/api/config",
+    json=config_update,
+    headers={"Content-Type": "application/json"}
+)
+
+if response.status_code == 200:
+    result = response.json()
+    print("Configuration updated successfully!")
+    print(f"Updated fields: {', '.join(result['updated_fields'])}")
+    print("Current configuration:")
+    for key, value in result['current_config'].items():
+        print(f"  {key}: {value}")
+else:
+    print(f"Error updating configuration: {response.status_code}")
+    print(f"Response: {response.text}")
+```
+
+**Пример использования в Bash:**
+```bash
+#!/bin/bash
+
+# Обновление конфигурации
+CONFIG_JSON='{
+  "polling_interval_ms": 1500,
+  "max_candidates": 75,
+  "dry_run_default": true,
+  "policy_mode": "rules-only"
+}'
+
+response=$(curl -s -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d "$CONFIG_JSON")
+
+if [ $? -eq 0 ]; then
+    status=$(echo "$response" | jq -r '.status')
+    if [ "$status" = "ok" ]; then
+        echo "Configuration updated successfully!"
+        echo "Updated fields:"
+        echo "$response" | jq -r '.updated_fields[]' | sed 's/^/  /'
+        echo -e "\nCurrent configuration:"
+        echo "$response" | jq -r '.current_config | to_entries[] | "  \(.key): \(.value)"'
+    else
+        echo "Error updating configuration"
+        echo "$response" | jq -r '.error // .message'
+    fi
+else
+    echo "Failed to update configuration"
+fi
+```
+
+---
+
+### POST /api/cache/config
+
+Обновление параметров кэша ML классификатора.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/cache/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "max_cache_size": 1000,
+    "cache_ttl_seconds": 300,
+    "enable_adaptive_caching": true
+  }'
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "message": "Cache configuration updated successfully",
+  "updated_fields": [
+    "max_cache_size",
+    "cache_ttl_seconds",
+    "enable_adaptive_caching"
+  ],
+  "current_cache_config": {
+    "max_cache_size": 1000,
+    "cache_ttl_seconds": 300,
+    "enable_adaptive_caching": true,
+    "current_cache_size": 450,
+    "cache_hit_rate": 0.85
+  }
+}
+```
+
+**Параметры запроса:**
+- `max_cache_size` (опционально): Максимальный размер кэша (100-10000)
+- `cache_ttl_seconds` (опционально): Время жизни кэша в секундах (60-3600)
+- `enable_adaptive_caching` (опционально): Включить адаптивное кэширование (boolean)
+
+**Ошибки:**
+- `400 Bad Request` - Некорректные данные запроса (недопустимые значения или типы)
+- `500 Internal Server Error` - Ошибка при обновлении конфигурации кэша
+
+**Пример использования в Python:**
+```python
+import requests
+import json
+
+# Обновление конфигурации кэша
+cache_config = {
+    "max_cache_size": 2000,
+    "cache_ttl_seconds": 600,
+    "enable_adaptive_caching": true
+}
+
+response = requests.post(
+    "http://127.0.0.1:8080/api/cache/config",
+    json=cache_config,
+    headers={"Content-Type": "application/json"}
+)
+
+if response.status_code == 200:
+    result = response.json()
+    print("Cache configuration updated successfully!")
+    print(f"Updated fields: {', '.join(result['updated_fields'])}")
+    print("Current cache configuration:")
+    for key, value in result['current_cache_config'].items():
+        print(f"  {key}: {value}")
+else:
+    print(f"Error updating cache configuration: {response.status_code}")
+    print(f"Response: {response.text}")
+```
+
+**Пример использования в Bash:**
+```bash
+#!/bin/bash
+
+# Обновление конфигурации кэша
+CACHE_CONFIG='{
+  "max_cache_size": 1500,
+  "cache_ttl_seconds": 900,
+  "enable_adaptive_caching": false
+}'
+
+response=$(curl -s -X POST http://127.0.0.1:8080/api/cache/config \
+  -H "Content-Type: application/json" \
+  -d "$CACHE_CONFIG")
+
+if [ $? -eq 0 ]; then
+    status=$(echo "$response" | jq -r '.status')
+    if [ "$status" = "ok" ]; then
+        echo "Cache configuration updated successfully!"
+        echo "Updated fields:"
+        echo "$response" | jq -r '.updated_fields[]' | sed 's/^/  /'
+        echo -e "\nCurrent cache configuration:"
+        echo "$response" | jq -r '.current_cache_config | to_entries[] | "  \(.key): \(.value)"'
+    else
+        echo "Error updating cache configuration"
+        echo "$response" | jq -r '.error // .message'
+    fi
+else
+    echo "Failed to update cache configuration"
+fi
+```
+
 ## Заключение
 
 SmoothTask Control API предоставляет мощный и гибкий интерфейс для мониторинга и управления системой. С помощью этого API вы можете интегрировать SmoothTask с существующими системами мониторинга, создавать кастомные дашборды и автоматизировать управление системными ресурсами.

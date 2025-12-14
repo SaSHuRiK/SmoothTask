@@ -4976,7 +4976,7 @@ mod tests {
     fn test_api_state_with_system_metrics() {
         use crate::metrics::system::{
             CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
-            PressureMetrics, SystemMetrics, TemperatureMetrics,
+            PressureMetrics, SystemCallMetrics, InodeMetrics, SwapMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -5013,6 +5013,9 @@ mod tests {
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc.clone());
