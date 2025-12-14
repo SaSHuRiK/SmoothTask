@@ -75,6 +75,12 @@ sha2 = "0.10"  # Для вычисления хэшей моделей
 # HTTP клиент для автоматического обновления моделей
 reqwest = { version = "0.12", features = ["blocking", "json"] }
 
+# Email поддержка для уведомлений
+lettre = { version = "0.11", features = ["tokio1", "builder", "smtp-transport", "native-tls"], optional = true }
+
+# SMS поддержка через HTTP API
+# Используем reqwest для HTTP SMS шлюзов
+
 # eBPF поддержка
 libbpf-rs = { version = "0.26.0-beta.1", optional = true }
 
@@ -100,6 +106,10 @@ dbus = ["dep:zbus"]
 catboost = ["dep:catboost"]
 onnx = ["dep:ort"]
 ebpf = ["dep:libbpf-rs"]
+email = ["dep:lettre"]
+sms = []
+telegram = []
+discord = []
 
 [dev-dependencies]
 tempfile = "3"

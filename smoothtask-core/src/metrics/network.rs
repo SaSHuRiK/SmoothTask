@@ -62,6 +62,10 @@ pub struct NetworkInterfaceStats {
 pub enum NetworkInterfaceType {
     Ethernet,
     Wifi,
+    Wifi6,
+    Wifi6E,
+    Cellular,
+    Cellular5G,
     Loopback,
     Virtual,
     Tunnel,
@@ -260,6 +264,123 @@ pub struct NetworkInterfaceStatsWithQoS {
     pub tc_config: Option<String>,
     /// QoS queue statistics
     pub qos_queue_stats: Vec<QoSQueueStats>,
+}
+
+/// Wi-Fi 6/6E specific statistics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct Wifi6Stats {
+    /// Wi-Fi standard (6 or 6E)
+    pub wifi_standard: String,
+    /// Channel bandwidth in MHz
+    pub channel_bandwidth_mhz: u32,
+    /// Current channel number
+    pub channel: u32,
+    /// Frequency band (2.4GHz, 5GHz, 6GHz)
+    pub frequency_band: String,
+    /// Signal strength in dBm
+    pub signal_strength_dbm: i32,
+    /// Signal to noise ratio in dB
+    pub signal_noise_ratio_db: f64,
+    /// Current transmission rate in Mbps
+    pub tx_rate_mbps: u32,
+    /// Current reception rate in Mbps
+    pub rx_rate_mbps: u32,
+    /// MU-MIMO support
+    pub mu_mimo_support: bool,
+    /// OFDMA support
+    pub ofdma_support: bool,
+    /// BSS coloring support
+    pub bss_coloring_support: bool,
+    /// Target Wake Time (TWT) support
+    pub target_wake_time_support: bool,
+    /// Spatial streams count
+    pub spatial_streams: u8,
+    /// Current MCS index
+    pub mcs_index: u8,
+    /// Retry count
+    pub retry_count: u32,
+    /// Packet loss percentage
+    pub packet_loss_percent: f64,
+    /// Roaming count
+    pub roaming_count: u32,
+    /// Security protocol (WPA3, etc.)
+    pub security_protocol: String,
+    /// Interface capabilities
+    pub capabilities: Vec<String>,
+}
+
+/// 5G cellular network statistics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct Cellular5GStats {
+    /// Cellular technology (5G NR, etc.)
+    pub technology: String,
+    /// Network generation (5G)
+    pub generation: String,
+    /// Signal strength in dBm
+    pub signal_strength_dbm: i32,
+    /// Reference Signal Received Power (RSRP) in dBm
+    pub rsrp_dbm: f64,
+    /// Reference Signal Received Quality (RSRQ) in dB
+    pub rsrq_db: f64,
+    /// Signal to Interference plus Noise Ratio (SINR) in dB
+    pub sinr_db: f64,
+    /// Current bandwidth in MHz
+    pub bandwidth_mhz: u32,
+    /// Current frequency band
+    pub frequency_band: String,
+    /// Cell ID
+    pub cell_id: u64,
+    /// Tracking Area Code
+    pub tracking_area_code: u32,
+    /// Physical Cell ID
+    pub physical_cell_id: u16,
+    /// Current modulation scheme
+    pub modulation: String,
+    /// Multiple Input Multiple Output (MIMO) configuration
+    pub mimo_config: String,
+    /// Carrier Aggregation status
+    pub carrier_aggregation: bool,
+    /// Current data rate (downlink) in Mbps
+    pub downlink_rate_mbps: f64,
+    /// Current data rate (uplink) in Mbps
+    pub uplink_rate_mbps: f64,
+    /// Latency in milliseconds
+    pub latency_ms: f64,
+    /// Jitter in milliseconds
+    pub jitter_ms: f64,
+    /// Packet loss percentage
+    pub packet_loss_percent: f64,
+    /// Network slice information
+    pub network_slice: Option<String>,
+    /// Quality of Service (QoS) flow information
+    pub qos_flow: Option<String>,
+    /// Connection stability score (0.0 to 1.0)
+    pub stability_score: f64,
+}
+
+/// Extended network interface statistics with advanced technology support
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ExtendedNetworkInterfaceStats {
+    /// Base interface statistics
+    pub base_stats: NetworkInterfaceStats,
+    /// QoS metrics for this interface
+    pub qos_metrics: NetworkQoSMetrics,
+    /// Wi-Fi 6/6E specific statistics (if applicable)
+    pub wifi6_stats: Option<Wifi6Stats>,
+    /// 5G cellular statistics (if applicable)
+    pub cellular5g_stats: Option<Cellular5GStats>,
+    /// Traffic Control (tc) configuration
+    pub tc_config: Option<String>,
+    /// QoS queue statistics
+    pub qos_queue_stats: Vec<QoSQueueStats>,
+    /// Technology-specific capabilities
+    pub technology_capabilities: Vec<String>,
+    /// Supported frequency bands
+    pub supported_bands: Vec<String>,
+    /// Current power saving mode
+    pub power_saving_mode: Option<String>,
+    /// Interface health status
+    pub health_status: String,
 }
 
 /// QoS queue statistics
@@ -654,6 +775,159 @@ impl NetworkMonitor {
         }
 
         Ok(interfaces_with_qos)
+    }
+
+    /// Collect extended network statistics with Wi-Fi 6E and 5G support
+    pub fn collect_extended_network_stats(&mut self) -> Result<Vec<ExtendedNetworkInterfaceStats>> {
+        let mut extended_interfaces = Vec::new();
+
+        // First collect basic interface statistics with QoS
+        let basic_interfaces_with_qos = self.collect_interface_stats_with_qos()?;
+
+        // Then enhance each interface with technology-specific statistics
+        for basic_iface in basic_interfaces_with_qos {
+            let mut extended_iface = ExtendedNetworkInterfaceStats {
+                base_stats: basic_iface.base_stats.clone(),
+                qos_metrics: basic_iface.qos_metrics,
+                wifi6_stats: None,
+                cellular5g_stats: None,
+                tc_config: basic_iface.tc_config,
+                qos_queue_stats: basic_iface.qos_queue_stats,
+                technology_capabilities: Vec::new(),
+                supported_bands: Vec::new(),
+                power_saving_mode: None,
+                health_status: "Operational".to_string(),
+            };
+
+            // Add technology-specific capabilities based on interface type
+            match basic_iface.base_stats.interface_type {
+                NetworkInterfaceType::Wifi6 | NetworkInterfaceType::Wifi6E => {
+                    extended_iface.wifi6_stats = Some(self.collect_wifi6_stats(&basic_iface.base_stats.name)?);
+                    extended_iface.technology_capabilities.push("Wi-Fi 6/6E".to_string());
+                    extended_iface.technology_capabilities.push("MU-MIMO".to_string());
+                    extended_iface.technology_capabilities.push("OFDMA".to_string());
+                    extended_iface.supported_bands.push("2.4GHz".to_string());
+                    extended_iface.supported_bands.push("5GHz".to_string());
+                    if basic_iface.base_stats.interface_type == NetworkInterfaceType::Wifi6E {
+                        extended_iface.supported_bands.push("6GHz".to_string());
+                        extended_iface.technology_capabilities.push("6GHz support".to_string());
+                    }
+                }
+                NetworkInterfaceType::Cellular5G => {
+                    extended_iface.cellular5g_stats = Some(self.collect_cellular5g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface.technology_capabilities.push("5G NR".to_string());
+                    extended_iface.technology_capabilities.push("Carrier Aggregation".to_string());
+                    extended_iface.technology_capabilities.push("MIMO".to_string());
+                    extended_iface.technology_capabilities.push("Network Slicing".to_string());
+                }
+                NetworkInterfaceType::Wifi => {
+                    extended_iface.technology_capabilities.push("Wi-Fi".to_string());
+                    extended_iface.supported_bands.push("2.4GHz".to_string());
+                    extended_iface.supported_bands.push("5GHz".to_string());
+                }
+                NetworkInterfaceType::Cellular => {
+                    extended_iface.technology_capabilities.push("Cellular".to_string());
+                    extended_iface.technology_capabilities.push("4G LTE".to_string());
+                }
+                NetworkInterfaceType::Ethernet => {
+                    extended_iface.technology_capabilities.push("Ethernet".to_string());
+                    extended_iface.technology_capabilities.push("Full Duplex".to_string());
+                }
+                _ => {}
+            }
+
+            // Add power saving mode based on interface capabilities
+            if extended_iface.technology_capabilities.contains(&"Wi-Fi 6/6E".to_string()) {
+                extended_iface.power_saving_mode = Some("TWT".to_string()); // Target Wake Time
+            } else if extended_iface.technology_capabilities.contains(&"Wi-Fi".to_string()) {
+                extended_iface.power_saving_mode = Some("Legacy".to_string());
+            }
+
+            extended_interfaces.push(extended_iface);
+        }
+
+        Ok(extended_interfaces)
+    }
+
+    /// Collect Wi-Fi 6/6E specific statistics
+    fn collect_wifi6_stats(&self, interface_name: &str) -> Result<Wifi6Stats> {
+        // In a real implementation, this would use iw, iwconfig, or nl80211
+        // For now, we'll return mock data with reasonable defaults
+        
+        let mut wifi6_stats = Wifi6Stats::default();
+
+        // Determine Wi-Fi standard based on interface type
+        wifi6_stats.wifi_standard = if interface_name.contains("wlan") || interface_name.contains("wifi") {
+            "Wi-Fi 6".to_string()
+        } else {
+            "Wi-Fi 6E".to_string()
+        };
+
+        // Set reasonable defaults for Wi-Fi 6/6E
+        wifi6_stats.channel_bandwidth_mhz = 160; // 160MHz channel
+        wifi6_stats.channel = 42; // Example channel in 5GHz band
+        wifi6_stats.frequency_band = "5GHz".to_string();
+        wifi6_stats.signal_strength_dbm = -55; // Good signal strength
+        wifi6_stats.signal_noise_ratio_db = 35.0; // Good SNR
+        wifi6_stats.tx_rate_mbps = 1200; // 1.2 Gbps
+        wifi6_stats.rx_rate_mbps = 1200; // 1.2 Gbps
+        wifi6_stats.mu_mimo_support = true;
+        wifi6_stats.ofdma_support = true;
+        wifi6_stats.bss_coloring_support = true;
+        wifi6_stats.target_wake_time_support = true;
+        wifi6_stats.spatial_streams = 2; // 2x2 MIMO
+        wifi6_stats.mcs_index = 9; // High MCS index
+        wifi6_stats.retry_count = 10;
+        wifi6_stats.packet_loss_percent = 0.5; // 0.5% packet loss
+        wifi6_stats.roaming_count = 0;
+        wifi6_stats.security_protocol = "WPA3".to_string();
+        wifi6_stats.capabilities.push("HE160".to_string()); // 160MHz channel support
+        wifi6_stats.capabilities.push("VHT160".to_string());
+        wifi6_stats.capabilities.push("HE_MU_MIMO".to_string());
+
+        // For Wi-Fi 6E, add 6GHz capabilities
+        if wifi6_stats.wifi_standard == "Wi-Fi 6E" {
+            wifi6_stats.frequency_band = "6GHz".to_string();
+            wifi6_stats.channel = 1; // Example channel in 6GHz band
+            wifi6_stats.capabilities.push("6GHz".to_string());
+            wifi6_stats.capabilities.push("HE_6GHZ".to_string());
+        }
+
+        Ok(wifi6_stats)
+    }
+
+    /// Collect 5G cellular network statistics
+    fn collect_cellular5g_stats(&self, _interface_name: &str) -> Result<Cellular5GStats> {
+        // In a real implementation, this would use mmcli, qmicli, or AT commands
+        // For now, we'll return mock data with reasonable defaults
+        
+        let mut cellular5g_stats = Cellular5GStats::default();
+
+        // Set 5G specific parameters
+        cellular5g_stats.technology = "5G NR".to_string();
+        cellular5g_stats.generation = "5G".to_string();
+        cellular5g_stats.signal_strength_dbm = -75; // Good 5G signal
+        cellular5g_stats.rsrp_dbm = -95.0; // Good RSRP
+        cellular5g_stats.rsrq_db = -10.0; // Good RSRQ
+        cellular5g_stats.sinr_db = 20.0; // Good SINR
+        cellular5g_stats.bandwidth_mhz = 100; // 100MHz bandwidth
+        cellular5g_stats.frequency_band = "n78".to_string(); // Common 5G band
+        cellular5g_stats.cell_id = 123456789;
+        cellular5g_stats.tracking_area_code = 12345;
+        cellular5g_stats.physical_cell_id = 42;
+        cellular5g_stats.modulation = "256QAM".to_string();
+        cellular5g_stats.mimo_config = "4x4".to_string();
+        cellular5g_stats.carrier_aggregation = true;
+        cellular5g_stats.downlink_rate_mbps = 800.0; // 800 Mbps downlink
+        cellular5g_stats.uplink_rate_mbps = 200.0; // 200 Mbps uplink
+        cellular5g_stats.latency_ms = 15.0; // Low latency
+        cellular5g_stats.jitter_ms = 2.0; // Low jitter
+        cellular5g_stats.packet_loss_percent = 0.1; // 0.1% packet loss
+        cellular5g_stats.network_slice = Some("eMBB".to_string()); // Enhanced Mobile Broadband
+        cellular5g_stats.qos_flow = Some("QFI_1".to_string()); // QoS Flow Identifier
+        cellular5g_stats.stability_score = 0.95; // Excellent stability
+
+        Ok(cellular5g_stats)
     }
 
     /// Get full Traffic Control (tc) configuration for an interface
@@ -3644,5 +3918,459 @@ mod tests {
                 tracing::debug!("Network stats collection error (expected in test): {}", e);
             }
         }
+    }
+
+    #[test]
+    fn test_network_interface_type_extended() {
+        // Test the new extended interface types
+        assert!(matches!(
+            NetworkInterfaceType::Wifi6,
+            NetworkInterfaceType::Wifi6
+        ));
+        assert!(matches!(
+            NetworkInterfaceType::Wifi6E,
+            NetworkInterfaceType::Wifi6E
+        ));
+        assert!(matches!(
+            NetworkInterfaceType::Cellular,
+            NetworkInterfaceType::Cellular
+        ));
+        assert!(matches!(
+            NetworkInterfaceType::Cellular5G,
+            NetworkInterfaceType::Cellular5G
+        ));
+    }
+
+    #[test]
+    fn test_wifi6_stats_default() {
+        let stats = Wifi6Stats::default();
+        assert_eq!(stats.wifi_standard, String::new());
+        assert_eq!(stats.channel_bandwidth_mhz, 0);
+        assert_eq!(stats.signal_strength_dbm, 0);
+        assert_eq!(stats.signal_noise_ratio_db, 0.0);
+        assert!(!stats.mu_mimo_support);
+        assert!(!stats.ofdma_support);
+        assert!(!stats.bss_coloring_support);
+        assert!(!stats.target_wake_time_support);
+        assert_eq!(stats.spatial_streams, 0);
+        assert_eq!(stats.mcs_index, 0);
+        assert_eq!(stats.retry_count, 0);
+        assert_eq!(stats.packet_loss_percent, 0.0);
+        assert_eq!(stats.roaming_count, 0);
+        assert_eq!(stats.security_protocol, String::new());
+        assert_eq!(stats.capabilities.len(), 0);
+    }
+
+    #[test]
+    fn test_cellular5g_stats_default() {
+        let stats = Cellular5GStats::default();
+        assert_eq!(stats.technology, String::new());
+        assert_eq!(stats.generation, String::new());
+        assert_eq!(stats.signal_strength_dbm, 0);
+        assert_eq!(stats.rsrp_dbm, 0.0);
+        assert_eq!(stats.rsrq_db, 0.0);
+        assert_eq!(stats.sinr_db, 0.0);
+        assert_eq!(stats.bandwidth_mhz, 0);
+        assert_eq!(stats.frequency_band, String::new());
+        assert_eq!(stats.cell_id, 0);
+        assert_eq!(stats.tracking_area_code, 0);
+        assert_eq!(stats.physical_cell_id, 0);
+        assert_eq!(stats.modulation, String::new());
+        assert_eq!(stats.mimo_config, String::new());
+        assert!(!stats.carrier_aggregation);
+        assert_eq!(stats.downlink_rate_mbps, 0.0);
+        assert_eq!(stats.uplink_rate_mbps, 0.0);
+        assert_eq!(stats.latency_ms, 0.0);
+        assert_eq!(stats.jitter_ms, 0.0);
+        assert_eq!(stats.packet_loss_percent, 0.0);
+        assert!(stats.network_slice.is_none());
+        assert!(stats.qos_flow.is_none());
+        assert_eq!(stats.stability_score, 0.0);
+    }
+
+    #[test]
+    fn test_extended_network_interface_stats_creation() {
+        let base_stats = NetworkInterfaceStats {
+            name: "wlan0".to_string(),
+            interface_type: NetworkInterfaceType::Wifi6,
+            ..Default::default()
+        };
+
+        let extended_stats = ExtendedNetworkInterfaceStats {
+            base_stats,
+            qos_metrics: NetworkQoSMetrics::default(),
+            wifi6_stats: Some(Wifi6Stats::default()),
+            cellular5g_stats: None,
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+            technology_capabilities: vec!["Wi-Fi 6".to_string(), "MU-MIMO".to_string()],
+            supported_bands: vec!["2.4GHz".to_string(), "5GHz".to_string()],
+            power_saving_mode: Some("TWT".to_string()),
+            health_status: "Operational".to_string(),
+        };
+
+        assert_eq!(extended_stats.base_stats.name, "wlan0");
+        assert!(matches!(
+            extended_stats.base_stats.interface_type,
+            NetworkInterfaceType::Wifi6
+        ));
+        assert!(extended_stats.wifi6_stats.is_some());
+        assert!(extended_stats.cellular5g_stats.is_none());
+        assert_eq!(extended_stats.technology_capabilities.len(), 2);
+        assert_eq!(extended_stats.supported_bands.len(), 2);
+        assert_eq!(
+            extended_stats.power_saving_mode,
+            Some("TWT".to_string())
+        );
+        assert_eq!(extended_stats.health_status, "Operational");
+    }
+
+    #[test]
+    fn test_cellular5g_extended_stats_creation() {
+        let base_stats = NetworkInterfaceStats {
+            name: "wwan0".to_string(),
+            interface_type: NetworkInterfaceType::Cellular5G,
+            ..Default::default()
+        };
+
+        let extended_stats = ExtendedNetworkInterfaceStats {
+            base_stats,
+            qos_metrics: NetworkQoSMetrics::default(),
+            wifi6_stats: None,
+            cellular5g_stats: Some(Cellular5GStats::default()),
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+            technology_capabilities: vec![
+                "5G NR".to_string(),
+                "Carrier Aggregation".to_string(),
+            ],
+            supported_bands: vec!["n78".to_string()],
+            power_saving_mode: None,
+            health_status: "Operational".to_string(),
+        };
+
+        assert_eq!(extended_stats.base_stats.name, "wwan0");
+        assert!(matches!(
+            extended_stats.base_stats.interface_type,
+            NetworkInterfaceType::Cellular5G
+        ));
+        assert!(extended_stats.wifi6_stats.is_none());
+        assert!(extended_stats.cellular5g_stats.is_some());
+        assert_eq!(extended_stats.technology_capabilities.len(), 2);
+        assert_eq!(extended_stats.supported_bands.len(), 1);
+        assert!(extended_stats.power_saving_mode.is_none());
+        assert_eq!(extended_stats.health_status, "Operational");
+    }
+
+    #[test]
+    fn test_wifi6e_interface_type() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test Wi-Fi 6E interface detection
+        let interface_type = monitor.detect_interface_type("wlan6e0");
+        assert!(matches!(
+            interface_type,
+            NetworkInterfaceType::Wifi6E
+        ));
+    }
+
+    #[test]
+    fn test_5g_interface_type() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test 5G interface detection
+        let interface_type = monitor.detect_interface_type("wwan5g0");
+        assert!(matches!(
+            interface_type,
+            NetworkInterfaceType::Cellular5G
+        ));
+    }
+
+    #[test]
+    fn test_extended_network_stats_integration() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test that extended network stats collection works
+        // Note: This will use mock data in test environment
+        let result = monitor.collect_extended_network_stats();
+        
+        match result {
+            Ok(extended_stats) => {
+                // Should return some extended statistics
+                assert!(extended_stats.len() >= 0);
+                
+                // If there are interfaces, they should have extended info
+                for ext_stats in extended_stats {
+                    // Basic stats should be present
+                    assert!(ext_stats.base_stats.name.len() > 0);
+                    
+                    // Technology capabilities should be populated
+                    assert!(ext_stats.technology_capabilities.len() > 0);
+                    
+                    // Health status should be set
+                    assert!(ext_stats.health_status.len() > 0);
+                }
+            }
+            Err(e) => {
+                // Some error occurred, but it should be handled gracefully
+                tracing::debug!(
+                    "Extended network stats collection error (expected in test): {}",
+                    e
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_wifi6_stats_collection() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test Wi-Fi 6 stats collection
+        let result = monitor.collect_wifi6_stats("wlan0");
+        
+        match result {
+            Ok(wifi6_stats) => {
+                // Should return reasonable Wi-Fi 6 stats
+                assert!(wifi6_stats.wifi_standard.len() > 0);
+                assert!(wifi6_stats.channel_bandwidth_mhz > 0);
+                assert!(wifi6_stats.signal_strength_dbm != 0);
+                assert!(wifi6_stats.tx_rate_mbps > 0);
+                assert!(wifi6_stats.rx_rate_mbps > 0);
+                assert!(wifi6_stats.mu_mimo_support);
+                assert!(wifi6_stats.ofdma_support);
+                assert!(wifi6_stats.capabilities.len() > 0);
+            }
+            Err(e) => {
+                tracing::debug!("Wi-Fi 6 stats collection error (expected in test): {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_cellular5g_stats_collection() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test 5G cellular stats collection
+        let result = monitor.collect_cellular5g_stats("wwan0");
+        
+        match result {
+            Ok(cellular5g_stats) => {
+                // Should return reasonable 5G stats
+                assert!(cellular5g_stats.technology.len() > 0);
+                assert!(cellular5g_stats.generation.len() > 0);
+                assert!(cellular5g_stats.signal_strength_dbm != 0);
+                assert!(cellular5g_stats.rsrp_dbm != 0.0);
+                assert!(cellular5g_stats.downlink_rate_mbps > 0.0);
+                assert!(cellular5g_stats.uplink_rate_mbps > 0.0);
+                assert!(cellular5g_stats.carrier_aggregation);
+                assert!(cellular5g_stats.stability_score > 0.0);
+            }
+            Err(e) => {
+                tracing::debug!("5G cellular stats collection error (expected in test): {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_extended_network_stats_serialization() {
+        // Test serialization of extended network statistics
+        let base_stats = NetworkInterfaceStats {
+            name: "wlan0".to_string(),
+            interface_type: NetworkInterfaceType::Wifi6,
+            mac_address: Some("00:11:22:33:44:55".to_string()),
+            ip_addresses: vec!["192.168.1.100".parse().unwrap()],
+            speed_mbps: Some(1200),
+            is_up: true,
+            rx_bytes: 1000000,
+            tx_bytes: 2000000,
+            rx_packets: 5000,
+            tx_packets: 10000,
+            ..Default::default()
+        };
+
+        let wifi6_stats = Wifi6Stats {
+            wifi_standard: "Wi-Fi 6".to_string(),
+            channel_bandwidth_mhz: 160,
+            channel: 42,
+            frequency_band: "5GHz".to_string(),
+            signal_strength_dbm: -55,
+            signal_noise_ratio_db: 35.0,
+            tx_rate_mbps: 1200,
+            rx_rate_mbps: 1200,
+            mu_mimo_support: true,
+            ofdma_support: true,
+            bss_coloring_support: true,
+            target_wake_time_support: true,
+            spatial_streams: 2,
+            mcs_index: 9,
+            retry_count: 10,
+            packet_loss_percent: 0.5,
+            roaming_count: 0,
+            security_protocol: "WPA3".to_string(),
+            capabilities: vec!["HE160".to_string(), "VHT160".to_string()],
+        };
+
+        let extended_stats = ExtendedNetworkInterfaceStats {
+            base_stats,
+            qos_metrics: NetworkQoSMetrics::default(),
+            wifi6_stats: Some(wifi6_stats),
+            cellular5g_stats: None,
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+            technology_capabilities: vec!["Wi-Fi 6".to_string(), "MU-MIMO".to_string()],
+            supported_bands: vec!["2.4GHz".to_string(), "5GHz".to_string()],
+            power_saving_mode: Some("TWT".to_string()),
+            health_status: "Operational".to_string(),
+        };
+
+        // Test JSON serialization
+        let json_result = serde_json::to_string(&extended_stats);
+        assert!(json_result.is_ok());
+        
+        let json_string = json_result.unwrap();
+        assert!(json_string.contains("Wi-Fi 6"));
+        assert!(json_string.contains("wlan0"));
+        assert!(json_string.contains("MU-MIMO"));
+        assert!(json_string.contains("Operational"));
+        
+        // Test JSON deserialization
+        let deserialized: Result<ExtendedNetworkInterfaceStats, _> = serde_json::from_str(&json_string);
+        assert!(deserialized.is_ok());
+        
+        let deserialized_stats = deserialized.unwrap();
+        assert_eq!(deserialized_stats.base_stats.name, "wlan0");
+        assert!(deserialized_stats.wifi6_stats.is_some());
+        assert_eq!(deserialized_stats.health_status, "Operational");
+    }
+
+    #[test]
+    fn test_extended_network_stats_with_cellular5g() {
+        // Test extended stats with 5G cellular
+        let base_stats = NetworkInterfaceStats {
+            name: "wwan0".to_string(),
+            interface_type: NetworkInterfaceType::Cellular5G,
+            mac_address: None,
+            ip_addresses: vec!["10.0.0.100".parse().unwrap()],
+            speed_mbps: Some(800),
+            is_up: true,
+            rx_bytes: 5000000,
+            tx_bytes: 1000000,
+            rx_packets: 2000,
+            tx_packets: 500,
+            ..Default::default()
+        };
+
+        let cellular5g_stats = Cellular5GStats {
+            technology: "5G NR".to_string(),
+            generation: "5G".to_string(),
+            signal_strength_dbm: -75,
+            rsrp_dbm: -95.0,
+            rsrq_db: -10.0,
+            sinr_db: 20.0,
+            bandwidth_mhz: 100,
+            frequency_band: "n78".to_string(),
+            cell_id: 123456789,
+            tracking_area_code: 12345,
+            physical_cell_id: 42,
+            modulation: "256QAM".to_string(),
+            mimo_config: "4x4".to_string(),
+            carrier_aggregation: true,
+            downlink_rate_mbps: 800.0,
+            uplink_rate_mbps: 200.0,
+            latency_ms: 15.0,
+            jitter_ms: 2.0,
+            packet_loss_percent: 0.1,
+            network_slice: Some("eMBB".to_string()),
+            qos_flow: Some("QFI_1".to_string()),
+            stability_score: 0.95,
+        };
+
+        let extended_stats = ExtendedNetworkInterfaceStats {
+            base_stats,
+            qos_metrics: NetworkQoSMetrics::default(),
+            wifi6_stats: None,
+            cellular5g_stats: Some(cellular5g_stats),
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+            technology_capabilities: vec![
+                "5G NR".to_string(),
+                "Carrier Aggregation".to_string(),
+            ],
+            supported_bands: vec!["n78".to_string()],
+            power_saving_mode: None,
+            health_status: "Operational".to_string(),
+        };
+
+        // Verify the structure
+        assert_eq!(extended_stats.base_stats.name, "wwan0");
+        assert!(extended_stats.cellular5g_stats.is_some());
+        assert!(extended_stats.wifi6_stats.is_none());
+        assert_eq!(extended_stats.technology_capabilities.len(), 2);
+        assert_eq!(extended_stats.supported_bands.len(), 1);
+        
+        // Test serialization
+        let json_result = serde_json::to_string(&extended_stats);
+        assert!(json_result.is_ok());
+        
+        let json_string = json_result.unwrap();
+        assert!(json_string.contains("5G NR"));
+        assert!(json_string.contains("wwan0"));
+        assert!(json_string.contains("Carrier Aggregation"));
+    }
+
+    #[test]
+    fn test_extended_network_stats_health_status() {
+        // Test different health status scenarios
+        let mut extended_stats = ExtendedNetworkInterfaceStats {
+            base_stats: NetworkInterfaceStats::default(),
+            qos_metrics: NetworkQoSMetrics::default(),
+            wifi6_stats: None,
+            cellular5g_stats: None,
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+            technology_capabilities: Vec::new(),
+            supported_bands: Vec::new(),
+            power_saving_mode: None,
+            health_status: "Operational".to_string(),
+        };
+
+        // Test operational status
+        assert_eq!(extended_stats.health_status, "Operational");
+        
+        // Test degraded status
+        extended_stats.health_status = "Degraded".to_string();
+        assert_eq!(extended_stats.health_status, "Degraded");
+        
+        // Test error status
+        extended_stats.health_status = "Error".to_string();
+        assert_eq!(extended_stats.health_status, "Error");
+    }
+
+    #[test]
+    fn test_extended_network_stats_power_saving() {
+        // Test power saving modes
+        let mut extended_stats = ExtendedNetworkInterfaceStats {
+            base_stats: NetworkInterfaceStats::default(),
+            qos_metrics: NetworkQoSMetrics::default(),
+            wifi6_stats: None,
+            cellular5g_stats: None,
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+            technology_capabilities: Vec::new(),
+            supported_bands: Vec::new(),
+            power_saving_mode: None,
+            health_status: "Operational".to_string(),
+        };
+
+        // Test no power saving
+        assert!(extended_stats.power_saving_mode.is_none());
+        
+        // Test TWT power saving
+        extended_stats.power_saving_mode = Some("TWT".to_string());
+        assert_eq!(extended_stats.power_saving_mode, Some("TWT".to_string()));
+        
+        // Test legacy power saving
+        extended_stats.power_saving_mode = Some("Legacy".to_string());
+        assert_eq!(extended_stats.power_saving_mode, Some("Legacy".to_string()));
     }
 }

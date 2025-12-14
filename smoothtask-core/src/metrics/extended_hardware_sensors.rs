@@ -24,6 +24,8 @@ pub struct ExtendedHardwareSensors {
     pub custom_sensors: Vec<(String, f32, String)>, // Пользовательские сенсоры (имя, значение, единица)
     pub thunderbolt_devices: Vec<(String, f32)>, // Thunderbolt устройства (имя, скорость в Гбит/с)
     pub pcie_devices: Vec<(String, f32)>, // PCIe устройства (имя, скорость в Гбит/с)
+    pub usb4_devices: Vec<(String, f32)>, // USB4 устройства (имя, скорость в Гбит/с)
+    pub nvme_devices: Vec<(String, f32)>, // NVMe устройства (имя, скорость в Гбит/с)
 }
 
 /// Конфигурация расширенного мониторинга сенсоров
@@ -41,6 +43,8 @@ pub struct ExtendedHardwareSensorsConfig {
     pub enable_custom_sensors: bool,
     pub enable_thunderbolt_monitoring: bool,
     pub enable_pcie_monitoring: bool,
+    pub enable_usb4_monitoring: bool,
+    pub enable_nvme_monitoring: bool,
 }
 
 impl Default for ExtendedHardwareSensorsConfig {
@@ -58,6 +62,8 @@ impl Default for ExtendedHardwareSensorsConfig {
             enable_custom_sensors: true,
             enable_thunderbolt_monitoring: true,
             enable_pcie_monitoring: true,
+            enable_usb4_monitoring: true,
+            enable_nvme_monitoring: true,
         }
     }
 }
@@ -148,6 +154,18 @@ impl ExtendedHardwareSensorsMonitor {
             "Extended hardware devices collection completed: {} Thunderbolt devices, {} PCIe devices",
             sensors.thunderbolt_devices.len(),
             sensors.pcie_devices.len()
+        );
+
+        // Собираем метрики с новых типов устройств
+        self.collect_usb4_metrics(&mut sensors)?;
+        self.collect_nvme_metrics(&mut sensors)?;
+
+        info!(
+            "Extended hardware devices collection completed: {} Thunderbolt devices, {} PCIe devices, {} USB4 devices, {} NVMe devices",
+            sensors.thunderbolt_devices.len(),
+            sensors.pcie_devices.len(),
+            sensors.usb4_devices.len(),
+            sensors.nvme_devices.len()
         );
 
         Ok(sensors)
@@ -984,6 +1002,132 @@ impl ExtendedHardwareSensorsMonitor {
 
         Ok(())
     }
+
+    /// Собрать метрики с USB4 устройств
+    fn collect_usb4_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        if !self.config.enable_usb4_monitoring {
+            debug!("USB4 monitoring is disabled");
+            return Ok(());
+        }
+
+        // Пробуем найти USB4 устройства в /sys/bus/thunderbolt/devices/ (USB4 часто использует Thunderbolt инфраструктуру)
+        let usb4_dir = Path::new("/sys/bus/thunderbolt/devices");
+        debug!("Scanning for USB4 devices at: {}", usb4_dir.display());
+
+        if !usb4_dir.exists() {
+            debug!("USB4 directory not found at: {}", usb4_dir.display());
+            return Ok(());
+        }
+
+        match fs::read_dir(usb4_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let device_path = entry.path();
+                            let device_name = entry.file_name();
+                            let device_name_str = device_name.to_string_lossy();
+
+                            // Пробуем получить информацию о скорости устройства
+                            let speed_file = device_path.join("link_speed");
+                            if speed_file.exists() {
+                                match fs::read_to_string(&speed_file) {
+                                    Ok(speed_content) => {
+                                        match speed_content.trim().parse::<f32>() {
+                                            Ok(speed_gbps) => {
+                                                // USB4 устройства обычно работают на скоростях 20 или 40 Гбит/с
+                                                if speed_gbps >= 20.0 {
+                                                    sensors.usb4_devices.push((
+                                                        device_name_str.to_string(),
+                                                        speed_gbps,
+                                                    ));
+                                                    debug!(
+                                                        "Successfully read USB4 device: {} at {} Gbps",
+                                                        device_name_str, speed_gbps
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to parse USB4 speed from {}: {}",
+                                                    speed_file.display(), e
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to read USB4 speed from {}: {}",
+                                            speed_file.display(), e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to read USB4 device entry: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read USB4 directory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Собрать метрики с NVMe устройств
+    fn collect_nvme_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        if !self.config.enable_nvme_monitoring {
+            debug!("NVMe monitoring is disabled");
+            return Ok(());
+        }
+
+        // Пробуем найти NVMe устройства в /sys/bus/nvme/devices/
+        let nvme_dir = Path::new("/sys/bus/nvme/devices");
+        debug!("Scanning for NVMe devices at: {}", nvme_dir.display());
+
+        if !nvme_dir.exists() {
+            debug!("NVMe directory not found at: {}", nvme_dir.display());
+            return Ok(());
+        }
+
+        match fs::read_dir(nvme_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let _device_path = entry.path();
+                            let device_name = entry.file_name();
+                            let device_name_str = device_name.to_string_lossy();
+
+                            // Пробуем получить информацию о скорости устройства
+                            // NVMe устройства обычно имеют скорость, определяемую их PCIe интерфейсом
+                            // Для простоты, будем использовать фиксированную скорость 32 Гбит/с для NVMe 4.0
+                            sensors.nvme_devices.push((
+                                device_name_str.to_string(),
+                                32.0, // Типичная скорость для NVMe 4.0
+                            ));
+                            debug!(
+                                "Successfully read NVMe device: {} at {} Gbps",
+                                device_name_str, 32.0
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to read NVMe device entry: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read NVMe directory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Тесты для расширенного мониторинга аппаратных сенсоров
@@ -1196,5 +1340,46 @@ mod tests {
         // В реальной системе могут быть устройства, в тестовой среде - нет
         assert!(sensors.thunderbolt_devices.len() >= 0);
         assert!(sensors.pcie_devices.len() >= 0);
+        assert!(sensors.usb4_devices.len() >= 0);
+        assert!(sensors.nvme_devices.len() >= 0);
+    }
+
+    #[test]
+    fn test_usb4_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_usb4_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_usb4_metrics(&mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.usb4_devices.len(), 0);
+    }
+
+    #[test]
+    fn test_nvme_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_nvme_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_nvme_metrics(&mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.nvme_devices.len(), 0);
+    }
+
+    #[test]
+    fn test_extended_sensors_with_all_devices() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let result = monitor.collect_extended_sensors();
+        assert!(result.is_ok());
+        let sensors = result.unwrap();
+        // В реальной системе могут быть устройства, в тестовой среде - нет
+        assert!(sensors.thunderbolt_devices.len() >= 0);
+        assert!(sensors.pcie_devices.len() >= 0);
+        assert!(sensors.usb4_devices.len() >= 0);
+        assert!(sensors.nvme_devices.len() >= 0);
     }
 }

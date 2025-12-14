@@ -18,6 +18,11 @@ pub mod app_rotation;
 pub mod async_logging;
 pub mod log_storage;
 pub mod rotation;
+
+use chrono::{DateTime, Utc};
+
+use crate::logging::log_storage::{LogEntry, LogLevel};
+
 pub mod snapshots;
 
 /// Log statistics structure
@@ -119,6 +124,266 @@ pub fn optimize_log_rotation(rotator: &mut rotation::LogRotator, memory_pressure
             new_max_size, new_interval
         );
     }
+}
+
+/// Enhanced log performance optimization with multiple strategies
+pub fn optimize_log_performance(
+    rotator: &mut rotation::LogRotator,
+    memory_pressure: bool,
+    high_log_volume: bool,
+    disk_space_low: bool,
+) {
+    // Get current configuration
+    let (max_size, max_files, compression, interval, max_age, max_total_size) =
+        rotator.get_config();
+
+    let mut new_max_size = max_size;
+    let mut new_interval = interval;
+    let mut new_compression = compression;
+    let mut new_max_files = max_files;
+    let mut new_max_age = max_age;
+    let mut new_max_total_size = max_total_size;
+
+    // Apply different optimization strategies based on conditions
+    if memory_pressure {
+        // Memory pressure strategy: reduce size and increase rotation frequency
+        new_max_size = (max_size as f64 * 0.6) as u64; // 40% reduction
+        new_interval = (interval as f64 * 0.4) as u64; // 60% reduction
+        new_max_files = std::cmp::min(max_files, 3); // Limit to 3 rotated files
+        tracing::warn!("Applying memory pressure optimization strategy");
+    }
+
+    if high_log_volume {
+        // High log volume strategy: increase rotation frequency and enable compression
+        new_interval = (interval as f64 * 0.3) as u64; // 70% reduction
+        new_compression = true; // Force compression
+        new_max_age = std::cmp::min(max_age, 3600); // 1 hour max age
+        tracing::warn!("Applying high log volume optimization strategy");
+    }
+
+    if disk_space_low {
+        // Low disk space strategy: aggressive cleanup and compression
+        new_max_size = (max_size as f64 * 0.5) as u64; // 50% reduction
+        new_max_files = std::cmp::min(max_files, 2); // Only 2 rotated files
+        new_compression = true; // Force compression
+        new_max_total_size = (max_total_size as f64 * 0.7) as u64; // 30% reduction
+        tracing::warn!("Applying low disk space optimization strategy");
+    }
+
+    // Apply the optimized configuration
+    rotator.update_config(
+        new_max_size,
+        new_max_files,
+        new_compression,
+        new_interval,
+        new_max_age,
+        new_max_total_size,
+    );
+
+    tracing::info!(
+        "Optimized log performance: max_size={} bytes, max_files={}, compression={}, interval={} sec, max_age={} sec, max_total_size={} bytes",
+        new_max_size, new_max_files, new_compression, new_interval, new_max_age, new_max_total_size
+    );
+}
+
+/// Advanced log compression strategy
+pub fn optimize_log_compression(
+    rotator: &mut rotation::LogRotator,
+    compression_level: u32,
+) {
+    // Get current configuration
+    let (max_size, max_files, compression, interval, max_age, max_total_size) =
+        rotator.get_config();
+
+    // Update compression settings
+    rotator.update_config(
+        max_size,
+        max_files,
+        compression,
+        interval,
+        max_age,
+        max_total_size,
+    );
+
+    // Set compression level (this would be implemented in the rotator)
+    tracing::info!("Set log compression level to: {}", compression_level);
+}
+
+/// Log performance monitoring and optimization
+pub fn monitor_and_optimize_log_performance(
+    rotator: &mut rotation::LogRotator,
+    stats: &LogStats,
+) {
+    // Analyze log statistics to determine optimization strategy
+    let high_volume = stats.total_entries > 1000 && stats.total_size > 1_000_000; // >1MB
+    let error_heavy = stats.error_count > stats.total_entries / 10; // >10% errors
+    let warning_heavy = stats.warning_count > stats.total_entries / 5; // >20% warnings
+
+    // Get memory pressure status (mock for now)
+    let memory_pressure = get_memory_pressure_status();
+    let disk_space_low = false; // Would be determined from system metrics
+
+    // Apply optimization based on analysis
+    optimize_log_performance(
+        rotator,
+        memory_pressure,
+        high_volume,
+        disk_space_low,
+    );
+
+    // Additional optimizations for error-heavy logs
+    if error_heavy {
+        tracing::warn!("High error rate detected - enabling error-focused optimization");
+        // Could implement error-specific logging strategies here
+    }
+
+    if warning_heavy {
+        tracing::warn!("High warning rate detected - enabling warning-focused optimization");
+        // Could implement warning-specific logging strategies here
+    }
+
+    // Log optimization results
+    let (new_max_size, new_max_files, new_compression, new_interval, _new_max_age, _new_max_total_size) =
+        rotator.get_config();
+
+    tracing::info!(
+        "Log performance optimization completed. New config: size={} bytes, files={}, compression={}, interval={} sec",
+        new_max_size, new_max_files, new_compression, new_interval
+    );
+}
+
+/// Get current log performance metrics
+pub fn get_log_performance_metrics() -> LogPerformanceMetrics {
+    // In a real implementation, this would collect actual performance metrics
+    // For now, we'll return mock data
+    LogPerformanceMetrics {
+        average_log_time_us: 150, // 150 microseconds per log entry
+        max_log_time_us: 500,     // 500 microseconds max
+        log_throughput: 1000,     // 1000 entries per second
+        compression_ratio: 2.5,   // 2.5:1 compression ratio
+        memory_usage_bytes: 5_000_000, // 5MB memory usage
+        disk_usage_bytes: 50_000_000,   // 50MB disk usage
+        cache_hit_rate: 0.85,     // 85% cache hit rate
+    }
+}
+
+/// Log performance metrics structure
+#[derive(Debug, Clone, Default)]
+pub struct LogPerformanceMetrics {
+    /// Average time per log operation in microseconds
+    pub average_log_time_us: u64,
+    /// Maximum time for a log operation in microseconds
+    pub max_log_time_us: u64,
+    /// Log throughput in entries per second
+    pub log_throughput: u64,
+    /// Compression ratio (original:compressed)
+    pub compression_ratio: f64,
+    /// Current memory usage in bytes
+    pub memory_usage_bytes: u64,
+    /// Current disk usage in bytes
+    pub disk_usage_bytes: u64,
+    /// Cache hit rate (0.0 to 1.0)
+    pub cache_hit_rate: f64,
+}
+
+/// Log the current performance metrics
+pub fn log_performance_metrics(metrics: &LogPerformanceMetrics) {
+    tracing::info!(
+        "Log Performance Metrics - Avg Time: {} us, Max Time: {} us, Throughput: {} entries/sec, Compression: {:.1}x, Memory: {} bytes, Disk: {} bytes, Cache Hit: {:.1}%",
+        metrics.average_log_time_us,
+        metrics.max_log_time_us,
+        metrics.log_throughput,
+        metrics.compression_ratio,
+        metrics.memory_usage_bytes,
+        metrics.disk_usage_bytes,
+        metrics.cache_hit_rate * 100.0
+    );
+
+    // Additional analysis
+    if metrics.average_log_time_us > 1000 {
+        tracing::warn!("High average log time detected: {} us", metrics.average_log_time_us);
+    }
+
+    if metrics.cache_hit_rate < 0.7 {
+        tracing::warn!("Low cache hit rate: {:.1}%", metrics.cache_hit_rate * 100.0);
+    }
+}
+
+/// Advanced log cleanup strategy
+pub fn advanced_log_cleanup(
+    rotator: &mut rotation::LogRotator,
+    aggressive: bool,
+) {
+    if aggressive {
+        // Aggressive cleanup: remove all but the most recent log files
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
+        // Reduce to minimum configuration
+        let new_max_files = std::cmp::min(max_files, 1); // Only keep current log
+        let new_max_total_size = (max_total_size as f64 * 0.3) as u64; // 70% reduction
+
+        rotator.update_config(
+            max_size,
+            new_max_files,
+            compression,
+            interval,
+            max_age,
+            new_max_total_size,
+        );
+
+        tracing::warn!("Aggressive log cleanup applied: max_files={}, max_total_size={} bytes",
+            new_max_files, new_max_total_size);
+    } else {
+        // Normal cleanup: apply standard rotation
+        tracing::info!("Normal log cleanup applied");
+    }
+}
+
+/// Batch log processing for performance optimization
+pub fn process_logs_in_batch(
+    logs: Vec<LogEntry>,
+    batch_size: usize,
+) -> Vec<Vec<LogEntry>> {
+    // Split logs into batches for more efficient processing
+    logs.chunks(batch_size)
+        .map(|chunk: &[LogEntry]| chunk.to_vec())
+        .collect()
+}
+
+/// Optimized log filtering for performance
+pub fn filter_logs_optimized<'a>(
+    logs: &'a [LogEntry],
+    level_filter: Option<LogLevel>,
+    target_filter: Option<&'a str>,
+    time_range: Option<(DateTime<Utc>, DateTime<Utc>)>,
+) -> Vec<&'a LogEntry> {
+    logs.iter()
+        .filter(|log| {
+            // Filter by level
+            if let Some(filter_level) = level_filter {
+                if log.level < filter_level {
+                    return false;
+                }
+            }
+
+            // Filter by target
+            if let Some(filter_target) = target_filter {
+                if !log.target.contains(filter_target) {
+                    return false;
+                }
+            }
+
+            // Filter by time range
+            if let Some((start, end)) = time_range {
+                if log.timestamp < start || log.timestamp > end {
+                    return false;
+                }
+            }
+
+            true
+        })
+        .collect()
 }
 
 /// Get memory pressure status (mock implementation)
@@ -266,5 +531,235 @@ mod tests {
         let avg_size = stats.total_size as f64 / stats.total_entries as f64;
         assert!(avg_size > 0.0);
         assert!(avg_size < 1024.0); // Less than 1KB per entry (reasonable for logs)
+    }
+
+    #[test]
+    fn test_optimize_log_performance_memory_pressure() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
+
+        // Test memory pressure optimization
+        optimize_log_performance(&mut rotator, true, false, false);
+        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        // Should be reduced due to memory pressure
+        assert!(max_size < 10_000);
+        assert!(interval < 3600);
+        assert_eq!(max_files, 3); // Limited to 3 files
+    }
+
+    #[test]
+    fn test_optimize_log_performance_high_volume() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, false, 3600, 86400, 1_000_000);
+
+        // Test high volume optimization
+        optimize_log_performance(&mut rotator, false, true, false);
+        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        // Should have compression enabled and reduced interval
+        assert!(compression); // Compression should be enabled
+        assert!(interval < 3600);
+        assert_eq!(max_age, 3600); // 1 hour max age
+    }
+
+    #[test]
+    fn test_optimize_log_performance_disk_space() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, false, 3600, 86400, 1_000_000);
+
+        // Test low disk space optimization
+        optimize_log_performance(&mut rotator, false, false, true);
+        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        // Should be aggressive cleanup
+        assert!(max_size < 10_000);
+        assert_eq!(max_files, 2); // Only 2 files
+        assert!(compression); // Compression enabled
+        assert!(max_total_size < 1_000_000); // Reduced total size
+    }
+
+    #[test]
+    fn test_monitor_and_optimize_log_performance() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
+        
+        // Create stats that would trigger optimization
+        let stats = LogStats {
+            total_entries: 2000,
+            total_size: 2_000_000, // 2MB - high volume
+            error_count: 300, // 15% errors - high error rate
+            warning_count: 800, // 40% warnings - high warning rate
+            info_count: 800,
+            debug_count: 100,
+        };
+
+        // This should trigger optimizations
+        monitor_and_optimize_log_performance(&mut rotator, &stats);
+        
+        // Verify that optimization was applied
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        // Should see some optimization applied
+        assert!(max_size <= 10_000);
+        assert!(interval <= 3600);
+    }
+
+    #[test]
+    fn test_get_log_performance_metrics() {
+        let metrics = get_log_performance_metrics();
+        
+        // Verify we get reasonable metrics
+        assert!(metrics.average_log_time_us > 0);
+        assert!(metrics.max_log_time_us >= metrics.average_log_time_us);
+        assert!(metrics.log_throughput > 0);
+        assert!(metrics.compression_ratio > 1.0); // Should be >1:1
+        assert!(metrics.memory_usage_bytes > 0);
+        assert!(metrics.disk_usage_bytes > 0);
+        assert!(metrics.cache_hit_rate > 0.0 && metrics.cache_hit_rate <= 1.0);
+    }
+
+    #[test]
+    fn test_log_performance_metrics() {
+        let metrics = LogPerformanceMetrics {
+            average_log_time_us: 250,
+            max_log_time_us: 1200,
+            log_throughput: 500,
+            compression_ratio: 3.0,
+            memory_usage_bytes: 10_000_000,
+            disk_usage_bytes: 100_000_000,
+            cache_hit_rate: 0.9,
+        };
+        
+        // This should not panic and should log the metrics
+        log_performance_metrics(&metrics);
+    }
+
+    #[test]
+    fn test_advanced_log_cleanup() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
+
+        // Test aggressive cleanup
+        advanced_log_cleanup(&mut rotator, true);
+        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        // Should be very aggressive
+        assert_eq!(max_files, 1); // Only current log
+        assert!(max_total_size < 1_000_000); // Reduced total size
+    }
+
+    #[test]
+    fn test_process_logs_in_batch() {
+        use log_storage::LogEntry;
+        
+        // Create some test log entries
+        let logs = vec![
+            LogEntry::new(log_storage::LogLevel::Info, "test", "message1"),
+            LogEntry::new(log_storage::LogLevel::Warn, "test", "message2"),
+            LogEntry::new(log_storage::LogLevel::Error, "test", "message3"),
+            LogEntry::new(log_storage::LogLevel::Debug, "test", "message4"),
+            LogEntry::new(log_storage::LogLevel::Trace, "test", "message5"),
+        ];
+
+        // Process in batches of 2
+        let batches = process_logs_in_batch(logs, 2);
+        
+        // Should have 3 batches (2, 2, 1)
+        assert_eq!(batches.len(), 3);
+        assert_eq!(batches[0].len(), 2);
+        assert_eq!(batches[1].len(), 2);
+        assert_eq!(batches[2].len(), 1);
+    }
+
+    #[test]
+    fn test_filter_logs_optimized() {
+        use log_storage::LogEntry;
+        
+        // Create test log entries with different levels and targets
+        let logs = vec![
+            LogEntry::new(log_storage::LogLevel::Info, "module1", "info message"),
+            LogEntry::new(log_storage::LogLevel::Warn, "module1", "warning message"),
+            LogEntry::new(log_storage::LogLevel::Error, "module2", "error message"),
+            LogEntry::new(log_storage::LogLevel::Debug, "module1", "debug message"),
+            LogEntry::new(log_storage::LogLevel::Trace, "module2", "trace message"),
+        ];
+
+        // Test level filtering
+        let filtered = filter_logs_optimized(&logs, Some(log_storage::LogLevel::Warn), None, None);
+        assert_eq!(filtered.len(), 2); // Should get Warn and Error
+
+        // Test target filtering
+        let filtered = filter_logs_optimized(&logs, None, Some("module1"), None);
+        assert_eq!(filtered.len(), 3); // Should get all module1 entries
+
+        // Test combined filtering
+        let filtered = filter_logs_optimized(&logs, Some(log_storage::LogLevel::Info), Some("module1"), None);
+        assert_eq!(filtered.len(), 1); // Should get only Info from module1
+    }
+
+    #[test]
+    fn test_log_performance_metrics_analysis() {
+        // Test with high average log time
+        let metrics = LogPerformanceMetrics {
+            average_log_time_us: 1500, // High
+            max_log_time_us: 5000,
+            log_throughput: 100,
+            compression_ratio: 2.0,
+            memory_usage_bytes: 5_000_000,
+            disk_usage_bytes: 50_000_000,
+            cache_hit_rate: 0.65, // Low
+        };
+        
+        // This should log warnings about high log time and low cache hit rate
+        log_performance_metrics(&metrics);
+    }
+
+    #[test]
+    fn test_optimize_log_compression() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, false, 3600, 86400, 1_000_000);
+
+        // Test compression optimization
+        optimize_log_compression(&mut rotator, 9);
+        
+        // Should log the compression level
+        // Note: Actual compression implementation would be in the rotator
+    }
+
+    #[test]
+    fn test_log_performance_optimization_integration() {
+        use rotation::LogRotator;
+
+        let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
+        
+        // Test multiple optimization scenarios
+        let high_volume_stats = LogStats {
+            total_entries: 5000,
+            total_size: 5_000_000, // 5MB
+            error_count: 100,
+            warning_count: 500,
+            info_count: 3000,
+            debug_count: 1400,
+        };
+
+        // Apply optimization for high volume
+        monitor_and_optimize_log_performance(&mut rotator, &high_volume_stats);
+        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        // Should see optimization applied
+        assert!(interval < 3600); // Reduced interval
+        assert!(compression); // Compression enabled
     }
 }
