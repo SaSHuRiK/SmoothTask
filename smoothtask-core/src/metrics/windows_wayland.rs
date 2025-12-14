@@ -241,7 +241,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
     // Это более надёжный метод, но требует доступа к /proc
     // В тестах мы можем отключить проверку процессов с помощью переменной окружения
     let skip_process_check = std::env::var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK").is_ok();
-    
+
     if !skip_process_check {
         if let Ok(processes) = std::fs::read_dir("/proc") {
             debug!("Checking running processes for Wayland compositors");
@@ -293,7 +293,9 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
             warn!("Could not read /proc directory to detect compositor processes");
         }
     } else {
-        debug!("Skipping process check due to SMOOTHTASK_TEST_SKIP_PROCESS_CHECK environment variable");
+        debug!(
+            "Skipping process check due to SMOOTHTASK_TEST_SKIP_PROCESS_CHECK environment variable"
+        );
     }
 
     // 4. Проверяем стандартные пути конфигурации
@@ -353,7 +355,7 @@ pub fn detect_wayland_compositor() -> Option<WaylandCompositorType> {
     #[cfg(target_os = "linux")]
     {
         debug!("Checking systemd services for Wayland compositors");
-        
+
         // Проверяем, запущен ли systemd
         if std::path::Path::new("/run/systemd/system").exists() {
             // Пробуем проверить стандартные сервисы композиторов
@@ -779,7 +781,7 @@ impl WaylandIntrospector {
 
             // Ждём немного и пробуем снова
             std::thread::sleep(std::time::Duration::from_millis(10));
-            
+
             match self.connection.flush() {
                 Ok(_) => {
                     debug!("Successfully flushed Wayland connection");
@@ -797,11 +799,13 @@ impl WaylandIntrospector {
                 "Failed to find wlr-foreign-toplevel-manager after {} attempts",
                 MAX_ATTEMPTS
             );
-            
+
             // Пробуем определить, поддерживает ли композитор нужный протокол
             if let Some(compositor_type) = &self.compositor_type {
                 match compositor_type {
-                    WaylandCompositorType::Mutter | WaylandCompositorType::KWin | WaylandCompositorType::Wayfire => {
+                    WaylandCompositorType::Mutter
+                    | WaylandCompositorType::KWin
+                    | WaylandCompositorType::Wayfire => {
                         warn!(
                             "Compositor {:?} may not support wlr-foreign-toplevel-management protocol",
                             compositor_type
@@ -898,8 +902,6 @@ impl WaylandIntrospector {
 }
 
 impl WaylandIntrospector {
-
-
     /// Создаёт тестовое окно, специфичное для обнаруженного композитора
     fn create_test_window_for_compositor(&self) -> WindowInfo {
         match self.compositor_type.as_ref() {
@@ -1536,7 +1538,7 @@ mod tests {
         // Очищаем переменные, которые могут повлиять на обнаружение
         std::env::remove_var("HOME");
         std::env::remove_var("DESKTOP_SESSION");
-        
+
         // Устанавливаем флаг для пропуска проверки процессов
         std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", "1");
 
@@ -1594,7 +1596,7 @@ mod tests {
         // Очищаем переменные, которые могут повлиять на обнаружение
         std::env::remove_var("HOME");
         std::env::remove_var("DESKTOP_SESSION");
-        
+
         // Устанавливаем флаг для пропуска проверки процессов
         std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", "1");
 
@@ -1655,7 +1657,7 @@ mod tests {
         std::env::remove_var("XDG_CURRENT_DESKTOP");
         std::env::remove_var("WAYLAND_DISPLAY");
         std::env::remove_var("HOME");
-        
+
         // Устанавливаем флаг для пропуска проверки процессов
         std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", "1");
 
@@ -1740,7 +1742,7 @@ mod tests {
         std::env::remove_var("WAYLAND_DISPLAY");
         std::env::remove_var("HOME");
         std::env::remove_var("DESKTOP_SESSION");
-        
+
         // Устанавливаем флаг для пропуска проверки процессов
         std::env::set_var("SMOOTHTASK_TEST_SKIP_PROCESS_CHECK", "1");
 

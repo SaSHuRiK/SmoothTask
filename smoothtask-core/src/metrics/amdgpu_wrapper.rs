@@ -161,7 +161,8 @@ pub fn is_amdgpu_available() -> bool {
                     if vendor_path.exists() {
                         if let Ok(vendor_content) = fs::read_to_string(&vendor_path) {
                             let vendor_id = vendor_content.trim();
-                            if vendor_id == "0x1002" { // AMD vendor ID
+                            if vendor_id == "0x1002" {
+                                // AMD vendor ID
                                 info!("AMD GPU устройство найдено");
                                 return true;
                             }
@@ -204,10 +205,13 @@ pub fn discover_amdgpu_devices() -> Result<Vec<AmdGpuDevice>> {
                             if vendor_path.exists() {
                                 if let Ok(vendor_content) = fs::read_to_string(&vendor_path) {
                                     let vendor_id = vendor_content.trim();
-                                    if vendor_id == "0x1002" { // AMD vendor ID
+                                    if vendor_id == "0x1002" {
+                                        // AMD vendor ID
                                         let device_id_path = device_path.join("device");
                                         let device_id = if device_id_path.exists() {
-                                            fs::read_to_string(&device_id_path).ok().map(|s| s.trim().to_string())
+                                            fs::read_to_string(&device_id_path)
+                                                .ok()
+                                                .map(|s| s.trim().to_string())
                                         } else {
                                             None
                                         };
@@ -288,9 +292,15 @@ pub fn collect_amdgpu_metrics() -> Result<AmdGpuMetricsCollection> {
             "Не удалось собрать метрики ни для одного AMD GPU устройства. \n            Возможные причины:\n            1) Проблемы с правами доступа ко всем устройствам\n            2) Драйверы AMD GPU не работают корректно\n            3) Аппаратные проблемы с GPU\n            4) Конфликт с другими GPU мониторинговыми инструментами\n            Рекомендации:\n            - Проверьте права доступа: sudo ls -la /sys/class/drm/*/device\n            - Проверьте загрузку драйверов: lsmod | grep amdgpu\n            - Проверьте системные логи: sudo dmesg | grep amdgpu\n            - Попробуйте перезагрузить драйверы: sudo systemctl restart display-manager\n            - Проверьте конфликты: sudo lsof | grep amdgpu\n            - Попробуйте перезагрузить систему"
         );
     } else if successful_devices < collection.gpu_count {
-        info!("Собраны метрики для {} из {} AMD GPU устройств (частичный успех)", successful_devices, collection.gpu_count);
+        info!(
+            "Собраны метрики для {} из {} AMD GPU устройств (частичный успех)",
+            successful_devices, collection.gpu_count
+        );
     } else {
-        info!("Собраны метрики для всех {} AMD GPU устройств", successful_devices);
+        info!(
+            "Собраны метрики для всех {} AMD GPU устройств",
+            successful_devices
+        );
     }
 
     Ok(collection)
@@ -328,7 +338,8 @@ fn collect_amdgpu_device_metrics(device: &AmdGpuDevice) -> Result<AmdGpuDeviceMe
         Ok(mem) => {
             metrics.memory = mem;
             if mem.total_bytes > 0 {
-                debug!("  AMD GPU memory: {}/{} MB ({}% used)",
+                debug!(
+                    "  AMD GPU memory: {}/{} MB ({}% used)",
                     mem.used_bytes / 1024 / 1024,
                     mem.total_bytes / 1024 / 1024,
                     mem.used_bytes as f32 / mem.total_bytes as f32 * 100.0
@@ -369,11 +380,17 @@ fn collect_amdgpu_device_metrics(device: &AmdGpuDevice) -> Result<AmdGpuDeviceMe
             debug!("  AMD GPU core clock: {} MHz", clocks.core_clock_mhz);
         }
         Err(e) => {
-            debug!("  Не удалось получить метрики тактовых частот AMD GPU: {}", e);
+            debug!(
+                "  Не удалось получить метрики тактовых частот AMD GPU: {}",
+                e
+            );
         }
     }
 
-    debug!("Метрики AMD GPU для устройства {} собраны успешно", device.name);
+    debug!(
+        "Метрики AMD GPU для устройства {} собраны успешно",
+        device.name
+    );
 
     Ok(metrics)
 }
@@ -436,7 +453,8 @@ fn collect_amdgpu_memory(device_path: &Path) -> Result<AmdGpuMemory> {
 
     // Validate and correct memory values
     if memory.total_bytes > 0 && memory.used_bytes > memory.total_bytes {
-        warn!("Исправление: использованная память AMD ({} MB) больше общей ({} MB)",
+        warn!(
+            "Исправление: использованная память AMD ({} MB) больше общей ({} MB)",
             memory.used_bytes / 1024 / 1024,
             memory.total_bytes / 1024 / 1024
         );
@@ -463,7 +481,8 @@ fn collect_amdgpu_temperature(device_path: &Path) -> Result<AmdGpuTemperature> {
                 if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        let file_name =
+                            temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
 
                         if file_name.ends_with("_input") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
@@ -511,24 +530,30 @@ fn collect_amdgpu_power(device_path: &Path) -> Result<AmdGpuPower> {
                 if let Ok(power_files) = fs::read_dir(&hwmon_path) {
                     for power_file in power_files.flatten() {
                         let power_path = power_file.path();
-                        let file_name = power_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        let file_name = power_path
+                            .file_name()
+                            .and_then(|s| s.to_str())
+                            .unwrap_or("");
 
                         if file_name.ends_with("_input") && file_name.starts_with("power") {
                             if let Ok(power_content) = fs::read_to_string(&power_path) {
                                 if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
-                                    power.power_mw = power_microwatts as u32 / 1000; // Convert microwatts to milliwatts
+                                    power.power_mw = power_microwatts as u32 / 1000;
+                                    // Convert microwatts to milliwatts
                                 }
                             }
                         } else if file_name == "power1_cap" {
                             if let Ok(power_content) = fs::read_to_string(&power_path) {
                                 if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
-                                    power.power_cap_mw = Some(power_microwatts as u32 / 1000); // Convert microwatts to milliwatts
+                                    power.power_cap_mw = Some(power_microwatts as u32 / 1000);
+                                    // Convert microwatts to milliwatts
                                 }
                             }
                         } else if file_name == "power1_avg" {
                             if let Ok(power_content) = fs::read_to_string(&power_path) {
                                 if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
-                                    power.power_avg_mw = Some(power_microwatts as u32 / 1000); // Convert microwatts to milliwatts
+                                    power.power_avg_mw = Some(power_microwatts as u32 / 1000);
+                                    // Convert microwatts to milliwatts
                                 }
                             }
                         }
@@ -643,8 +668,8 @@ mod tests {
             },
             memory: AmdGpuMemory {
                 total_bytes: 16_000_000_000, // 16 GB
-                used_bytes: 8_000_000_000,  // 8 GB
-                free_bytes: 8_000_000_000,  // 8 GB
+                used_bytes: 8_000_000_000,   // 8 GB
+                free_bytes: 8_000_000_000,   // 8 GB
                 vram_total_bytes: Some(16_000_000_000),
                 vram_used_bytes: Some(8_000_000_000),
             },
@@ -655,8 +680,8 @@ mod tests {
                 vram_c: Some(68),
             },
             power: AmdGpuPower {
-                power_mw: 200_000, // 200 W
-                power_limit_mw: 250_000, // 250 W
+                power_mw: 200_000,           // 200 W
+                power_limit_mw: 250_000,     // 250 W
                 power_cap_mw: Some(230_000), // 230 W
                 power_avg_mw: Some(180_000), // 180 W
             },
@@ -671,7 +696,8 @@ mod tests {
 
         // Test serialization
         let serialized = serde_json::to_string(&metrics).expect("Serialization failed");
-        let deserialized: AmdGpuDeviceMetrics = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: AmdGpuDeviceMetrics =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(deserialized.device.name, "Radeon RX 6800");
         assert_eq!(deserialized.utilization.gpu_util, 65);
@@ -689,7 +715,8 @@ mod tests {
         };
 
         let serialized = serde_json::to_string(&collection).expect("Serialization failed");
-        let deserialized: AmdGpuMetricsCollection = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: AmdGpuMetricsCollection =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(deserialized.gpu_count, 1);
         assert_eq!(deserialized.devices.len(), 1);
@@ -700,7 +727,7 @@ mod tests {
         // Test that AMDGPU functions handle errors gracefully
         let result = collect_amdgpu_metrics();
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
         assert_eq!(collection.devices.len(), collection.gpu_count);
     }
@@ -709,35 +736,34 @@ mod tests {
     fn test_amdgpu_error_handling_detailed() {
         // Test that AMDGPU error handling provides detailed troubleshooting information
         // This test verifies that error messages contain helpful context
-        
+
         // Test device discovery error handling
         let devices_result = discover_amdgpu_devices();
         assert!(devices_result.is_ok()); // Should always return Ok, even if no devices found
-        
+
         // Test metrics collection error handling
         let metrics_result = collect_amdgpu_metrics();
         assert!(metrics_result.is_ok()); // Should always return Ok with graceful degradation
-        
+
         let collection = metrics_result.unwrap();
-        
+
         // Verify that the collection is valid even if no devices are found
         assert_eq!(collection.devices.len(), collection.gpu_count);
-        
+
         // Test that serialization/deserialization works even with empty collections
         let serialized = serde_json::to_string(&collection).expect("Serialization should work");
-        let deserialized: AmdGpuMetricsCollection = serde_json::from_str(&serialized).expect("Deserialization should work");
-        
+        let deserialized: AmdGpuMetricsCollection =
+            serde_json::from_str(&serialized).expect("Deserialization should work");
+
         assert_eq!(deserialized.gpu_count, collection.gpu_count);
         assert_eq!(deserialized.devices.len(), collection.devices.len());
     }
-
-
 
     #[test]
     fn test_amdgpu_memory_validation() {
         let mut memory = AmdGpuMemory {
             total_bytes: 16_000_000_000, // 16 GB
-            used_bytes: 18_000_000_000, // 18 GB (more than total)
+            used_bytes: 18_000_000_000,  // 18 GB (more than total)
             free_bytes: 0,
             vram_total_bytes: None,
             vram_used_bytes: None,
@@ -746,12 +772,12 @@ mod tests {
         // This should handle overflow correctly
         memory.free_bytes = memory.total_bytes.saturating_sub(memory.used_bytes);
         assert_eq!(memory.free_bytes, 0);
-        
+
         // In a real scenario, we would also cap used_bytes to total_bytes
         if memory.used_bytes > memory.total_bytes {
             memory.used_bytes = memory.total_bytes;
         }
-        
+
         assert_eq!(memory.used_bytes, 16_000_000_000);
         assert_eq!(memory.free_bytes, 0);
     }
@@ -790,7 +816,7 @@ mod tests {
     fn test_amdgpu_collection_with_no_devices() {
         let result = collect_amdgpu_metrics();
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
         assert_eq!(collection.devices.len(), collection.gpu_count);
     }
@@ -800,13 +826,13 @@ mod tests {
         // Test that the system can recover from AMDGPU errors
         let result1 = collect_amdgpu_metrics();
         let result2 = collect_amdgpu_metrics();
-        
+
         assert!(result1.is_ok());
         assert!(result2.is_ok());
-        
+
         let collection1 = result1.unwrap();
         let collection2 = result2.unwrap();
-        
+
         assert_eq!(collection1.gpu_count, collection2.gpu_count);
     }
 }

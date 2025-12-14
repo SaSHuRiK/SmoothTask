@@ -4,9 +4,7 @@
 //! Этот пример показывает, как интегрировать eBPF модуль в реальное приложение
 //! с поддержкой динамической конфигурации и обработки ошибок.
 
-use smoothtask_core::metrics::ebpf::{
-    EbpfConfig, EbpfMetrics, EbpfMetricsCollector,
-};
+use smoothtask_core::metrics::ebpf::{EbpfConfig, EbpfMetrics, EbpfMetricsCollector};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
@@ -345,4 +343,3 @@ fn analyze_metrics(metrics: &EbpfMetrics) {
         println!("  ✓ System metrics look normal");
     }
 }
-

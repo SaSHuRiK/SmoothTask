@@ -520,8 +520,13 @@ pub struct SnapshotLogger {
 impl SnapshotLogger {
     /// Создать новый логгер и инициализировать схему БД.
     pub fn new<P: AsRef<Path>>(db_path: P) -> Result<Self> {
-        let conn = Connection::open(db_path.as_ref())
-            .with_context(|| format!("Не удалось открыть БД: {}. Ошибка: {}", db_path.as_ref().display(), std::io::Error::last_os_error()))?;
+        let conn = Connection::open(db_path.as_ref()).with_context(|| {
+            format!(
+                "Не удалось открыть БД: {}. Ошибка: {}",
+                db_path.as_ref().display(),
+                std::io::Error::last_os_error()
+            )
+        })?;
 
         let logger = SnapshotLogger {
             conn,
@@ -562,8 +567,13 @@ impl SnapshotLogger {
         db_path: P,
         logging_config: &crate::config::config_struct::LoggingConfig,
     ) -> Result<Self> {
-        let conn = Connection::open(db_path.as_ref())
-            .with_context(|| format!("Не удалось открыть БД: {}. Ошибка: {}", db_path.as_ref().display(), std::io::Error::last_os_error()))?;
+        let conn = Connection::open(db_path.as_ref()).with_context(|| {
+            format!(
+                "Не удалось открыть БД: {}. Ошибка: {}",
+                db_path.as_ref().display(),
+                std::io::Error::last_os_error()
+            )
+        })?;
 
         let log_rotator = if logging_config.log_max_size_bytes > 0
             || logging_config.log_rotation_interval_sec > 0
@@ -826,8 +836,11 @@ impl SnapshotLogger {
 
     fn insert_processes(tx: &Transaction, snapshot: &Snapshot) -> Result<()> {
         for proc in &snapshot.processes {
-            let tags_json = serde_json::to_string(&proc.tags)
-                .context(format!("Не удалось сериализовать tags процесса (pid={}): {}", proc.pid, proc.tags.len()))?;
+            let tags_json = serde_json::to_string(&proc.tags).context(format!(
+                "Не удалось сериализовать tags процесса (pid={}): {}",
+                proc.pid,
+                proc.tags.len()
+            ))?;
 
             tx.execute(
                 r"
@@ -896,10 +909,16 @@ impl SnapshotLogger {
 
     fn insert_app_groups(tx: &Transaction, snapshot: &Snapshot) -> Result<()> {
         for group in &snapshot.app_groups {
-            let process_ids_json = serde_json::to_string(&group.process_ids)
-                .context(format!("Не удалось сериализовать process_ids группы ({}): {}", group.app_group_id, group.process_ids.len()))?;
-            let tags_json = serde_json::to_string(&group.tags)
-                .context(format!("Не удалось сериализовать tags группы ({}): {}", group.app_group_id, group.tags.len()))?;
+            let process_ids_json = serde_json::to_string(&group.process_ids).context(format!(
+                "Не удалось сериализовать process_ids группы ({}): {}",
+                group.app_group_id,
+                group.process_ids.len()
+            ))?;
+            let tags_json = serde_json::to_string(&group.tags).context(format!(
+                "Не удалось сериализовать tags группы ({}): {}",
+                group.app_group_id,
+                group.tags.len()
+            ))?;
 
             tx.execute(
                 r"
@@ -1011,7 +1030,7 @@ mod tests {
                 teacher_priority_class: Some("INTERACTIVE".to_string()),
                 teacher_score: Some(0.75),
                 energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
-                power_w: Some(0.5), // 0.5 ватта
+                power_w: Some(0.5),       // 0.5 ватта
                 energy_timestamp: Some(1234567890),
                 network_rx_bytes: None,
                 network_tx_bytes: None,
@@ -1046,7 +1065,7 @@ mod tests {
                 tags: vec!["terminal".to_string()],
                 priority_class: Some("INTERACTIVE".to_string()),
                 total_energy_uj: Some(2000000), // 2000000 микроджоулей = 2 джоуля
-                total_power_w: Some(1.0), // 1 ватт
+                total_power_w: Some(1.0),       // 1 ватт
                 total_network_rx_bytes: None,
                 total_network_tx_bytes: None,
                 total_network_rx_packets: None,
@@ -1130,7 +1149,7 @@ mod tests {
             tags: vec!["terminal".to_string()],
             priority_class: Some("INTERACTIVE".to_string()),
             total_energy_uj: Some(2000000), // 2000000 микроджоулей = 2 джоуля
-            total_power_w: Some(1.0), // 1 ватт
+            total_power_w: Some(1.0),       // 1 ватт
             total_network_rx_bytes: None,
             total_network_tx_bytes: None,
             total_network_rx_packets: None,
@@ -1228,7 +1247,7 @@ mod tests {
             background_percentile: 0.1,
             sched_latency_p99_threshold_ms: 10.0,
             ui_loop_p95_threshold_ms: 16.67,
-                priority_hysteresis_stable_sec: Some(30),
+            priority_hysteresis_stable_sec: Some(30),
         }
     }
 
@@ -1576,7 +1595,8 @@ mod tests {
 
         // Проверяем, что конфигурация ротации правильная
         if let Some(rotator) = &logger.log_rotator {
-            let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+            let (max_size, max_files, compression, interval, max_age, max_total_size) =
+                rotator.get_config();
             assert_eq!(max_size, 100);
             assert_eq!(max_files, 3);
             assert!(!compression);

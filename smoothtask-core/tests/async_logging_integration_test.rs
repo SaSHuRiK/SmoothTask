@@ -15,7 +15,7 @@ fn create_runtime() -> Runtime {
 #[test]
 fn test_async_log_rotator_integration() {
     let runtime = create_runtime();
-    
+
     runtime.block_on(async {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("test.log");
@@ -32,11 +32,17 @@ fn test_async_log_rotator_integration() {
 
         // Проверяем, что ротация необходима
         let current_size = get_log_file_size_async(&log_path).await.expect("get size");
-        let needs_rotation = rotator.needs_rotation(&log_path, current_size).await.expect("check rotation");
+        let needs_rotation = rotator
+            .needs_rotation(&log_path, current_size)
+            .await
+            .expect("check rotation");
         assert!(needs_rotation, "Rotation should be needed for large file");
 
         // Выполняем ротацию
-        rotator.rotate_log(&log_path).await.expect("rotation should succeed");
+        rotator
+            .rotate_log(&log_path)
+            .await
+            .expect("rotation should succeed");
 
         // Проверяем, что оригинальный файл удалён
         assert!(!log_path.exists(), "Original log file should be removed");
@@ -55,7 +61,7 @@ fn test_async_log_rotator_integration() {
 #[test]
 fn test_async_log_rotator_compression() {
     let runtime = create_runtime();
-    
+
     runtime.block_on(async {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("test.log");
@@ -71,7 +77,10 @@ fn test_async_log_rotator_compression() {
         let rotator = create_async_log_rotator(100, 3, true, 0, 0, 0);
 
         // Выполняем ротацию
-        rotator.rotate_log(&log_path).await.expect("rotation with compression should succeed");
+        rotator
+            .rotate_log(&log_path)
+            .await
+            .expect("rotation with compression should succeed");
 
         // Проверяем, что оригинальный файл удалён
         assert!(!log_path.exists(), "Original log file should be removed");
@@ -83,14 +92,18 @@ fn test_async_log_rotator_compression() {
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
             .collect();
 
-        assert_eq!(compressed_files.len(), 1, "Should have one compressed log file");
+        assert_eq!(
+            compressed_files.len(),
+            1,
+            "Should have one compressed log file"
+        );
     });
 }
 
 #[test]
 fn test_async_log_rotator_cleanup() {
     let runtime = create_runtime();
-    
+
     runtime.block_on(async {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("test.log");
@@ -105,7 +118,10 @@ fn test_async_log_rotator_cleanup() {
 
         // Выполняем несколько ротаций
         for i in 0..5 {
-            rotator.rotate_log(&log_path).await.expect("rotation should succeed");
+            rotator
+                .rotate_log(&log_path)
+                .await
+                .expect("rotation should succeed");
             // Воссоздаём файл для следующей ротации
             let mut file = std::fs::File::create(&log_path).expect("recreate log file");
             writeln!(file, "Test log entry {}", i).expect("write to log");
@@ -113,7 +129,10 @@ fn test_async_log_rotator_cleanup() {
         }
 
         // Выполняем очистку
-        rotator.cleanup_logs(&log_path).await.expect("cleanup should succeed");
+        rotator
+            .cleanup_logs(&log_path)
+            .await
+            .expect("cleanup should succeed");
 
         // Проверяем, что сохранено не более 2 ротированных файлов
         let rotated_files: Vec<_> = std::fs::read_dir(temp_dir.path())
@@ -122,14 +141,17 @@ fn test_async_log_rotator_cleanup() {
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
 
-        assert!(rotated_files.len() <= 2, "Should have at most 2 rotated log files");
+        assert!(
+            rotated_files.len() <= 2,
+            "Should have at most 2 rotated log files"
+        );
     });
 }
 
 #[test]
 fn test_async_log_file_size() {
     let runtime = create_runtime();
-    
+
     runtime.block_on(async {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("test.log");
@@ -148,13 +170,14 @@ fn test_async_log_file_size() {
 #[test]
 fn test_async_rotator_config() {
     let runtime = create_runtime();
-    
+
     runtime.block_on(async {
         // Создаём асинхронный ротатор
         let rotator = create_async_log_rotator(1000, 3, false, 0, 0, 0);
 
         // Проверяем конфигурацию
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
         assert_eq!(max_size, 1000);
         assert_eq!(max_files, 3);
         assert!(!compression);

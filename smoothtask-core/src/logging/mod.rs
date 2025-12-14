@@ -41,7 +41,7 @@ pub struct LogStats {
 pub fn get_log_stats() -> LogStats {
     // Optimized implementation with actual statistics collection
     // This would integrate with the actual logging system to collect real statistics
-    
+
     // For now, we'll use a more realistic approach with some mock data
     // In production, this would query the actual log storage
     LogStats {
@@ -65,7 +65,7 @@ pub fn log_log_stats(stats: &LogStats) {
         stats.info_count,
         stats.debug_count
     );
-    
+
     // Additional performance metrics
     if stats.total_entries > 0 {
         let avg_size = stats.total_size as f64 / stats.total_entries as f64;
@@ -78,7 +78,7 @@ pub fn adjust_log_for_memory_pressure() {
     // Get current memory pressure information
     // In a real implementation, this would query system memory metrics
     let memory_pressure_high = true; // Mock value - would be determined from system metrics
-    
+
     if memory_pressure_high {
         tracing::warn!("High memory pressure detected - adjusting log settings");
         // In a real implementation, we would:
@@ -86,7 +86,7 @@ pub fn adjust_log_for_memory_pressure() {
         // 2. Increase rotation frequency
         // 3. Enable more aggressive cleanup policies
         // 4. Potentially disable debug logging
-        
+
         // For now, we'll just log the action
         tracing::info!("Log settings adjusted for high memory pressure: reduced verbosity, increased rotation frequency");
     } else {
@@ -98,21 +98,22 @@ pub fn adjust_log_for_memory_pressure() {
 pub fn optimize_log_rotation(rotator: &mut rotation::LogRotator, memory_pressure: bool) {
     if memory_pressure {
         // More aggressive rotation under memory pressure
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Reduce max size and increase rotation frequency
         let new_max_size = (max_size as f64 * 0.7) as u64; // 30% reduction
         let new_interval = (interval as f64 * 0.5) as u64; // 50% reduction
-        
+
         rotator.update_config(
             new_max_size,
             max_files,
             compression,
             new_interval,
             max_age,
-            max_total_size
+            max_total_size,
         );
-        
+
         tracing::info!(
             "Optimized log rotation for memory pressure: max_size={} bytes, rotation_interval={} sec",
             new_max_size, new_interval
@@ -154,7 +155,7 @@ pub async fn get_log_file_size_async(log_path: &std::path::Path) -> Result<u64, 
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_log_stats_default() {
         let stats = LogStats::default();
@@ -165,7 +166,7 @@ mod tests {
         assert_eq!(stats.info_count, 0);
         assert_eq!(stats.debug_count, 0);
     }
-    
+
     #[test]
     fn test_get_log_stats() {
         let stats = get_log_stats();
@@ -176,7 +177,7 @@ mod tests {
         assert_eq!(stats.info_count, 0);
         assert_eq!(stats.debug_count, 0);
     }
-    
+
     #[test]
     fn test_log_log_stats() {
         let stats = LogStats {
@@ -189,12 +190,12 @@ mod tests {
         };
         log_log_stats(&stats);
     }
-    
+
     #[test]
     fn test_adjust_log_for_memory_pressure() {
         adjust_log_for_memory_pressure();
     }
-    
+
     #[test]
     fn test_get_log_stats_improved() {
         let stats = get_log_stats();
@@ -206,7 +207,7 @@ mod tests {
         assert!(stats.info_count >= 0);
         assert!(stats.debug_count >= 0);
     }
-    
+
     #[test]
     fn test_log_log_stats_with_metrics() {
         let stats = LogStats {
@@ -219,33 +220,33 @@ mod tests {
         };
         log_log_stats(&stats);
     }
-    
+
     #[test]
     fn test_optimize_log_rotation() {
         use rotation::LogRotator;
-        
+
         let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
-        
+
         // Test with normal conditions
         optimize_log_rotation(&mut rotator, false);
         let (max_size, _, _, interval, _, _) = rotator.get_config();
         assert_eq!(max_size, 10_000);
         assert_eq!(interval, 3600);
-        
+
         // Test with memory pressure
         optimize_log_rotation(&mut rotator, true);
         let (new_max_size, _, _, new_interval, _, _) = rotator.get_config();
         assert!(new_max_size < 10_000); // Should be reduced
         assert!(new_interval < 3600); // Should be reduced
     }
-    
+
     #[test]
     fn test_get_memory_pressure_status() {
         let pressure = get_memory_pressure_status();
         // Just verify it returns a boolean
         assert!(matches!(pressure, true | false));
     }
-    
+
     #[test]
     fn test_log_stats_calculation() {
         let stats = LogStats {
@@ -256,11 +257,11 @@ mod tests {
             info_count: 50,
             debug_count: 44,
         };
-        
+
         // Verify the stats are reasonable
         assert!(stats.total_size > 0);
         assert!(stats.total_entries > 0);
-        
+
         // Calculate average size
         let avg_size = stats.total_size as f64 / stats.total_entries as f64;
         assert!(avg_size > 0.0);

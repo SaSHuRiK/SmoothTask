@@ -21,8 +21,13 @@ use tracing::{debug, error, info, warn};
 
 use crate::actuator::{apply_priority_adjustments, plan_priority_changes, HysteresisTracker};
 use crate::api::{ApiServer, ApiServerHandle, ApiStateBuilder};
-use crate::classify::{grouper::ProcessGrouper, pattern_watcher::{PatternWatcher, PatternWatcherConfig}, rules::classify_all, rules::PatternDatabase};
 use crate::classify::pattern_watcher::PatternUpdateResult;
+use crate::classify::{
+    grouper::ProcessGrouper,
+    pattern_watcher::{PatternWatcher, PatternWatcherConfig},
+    rules::classify_all,
+    rules::PatternDatabase,
+};
 use crate::config::config_struct::NotificationBackend;
 use crate::config::watcher::ConfigWatcher;
 use crate::notifications::{Notification, NotificationManager, NotificationType};
@@ -37,8 +42,8 @@ use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{
-    collect_system_metrics, CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics,
-    PowerMetrics, PressureMetrics, ProcPaths, SystemMetrics, TemperatureMetrics,
+    collect_system_metrics, CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo,
+    NetworkMetrics, PowerMetrics, PressureMetrics, ProcPaths, SystemMetrics, TemperatureMetrics,
 };
 use crate::metrics::windows::{
     is_wayland_available, StaticWindowIntrospector, WaylandIntrospector, WindowIntrospector,
@@ -618,24 +623,31 @@ pub async fn run_daemon(
     // Инициализация менеджера пользовательских метрик
     let custom_metrics_manager: Arc<crate::metrics::custom::CustomMetricsManager> = {
         let manager = crate::metrics::custom::CustomMetricsManager::new();
-        
+
         // Загружаем пользовательские метрики из конфигурации, если они есть
         if let Some(custom_metrics_config) = initial_config.custom_metrics.as_ref() {
             for metric_config in custom_metrics_config {
                 if let Err(e) = manager.add_metric(metric_config.clone()).await {
                     warn!("Failed to add custom metric '{}': {}", metric_config.id, e);
                 } else {
-                    info!("Added custom metric: {} ({})", metric_config.name, metric_config.id);
+                    info!(
+                        "Added custom metric: {} ({})",
+                        metric_config.name, metric_config.id
+                    );
                 }
             }
         }
-        
+
         // Запускаем цикл обновления метрик
         manager.start_update_loop().await;
-        
+
         info!(
             "Custom metrics manager initialized with {} metrics",
-            manager.get_all_metrics_config().await.unwrap_or_default().len()
+            manager
+                .get_all_metrics_config()
+                .await
+                .unwrap_or_default()
+                .len()
         );
         Arc::new(manager)
     };
@@ -708,11 +720,12 @@ pub async fn run_daemon(
     let latency_collector = Arc::new(LatencyCollector::new(5000));
     let sleep_interval_ms = 5; // 5 мс согласно документации tz.md
     let mut latency_probe =
-        LatencyProbe::new(Arc::clone(&latency_collector), sleep_interval_ms, 5000)
-        .map_err(|e| {
-            error!("Failed to create latency probe: {}", e);
-            anyhow::anyhow!(e)
-        })?;
+        LatencyProbe::new(Arc::clone(&latency_collector), sleep_interval_ms, 5000).map_err(
+            |e| {
+                error!("Failed to create latency probe: {}", e);
+                anyhow::anyhow!(e)
+            },
+        )?;
 
     // Загрузка базы паттернов для классификации
     info!(
@@ -735,40 +748,47 @@ pub async fn run_daemon(
     // Инициализация PatternWatcher для автоматического обновления паттернов
     // Используем Arc<Mutex<PatternDatabase>> для совместного доступа
     let pattern_db_arc = Arc::new(Mutex::new(pattern_db.clone()));
-    
+
     // Создаём PatternWatcher только если автообновление включено в конфигурации
     let mut pattern_change_receiver: Option<watch::Receiver<PatternUpdateResult>> = None;
     let mut _pattern_watcher_handle: Option<tokio::task::JoinHandle<Result<()>>> = None;
-    
+
     if initial_config.pattern_auto_update.enabled {
         let pattern_watcher: Option<PatternWatcher>;
-        info!("Pattern auto-update is enabled (interval: {}s)", initial_config.pattern_auto_update.interval_sec);
-        
+        info!(
+            "Pattern auto-update is enabled (interval: {}s)",
+            initial_config.pattern_auto_update.interval_sec
+        );
+
         let pattern_watcher_config = PatternWatcherConfig {
             enabled: initial_config.pattern_auto_update.enabled,
             interval_sec: initial_config.pattern_auto_update.interval_sec,
             notify_on_update: initial_config.pattern_auto_update.notify_on_update,
         };
-        
+
         let watcher = PatternWatcher::new(
             &initial_config.paths.patterns_dir,
             Arc::clone(&pattern_db_arc),
-            pattern_watcher_config
-        ).with_context(|| {
+            pattern_watcher_config,
+        )
+        .with_context(|| {
             format!(
                 "Failed to initialize pattern watcher for directory: {}",
                 initial_config.paths.patterns_dir
             )
         })?;
-        
+
         pattern_watcher = Some(watcher);
         pattern_change_receiver = Some(pattern_watcher.as_ref().unwrap().change_receiver());
-        
+
         // Запускаем задачу для мониторинга изменений паттернов
         let handle = pattern_watcher.as_ref().unwrap().start_watching();
         _pattern_watcher_handle = Some(handle);
-        
-        info!("Pattern watcher started for directory: {}", initial_config.paths.patterns_dir);
+
+        info!(
+            "Pattern watcher started for directory: {}",
+            initial_config.paths.patterns_dir
+        );
     } else {
         info!("Pattern auto-update is disabled");
     }
@@ -988,7 +1008,7 @@ pub async fn run_daemon(
 
                         // 5. Обновляем конфигурацию хранилища логов
                         drop(config_guard);
-                        
+
                         // Обновляем конфигурацию ротации для LogStorage
                         // Используем разумные значения: max_entries = 1000, max_age_seconds = 3600 (1 час)
                         log_storage.update_rotation_config(1000, 3600).await;
@@ -1014,33 +1034,35 @@ pub async fn run_daemon(
         if let Some(ref mut pattern_change_rx) = pattern_change_receiver {
             if pattern_change_rx.borrow_and_update().has_changes() {
                 info!("Pattern database updated, applying changes...");
-                
+
                 // Получаем текущий результат обновления
                 let update_result = pattern_change_rx.borrow_and_update();
                 info!("Pattern update: {}", update_result.summary());
-                
+
                 // Уведомляем пользователя, если включено в конфигурации
                 let config_guard = config_arc.read().await;
                 if config_guard.pattern_auto_update.notify_on_update
-                    && notification_manager.lock().await.is_enabled() {
+                    && notification_manager.lock().await.is_enabled()
+                {
                     let notification = Notification::new(
                         NotificationType::Info,
                         "Pattern Database Updated",
                         format!("Pattern database updated: {}", update_result.summary()),
-                    ).with_details(format!(
+                    )
+                    .with_details(format!(
                         "Total patterns: {}, Changed: {}, New: {}, Removed: {}",
                         update_result.patterns_after,
                         update_result.changed_files,
                         update_result.new_files,
                         update_result.removed_files
                     ));
-                    
+
                     if let Err(e) = notification_manager.lock().await.send(&notification).await {
                         warn!("Failed to send pattern update notification: {}", e);
                     }
                 }
                 drop(config_guard);
-                
+
                 // Сбрасываем флаг изменения паттернов
                 // Это будет сделано автоматически при следующем обновлении
             }
@@ -1048,10 +1070,15 @@ pub async fn run_daemon(
 
         // Проверяем и выполняем ротацию логов приложения
         if let Some(ref mut rotator) = app_log_rotator {
-            if let Ok(current_size) = crate::logging::app_rotation::get_app_log_file_size(rotator.log_path()) {
+            if let Ok(current_size) =
+                crate::logging::app_rotation::get_app_log_file_size(rotator.log_path())
+            {
                 if let Ok(needs_rotation) = rotator.needs_rotation(current_size) {
                     if needs_rotation {
-                        info!("Performing application log rotation (current_size: {} bytes)", current_size);
+                        info!(
+                            "Performing application log rotation (current_size: {} bytes)",
+                            current_size
+                        );
                         if let Err(e) = rotator.rotate_log() {
                             error!("Failed to rotate application log: {}", e);
                         } else {

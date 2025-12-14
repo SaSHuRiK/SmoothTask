@@ -3,7 +3,6 @@
 //! Этот модуль содержит бенчмарки для измерения производительности
 //! ML-классификатора, включая извлечение фич и классификацию процессов.
 
-
 use criterion::{criterion_group, criterion_main, Criterion};
 use smoothtask_core::classify::ml_classifier::{create_ml_classifier, MLClassifier};
 use smoothtask_core::config::config_struct::{MLClassifierConfig, ModelType};
@@ -244,7 +243,7 @@ fn benchmark_cache_capacity_adjustment(c: &mut Criterion) {
 criterion_group!(
     name = ml_classifier_benches;
     config = Criterion::default().sample_size(10);
-    targets = 
+    targets =
         benchmark_stub_classifier,
         benchmark_feature_extraction,
         benchmark_feature_extraction_cached,

@@ -7,16 +7,18 @@ use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
 };
+use chrono::Utc;
 use serde_json::{json, Value};
 use std::time::Instant;
-use chrono::Utc;
 
 use crate::api::server::ApiState;
 
 /// Обработчик для endpoint `/api/custom-metrics`.
 ///
 /// Возвращает все пользовательские метрики и их текущие значения.
-pub async fn custom_metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+pub async fn custom_metrics_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
     // Начинаем отслеживание производительности
     let _start_time = Instant::now();
 
@@ -137,7 +139,7 @@ pub async fn custom_metrics_handler(State(state): State<ApiState>) -> Result<Jso
             "custom_metrics": [],
             "count": 0,
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }
 
@@ -167,14 +169,22 @@ pub async fn custom_metric_by_id_handler(
     match &state.custom_metrics_manager {
         Some(manager) => {
             let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
-                tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
+                tracing::error!(
+                    "Failed to get custom metric config for '{}': {}",
+                    metric_id,
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
             match config {
                 Some(config) => {
                     let value = manager.get_metric_value(&metric_id).await.map_err(|e| {
-                        tracing::error!("Failed to get custom metric value for '{}': {}", metric_id, e);
+                        tracing::error!(
+                            "Failed to get custom metric value for '{}': {}",
+                            metric_id,
+                            e
+                        );
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
 
@@ -270,13 +280,13 @@ pub async fn custom_metric_by_id_handler(
                 None => Ok(Json(json!({
                     "status": "error",
                     "message": format!("Custom metric '{}' not found", metric_id)
-                })))
+                }))),
             }
         }
         None => Ok(Json(json!({
             "status": "error",
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }
 
@@ -307,7 +317,11 @@ pub async fn custom_metric_update_handler(
         Some(manager) => {
             // Проверяем, что метрика существует
             let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
-                tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
+                tracing::error!(
+                    "Failed to get custom metric config for '{}': {}",
+                    metric_id,
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
@@ -319,10 +333,15 @@ pub async fn custom_metric_update_handler(
                     match result {
                         Ok(_) => {
                             // Получаем обновленное значение
-                            let value = manager.get_metric_value(&metric_id).await.map_err(|e| {
-                                tracing::error!("Failed to get updated custom metric value for '{}': {}", metric_id, e);
-                                StatusCode::INTERNAL_SERVER_ERROR
-                            })?;
+                            let value =
+                                manager.get_metric_value(&metric_id).await.map_err(|e| {
+                                    tracing::error!(
+                                        "Failed to get updated custom metric value for '{}': {}",
+                                        metric_id,
+                                        e
+                                    );
+                                    StatusCode::INTERNAL_SERVER_ERROR
+                                })?;
 
                             let value_json = value.map(|value| {
                                 json!({
@@ -355,19 +374,19 @@ pub async fn custom_metric_update_handler(
                         Err(e) => Ok(Json(json!({
                             "status": "error",
                             "message": format!("Failed to update custom metric '{}': {}", metric_id, e)
-                        })))
+                        }))),
                     }
                 }
                 None => Ok(Json(json!({
                     "status": "error",
                     "message": format!("Custom metric '{}' not found", metric_id)
-                })))
+                }))),
             }
         }
         None => Ok(Json(json!({
             "status": "error",
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }
 
@@ -396,7 +415,8 @@ pub async fn custom_metric_add_handler(
     }
 
     // Валидируем payload
-    if let Err(_status_code) = crate::api::validation::validate_custom_metric_add_payload(&payload) {
+    if let Err(_status_code) = crate::api::validation::validate_custom_metric_add_payload(&payload)
+    {
         return Ok(Json(json!({
             "status": "error",
             "message": "Invalid payload for adding custom metric"
@@ -406,7 +426,7 @@ pub async fn custom_metric_add_handler(
     match &state.custom_metrics_manager {
         Some(manager) => {
             // Пробуем разобрать конфигурацию метрики из JSON
-            let config_result: Result<crate::metrics::custom::CustomMetricConfig, _> = 
+            let config_result: Result<crate::metrics::custom::CustomMetricConfig, _> =
                 serde_json::from_value(payload);
 
             match config_result {
@@ -427,19 +447,19 @@ pub async fn custom_metric_add_handler(
                         Err(e) => Ok(Json(json!({
                             "status": "error",
                             "message": format!("Failed to add custom metric '{}': {}", metric_id, e)
-                        })))
+                        }))),
                     }
                 }
                 Err(e) => Ok(Json(json!({
                     "status": "error",
                     "message": format!("Invalid custom metric configuration: {}", e)
-                })))
+                }))),
             }
         }
         None => Ok(Json(json!({
             "status": "error",
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }
 
@@ -481,13 +501,13 @@ pub async fn custom_metric_remove_handler(
                 Err(e) => Ok(Json(json!({
                     "status": "error",
                     "message": format!("Failed to remove custom metric '{}': {}", metric_id, e)
-                })))
+                }))),
             }
         }
         None => Ok(Json(json!({
             "status": "error",
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }
 
@@ -518,14 +538,18 @@ pub async fn custom_metric_enable_handler(
         Some(manager) => {
             // Получаем текущую конфигурацию
             let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
-                tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
+                tracing::error!(
+                    "Failed to get custom metric config for '{}': {}",
+                    metric_id,
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
             match config {
                 Some(mut config) => {
                     config.enabled = true;
-                    
+
                     // Удаляем старую метрику и добавляем новую с обновленной конфигурацией
                     if let Err(e) = manager.remove_metric(&metric_id).await {
                         return Ok(Json(json!({
@@ -533,7 +557,7 @@ pub async fn custom_metric_enable_handler(
                             "message": format!("Failed to remove old metric config for '{}': {}", metric_id, e)
                         })));
                     }
-                    
+
                     if let Err(e) = manager.add_metric(config).await {
                         return Ok(Json(json!({
                             "status": "error",
@@ -551,13 +575,13 @@ pub async fn custom_metric_enable_handler(
                 None => Ok(Json(json!({
                     "status": "error",
                     "message": format!("Custom metric '{}' not found", metric_id)
-                })))
+                }))),
             }
         }
         None => Ok(Json(json!({
             "status": "error",
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }
 
@@ -588,14 +612,18 @@ pub async fn custom_metric_disable_handler(
         Some(manager) => {
             // Получаем текущую конфигурацию
             let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
-                tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
+                tracing::error!(
+                    "Failed to get custom metric config for '{}': {}",
+                    metric_id,
+                    e
+                );
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
             match config {
                 Some(mut config) => {
                     config.enabled = false;
-                    
+
                     // Удаляем старую метрику и добавляем новую с обновленной конфигурацией
                     if let Err(e) = manager.remove_metric(&metric_id).await {
                         return Ok(Json(json!({
@@ -603,7 +631,7 @@ pub async fn custom_metric_disable_handler(
                             "message": format!("Failed to remove old metric config for '{}': {}", metric_id, e)
                         })));
                     }
-                    
+
                     if let Err(e) = manager.add_metric(config).await {
                         return Ok(Json(json!({
                             "status": "error",
@@ -621,12 +649,12 @@ pub async fn custom_metric_disable_handler(
                 None => Ok(Json(json!({
                     "status": "error",
                     "message": format!("Custom metric '{}' not found", metric_id)
-                })))
+                }))),
             }
         }
         None => Ok(Json(json!({
             "status": "error",
             "message": "Custom metrics manager not available (daemon may not be running or feature not enabled)"
-        })))
+        }))),
     }
 }

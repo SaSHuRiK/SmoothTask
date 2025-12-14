@@ -5,8 +5,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use smoothtask_core::config::config_struct::{
-    CacheIntervals, Config, LoggingConfig, MLClassifierConfig, ModelConfig, ModelType, 
-    NotificationConfig, PatternAutoUpdateConfig, Paths, PolicyMode, Thresholds,
+    CacheIntervals, Config, LoggingConfig, MLClassifierConfig, ModelConfig, ModelType,
+    NotificationConfig, Paths, PatternAutoUpdateConfig, PolicyMode, Thresholds,
 };
 use smoothtask_core::metrics::ebpf::EbpfConfig;
 use smoothtask_core::metrics::process::collect_process_metrics;

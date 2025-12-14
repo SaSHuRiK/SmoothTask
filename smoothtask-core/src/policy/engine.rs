@@ -163,17 +163,26 @@ impl PolicyEngine {
             } else {
                 // Модель отключена в конфигурации, используем заглушку
                 tracing::info!("ML-модель отключена в конфигурации, используется StubRanker");
-                tracing::info!("Для включения ML-ранжирования установите model.enabled = true в конфигурации");
+                tracing::info!(
+                    "Для включения ML-ранжирования установите model.enabled = true в конфигурации"
+                );
                 Some(Box::new(crate::model::ranker::StubRanker::new()))
             }
         } else {
-            tracing::debug!("Режим policy_mode = {:?}, ML-ранкер не используется", config.policy_mode);
+            tracing::debug!(
+                "Режим policy_mode = {:?}, ML-ранкер не используется",
+                config.policy_mode
+            );
             None
         };
-        
+
         let dynamic_scaler = DynamicPriorityScaler::new(config.clone());
-        
-        Self { config, ranker, dynamic_scaler }
+
+        Self {
+            config,
+            ranker,
+            dynamic_scaler,
+        }
     }
 
     /// Создать Policy Engine с явно заданным ранкером (для тестирования).
@@ -304,9 +313,11 @@ impl PolicyEngine {
             .iter()
             .map(|(app_group_id, result)| (app_group_id.clone(), result.priority_class))
             .collect();
-        
-        let scaled_priorities = self.dynamic_scaler.scale_priorities(snapshot, &base_priorities);
-        
+
+        let scaled_priorities = self
+            .dynamic_scaler
+            .scale_priorities(snapshot, &base_priorities);
+
         // Обновляем результаты с учетом динамического масштабирования
         let mut final_results = std::collections::HashMap::new();
         for (app_group_id, result) in results {
@@ -1647,7 +1658,8 @@ mod tests {
         terminal_process.gid = 1000;
         terminal_process.exe = Some("/usr/bin/bash".to_string());
         terminal_process.cmdline = Some("bash".to_string());
-        terminal_process.cgroup_path = Some("/user.slice/user-1000.slice/session-1.scope".to_string());
+        terminal_process.cgroup_path =
+            Some("/user.slice/user-1000.slice/session-1.scope".to_string());
         terminal_process.app_group_id = Some("terminal".to_string());
         terminal_process.state = "S".to_string();
         terminal_process.start_time = 0;
@@ -1710,7 +1722,7 @@ mod tests {
         let mut snapshot = create_test_snapshot();
 
         // Создаем несколько групп с разными характеристиками
-        
+
         // Группа 1: Фокусный GUI (должен быть Interactive)
         let focused_gui_group = AppGroupRecord {
             app_group_id: "focused-gui".to_string(),
@@ -1827,12 +1839,7 @@ mod tests {
             network_data_source: None,
         };
 
-        snapshot.app_groups = vec![
-            focused_gui_group,
-            system_group,
-            updater_group,
-            normal_group,
-        ];
+        snapshot.app_groups = vec![focused_gui_group, system_group, updater_group, normal_group];
 
         // Добавляем системный процесс для защиты
         let mut system_process = ProcessRecord::default();
@@ -1860,10 +1867,22 @@ mod tests {
         let results = engine.evaluate_snapshot(&snapshot);
 
         // Проверяем, что каждая группа получила ожидаемый приоритет
-        assert_eq!(results.get("focused-gui").unwrap().priority_class, PriorityClass::Interactive);
-        assert_eq!(results.get("systemd").unwrap().priority_class, PriorityClass::Normal);
-        assert_eq!(results.get("updater").unwrap().priority_class, PriorityClass::Background);
-        assert_eq!(results.get("normal").unwrap().priority_class, PriorityClass::Normal);
+        assert_eq!(
+            results.get("focused-gui").unwrap().priority_class,
+            PriorityClass::Interactive
+        );
+        assert_eq!(
+            results.get("systemd").unwrap().priority_class,
+            PriorityClass::Normal
+        );
+        assert_eq!(
+            results.get("updater").unwrap().priority_class,
+            PriorityClass::Background
+        );
+        assert_eq!(
+            results.get("normal").unwrap().priority_class,
+            PriorityClass::Normal
+        );
     }
 
     #[test]

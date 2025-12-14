@@ -47,7 +47,7 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             log_cleanup_interval_sec: 3600,
         },
         paths: Paths {
-                log_file_path: "smoothtask.log".to_string(),
+            log_file_path: "smoothtask.log".to_string(),
             snapshot_db_path,
             patterns_dir: patterns_dir.to_string(),
             api_listen_addr: None, // API сервер отключен по умолчанию в тестах

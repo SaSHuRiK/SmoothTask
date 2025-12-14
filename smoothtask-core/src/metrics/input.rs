@@ -89,7 +89,7 @@ impl InputActivityTracker {
         }
         self.metrics(now)
     }
-    
+
     /// Получить количество ошибок чтения устройств.
     ///
     /// Используется для диагностики и мониторинга.
@@ -282,7 +282,7 @@ impl InputTracker {
             Self::Simple(tracker) => tracker.set_idle_threshold(new_threshold),
         }
     }
-    
+
     /// Получить количество ошибок чтения устройств.
     ///
     /// Используется для диагностики и мониторинга.
@@ -422,7 +422,7 @@ impl EvdevInputTracker {
                     if e.kind() != std::io::ErrorKind::WouldBlock {
                         // Другие ошибки (например, устройство отключено) логируем, но продолжаем
                         self.activity_tracker.error_count += 1;
-                        
+
                         // Улучшенные сообщения об ошибках с практическими рекомендациями
                         match e.kind() {
                             std::io::ErrorKind::PermissionDenied => {
@@ -431,17 +431,21 @@ impl EvdevInputTracker {
                             std::io::ErrorKind::NotFound => {
                                 warn!("Input device not found: {}. Device may have been disconnected. Check /dev/input/event* devices", e);
                             }
-                            std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted => {
+                            std::io::ErrorKind::ConnectionReset
+                            | std::io::ErrorKind::ConnectionAborted => {
                                 warn!("Input device connection error: {}. Device may have been disconnected. Check device connections and try reconnecting", e);
                             }
                             _ => {
                                 warn!("Error reading from input device: {}. Check device permissions and connections. If issue persists, try restarting the daemon", e);
                             }
                         }
-                        
+
                         // Логируем количество ошибок для диагностики
                         if self.activity_tracker.error_count.is_multiple_of(10) {
-                            warn!("Input device error count reached {}: {}", self.activity_tracker.error_count, e);
+                            warn!(
+                                "Input device error count reached {}: {}",
+                                self.activity_tracker.error_count, e
+                            );
                         }
                     }
                 }
@@ -506,11 +510,12 @@ impl EvdevInputTracker {
                 )
             }
         })?;
-        
+
         for entry in entries {
             let entry = entry.map_err(|e| {
                 anyhow::anyhow!(
-                    "Failed to read input device entry: {}. Check /dev/input directory permissions", e
+                    "Failed to read input device entry: {}. Check /dev/input directory permissions",
+                    e
                 )
             })?;
             let path = entry.path();
@@ -569,7 +574,7 @@ impl EvdevInputTracker {
     pub fn set_idle_threshold(&mut self, new_threshold: Duration) {
         self.activity_tracker.set_idle_threshold(new_threshold);
     }
-    
+
     /// Получить количество ошибок чтения устройств.
     ///
     /// Используется для диагностики и мониторинга.
@@ -1273,45 +1278,45 @@ mod tests {
         let metrics = tracker.metrics(later);
         assert!(!metrics.user_active);
     }
-    
+
     #[test]
     fn test_input_tracker_error_counting() {
         // Тест для проверки счетчика ошибок
         let tracker = InputActivityTracker::new(Duration::from_secs(5));
         assert_eq!(tracker.error_count(), 0);
-        
+
         // Проверяем, что счетчик ошибок доступен через InputTracker
         let input_tracker = InputTracker::new(Duration::from_secs(5));
         let error_count = input_tracker.error_count();
         assert_eq!(error_count, 0);
     }
-    
+
     #[test]
     fn test_input_tracker_graceful_degradation() {
         // Тест для проверки graceful degradation
         // При отсутствии устройств должны возвращаться дефолтные метрики
         let tracker = InputActivityTracker::new(Duration::from_secs(5));
         let metrics = tracker.metrics(Instant::now());
-        
+
         // При отсутствии событий должны возвращаться дефолтные значения
         assert!(!metrics.user_active);
         assert_eq!(metrics.time_since_last_input_ms, None);
     }
-    
+
     #[test]
     fn test_input_tracker_error_recovery() {
         // Тест для проверки восстановления после ошибок
         let mut tracker = InputActivityTracker::new(Duration::from_secs(5));
-        
+
         // Симулируем активность
         let now = Instant::now();
         let key = InputEvent::new(EventType::KEY, Key::KEY_A.code(), 1);
         let metrics = tracker.ingest_events([key].iter(), now);
-        
+
         // После активности пользователь должен быть активным
         assert!(metrics.user_active);
         assert_eq!(metrics.time_since_last_input_ms, Some(0));
-        
+
         // Проверяем, что счетчик ошибок доступен
         assert_eq!(tracker.error_count(), 0);
     }

@@ -11,17 +11,17 @@ use smoothtask_core::classify::ml_classifier::{
     create_ml_classifier, MLClassificationResult, MLClassifier,
 };
 #[cfg(any(feature = "catboost", feature = "onnx"))]
-use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
-#[cfg(any(feature = "catboost", feature = "onnx"))]
 use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherConfig};
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use smoothtask_core::config::config_struct::{MLClassifierConfig, ModelType};
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use smoothtask_core::logging::snapshots::ProcessRecord;
 #[cfg(any(feature = "catboost", feature = "onnx"))]
-use std::path::Path;
-#[cfg(any(feature = "catboost", feature = "onnx"))]
 use std::collections::HashSet;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use std::path::Path;
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use std::sync::{Arc, Mutex};
 #[cfg(any(feature = "catboost", feature = "onnx"))]

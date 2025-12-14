@@ -584,7 +584,10 @@ apps:
         };
 
         assert!(result.has_changes());
-        assert_eq!(result.summary(), "Updated: 1 changed, 2 new, 0 removed (5 patterns)");
+        assert_eq!(
+            result.summary(),
+            "Updated: 1 changed, 2 new, 0 removed (5 patterns)"
+        );
 
         let no_change_result = PatternUpdateResult {
             total_files: 1,

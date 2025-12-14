@@ -114,171 +114,207 @@ impl MLClassifierConfig {
     }
 }
 
-    #[test]
-    fn test_ml_classifier_config_validation() {
-        // Тест валидной конфигурации
-        let valid_config = MLClassifierConfig {
-            enabled: true,
-            model_path: "models/test.json".to_string(),
-            confidence_threshold: 0.7,
-            model_type: ModelType::Catboost,
-        };
-        assert!(valid_config.validate().is_ok());
+#[test]
+fn test_ml_classifier_config_validation() {
+    // Тест валидной конфигурации
+    let valid_config = MLClassifierConfig {
+        enabled: true,
+        model_path: "models/test.json".to_string(),
+        confidence_threshold: 0.7,
+        model_type: ModelType::Catboost,
+    };
+    assert!(valid_config.validate().is_ok());
 
-        // Тест невалидного confidence_threshold (слишком высокий)
-        let mut invalid_config = valid_config.clone();
-        invalid_config.confidence_threshold = 1.5;
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be in the [0.0, 1.0] range"));
+    // Тест невалидного confidence_threshold (слишком высокий)
+    let mut invalid_config = valid_config.clone();
+    invalid_config.confidence_threshold = 1.5;
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must be in the [0.0, 1.0] range"));
 
-        // Тест невалидного confidence_threshold (слишком низкий)
-        invalid_config.confidence_threshold = -0.1;
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be in the [0.0, 1.0] range"));
+    // Тест невалидного confidence_threshold (слишком низкий)
+    invalid_config.confidence_threshold = -0.1;
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must be in the [0.0, 1.0] range"));
 
-        // Тест пустого model_path
-        invalid_config = valid_config.clone();
-        invalid_config.model_path = "".to_string();
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+    // Тест пустого model_path
+    invalid_config = valid_config.clone();
+    invalid_config.model_path = "".to_string();
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must not be empty"));
 
-        // Тест model_path с пробелами
-        invalid_config.model_path = "   ".to_string();
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
-    }
+    // Тест model_path с пробелами
+    invalid_config.model_path = "   ".to_string();
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must not be empty"));
+}
 
-    #[test]
-    fn test_pattern_auto_update_config_validation() {
-        // Тест валидной конфигурации
-        let valid_config = PatternAutoUpdateConfig {
-            enabled: true,
-            interval_sec: 60,
-            notify_on_update: true,
-        };
-        assert!(valid_config.validate().is_ok());
+#[test]
+fn test_pattern_auto_update_config_validation() {
+    // Тест валидной конфигурации
+    let valid_config = PatternAutoUpdateConfig {
+        enabled: true,
+        interval_sec: 60,
+        notify_on_update: true,
+    };
+    assert!(valid_config.validate().is_ok());
 
-        // Тест невалидного interval_sec (слишком маленький)
-        let invalid_config = PatternAutoUpdateConfig {
-            enabled: true,
-            interval_sec: 5,
-            notify_on_update: true,
-        };
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be >= 10 seconds"));
+    // Тест невалидного interval_sec (слишком маленький)
+    let invalid_config = PatternAutoUpdateConfig {
+        enabled: true,
+        interval_sec: 5,
+        notify_on_update: true,
+    };
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must be >= 10 seconds"));
 
-        // Тест минимального валидного interval_sec
-        let edge_config = PatternAutoUpdateConfig {
-            enabled: true,
-            interval_sec: 10,
-            notify_on_update: true,
-        };
-        assert!(edge_config.validate().is_ok());
-    }
+    // Тест минимального валидного interval_sec
+    let edge_config = PatternAutoUpdateConfig {
+        enabled: true,
+        interval_sec: 10,
+        notify_on_update: true,
+    };
+    assert!(edge_config.validate().is_ok());
+}
 
-    #[test]
-    fn test_notification_config_validation() {
-        // Тест валидной конфигурации
-        let valid_config = NotificationConfig {
-            enabled: true,
-            backend: NotificationBackend::Libnotify,
-            app_name: "SmoothTask".to_string(),
-            min_level: NotificationLevel::Info,
-        };
-        assert!(valid_config.validate().is_ok());
+#[test]
+fn test_notification_config_validation() {
+    // Тест валидной конфигурации
+    let valid_config = NotificationConfig {
+        enabled: true,
+        backend: NotificationBackend::Libnotify,
+        app_name: "SmoothTask".to_string(),
+        min_level: NotificationLevel::Info,
+    };
+    assert!(valid_config.validate().is_ok());
 
-        // Тест пустого app_name
-        let invalid_config = NotificationConfig {
-            enabled: true,
-            backend: NotificationBackend::Libnotify,
-            app_name: "".to_string(),
-            min_level: NotificationLevel::Info,
-        };
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+    // Тест пустого app_name
+    let invalid_config = NotificationConfig {
+        enabled: true,
+        backend: NotificationBackend::Libnotify,
+        app_name: "".to_string(),
+        min_level: NotificationLevel::Info,
+    };
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must not be empty"));
 
-        // Тест app_name с пробелами
-        let invalid_config = NotificationConfig {
-            enabled: true,
-            backend: NotificationBackend::Libnotify,
-            app_name: "   ".to_string(),
-            min_level: NotificationLevel::Info,
-        };
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
-    }
+    // Тест app_name с пробелами
+    let invalid_config = NotificationConfig {
+        enabled: true,
+        backend: NotificationBackend::Libnotify,
+        app_name: "   ".to_string(),
+        min_level: NotificationLevel::Info,
+    };
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must not be empty"));
+}
 
-    #[test]
-    fn test_model_config_validation() {
-        // Тест валидной конфигурации
-        let valid_config = ModelConfig {
-            enabled: true,
-            model_path: "models/ranker.onnx".to_string(),
-            model_type: ModelType::Onnx,
-        };
-        assert!(valid_config.validate().is_ok());
+#[test]
+fn test_model_config_validation() {
+    // Тест валидной конфигурации
+    let valid_config = ModelConfig {
+        enabled: true,
+        model_path: "models/ranker.onnx".to_string(),
+        model_type: ModelType::Onnx,
+    };
+    assert!(valid_config.validate().is_ok());
 
-        // Тест пустого model_path
-        let invalid_config = ModelConfig {
-            enabled: true,
-            model_path: "".to_string(),
-            model_type: ModelType::Onnx,
-        };
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+    // Тест пустого model_path
+    let invalid_config = ModelConfig {
+        enabled: true,
+        model_path: "".to_string(),
+        model_type: ModelType::Onnx,
+    };
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must not be empty"));
 
-        // Тест model_path с пробелами
-        let invalid_config = ModelConfig {
-            enabled: true,
-            model_path: "   ".to_string(),
-            model_type: ModelType::Onnx,
-        };
-        let result = invalid_config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
-    }
+    // Тест model_path с пробелами
+    let invalid_config = ModelConfig {
+        enabled: true,
+        model_path: "   ".to_string(),
+        model_type: ModelType::Onnx,
+    };
+    let result = invalid_config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("must not be empty"));
+}
 
-    #[test]
-    fn test_full_config_validation() {
-        // Тест полной конфигурации с валидными значениями
-        let mut config = Config::default();
-        assert!(config.validate().is_ok());
+#[test]
+fn test_full_config_validation() {
+    // Тест полной конфигурации с валидными значениями
+    let mut config = Config::default();
+    assert!(config.validate().is_ok());
 
-        // Тест с невалидным ml_classifier
-        config.ml_classifier.confidence_threshold = 1.5;
-        let result = config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("ml_classifier.confidence_threshold"));
+    // Тест с невалидным ml_classifier
+    config.ml_classifier.confidence_threshold = 1.5;
+    let result = config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("ml_classifier.confidence_threshold"));
 
-        // Тест с невалидным pattern_auto_update
-        config = Config::default();
-        config.pattern_auto_update.interval_sec = 5;
-        let result = config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("pattern_auto_update.interval_sec"));
+    // Тест с невалидным pattern_auto_update
+    config = Config::default();
+    config.pattern_auto_update.interval_sec = 5;
+    let result = config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("pattern_auto_update.interval_sec"));
 
-        // Тест с невалидным notification
-        config = Config::default();
-        config.notifications.app_name = "".to_string();
-        let result = config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("notifications.app_name"));
+    // Тест с невалидным notification
+    config = Config::default();
+    config.notifications.app_name = "".to_string();
+    let result = config.validate();
+    assert!(result.is_err());
+    assert!(result
+        .unwrap_err()
+        .to_string()
+        .contains("notifications.app_name"));
 
-        // Тест с невалидным model
-        config = Config::default();
-        config.model.model_path = "".to_string();
-        let result = config.validate();
-        assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("model.model_path"));
-    }
+    // Тест с невалидным model
+    config = Config::default();
+    config.model.model_path = "".to_string();
+    let result = config.validate();
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("model.model_path"));
+}
 
 /// Конфигурация логирования для системы.
 ///
@@ -5519,26 +5555,38 @@ thresholds:
         invalid_config.confidence_threshold = 1.5;
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be in the [0.0, 1.0] range"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be in the [0.0, 1.0] range"));
 
         // Тест невалидного confidence_threshold (слишком низкий)
         invalid_config.confidence_threshold = -0.1;
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be in the [0.0, 1.0] range"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be in the [0.0, 1.0] range"));
 
         // Тест пустого model_path
         invalid_config = valid_config.clone();
         invalid_config.model_path = "".to_string();
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
 
         // Тест model_path с пробелами
         invalid_config.model_path = "   ".to_string();
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
     }
 
     #[test]
@@ -5559,7 +5607,10 @@ thresholds:
         };
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must be >= 10 seconds"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must be >= 10 seconds"));
 
         // Тест минимального валидного interval_sec
         let edge_config = PatternAutoUpdateConfig {
@@ -5590,7 +5641,10 @@ thresholds:
         };
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
 
         // Тест app_name с пробелами
         let invalid_config = NotificationConfig {
@@ -5601,7 +5655,10 @@ thresholds:
         };
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
     }
 
     #[test]
@@ -5622,7 +5679,10 @@ thresholds:
         };
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
 
         // Тест model_path с пробелами
         let invalid_config = ModelConfig {
@@ -5632,7 +5692,10 @@ thresholds:
         };
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("must not be empty"));
     }
 
     #[test]
@@ -5699,7 +5762,10 @@ thresholds:
         invalid_config.pattern_auto_update.interval_sec = 5;
         let result = invalid_config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("Pattern auto-update"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("Pattern auto-update"));
 
         // Тест невалидной конфигурации (пустой app_name)
         invalid_config = valid_config.clone();

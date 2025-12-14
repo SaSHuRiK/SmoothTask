@@ -58,8 +58,7 @@ pub struct NetworkInterfaceStats {
 }
 
 /// Network interface type
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub enum NetworkInterfaceType {
     Ethernet,
     Wifi,
@@ -343,7 +342,7 @@ impl NetworkMonitor {
         if self.interface_cache.is_empty() {
             return false;
         }
-        
+
         match self.last_cache_update.elapsed() {
             Ok(elapsed) => elapsed < self.cache_ttl,
             Err(_) => false, // Cache is too old or system time issue
@@ -398,22 +397,29 @@ impl NetworkMonitor {
     fn collect_interface_stats_optimized(&mut self) -> Result<Vec<NetworkInterfaceStats>> {
         // Check if we can use cached interface data
         if self.is_interface_cache_valid() {
-            tracing::debug!("Using cached interface data (cache TTL: {}s)", self.cache_ttl.as_secs());
+            tracing::debug!(
+                "Using cached interface data (cache TTL: {}s)",
+                self.cache_ttl.as_secs()
+            );
             return Ok(self.interface_cache.values().cloned().collect());
         }
 
         // Cache is invalid or empty, collect fresh data
         let interfaces = self.collect_interface_stats()?;
-        
+
         // Update cache with fresh data
         self.interface_cache.clear();
         for iface in &interfaces {
-            self.interface_cache.insert(iface.name.clone(), iface.clone());
+            self.interface_cache
+                .insert(iface.name.clone(), iface.clone());
         }
         self.last_cache_update = SystemTime::now();
-        
-        tracing::debug!("Updated interface cache with {} interfaces", interfaces.len());
-        
+
+        tracing::debug!(
+            "Updated interface cache with {} interfaces",
+            interfaces.len()
+        );
+
         Ok(interfaces)
     }
 
@@ -433,11 +439,12 @@ impl NetworkMonitor {
         interfaces.reserve(8); // Most systems have 2-8 interfaces
 
         // Parse interface statistics with validation using optimized parsing
-        for (line_num, line) in proc_net_dev.lines().skip(2).enumerate() { // Skip header lines
+        for (line_num, line) in proc_net_dev.lines().skip(2).enumerate() {
+            // Skip header lines
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 17 {
                 let name = parts[0].trim_end_matches(':').to_string();
-                
+
                 // Validate interface name
                 if name.is_empty() {
                     tracing::warn!("Empty interface name found at line {}", line_num + 2);
@@ -454,14 +461,20 @@ impl NetworkMonitor {
                 // Parse numeric values with error handling using fast parsing
                 let rx_bytes = self.parse_u64_fast(parts[1], &name, "rx_bytes", line_num + 2)?;
                 let tx_bytes = self.parse_u64_fast(parts[9], &name, "tx_bytes", line_num + 2)?;
-                let rx_packets = self.parse_u64_fast(parts[2], &name, "rx_packets", line_num + 2)?;
-                let tx_packets = self.parse_u64_fast(parts[10], &name, "tx_packets", line_num + 2)?;
+                let rx_packets =
+                    self.parse_u64_fast(parts[2], &name, "rx_packets", line_num + 2)?;
+                let tx_packets =
+                    self.parse_u64_fast(parts[10], &name, "tx_packets", line_num + 2)?;
                 let rx_errors = self.parse_u64_fast(parts[3], &name, "rx_errors", line_num + 2)?;
                 let tx_errors = self.parse_u64_fast(parts[11], &name, "tx_errors", line_num + 2)?;
-                let rx_dropped = self.parse_u64_fast(parts[4], &name, "rx_dropped", line_num + 2)?;
-                let tx_dropped = self.parse_u64_fast(parts[12], &name, "tx_dropped", line_num + 2)?;
-                let rx_overruns = self.parse_u64_fast(parts[5], &name, "rx_overruns", line_num + 2)?;
-                let tx_overruns = self.parse_u64_fast(parts[13], &name, "tx_overruns", line_num + 2)?;
+                let rx_dropped =
+                    self.parse_u64_fast(parts[4], &name, "rx_dropped", line_num + 2)?;
+                let tx_dropped =
+                    self.parse_u64_fast(parts[12], &name, "tx_dropped", line_num + 2)?;
+                let rx_overruns =
+                    self.parse_u64_fast(parts[5], &name, "rx_overruns", line_num + 2)?;
+                let tx_overruns =
+                    self.parse_u64_fast(parts[13], &name, "tx_overruns", line_num + 2)?;
 
                 let mut iface = NetworkInterfaceStats {
                     name: name.clone(),
@@ -497,7 +510,11 @@ impl NetworkMonitor {
 
                 interfaces.push(iface);
             } else {
-                tracing::debug!("Skipping line {}: insufficient data (expected >= 17 fields, got {})", line_num + 2, parts.len());
+                tracing::debug!(
+                    "Skipping line {}: insufficient data (expected >= 17 fields, got {})",
+                    line_num + 2,
+                    parts.len()
+                );
             }
         }
 
@@ -509,7 +526,13 @@ impl NetworkMonitor {
     }
 
     /// Fast u64 parsing with error handling
-    fn parse_u64_fast(&self, s: &str, interface_name: &str, field_name: &str, line_num: usize) -> Result<u64> {
+    fn parse_u64_fast(
+        &self,
+        s: &str,
+        interface_name: &str,
+        field_name: &str,
+        line_num: usize,
+    ) -> Result<u64> {
         s.parse::<u64>()
             .with_context(|| {
                 format!(
@@ -564,7 +587,11 @@ impl NetworkMonitor {
                             if let Ok(ip) = ip_str.parse::<Ipv4Addr>() {
                                 addresses.push(IpAddr::V4(ip));
                             } else {
-                                tracing::debug!("Failed to parse IPv4 address '{}' for interface {}", ip_str, name);
+                                tracing::debug!(
+                                    "Failed to parse IPv4 address '{}' for interface {}",
+                                    ip_str,
+                                    name
+                                );
                             }
                         }
                     }
@@ -585,7 +612,11 @@ impl NetworkMonitor {
                             if let Ok(ip) = ip_str.parse::<Ipv6Addr>() {
                                 addresses.push(IpAddr::V6(ip));
                             } else {
-                                tracing::debug!("Failed to parse IPv6 address '{}' for interface {}", ip_str, name);
+                                tracing::debug!(
+                                    "Failed to parse IPv6 address '{}' for interface {}",
+                                    ip_str,
+                                    name
+                                );
                             }
                         }
                     }
@@ -603,15 +634,13 @@ impl NetworkMonitor {
     fn get_interface_speed_optimized(&self, name: &str) -> Option<u64> {
         let speed_path = format!("/sys/class/net/{}/speed", name);
         match fs::read_to_string(speed_path) {
-            Ok(s) => {
-                match s.trim().parse::<u64>() {
-                    Ok(speed) => Some(speed),
-                    Err(e) => {
-                        tracing::debug!("Failed to parse interface speed for {}: {}", name, e);
-                        None
-                    }
+            Ok(s) => match s.trim().parse::<u64>() {
+                Ok(speed) => Some(speed),
+                Err(e) => {
+                    tracing::debug!("Failed to parse interface speed for {}: {}", name, e);
+                    None
                 }
-            }
+            },
             Err(e) => {
                 tracing::debug!("Failed to read interface speed for {}: {}", name, e);
                 None
@@ -658,8 +687,6 @@ impl NetworkMonitor {
         }
     }
 
-
-
     /// Collect protocol statistics from /proc/net/snmp
     fn collect_protocol_stats(&self) -> Result<NetworkProtocolStats> {
         let mut stats = NetworkProtocolStats::default();
@@ -694,7 +721,11 @@ impl NetworkMonitor {
                                     )
                                 })?;
                         } else {
-                            tracing::debug!("Insufficient TCP data at line {}: expected >= 16 fields, got {}", line_num, parts.len());
+                            tracing::debug!(
+                                "Insufficient TCP data at line {}: expected >= 16 fields, got {}",
+                                line_num,
+                                parts.len()
+                            );
                         }
                     }
                     "Udp" => {
@@ -707,7 +738,11 @@ impl NetworkMonitor {
                                     )
                                 })?;
                         } else {
-                            tracing::debug!("Insufficient UDP data at line {}: expected >= 4 fields, got {}", line_num, parts.len());
+                            tracing::debug!(
+                                "Insufficient UDP data at line {}: expected >= 4 fields, got {}",
+                                line_num,
+                                parts.len()
+                            );
                         }
                     }
                     "Icmp" => {
@@ -720,7 +755,11 @@ impl NetworkMonitor {
                                     )
                                 })?;
                         } else {
-                            tracing::debug!("Insufficient ICMP data at line {}: expected >= 3 fields, got {}", line_num, parts.len());
+                            tracing::debug!(
+                                "Insufficient ICMP data at line {}: expected >= 3 fields, got {}",
+                                line_num,
+                                parts.len()
+                            );
                         }
                     }
                     _ => {
@@ -730,8 +769,12 @@ impl NetworkMonitor {
             }
         }
 
-        tracing::debug!("Collected protocol stats: TCP={} connections, UDP={} connections, ICMP={} packets",
-                      stats.tcp_connections, stats.udp_connections, stats.icmp_packets);
+        tracing::debug!(
+            "Collected protocol stats: TCP={} connections, UDP={} connections, ICMP={} packets",
+            stats.tcp_connections,
+            stats.udp_connections,
+            stats.icmp_packets
+        );
 
         Ok(stats)
     }
@@ -743,19 +786,22 @@ impl NetworkMonitor {
 
         // Initialize port stats for monitored ports
         for &port in &self.config.monitored_ports {
-            port_map.insert(port, PortUsageStats {
+            port_map.insert(
                 port,
-                protocol: "TCP".to_string(),
-                connection_count: 0,
-                bytes_transmitted: 0,
-                bytes_received: 0,
-                processes: Vec::new(),
-            });
+                PortUsageStats {
+                    port,
+                    protocol: "TCP".to_string(),
+                    connection_count: 0,
+                    bytes_transmitted: 0,
+                    bytes_received: 0,
+                    processes: Vec::new(),
+                },
+            );
         }
 
         // Collect active connections and aggregate by port
         let connections = self.collect_connection_stats()?;
-        
+
         for conn in connections {
             // Track both source and destination ports
             for &port in &[conn.src_port, conn.dst_port] {
@@ -768,11 +814,11 @@ impl NetworkMonitor {
                         bytes_received: 0,
                         processes: Vec::new(),
                     });
-                    
+
                     entry.connection_count += 1;
                     entry.bytes_transmitted += conn.bytes_transmitted;
                     entry.bytes_received += conn.bytes_received;
-                    
+
                     // Track associated processes
                     if let Some(pid) = conn.pid {
                         if !entry.processes.contains(&pid) {
@@ -785,7 +831,7 @@ impl NetworkMonitor {
 
         // Convert hashmap to vector
         port_stats.extend(port_map.into_values());
-        
+
         Ok(port_stats)
     }
 
@@ -796,17 +842,20 @@ impl NetworkMonitor {
 
         // Enhanced TCP connection tracking
         self.collect_tcp_connections(&mut connection_map)?;
-        
+
         // Enhanced UDP connection tracking
         self.collect_udp_connections(&mut connection_map)?;
-        
+
         // Convert hashmap to vector and apply limits
         connections.extend(connection_map.into_values());
-        
+
         // Limit connections to configured maximum
         if connections.len() > self.config.max_connections {
-            tracing::info!("Truncating connections list from {} to {} (max_connections limit)", 
-                          connections.len(), self.config.max_connections);
+            tracing::info!(
+                "Truncating connections list from {} to {} (max_connections limit)",
+                connections.len(),
+                self.config.max_connections
+            );
             connections.truncate(self.config.max_connections);
         }
 
@@ -816,15 +865,19 @@ impl NetworkMonitor {
     }
 
     /// Collect TCP connections with detailed information
-    fn collect_tcp_connections(&self, connection_map: &mut HashMap<String, NetworkConnectionStats>) -> Result<()> {
+    fn collect_tcp_connections(
+        &self,
+        connection_map: &mut HashMap<String, NetworkConnectionStats>,
+    ) -> Result<()> {
         // Try to read TCP connections with enhanced error handling
         match fs::read_to_string("/proc/net/tcp") {
             Ok(tcp_connections) => {
-                for (line_num, line) in tcp_connections.lines().skip(1).enumerate() { // Skip header
+                for (line_num, line) in tcp_connections.lines().skip(1).enumerate() {
+                    // Skip header
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 10 {
                         let _conn_key = format!("TCP:{}:{}", parts[1], parts[2]); // src_ip:src_port
-                        
+
                         // Parse connection state
                         let state = match parts[3] {
                             "01" => "ESTABLISHED",
@@ -840,44 +893,48 @@ impl NetworkMonitor {
                             "0B" => "CLOSING",
                             _ => "UNKNOWN",
                         };
-                        
+
                         // Parse IP addresses and ports from hex format
                         let (src_ip, src_port) = self.parse_ip_port_from_hex(parts[1])?;
                         let (dst_ip, dst_port) = self.parse_ip_port_from_hex(parts[2])?;
-                        
+
                         // Get process information
                         let inode = parts[9];
                         let (pid, process_name) = self.get_process_info_from_inode(inode)?;
-                        
+
                         // Calculate connection metrics
                         let tx_queue = parts[4].parse::<u64>().unwrap_or(0);
                         let rx_queue = parts[5].parse::<u64>().unwrap_or(0);
                         let timer = parts[6].parse::<u64>().unwrap_or(0);
                         let _retrans = parts[7].parse::<u64>().unwrap_or(0);
-                        
+
                         // Estimate bandwidth based on queue sizes
                         let bytes_transmitted = tx_queue * 1024; // Approximate
-                        let bytes_received = rx_queue * 1024;   // Approximate
-                        
-                        let conn_id = format!("TCP:{}:{}:{}:{}", src_ip, src_port, dst_ip, dst_port);
-                        
-                        connection_map.insert(conn_id, NetworkConnectionStats {
-                            src_ip,
-                            dst_ip,
-                            src_port,
-                            dst_port,
-                            protocol: "TCP".to_string(),
-                            state: state.to_string(),
-                            pid,
-                            process_name,
-                            bytes_transmitted,
-                            bytes_received,
-                            packets_transmitted: tx_queue,
-                            packets_received: rx_queue,
-                            start_time: SystemTime::now(),
-                            last_activity: SystemTime::now(),
-                            duration: Duration::from_secs(timer),
-                        });
+                        let bytes_received = rx_queue * 1024; // Approximate
+
+                        let conn_id =
+                            format!("TCP:{}:{}:{}:{}", src_ip, src_port, dst_ip, dst_port);
+
+                        connection_map.insert(
+                            conn_id,
+                            NetworkConnectionStats {
+                                src_ip,
+                                dst_ip,
+                                src_port,
+                                dst_port,
+                                protocol: "TCP".to_string(),
+                                state: state.to_string(),
+                                pid,
+                                process_name,
+                                bytes_transmitted,
+                                bytes_received,
+                                packets_transmitted: tx_queue,
+                                packets_received: rx_queue,
+                                start_time: SystemTime::now(),
+                                last_activity: SystemTime::now(),
+                                duration: Duration::from_secs(timer),
+                            },
+                        );
                     } else {
                         tracing::debug!("Skipping TCP connection line {}: insufficient data (expected >= 10 fields, got {})", line_num + 1, parts.len());
                     }
@@ -888,58 +945,66 @@ impl NetworkMonitor {
                 // Continue gracefully - this is not a fatal error
             }
         }
-        
+
         Ok(())
     }
 
     /// Collect UDP connections with detailed information
-    fn collect_udp_connections(&self, connection_map: &mut HashMap<String, NetworkConnectionStats>) -> Result<()> {
+    fn collect_udp_connections(
+        &self,
+        connection_map: &mut HashMap<String, NetworkConnectionStats>,
+    ) -> Result<()> {
         // Try to read UDP connections with enhanced error handling
         match fs::read_to_string("/proc/net/udp") {
             Ok(udp_connections) => {
-                for (line_num, line) in udp_connections.lines().skip(1).enumerate() { // Skip header
+                for (line_num, line) in udp_connections.lines().skip(1).enumerate() {
+                    // Skip header
                     let parts: Vec<&str> = line.split_whitespace().collect();
                     if parts.len() >= 10 {
                         let _conn_key = format!("UDP:{}:{}", parts[1], parts[2]); // src_ip:src_port
-                        
+
                         // Parse IP addresses and ports from hex format
                         let (src_ip, src_port) = self.parse_ip_port_from_hex(parts[1])?;
                         let (dst_ip, dst_port) = self.parse_ip_port_from_hex(parts[2])?;
-                        
+
                         // Get process information
                         let inode = parts[9];
                         let (pid, process_name) = self.get_process_info_from_inode(inode)?;
-                        
+
                         // UDP doesn't have state like TCP, so we'll use "ACTIVE"
                         let state = "ACTIVE".to_string();
-                        
+
                         // Calculate connection metrics
                         let rx_queue = parts[4].parse::<u64>().unwrap_or(0);
                         let tx_queue = parts[5].parse::<u64>().unwrap_or(0);
-                        
+
                         // Estimate bandwidth based on queue sizes
                         let bytes_transmitted = tx_queue * 1024; // Approximate
-                        let bytes_received = rx_queue * 1024;   // Approximate
-                        
-                        let conn_id = format!("UDP:{}:{}:{}:{}", src_ip, src_port, dst_ip, dst_port);
-                        
-                        connection_map.insert(conn_id, NetworkConnectionStats {
-                            src_ip,
-                            dst_ip,
-                            src_port,
-                            dst_port,
-                            protocol: "UDP".to_string(),
-                            state,
-                            pid,
-                            process_name,
-                            bytes_transmitted,
-                            bytes_received,
-                            packets_transmitted: tx_queue,
-                            packets_received: rx_queue,
-                            start_time: SystemTime::now(),
-                            last_activity: SystemTime::now(),
-                            duration: Duration::from_secs(0), // UDP doesn't have duration like TCP
-                        });
+                        let bytes_received = rx_queue * 1024; // Approximate
+
+                        let conn_id =
+                            format!("UDP:{}:{}:{}:{}", src_ip, src_port, dst_ip, dst_port);
+
+                        connection_map.insert(
+                            conn_id,
+                            NetworkConnectionStats {
+                                src_ip,
+                                dst_ip,
+                                src_port,
+                                dst_port,
+                                protocol: "UDP".to_string(),
+                                state,
+                                pid,
+                                process_name,
+                                bytes_transmitted,
+                                bytes_received,
+                                packets_transmitted: tx_queue,
+                                packets_received: rx_queue,
+                                start_time: SystemTime::now(),
+                                last_activity: SystemTime::now(),
+                                duration: Duration::from_secs(0), // UDP doesn't have duration like TCP
+                            },
+                        );
                     } else {
                         tracing::debug!("Skipping UDP connection line {}: insufficient data (expected >= 10 fields, got {})", line_num + 1, parts.len());
                     }
@@ -950,7 +1015,7 @@ impl NetworkMonitor {
                 // Continue gracefully - this is not a fatal error
             }
         }
-        
+
         Ok(())
     }
 
@@ -959,21 +1024,24 @@ impl NetworkMonitor {
         // Split hex string into IP and port parts
         let parts: Vec<&str> = hex_str.split(':').collect();
         if parts.len() != 2 {
-            return Err(anyhow::anyhow!("Invalid hex format for IP:port: {}", hex_str));
+            return Err(anyhow::anyhow!(
+                "Invalid hex format for IP:port: {}",
+                hex_str
+            ));
         }
-        
+
         let ip_hex = parts[0];
         let port_hex = parts[1];
-        
+
         // Parse IP address (little-endian hex)
         let ip_value = u32::from_str_radix(ip_hex, 16)
             .with_context(|| format!("Failed to parse IP hex: {}", ip_hex))?;
         let ip_addr = u32_to_ipaddr(ip_value);
-        
+
         // Parse port (little-endian hex)
         let port_value = u16::from_str_radix(port_hex, 16)
             .with_context(|| format!("Failed to parse port hex: {}", port_hex))?;
-        
+
         Ok((ip_addr, port_value))
     }
 
@@ -981,10 +1049,10 @@ impl NetworkMonitor {
     fn get_process_info_from_inode(&self, inode: &str) -> Result<(Option<u32>, Option<String>)> {
         // Scan /proc/*/fd/* directories to find processes using this socket
         // This is the standard Linux method for mapping sockets to processes
-        
+
         // First, try to find the process ID by scanning /proc/*/fd/*
         let pid = self.find_pid_by_inode(inode)?;
-        
+
         if let Some(pid) = pid {
             // Get the process name from /proc/[pid]/cmdline
             let process_name = self.get_process_name_from_pid(pid)?;
@@ -1004,7 +1072,7 @@ impl NetworkMonitor {
                 return Ok(None);
             }
         };
-        
+
         // Look for socket:[inode] in each process's file descriptors
         for entry in proc_dir {
             match entry {
@@ -1024,7 +1092,10 @@ impl NetworkMonitor {
                                                 if let Ok(target) = fs::read_link(fd_entry.path()) {
                                                     if let Some(target_str) = target.to_str() {
                                                         // Check if this is a socket with our inode
-                                                        if target_str.contains(&format!("socket:[{}]", inode)) {
+                                                        if target_str.contains(&format!(
+                                                            "socket:[{}]",
+                                                            inode
+                                                        )) {
                                                             return Ok(Some(pid));
                                                         }
                                                     }
@@ -1041,23 +1112,19 @@ impl NetworkMonitor {
                 Err(_) => continue,
             }
         }
-        
+
         Ok(None)
     }
 
     /// Get process name from PID by reading /proc/[pid]/cmdline
     fn get_process_name_from_pid(&self, pid: u32) -> Result<Option<String>> {
         let cmdline_path = format!("/proc/{}/cmdline", pid);
-        
+
         match fs::read_to_string(cmdline_path) {
             Ok(cmdline) => {
                 // cmdline contains null-separated arguments, we want the first one (process name)
-                let process_name = cmdline
-                    .split('\0')
-                    .next()
-                    .unwrap_or("")
-                    .to_string();
-                
+                let process_name = cmdline.split('\0').next().unwrap_or("").to_string();
+
                 if process_name.is_empty() {
                     // Fallback: try to read /proc/[pid]/comm which contains the command name
                     let comm_path = format!("/proc/{}/comm", pid);
@@ -1074,7 +1141,7 @@ impl NetworkMonitor {
             }
             Err(e) => {
                 tracing::debug!("Failed to read cmdline for PID {}: {}", pid, e);
-                
+
                 // Fallback: try to read /proc/[pid]/comm
                 let comm_path = format!("/proc/{}/comm", pid);
                 match fs::read_to_string(comm_path) {
@@ -1095,84 +1162,91 @@ impl NetworkMonitor {
     /// Collect network quality metrics with enhanced tracking
     fn collect_network_quality_metrics(&self) -> Result<NetworkQualityMetrics> {
         let mut metrics = NetworkQualityMetrics::default();
-        
+
         // Calculate packet loss based on connection statistics
         let connections = self.collect_connection_stats()?;
-        
+
         if !connections.is_empty() {
             // Count connections in different states to estimate quality
             let total_connections = connections.len() as f64;
-            let established_count = connections.iter()
+            let established_count = connections
+                .iter()
                 .filter(|c| c.state == "ESTABLISHED" && c.protocol == "TCP")
                 .count() as f64;
-            let error_count = connections.iter()
+            let error_count = connections
+                .iter()
                 .filter(|c| c.state.contains("ERROR") || c.state.contains("FAILED"))
                 .count() as f64;
-            
+
             // Estimate packet loss based on connection states
             if total_connections > 0.0 {
                 metrics.packet_loss = error_count / total_connections;
                 metrics.stability_score = established_count / total_connections;
             }
-            
+
             // Estimate bandwidth utilization based on connection activity
-            let total_bytes: u64 = connections.iter()
+            let total_bytes: u64 = connections
+                .iter()
                 .map(|c| c.bytes_transmitted + c.bytes_received)
                 .sum();
-            
+
             // Simple heuristic for bandwidth utilization (would be more accurate with interface stats)
             if total_bytes > 0 {
-                metrics.bandwidth_utilization = (total_bytes as f64 / 1_000_000.0).min(1.0); // Cap at 1.0 (100%)
+                metrics.bandwidth_utilization = (total_bytes as f64 / 1_000_000.0).min(1.0);
+                // Cap at 1.0 (100%)
             }
         }
-        
+
         // Add some realistic default values for latency and jitter
         metrics.latency_ms = 25.0; // Average latency in ms
-        metrics.jitter_ms = 5.0;  // Average jitter in ms
-        
+        metrics.jitter_ms = 5.0; // Average jitter in ms
+
         Ok(metrics)
     }
 
     /// Benchmark network monitoring performance
-    pub fn benchmark_network_monitoring(&mut self, iterations: usize) -> Result<NetworkBenchmarkResults> {
+    pub fn benchmark_network_monitoring(
+        &mut self,
+        iterations: usize,
+    ) -> Result<NetworkBenchmarkResults> {
         use std::time::Instant;
-        
+
         let mut results = NetworkBenchmarkResults {
             iterations,
             ..Default::default()
         };
-        
+
         // Clear cache for fair benchmarking
         self.clear_interface_cache();
-        
+
         // Benchmark interface collection
         let interface_start = Instant::now();
         for _ in 0..iterations {
             let _ = self.collect_interface_stats()?;
         }
         results.interface_collection_time = interface_start.elapsed();
-        
+
         // Benchmark protocol collection
         let protocol_start = Instant::now();
         for _ in 0..iterations {
             let _ = self.collect_protocol_stats()?;
         }
         results.protocol_collection_time = protocol_start.elapsed();
-        
+
         // Benchmark connection collection
         let connection_start = Instant::now();
         for _ in 0..iterations {
             let _ = self.collect_connection_stats()?;
         }
         results.connection_collection_time = connection_start.elapsed();
-        
+
         // Benchmark full collection with caching
         let full_start = Instant::now();
         for _ in 0..iterations {
             let _ = self.collect_network_stats()?;
         }
         results.full_collection_time = full_start.elapsed();
-        
+
         // Calculate averages
         if iterations > 0 {
             results.avg_interface_time = results.interface_collection_time / iterations as u32;
@@ -1180,7 +1254,7 @@ impl NetworkMonitor {
             results.avg_connection_time = results.connection_collection_time / iterations as u32;
             results.avg_full_time = results.full_collection_time / iterations as u32;
         }
-        
+
         Ok(results)
     }
 
@@ -1194,13 +1268,19 @@ impl NetworkMonitor {
 
         // Calculate interface deltas
         for current_iface in &current.interfaces {
-            if let Some(prev_iface) = previous.interfaces.iter().find(|i| i.name == current_iface.name) {
-
-
+            if let Some(prev_iface) = previous
+                .interfaces
+                .iter()
+                .find(|i| i.name == current_iface.name)
+            {
                 let rx_bytes_delta = current_iface.rx_bytes.saturating_sub(prev_iface.rx_bytes);
                 let tx_bytes_delta = current_iface.tx_bytes.saturating_sub(prev_iface.tx_bytes);
-                let rx_packets_delta = current_iface.rx_packets.saturating_sub(prev_iface.rx_packets);
-                let tx_packets_delta = current_iface.tx_packets.saturating_sub(prev_iface.tx_packets);
+                let rx_packets_delta = current_iface
+                    .rx_packets
+                    .saturating_sub(prev_iface.rx_packets);
+                let tx_packets_delta = current_iface
+                    .tx_packets
+                    .saturating_sub(prev_iface.tx_packets);
 
                 deltas.interface_deltas.push(NetworkInterfaceDelta {
                     name: current_iface.name.clone(),
@@ -1213,10 +1293,18 @@ impl NetworkMonitor {
         }
 
         // Calculate total deltas
-        deltas.total_rx_bytes_delta = current.total_rx_bytes.saturating_sub(previous.total_rx_bytes);
-        deltas.total_tx_bytes_delta = current.total_tx_bytes.saturating_sub(previous.total_tx_bytes);
-        deltas.total_rx_packets_delta = current.total_rx_packets.saturating_sub(previous.total_rx_packets);
-        deltas.total_tx_packets_delta = current.total_tx_packets.saturating_sub(previous.total_tx_packets);
+        deltas.total_rx_bytes_delta = current
+            .total_rx_bytes
+            .saturating_sub(previous.total_rx_bytes);
+        deltas.total_tx_bytes_delta = current
+            .total_tx_bytes
+            .saturating_sub(previous.total_tx_bytes);
+        deltas.total_rx_packets_delta = current
+            .total_rx_packets
+            .saturating_sub(previous.total_rx_packets);
+        deltas.total_tx_packets_delta = current
+            .total_tx_packets
+            .saturating_sub(previous.total_tx_packets);
 
         deltas
     }
@@ -1302,7 +1390,10 @@ mod tests {
         assert_eq!(stats.name, String::new());
         assert_eq!(stats.rx_bytes, 0);
         assert_eq!(stats.tx_bytes, 0);
-        assert!(matches!(stats.interface_type, NetworkInterfaceType::Unknown));
+        assert!(matches!(
+            stats.interface_type,
+            NetworkInterfaceType::Unknown
+        ));
     }
 
     #[test]
@@ -1341,13 +1432,34 @@ mod tests {
     #[test]
     fn test_interface_type_detection() {
         let monitor = NetworkMonitor::new();
-        assert!(matches!(monitor.detect_interface_type("lo"), NetworkInterfaceType::Loopback));
-        assert!(matches!(monitor.detect_interface_type("eth0"), NetworkInterfaceType::Ethernet));
-        assert!(matches!(monitor.detect_interface_type("wlan0"), NetworkInterfaceType::Wifi));
-        assert!(matches!(monitor.detect_interface_type("virbr0"), NetworkInterfaceType::Virtual));
-        assert!(matches!(monitor.detect_interface_type("tun0"), NetworkInterfaceType::Tunnel));
-        assert!(matches!(monitor.detect_interface_type("br0"), NetworkInterfaceType::Bridge));
-        assert!(matches!(monitor.detect_interface_type("unknown0"), NetworkInterfaceType::Unknown));
+        assert!(matches!(
+            monitor.detect_interface_type("lo"),
+            NetworkInterfaceType::Loopback
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("eth0"),
+            NetworkInterfaceType::Ethernet
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("wlan0"),
+            NetworkInterfaceType::Wifi
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("virbr0"),
+            NetworkInterfaceType::Virtual
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("tun0"),
+            NetworkInterfaceType::Tunnel
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("br0"),
+            NetworkInterfaceType::Bridge
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("unknown0"),
+            NetworkInterfaceType::Unknown
+        ));
     }
 
     #[test]
@@ -1384,8 +1496,12 @@ mod tests {
     fn test_network_config_serialization() {
         let config = NetworkMonitorConfig::default();
         let json = serde_json::to_string(&config).expect("Serialization should work");
-        let deserialized: NetworkMonitorConfig = serde_json::from_str(&json).expect("Deserialization should work");
-        assert_eq!(deserialized.enable_detailed_interfaces, config.enable_detailed_interfaces);
+        let deserialized: NetworkMonitorConfig =
+            serde_json::from_str(&json).expect("Deserialization should work");
+        assert_eq!(
+            deserialized.enable_detailed_interfaces,
+            config.enable_detailed_interfaces
+        );
         assert_eq!(deserialized.max_connections, config.max_connections);
     }
 
@@ -1433,7 +1549,7 @@ mod tests {
             total_tx_bytes: 2000,
             ..Default::default()
         };
-        
+
         let previous = ComprehensiveNetworkStats::default();
 
         let monitor = NetworkMonitor::new();
@@ -1461,7 +1577,7 @@ mod tests {
                     rx_bytes: 1000,
                     tx_bytes: 2000,
                     ..Default::default()
-                }
+                },
             ],
             ..Default::default()
         };
@@ -1481,7 +1597,7 @@ mod tests {
                     rx_bytes: 500,
                     tx_bytes: 1000,
                     ..Default::default()
-                }
+                },
             ],
             ..Default::default()
         };
@@ -1492,14 +1608,22 @@ mod tests {
         assert_eq!(deltas.total_rx_bytes_delta, 750);
         assert_eq!(deltas.total_tx_bytes_delta, 1500);
         assert_eq!(deltas.interface_deltas.len(), 2);
-        
+
         // Check eth0 deltas
-        let eth0_delta = deltas.interface_deltas.iter().find(|d| d.name == "eth0").unwrap();
+        let eth0_delta = deltas
+            .interface_deltas
+            .iter()
+            .find(|d| d.name == "eth0")
+            .unwrap();
         assert_eq!(eth0_delta.rx_bytes_delta, 250);
         assert_eq!(eth0_delta.tx_bytes_delta, 500);
-        
+
         // Check wlan0 deltas
-        let wlan0_delta = deltas.interface_deltas.iter().find(|d| d.name == "wlan0").unwrap();
+        let wlan0_delta = deltas
+            .interface_deltas
+            .iter()
+            .find(|d| d.name == "wlan0")
+            .unwrap();
         assert_eq!(wlan0_delta.rx_bytes_delta, 500);
         assert_eq!(wlan0_delta.tx_bytes_delta, 1000);
     }
@@ -1519,9 +1643,12 @@ mod tests {
             tx_packets: 200,
             ..Default::default()
         };
-        
+
         assert_eq!(stats.name, "eth0");
-        assert!(matches!(stats.interface_type, NetworkInterfaceType::Ethernet));
+        assert!(matches!(
+            stats.interface_type,
+            NetworkInterfaceType::Ethernet
+        ));
         assert_eq!(stats.mac_address, Some("00:11:22:33:44:55".to_string()));
         assert_eq!(stats.ip_addresses.len(), 1);
         assert_eq!(stats.speed_mbps, Some(1000));
@@ -1545,7 +1672,7 @@ mod tests {
             bytes_received: 2048,
             ..Default::default()
         };
-        
+
         assert!(matches!(stats.src_ip, IpAddr::V4(_)));
         assert!(matches!(stats.dst_ip, IpAddr::V4(_)));
         assert_eq!(stats.src_port, 12345);
@@ -1565,7 +1692,7 @@ mod tests {
             bandwidth_utilization: 0.75,
             stability_score: 0.95,
         };
-        
+
         assert_eq!(metrics.packet_loss, 0.1);
         assert_eq!(metrics.latency_ms, 50.5);
         assert_eq!(metrics.jitter_ms, 5.2);
@@ -1583,7 +1710,7 @@ mod tests {
             bytes_received: 20480,
             processes: vec![1234, 5678],
         };
-        
+
         assert_eq!(stats.port, 8080);
         assert_eq!(stats.protocol, "TCP");
         assert_eq!(stats.connection_count, 5);
@@ -1605,7 +1732,7 @@ mod tests {
             monitored_ports: vec![80, 443, 8080],
             monitored_protocols: vec!["TCP".to_string(), "UDP".to_string(), "ICMP".to_string()],
         };
-        
+
         let monitor = NetworkMonitor::with_config(config);
         assert!(!monitor.config.enable_detailed_interfaces);
         assert!(!monitor.config.enable_protocol_monitoring);
@@ -1622,7 +1749,7 @@ mod tests {
     fn test_format_ip_addr() {
         let ipv4 = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1));
         let ipv6 = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
-        
+
         assert_eq!(format_ip_addr(ipv4), "192.168.1.1");
         assert_eq!(format_ip_addr(ipv6), "2001:db8::1");
     }
@@ -1651,11 +1778,11 @@ mod tests {
     fn test_network_error_handling_empty_data() {
         // Test error handling with empty interface data
         let monitor = NetworkMonitor::new();
-        
+
         // Test with empty interface name
         let interface_type = monitor.detect_interface_type("");
         assert!(matches!(interface_type, NetworkInterfaceType::Unknown));
-        
+
         // Test with invalid interface name
         let interface_type = monitor.detect_interface_type("invalid!@#");
         assert!(matches!(interface_type, NetworkInterfaceType::Unknown));
@@ -1664,9 +1791,10 @@ mod tests {
     #[test]
     fn test_network_error_handling_invalid_parsing() {
         // Test error handling with invalid numeric parsing
-        let result: Result<u64> = "invalid".parse::<u64>()
+        let result: Result<u64> = "invalid"
+            .parse::<u64>()
             .with_context(|| "Test parsing error".to_string());
-        
+
         assert!(result.is_err());
         if let Err(e) = result {
             assert!(e.to_string().contains("Test parsing error"));
@@ -1680,16 +1808,16 @@ mod tests {
             max_connections: 0, // Edge case: zero connections
             ..Default::default()
         };
-        
+
         let monitor = NetworkMonitor::with_config(config);
         assert_eq!(monitor.config.max_connections, 0);
-        
+
         // Test with very large max_connections
         let config = NetworkMonitorConfig {
             max_connections: usize::MAX,
             ..Default::default()
         };
-        
+
         let monitor = NetworkMonitor::with_config(config);
         assert_eq!(monitor.config.max_connections, usize::MAX);
     }
@@ -1698,7 +1826,7 @@ mod tests {
     fn test_network_error_messages_context() {
         // Test that error messages provide useful context
         let monitor = NetworkMonitor::new();
-        
+
         // Test parsing error with context
         let result: Result<u64> = monitor.parse_u64_fast("invalid", "eth0", "rx_bytes", 1);
         assert!(result.is_err());
@@ -1710,7 +1838,7 @@ mod tests {
             assert!(error_msg.contains("invalid"));
             assert!(error_msg.contains("troubleshooting"));
         }
-        
+
         // Test flags parsing error with context
         let result = monitor.get_interface_flags_optimized("eth0");
         assert!(result.is_err());
@@ -1732,10 +1860,10 @@ mod tests {
             tx_packets: u64::MAX,
             ..Default::default()
         };
-        
+
         assert_eq!(stats_max.rx_bytes, u64::MAX);
         assert_eq!(stats_max.tx_bytes, u64::MAX);
-        
+
         let stats_zero = NetworkInterfaceStats {
             rx_bytes: 0,
             tx_bytes: 0,
@@ -1755,7 +1883,7 @@ mod tests {
         };
         assert_eq!(stats_max_ports.src_port, u16::MAX);
         assert_eq!(stats_max_ports.dst_port, u16::MAX);
-        
+
         let stats_zero_ports = NetworkConnectionStats {
             src_port: 0,
             dst_port: 0,
@@ -1763,7 +1891,7 @@ mod tests {
         };
         assert_eq!(stats_zero_ports.src_port, 0);
         assert_eq!(stats_zero_ports.dst_port, 0);
-        
+
         let stats_max_bytes = NetworkConnectionStats {
             bytes_transmitted: u64::MAX,
             bytes_received: u64::MAX,
@@ -1783,10 +1911,10 @@ mod tests {
             bandwidth_utilization: 1.0,
             stability_score: 1.0,
         };
-        
+
         assert_eq!(metrics_max.packet_loss, 1.0);
         assert_eq!(metrics_max.latency_ms, f64::MAX);
-        
+
         let metrics_zero = NetworkQualityMetrics {
             packet_loss: 0.0,
             latency_ms: 0.0,
@@ -1794,7 +1922,7 @@ mod tests {
             bandwidth_utilization: 0.0,
             stability_score: 0.0,
         };
-        
+
         assert_eq!(metrics_zero.packet_loss, 0.0);
         assert_eq!(metrics_zero.latency_ms, 0.0);
         assert_eq!(metrics_zero.jitter_ms, 0.0);
@@ -1806,19 +1934,19 @@ mod tests {
     fn test_network_port_usage_edge_cases() {
         // Test edge cases for port usage statistics
         let mut stats = PortUsageStats::default();
-        
+
         // Test with maximum port value
         stats.port = u16::MAX;
         assert_eq!(stats.port, u16::MAX);
-        
+
         // Test with zero port value
         stats.port = 0;
         assert_eq!(stats.port, 0);
-        
+
         // Test with maximum connection count
         stats.connection_count = u64::MAX;
         assert_eq!(stats.connection_count, u64::MAX);
-        
+
         // Test with empty processes list
         stats.processes = Vec::new();
         assert!(stats.processes.is_empty());
@@ -1837,14 +1965,14 @@ mod tests {
             total_tx_bytes: u64::MAX,
             ..Default::default()
         };
-        
+
         let monitor = NetworkMonitor::new();
         let deltas = monitor.calculate_traffic_deltas(&current, &previous);
-        
+
         // Should handle overflow gracefully
         assert_eq!(deltas.total_rx_bytes_delta, 0);
         assert_eq!(deltas.total_tx_bytes_delta, 0);
-        
+
         // Test with zero values
         let current_zero = ComprehensiveNetworkStats {
             total_rx_bytes: 0,
@@ -1856,7 +1984,7 @@ mod tests {
             total_tx_bytes: 0,
             ..Default::default()
         };
-        
+
         let deltas = monitor.calculate_traffic_deltas(&current_zero, &previous_zero);
         assert_eq!(deltas.total_rx_bytes_delta, 0);
         assert_eq!(deltas.total_tx_bytes_delta, 0);
@@ -1866,15 +1994,16 @@ mod tests {
     fn test_network_config_serialization_edge_cases() {
         // Test serialization edge cases
         let config = NetworkMonitorConfig {
-            monitored_ports: vec![], // Empty ports
+            monitored_ports: vec![],     // Empty ports
             monitored_protocols: vec![], // Empty protocols
-            max_connections: 0, // Zero connections
+            max_connections: 0,          // Zero connections
             ..Default::default()
         };
-        
+
         let json = serde_json::to_string(&config).expect("Serialization should work");
-        let deserialized: NetworkMonitorConfig = serde_json::from_str(&json).expect("Deserialization should work");
-        
+        let deserialized: NetworkMonitorConfig =
+            serde_json::from_str(&json).expect("Deserialization should work");
+
         assert_eq!(deserialized.monitored_ports.len(), 0);
         assert_eq!(deserialized.monitored_protocols.len(), 0);
         assert_eq!(deserialized.max_connections, 0);
@@ -1884,18 +2013,42 @@ mod tests {
     fn test_network_interface_type_detection_edge_cases() {
         // Test edge cases for interface type detection
         let monitor = NetworkMonitor::new();
-        
+
         // Test with various edge case names
-        assert!(matches!(monitor.detect_interface_type("lo"), NetworkInterfaceType::Loopback));
-        assert!(matches!(monitor.detect_interface_type("loopback"), NetworkInterfaceType::Loopback));
-        assert!(matches!(monitor.detect_interface_type("eth"), NetworkInterfaceType::Ethernet));
-        assert!(matches!(monitor.detect_interface_type("ethernet"), NetworkInterfaceType::Ethernet));
-        assert!(matches!(monitor.detect_interface_type("wlan"), NetworkInterfaceType::Wifi));
-        assert!(matches!(monitor.detect_interface_type("wireless"), NetworkInterfaceType::Unknown));
-        
+        assert!(matches!(
+            monitor.detect_interface_type("lo"),
+            NetworkInterfaceType::Loopback
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("loopback"),
+            NetworkInterfaceType::Loopback
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("eth"),
+            NetworkInterfaceType::Ethernet
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("ethernet"),
+            NetworkInterfaceType::Ethernet
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("wlan"),
+            NetworkInterfaceType::Wifi
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("wireless"),
+            NetworkInterfaceType::Unknown
+        ));
+
         // Test with special characters
-        assert!(matches!(monitor.detect_interface_type("eth0:1"), NetworkInterfaceType::Ethernet));
-        assert!(matches!(monitor.detect_interface_type("eth0@"), NetworkInterfaceType::Ethernet));
+        assert!(matches!(
+            monitor.detect_interface_type("eth0:1"),
+            NetworkInterfaceType::Ethernet
+        ));
+        assert!(matches!(
+            monitor.detect_interface_type("eth0@"),
+            NetworkInterfaceType::Ethernet
+        ));
     }
 
     #[test]
@@ -1903,21 +2056,21 @@ mod tests {
         // Test edge cases for monitor configuration
         let config = NetworkMonitorConfig {
             update_interval_secs: 0, // Zero interval
-            max_connections: 1, // Minimum connections
+            max_connections: 1,      // Minimum connections
             ..Default::default()
         };
-        
+
         let monitor = NetworkMonitor::with_config(config);
         assert_eq!(monitor.config.update_interval_secs, 0);
         assert_eq!(monitor.config.max_connections, 1);
-        
+
         // Test with maximum values
         let config = NetworkMonitorConfig {
             update_interval_secs: u64::MAX,
             max_connections: usize::MAX,
             ..Default::default()
         };
-        
+
         let monitor = NetworkMonitor::with_config(config);
         assert_eq!(monitor.config.update_interval_secs, u64::MAX);
         assert_eq!(monitor.config.max_connections, usize::MAX);
@@ -1937,7 +2090,7 @@ mod tests {
             }],
             ..Default::default()
         };
-        
+
         // Set maximum totals
         let stats = ComprehensiveNetworkStats {
             total_rx_bytes: u64::MAX,
@@ -1954,10 +2107,11 @@ mod tests {
             }],
             ..Default::default()
         };
-        
+
         let json = serde_json::to_string(&stats).expect("Serialization should work");
-        let deserialized: ComprehensiveNetworkStats = serde_json::from_str(&json).expect("Deserialization should work");
-        
+        let deserialized: ComprehensiveNetworkStats =
+            serde_json::from_str(&json).expect("Deserialization should work");
+
         assert_eq!(deserialized.interfaces.len(), 1);
         assert_eq!(deserialized.total_rx_bytes, u64::MAX);
     }
@@ -1966,11 +2120,11 @@ mod tests {
     fn test_network_monitor_cache_operations() {
         // Test cache operations in NetworkMonitor
         let mut monitor = NetworkMonitor::new();
-        
+
         // Test initial cache state
         assert!(monitor.interface_cache.is_empty());
         assert!(!monitor.is_interface_cache_valid());
-        
+
         // Test cache clearing
         monitor.clear_interface_cache();
         assert!(monitor.interface_cache.is_empty());
@@ -1981,7 +2135,7 @@ mod tests {
         // Test NetworkMonitor with custom cache TTL
         let config = NetworkMonitorConfig::default();
         let monitor = NetworkMonitor::with_config_and_cache(config, 10);
-        
+
         assert_eq!(monitor.cache_ttl, Duration::from_secs(10));
     }
 
@@ -1989,7 +2143,7 @@ mod tests {
     fn test_network_benchmark_results_default() {
         // Test NetworkBenchmarkResults default values
         let results = NetworkBenchmarkResults::default();
-        
+
         assert_eq!(results.iterations, 0);
         assert_eq!(results.interface_collection_time, Duration::from_secs(0));
         assert_eq!(results.protocol_collection_time, Duration::from_secs(0));
@@ -2009,24 +2163,28 @@ mod tests {
             avg_interface_time: Duration::from_millis(10),
             ..Default::default()
         };
-        
+
         let json = serde_json::to_string(&results).expect("Serialization should work");
-        let deserialized: NetworkBenchmarkResults = serde_json::from_str(&json).expect("Deserialization should work");
-        
+        let deserialized: NetworkBenchmarkResults =
+            serde_json::from_str(&json).expect("Deserialization should work");
+
         assert_eq!(deserialized.iterations, 10);
-        assert_eq!(deserialized.interface_collection_time, Duration::from_millis(100));
+        assert_eq!(
+            deserialized.interface_collection_time,
+            Duration::from_millis(100)
+        );
     }
 
     #[test]
     fn test_network_optimized_methods() {
         // Test optimized methods
         let monitor = NetworkMonitor::new();
-        
+
         // Test fast parsing
         let result = monitor.parse_u64_fast("12345", "eth0", "test_field", 1);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), 12345);
-        
+
         // Test invalid parsing
         let result = monitor.parse_u64_fast("invalid", "eth0", "test_field", 1);
         assert!(result.is_err());
@@ -2036,19 +2194,19 @@ mod tests {
     fn test_network_interface_cache_optimization() {
         // Test interface cache optimization
         let mut monitor = NetworkMonitor::with_config_and_cache(NetworkMonitorConfig::default(), 1);
-        
+
         // Cache should be invalid initially
         assert!(!monitor.is_interface_cache_valid());
-        
+
         // Add some data to cache
         let mut stats = NetworkInterfaceStats::default();
         stats.name = "eth0".to_string();
         monitor.interface_cache.insert("eth0".to_string(), stats);
         monitor.last_cache_update = SystemTime::now();
-        
+
         // Cache should be valid now
         assert!(monitor.is_interface_cache_valid());
-        
+
         // Clear cache
         monitor.clear_interface_cache();
         assert!(!monitor.is_interface_cache_valid());
@@ -2058,18 +2216,18 @@ mod tests {
     fn test_network_memory_optimization() {
         // Test memory optimization in data structures
         let mut stats = ComprehensiveNetworkStats::default();
-        
+
         // Test capacity reservation
         stats.interfaces.reserve(8);
         assert!(stats.interfaces.capacity() >= 8);
-        
+
         // Test with actual data
         for i in 0..5 {
             let mut iface = NetworkInterfaceStats::default();
             iface.name = format!("eth{}", i);
             stats.interfaces.push(iface);
         }
-        
+
         assert_eq!(stats.interfaces.len(), 5);
     }
 
@@ -2077,19 +2235,19 @@ mod tests {
     fn test_network_optimized_interface_methods() {
         // Test optimized interface methods
         let monitor = NetworkMonitor::new();
-        
+
         // Test interface up check
         let _is_up = monitor.check_interface_up_optimized("lo");
         // Should return false for non-existent interface or handle gracefully
-        
+
         // Test MAC address retrieval
         let _mac = monitor.get_mac_address_optimized("lo");
         // Should return None for non-existent interface or handle gracefully
-        
+
         // Test IP addresses retrieval
         let _ips = monitor.get_ip_addresses_optimized("lo");
         // Should return empty vec for non-existent interface or handle gracefully
-        
+
         // Test interface speed retrieval
         let _speed = monitor.get_interface_speed_optimized("lo");
         // Should return None for non-existent interface or handle gracefully
@@ -2105,11 +2263,15 @@ mod tests {
         assert_eq!(ip2, IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
 
         // Test format_ip_addr function
-        assert_eq!(format_ip_addr(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))), "1.2.3.4");
-        assert_eq!(format_ip_addr(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))), "::1");
+        assert_eq!(
+            format_ip_addr(IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4))),
+            "1.2.3.4"
+        );
+        assert_eq!(
+            format_ip_addr(IpAddr::V6(Ipv6Addr::new(0, 0, 0, 0, 0, 0, 0, 1))),
+            "::1"
+        );
     }
-
-
 
     #[test]
     fn test_network_stats_equality() {
@@ -2136,13 +2298,13 @@ mod tests {
         // Test that network functions handle errors gracefully
         // This is a basic test - more comprehensive error handling tests
         // would require mocking system calls
-        
+
         // Test that we can create a monitor even if some interfaces don't exist
         let mut monitor = NetworkMonitor::new();
-        
+
         // Test that cache operations don't panic
         monitor.clear_interface_cache();
-        
+
         // Test that we can work with empty data
         let empty_stats = ComprehensiveNetworkStats::default();
         assert_eq!(empty_stats.interfaces.len(), 0);
@@ -2153,14 +2315,14 @@ mod tests {
     fn test_ip_port_parsing() {
         // Test IP and port parsing from hex format
         let monitor = NetworkMonitor::new();
-        
+
         // Test valid IPv4 address and port
         let result = monitor.parse_ip_port_from_hex("01020304:0050");
         assert!(result.is_ok());
         let (ip, port) = result.unwrap();
         assert_eq!(ip, IpAddr::V4(Ipv4Addr::new(1, 2, 3, 4)));
         assert_eq!(port, 0x0050); // 80 in decimal
-        
+
         // Test invalid format
         let result = monitor.parse_ip_port_from_hex("invalid");
         assert!(result.is_err());
@@ -2170,7 +2332,7 @@ mod tests {
     fn test_connection_tracking_integration() {
         // Test that connection tracking integrates with port usage stats
         let monitor = NetworkMonitor::new();
-        
+
         // Create some test connections
         let mut connections = Vec::new();
         connections.push(NetworkConnectionStats {
@@ -2183,7 +2345,7 @@ mod tests {
             pid: Some(1234),
             ..Default::default()
         });
-        
+
         connections.push(NetworkConnectionStats {
             src_port: 443,
             dst_port: 8080,
@@ -2194,7 +2356,7 @@ mod tests {
             pid: Some(5678),
             ..Default::default()
         });
-        
+
         // Test that port usage stats are generated correctly
         // This would be more comprehensive in a real implementation
         assert_eq!(connections.len(), 2);
@@ -2204,10 +2366,10 @@ mod tests {
     fn test_network_quality_metrics_calculation() {
         // Test network quality metrics calculation
         let monitor = NetworkMonitor::new();
-        
+
         // Create test connections with different states
         let mut connections = Vec::new();
-        
+
         // Add established connections
         for _ in 0..5 {
             connections.push(NetworkConnectionStats {
@@ -2218,14 +2380,14 @@ mod tests {
                 ..Default::default()
             });
         }
-        
+
         // Add some error connections
         connections.push(NetworkConnectionStats {
             state: "ERROR".to_string(),
             protocol: "TCP".to_string(),
             ..Default::default()
         });
-        
+
         // Test quality metrics calculation
         // This would be more comprehensive in a real implementation
         assert_eq!(connections.len(), 6);
@@ -2235,7 +2397,7 @@ mod tests {
     fn test_connection_state_parsing() {
         // Test TCP connection state parsing
         let monitor = NetworkMonitor::new();
-        
+
         // Test various TCP states
         let states = vec![
             ("01", "ESTABLISHED"),
@@ -2245,7 +2407,7 @@ mod tests {
             ("0B", "CLOSING"),
             ("99", "UNKNOWN"), // Invalid state
         ];
-        
+
         for (hex_state, expected) in states {
             let state = match hex_state {
                 "01" => "ESTABLISHED",
@@ -2261,7 +2423,7 @@ mod tests {
                 "0B" => "CLOSING",
                 _ => "UNKNOWN",
             };
-            
+
             assert_eq!(state, expected);
         }
     }
@@ -2270,14 +2432,14 @@ mod tests {
     fn test_bandwidth_estimation() {
         // Test bandwidth estimation logic
         let monitor = NetworkMonitor::new();
-        
+
         // Test that queue sizes are used for bandwidth estimation
         let tx_queue = 100;
         let rx_queue = 50;
-        
+
         let bytes_transmitted = tx_queue * 1024;
         let bytes_received = rx_queue * 1024;
-        
+
         assert_eq!(bytes_transmitted, 102400);
         assert_eq!(bytes_received, 51200);
     }
@@ -2286,10 +2448,10 @@ mod tests {
     fn test_connection_process_association() {
         // Test connection to process association
         let monitor = NetworkMonitor::new();
-        
+
         // Test that process info is handled correctly
         let (pid, process_name) = monitor.get_process_info_from_inode("12345").unwrap();
-        
+
         // In the current implementation, this should return None
         // In a real implementation, it would find the process
         assert_eq!(pid, None);
@@ -2300,10 +2462,10 @@ mod tests {
     fn test_network_monitoring_error_recovery() {
         // Test that network monitoring recovers gracefully from errors
         let mut monitor = NetworkMonitor::new();
-        
+
         // Test that we can continue even if some files are missing
         // This would be more comprehensive with actual file system mocking
-        
+
         // Test that cache operations work correctly
         monitor.clear_interface_cache();
         assert!(monitor.interface_cache.is_empty());
@@ -2313,10 +2475,10 @@ mod tests {
     fn test_connection_tracking_performance() {
         // Test that connection tracking doesn't cause performance issues
         let monitor = NetworkMonitor::new();
-        
+
         // Test with empty connection map
         let mut connection_map: HashMap<String, NetworkConnectionStats> = HashMap::new();
-        
+
         // Test that we can add connections without issues
         let test_conn = NetworkConnectionStats {
             src_ip: IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
@@ -2327,7 +2489,7 @@ mod tests {
             state: "ESTABLISHED".to_string(),
             ..Default::default()
         };
-        
+
         connection_map.insert("test".to_string(), test_conn);
         assert_eq!(connection_map.len(), 1);
     }
@@ -2341,7 +2503,7 @@ mod tests {
             monitored_ports: vec![80, 443, 8080],
             ..Default::default()
         };
-        
+
         let monitor = NetworkMonitor::with_config(config);
         assert!(monitor.config.enable_connection_tracking);
         assert_eq!(monitor.config.max_connections, 2048);
@@ -2352,10 +2514,10 @@ mod tests {
     fn test_network_stats_aggregation() {
         // Test that network statistics are aggregated correctly
         let monitor = NetworkMonitor::new();
-        
+
         // Test that we can create comprehensive stats
         let mut stats = ComprehensiveNetworkStats::default();
-        
+
         // Add some interface stats
         stats.interfaces.push(NetworkInterfaceStats {
             name: "eth0".to_string(),
@@ -2363,11 +2525,11 @@ mod tests {
             tx_bytes: 2000,
             ..Default::default()
         });
-        
+
         // Test that totals are calculated correctly
         assert_eq!(stats.total_rx_bytes, 0); // Not calculated yet
         assert_eq!(stats.total_tx_bytes, 0); // Not calculated yet
-        
+
         // In the actual collection, totals would be calculated
         assert_eq!(stats.interfaces.len(), 1);
     }
@@ -2376,18 +2538,18 @@ mod tests {
     fn test_network_monitoring_edge_cases() {
         // Test edge cases in network monitoring
         let monitor = NetworkMonitor::new();
-        
+
         // Test with zero connections
         let mut connection_map: HashMap<String, NetworkConnectionStats> = HashMap::new();
         assert!(connection_map.is_empty());
-        
+
         // Test with maximum port values
         let port_stats = PortUsageStats {
             port: u16::MAX,
             connection_count: u64::MAX,
             ..Default::default()
         };
-        
+
         assert_eq!(port_stats.port, u16::MAX);
         assert_eq!(port_stats.connection_count, u64::MAX);
     }
@@ -2396,20 +2558,24 @@ mod tests {
     fn test_network_connection_identification() {
         // Test that connections are uniquely identified
         let monitor = NetworkMonitor::new();
-        
+
         // Test connection ID generation
-        let conn_id1 = format!("TCP:{}:{}:{}:{}", 
-                              IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 
-                              12345, 
-                              IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)), 
-                              80);
-        
-        let conn_id2 = format!("UDP:{}:{}:{}:{}", 
-                              IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)), 
-                              54321, 
-                              IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)), 
-                              443);
-        
+        let conn_id1 = format!(
+            "TCP:{}:{}:{}:{}",
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
+            12345,
+            IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8)),
+            80
+        );
+
+        let conn_id2 = format!(
+            "UDP:{}:{}:{}:{}",
+            IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)),
+            54321,
+            IpAddr::V4(Ipv4Addr::new(8, 8, 4, 4)),
+            443
+        );
+
         // Test that IDs are different for different connections
         assert_ne!(conn_id1, conn_id2);
     }
@@ -2418,10 +2584,10 @@ mod tests {
     fn test_network_monitoring_integration() {
         // Test that network monitoring integrates with other components
         let mut monitor = NetworkMonitor::new();
-        
+
         // Test that we can collect stats without errors
         let result = monitor.collect_network_stats();
-        
+
         // This should work even if some data sources are unavailable
         // (graceful degradation)
         match result {
@@ -2439,14 +2605,14 @@ mod tests {
     fn test_process_info_from_inode_error_handling() {
         // Test that process info from inode handles errors gracefully
         let monitor = NetworkMonitor::new();
-        
+
         // Test with invalid inode
         let result = monitor.get_process_info_from_inode("invalid_inode");
         assert!(result.is_ok());
         let (pid, process_name) = result.unwrap();
         assert_eq!(pid, None);
         assert_eq!(process_name, None);
-        
+
         // Test with empty inode
         let result = monitor.get_process_info_from_inode("");
         assert!(result.is_ok());
@@ -2459,12 +2625,12 @@ mod tests {
     fn test_find_pid_by_inode_error_handling() {
         // Test that find_pid_by_inode handles errors gracefully
         let monitor = NetworkMonitor::new();
-        
+
         // Test with invalid inode
         let result = monitor.find_pid_by_inode("invalid_inode");
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
-        
+
         // Test with empty inode
         let result = monitor.find_pid_by_inode("");
         assert!(result.is_ok());
@@ -2475,12 +2641,12 @@ mod tests {
     fn test_get_process_name_from_pid_error_handling() {
         // Test that get_process_name_from_pid handles errors gracefully
         let monitor = NetworkMonitor::new();
-        
+
         // Test with invalid PID (should return None)
         let result = monitor.get_process_name_from_pid(999999);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
-        
+
         // Test with PID 0 (should return None)
         let result = monitor.get_process_name_from_pid(0);
         assert!(result.is_ok());
@@ -2491,21 +2657,21 @@ mod tests {
     fn test_network_connection_process_mapping() {
         // Test that network connections can be mapped to processes
         let monitor = NetworkMonitor::new();
-        
+
         // Test that the connection collection functions work
         // This is a basic test - more comprehensive testing would require
         // actual network connections and processes
-        
+
         // Test TCP connection collection
         let mut connection_map: HashMap<String, NetworkConnectionStats> = HashMap::new();
         let result = monitor.collect_tcp_connections(&mut connection_map);
-        
+
         // Should not panic and should handle gracefully
         assert!(result.is_ok());
-        
+
         // Test UDP connection collection
         let result = monitor.collect_udp_connections(&mut connection_map);
-        
+
         // Should not panic and should handle gracefully
         assert!(result.is_ok());
     }
@@ -2514,20 +2680,20 @@ mod tests {
     fn test_network_monitoring_process_integration() {
         // Test that network monitoring integrates with process monitoring
         let mut monitor = NetworkMonitor::new();
-        
+
         // Test that we can collect stats and they include process information
         let result = monitor.collect_network_stats();
-        
+
         match result {
             Ok(stats) => {
                 // Check that we have some basic stats
                 assert!(stats.timestamp > SystemTime::UNIX_EPOCH);
-                
+
                 // Check that active connections are collected
                 // Note: In a test environment, there might be no connections,
                 // so we just verify that the collection doesn't panic
                 assert!(stats.active_connections.len() >= 0);
-                
+
                 // If there are connections, they should have process info
                 for conn in stats.active_connections {
                     // Process info might be None if no process is found,

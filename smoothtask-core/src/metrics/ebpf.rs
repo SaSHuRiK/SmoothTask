@@ -447,8 +447,6 @@ pub struct ProcessNetworkStat {
     pub total_network_operations: u64,
 }
 
-
-
 /// Статистика по использованию диска процессами
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, Default)]
 pub struct ProcessDiskStat {
@@ -504,8 +502,6 @@ pub struct ProcessMemoryStat {
     /// Имя процесса
     pub name: String,
 }
-
-
 
 /// Структура для хранения eBPF метрик
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -670,7 +666,10 @@ fn load_ebpf_program_from_file(program_path: &str) -> Result<Program> {
 
     let path = Path::new(program_path);
     if !path.exists() {
-        tracing::error!("eBPF программа не найдена: {:?}. Проверьте путь к файлу и наличие программы", program_path);
+        tracing::error!(
+            "eBPF программа не найдена: {:?}. Проверьте путь к файлу и наличие программы",
+            program_path
+        );
         anyhow::bail!("eBPF программа не найдена: {}. Убедитесь, что файл существует и путь корректен. Требуемые программы должны быть в директории src/ebpf_programs/", program_path);
     }
 
@@ -1944,7 +1943,9 @@ impl EbpfMetricsCollector {
                 tracing::info!("Выбрана высокопроизводительная eBPF программа для мониторинга GPU");
                 high_perf_path
             } else if std::path::Path::new(memory_optimized_path).exists() {
-                tracing::info!("Выбрана оптимизированная по памяти eBPF программа для мониторинга GPU");
+                tracing::info!(
+                    "Выбрана оптимизированная по памяти eBPF программа для мониторинга GPU"
+                );
                 memory_optimized_path
             } else if std::path::Path::new(optimized_path).exists() {
                 tracing::info!("Выбрана оптимизированная eBPF программа для мониторинга GPU");
@@ -2336,7 +2337,8 @@ impl EbpfMetricsCollector {
         // Пробуем загрузить комплексную версию программы (наиболее полная)
         let comprehensive_program_path = Path::new("src/ebpf_programs/gpu_monitor_comprehensive.c");
         let high_perf_program_path = Path::new("src/ebpf_programs/gpu_monitor_high_perf.c");
-        let memory_optimized_program_path = Path::new("src/ebpf_programs/gpu_monitor_memory_optimized.c");
+        let memory_optimized_program_path =
+            Path::new("src/ebpf_programs/gpu_monitor_memory_optimized.c");
         let optimized_program_path = Path::new("src/ebpf_programs/gpu_monitor_optimized.c");
         let basic_program_path = Path::new("src/ebpf_programs/gpu_monitor.c");
 
@@ -2382,19 +2384,15 @@ impl EbpfMetricsCollector {
         // Загрузка карт из программы
         self.gpu_maps =
             self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_stats_map")?;
-        
+
         // Для комплексной программы загружаем дополнительные карты
         if program_path == comprehensive_program_path {
-            let mut additional_maps = self.load_maps_from_program(
-                program_path.to_str().unwrap(), 
-                "total_gpu_usage_map"
-            )?;
+            let mut additional_maps =
+                self.load_maps_from_program(program_path.to_str().unwrap(), "total_gpu_usage_map")?;
             self.gpu_maps.extend(additional_maps);
-            
-            let mut device_maps = self.load_maps_from_program(
-                program_path.to_str().unwrap(), 
-                "gpu_device_info_map"
-            )?;
+
+            let mut device_maps =
+                self.load_maps_from_program(program_path.to_str().unwrap(), "gpu_device_info_map")?;
             self.gpu_maps.extend(device_maps);
         }
 
@@ -2593,8 +2591,8 @@ impl EbpfMetricsCollector {
         self.process_network_program = Some(program);
 
         // Загрузка карт из программы
-        self.process_network_maps =
-            self.load_maps_from_program(program_path.to_str().unwrap(), "process_network_stats_map")?;
+        self.process_network_maps = self
+            .load_maps_from_program(program_path.to_str().unwrap(), "process_network_stats_map")?;
 
         tracing::info!("eBPF программа для мониторинга использования сети процессами успешно загружена с {} картами", self.process_network_maps.len());
         Ok(())
@@ -2935,7 +2933,9 @@ impl EbpfMetricsCollector {
 
         // Возвращаем None только если не удалось собрать данные из всех карт
         if successful_maps == 0 {
-            tracing::error!("Не удалось собрать детализированную статистику файловой системы ни из одной карты");
+            tracing::error!(
+                "Не удалось собрать детализированную статистику файловой системы ни из одной карты"
+            );
             return None;
         }
 
@@ -4235,7 +4235,10 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте энергопотребления процессов: {}", e);
+                    tracing::error!(
+                        "Ошибка при итерации по карте энергопотребления процессов: {}",
+                        e
+                    );
                     continue;
                 }
             }
@@ -4293,7 +4296,10 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте использования GPU процессами: {}", e);
+                    tracing::error!(
+                        "Ошибка при итерации по карте использования GPU процессами: {}",
+                        e
+                    );
                     continue;
                 }
             }
@@ -4342,7 +4348,10 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте использования сети процессами: {}", e);
+                    tracing::error!(
+                        "Ошибка при итерации по карте использования сети процессами: {}",
+                        e
+                    );
                     continue;
                 }
             }
@@ -4391,7 +4400,10 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте использования диска процессами: {}", e);
+                    tracing::error!(
+                        "Ошибка при итерации по карте использования диска процессами: {}",
+                        e
+                    );
                     continue;
                 }
             }
@@ -4445,7 +4457,10 @@ impl EbpfMetricsCollector {
                     }
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка при итерации по карте использования памяти процессами: {}", e);
+                    tracing::error!(
+                        "Ошибка при итерации по карте использования памяти процессами: {}",
+                        e
+                    );
                     continue;
                 }
             }
@@ -4579,7 +4594,10 @@ impl EbpfMetricsCollector {
                     return Ok(metrics);
                 }
                 Err(e) => {
-                    tracing::error!("Ошибка сбора eBPF метрик: {}. Активируем стратегию graceful degradation", e);
+                    tracing::error!(
+                        "Ошибка сбора eBPF метрик: {}. Активируем стратегию graceful degradation",
+                        e
+                    );
 
                     // Улучшенная стратегия graceful degradation:
                     // 1. Пробуем вернуть кэшированные метрики
@@ -4603,10 +4621,10 @@ impl EbpfMetricsCollector {
                         "Нет кэшированных метрик и частичный сбор не удался. Возвращаем значения по умолчанию. eBPF функциональность временно недоступна: {}",
                         e
                     );
-                    
+
                     // Логируем ошибку в систему мониторинга
                     self.log_ebpf_error(&e);
-                    
+
                     return Ok(EbpfMetrics::default());
                 }
             }
@@ -4678,7 +4696,7 @@ impl EbpfMetricsCollector {
                 return Ok(usage);
             }
         }
-        
+
         tracing::warn!("Не удалось получить CPU метрики из резервного источника");
         Err(anyhow::anyhow!("Резервный сбор CPU метрик не удался"))
     }
@@ -4691,11 +4709,14 @@ impl EbpfMetricsCollector {
             let total_memory = mem_info.total;
             let free_memory = mem_info.free;
             let used_memory = total_memory - free_memory;
-            
-            tracing::debug!("Метрики памяти получены из резервного источника: {} bytes", used_memory);
+
+            tracing::debug!(
+                "Метрики памяти получены из резервного источника: {} bytes",
+                used_memory
+            );
             return Ok(used_memory);
         }
-        
+
         tracing::warn!("Не удалось получить метрики памяти из резервного источника");
         Err(anyhow::anyhow!("Резервный сбор метрик памяти не удался"))
     }
@@ -4705,22 +4726,27 @@ impl EbpfMetricsCollector {
     fn collect_process_count_fallback(&self) -> Result<u64> {
         // Попробуем получить количество процессов из /proc
         if let Ok(process_count) = crate::metrics::process::count_processes() {
-            tracing::debug!("Количество процессов получено из резервного источника: {}", process_count);
+            tracing::debug!(
+                "Количество процессов получено из резервного источника: {}",
+                process_count
+            );
             return Ok(process_count as u64);
         }
-        
+
         tracing::warn!("Не удалось получить количество процессов из резервного источника");
-        Err(anyhow::anyhow!("Резервный сбор количества процессов не удался"))
+        Err(anyhow::anyhow!(
+            "Резервный сбор количества процессов не удался"
+        ))
     }
 
     /// Enhanced error handling with detailed error classification and recovery strategies
     #[allow(dead_code)]
     fn log_ebpf_error(&self, error: &anyhow::Error) {
         let error_string = error.to_string();
-        
+
         // Classify the error for better handling
         let error_category = self.classify_ebpf_error(&error_string);
-        
+
         // Log with appropriate level based on error category
         match error_category {
             EbpfErrorCategory::Critical => {
@@ -4733,28 +4759,33 @@ impl EbpfMetricsCollector {
                 tracing::info!("INFO eBPF Event: {}", error_string);
             }
         }
-        
+
         // Log to monitoring system with appropriate severity
         if self.config.enable_notifications {
             if let Some(notification_manager) = &self.notification_manager {
                 let severity = match error_category {
                     EbpfErrorCategory::Critical => crate::notifications::NotificationType::Critical,
-                    EbpfErrorCategory::Recoverable => crate::notifications::NotificationType::Warning,
-                    EbpfErrorCategory::Informational => crate::notifications::NotificationType::Info,
+                    EbpfErrorCategory::Recoverable => {
+                        crate::notifications::NotificationType::Warning
+                    }
+                    EbpfErrorCategory::Informational => {
+                        crate::notifications::NotificationType::Info
+                    }
                 };
-                
+
                 let notification = crate::notifications::Notification::new(
                     severity,
                     "eBPF Error Detected",
                     format!("eBPF monitoring encountered an error: {}", error_string),
-                ).with_details(format!(
+                )
+                .with_details(format!(
                     "eBPF functionality is degraded. Category: {:?}. Error: {}",
                     error_category, error_string
                 ));
-                
+
                 // Клонируем менеджер уведомлений для асинхронной задачи
                 let notification_manager_clone = notification_manager.clone();
-                
+
                 // Асинхронная отправка уведомления
                 tokio::spawn(async move {
                     if let Err(e) = notification_manager_clone.send(&notification).await {
@@ -4763,60 +4794,65 @@ impl EbpfMetricsCollector {
                 });
             }
         }
-        
+
         // Apply recovery strategy based on error category
         self.apply_error_recovery(error_category);
     }
-    
+
     /// Classify eBPF errors for better handling
     fn classify_ebpf_error(&self, error: &str) -> EbpfErrorCategory {
         let error_lower = error.to_lowercase();
-        
+
         // Critical errors - require immediate attention
-        if error_lower.contains("permission denied") 
+        if error_lower.contains("permission denied")
             || error_lower.contains("access denied")
             || error_lower.contains("insufficient privileges")
             || error_lower.contains("cap_bpf")
-            || error_lower.contains("root required") {
+            || error_lower.contains("root required")
+        {
             return EbpfErrorCategory::Critical;
         }
-        
+
         // Critical errors - hardware/firmware issues
         if error_lower.contains("hardware error")
             || error_lower.contains("firmware error")
             || error_lower.contains("device not found")
-            || error_lower.contains("gpu not detected") {
+            || error_lower.contains("gpu not detected")
+        {
             return EbpfErrorCategory::Critical;
         }
-        
+
         // Recoverable errors - can be handled gracefully
         if error_lower.contains("timeout")
             || error_lower.contains("temporary failure")
             || error_lower.contains("resource busy")
             || error_lower.contains("try again")
-            || error_lower.contains("retry") {
+            || error_lower.contains("retry")
+        {
             return EbpfErrorCategory::Recoverable;
         }
-        
+
         // Recoverable errors - configuration issues
         if error_lower.contains("configuration")
             || error_lower.contains("invalid config")
-            || error_lower.contains("missing parameter") {
+            || error_lower.contains("missing parameter")
+        {
             return EbpfErrorCategory::Recoverable;
         }
-        
+
         // Informational - expected conditions
         if error_lower.contains("not supported")
             || error_lower.contains("not available")
             || error_lower.contains("feature disabled")
-            || error_lower.contains("optional feature") {
+            || error_lower.contains("optional feature")
+        {
             return EbpfErrorCategory::Informational;
         }
-        
+
         // Default to recoverable for unknown errors
         EbpfErrorCategory::Recoverable
     }
-    
+
     /// Apply recovery strategies based on error category
     #[allow(dead_code)]
     fn apply_error_recovery(&self, category: EbpfErrorCategory) {
@@ -4939,7 +4975,7 @@ impl EbpfMetricsCollector {
             high_performance_mode: self.config.enable_high_performance_mode,
         }
     }
-    
+
     /// Get the current health status of the eBPF subsystem
     pub fn get_health_status(&self) -> EbpfStatus {
         EbpfStatus {
@@ -4951,18 +4987,18 @@ impl EbpfMetricsCollector {
             high_performance_mode: self.config.enable_high_performance_mode,
         }
     }
-    
+
     /// Check if eBPF is healthy and providing useful metrics
     pub fn is_healthy(&self) -> bool {
         if !self.initialized {
             return false;
         }
-        
+
         // If we have recent cached metrics, consider it healthy
         if self.metrics_cache.is_some() {
             return true;
         }
-        
+
         // If no critical errors, consider it healthy
         if let Some(last_error) = &self.last_error {
             let error_category = self.classify_ebpf_error(last_error);
@@ -4970,10 +5006,10 @@ impl EbpfMetricsCollector {
                 return false;
             }
         }
-        
+
         true
     }
-    
+
     /// Проверить, что конфигурация корректна
     pub fn validate_config(&self) -> Result<()> {
         if self.config.batch_size == 0 {
@@ -7569,8 +7605,8 @@ mod tests {
         // В тестовой среде новые программы могут не загрузиться, если файлы не существуют
         // success_count is usize (unsigned), so it's always >= 0
         // No assertion needed since it's always true
-                                     // Ошибки могут быть, если новые программы не найдены
-                                     // Это нормально для тестовой среды
+        // Ошибки могут быть, если новые программы не найдены
+        // Это нормально для тестовой среды
         println!(
             "Статистика инициализации: {} успешных, {} ошибок",
             success_count, error_count
@@ -7581,15 +7617,15 @@ mod tests {
     fn test_ebpf_error_handling_and_graceful_degradation() {
         let config = EbpfConfig::default();
         let mut collector = EbpfMetricsCollector::new(config);
-        
+
         // Инициализация должна пройти успешно даже если eBPF не поддерживается
         assert!(collector.initialize().is_ok());
-        
+
         // Сбор метрик должен вернуть значения по умолчанию если eBPF не доступен
         let metrics = collector.collect_metrics().unwrap();
         assert_eq!(metrics.cpu_usage, 0.0);
         assert_eq!(metrics.memory_usage, 0);
-        
+
         // Проверяем, что статус корректно отображает состояние
         let status = collector.get_ebpf_status();
         assert!(status.cache_enabled);
@@ -7606,7 +7642,7 @@ mod tests {
             aggressive_caching_enabled: false,
             high_performance_mode: true,
         };
-        
+
         assert!(status.initialized);
         assert_eq!(status.last_error, Some("Test error".to_string()));
         assert!(status.cache_enabled);
@@ -7970,9 +8006,9 @@ mod ebpf_filtering_tests {
 
         // Создаем тестовые метрики
         let mut metrics = EbpfMetrics {
-            cpu_usage: 3.0, // Ниже порога
-            memory_usage: 512, // Ниже порога
-            syscall_count: 25, // Ниже порога
+            cpu_usage: 3.0,      // Ниже порога
+            memory_usage: 512,   // Ниже порога
+            syscall_count: 25,   // Ниже порога
             network_bytes: 1000, // Выше порога
             ..Default::default()
         };
@@ -8459,7 +8495,10 @@ mod ebpf_memory_optimization_tests {
         let result = collector.optimize_ebpf_memory_usage();
 
         // Проверяем, что функция выполнилась успешно
-        assert!(result.is_ok(), "Оптимизация памяти должна выполниться успешно");
+        assert!(
+            result.is_ok(),
+            "Оптимизация памяти должна выполниться успешно"
+        );
     }
 
     /// Тест для проверки установки и получения ограничения на кэшируемые детали
@@ -8520,7 +8559,7 @@ mod ebpf_memory_optimization_tests {
                 src_port: 1000 + i as u16,
                 dst_port: 80,
                 protocol: 6, // TCP
-                state: 1,   // ESTABLISHED
+                state: 1,    // ESTABLISHED
                 packets: (5 - i) as u64 * 100,
                 bytes: 1000,
                 start_time: 0,
@@ -8559,7 +8598,11 @@ mod ebpf_memory_optimization_tests {
 
         // Проверяем, что количество записей ограничено
         if let Some(details) = syscall_details {
-            assert_eq!(details.len(), 2, "Количество системных вызовов должно быть ограничено до 2");
+            assert_eq!(
+                details.len(),
+                2,
+                "Количество системных вызовов должно быть ограничено до 2"
+            );
         }
 
         // Проверяем, что None значения остаются None
@@ -8570,11 +8613,19 @@ mod ebpf_memory_optimization_tests {
         assert!(process_energy_details.is_none());
 
         if let Some(details) = network_details {
-            assert_eq!(details.len(), 2, "Количество сетевых статистик должно быть ограничено до 2");
+            assert_eq!(
+                details.len(),
+                2,
+                "Количество сетевых статистик должно быть ограничено до 2"
+            );
         }
 
         if let Some(details) = connection_details {
-            assert_eq!(details.len(), 2, "Количество соединений должно быть ограничено до 2");
+            assert_eq!(
+                details.len(),
+                2,
+                "Количество соединений должно быть ограничено до 2"
+            );
         }
 
         // Проверяем, что None значения остаются None
@@ -8625,7 +8676,8 @@ mod test_process_energy {
         };
 
         let json = serde_json::to_string(&stat).expect("Сериализация должна работать");
-        let deserialized: ProcessEnergyStat = serde_json::from_str(&json).expect("Десериализация должна работать");
+        let deserialized: ProcessEnergyStat =
+            serde_json::from_str(&json).expect("Десериализация должна работать");
 
         assert_eq!(deserialized.pid, 123);
         assert_eq!(deserialized.tgid, 456);
@@ -8640,7 +8692,10 @@ mod test_process_energy {
     fn test_process_energy_config() {
         // Тест проверяет, что конфигурация process_energy_monitoring корректно работает
         let mut config = EbpfConfig::default();
-        assert!(!config.enable_process_energy_monitoring, "По умолчанию должно быть отключено");
+        assert!(
+            !config.enable_process_energy_monitoring,
+            "По умолчанию должно быть отключено"
+        );
 
         config.enable_process_energy_monitoring = true;
         assert!(config.enable_process_energy_monitoring, "Должно включаться");
@@ -8650,7 +8705,10 @@ mod test_process_energy {
     fn test_ebpf_metrics_with_process_energy() {
         // Тест проверяет, что EbpfMetrics корректно хранит process_energy_details
         let mut metrics = EbpfMetrics::default();
-        assert!(metrics.process_energy_details.is_none(), "По умолчанию должно быть None");
+        assert!(
+            metrics.process_energy_details.is_none(),
+            "По умолчанию должно быть None"
+        );
 
         let energy_stats = vec![
             ProcessEnergyStat {
@@ -8742,7 +8800,11 @@ mod test_process_energy {
         );
 
         if let Some(details) = process_energy_details {
-            assert_eq!(details.len(), 1, "Количество статистик энергопотребления должно быть ограничено до 1");
+            assert_eq!(
+                details.len(),
+                1,
+                "Количество статистик энергопотребления должно быть ограничено до 1"
+            );
         } else {
             panic!("process_energy_details должно быть Some");
         }
@@ -8859,7 +8921,10 @@ mod test_process_energy {
     fn test_process_gpu_config() {
         // Тест проверяет, что конфигурация process_gpu_monitoring корректно работает
         let mut config = EbpfConfig::default();
-        assert!(!config.enable_process_gpu_monitoring, "По умолчанию должно быть отключено");
+        assert!(
+            !config.enable_process_gpu_monitoring,
+            "По умолчанию должно быть отключено"
+        );
 
         config.enable_process_gpu_monitoring = true;
         assert!(config.enable_process_gpu_monitoring, "Должно включаться");
@@ -8869,22 +8934,23 @@ mod test_process_energy {
     fn test_ebpf_metrics_with_process_gpu() {
         // Тест проверяет, что EbpfMetrics корректно хранит process_gpu_details
         let mut metrics = EbpfMetrics::default();
-        assert!(metrics.process_gpu_details.is_none(), "По умолчанию должно быть None");
+        assert!(
+            metrics.process_gpu_details.is_none(),
+            "По умолчанию должно быть None"
+        );
 
-        let gpu_stats = vec![
-            ProcessGpuStat {
-                pid: 1,
-                tgid: 1,
-                gpu_time_ns: 1000000,
-                memory_usage_bytes: 1024 * 1024,
-                compute_units_used: 1,
-                last_update_ns: 1000000000,
-                gpu_id: 0,
-                temperature_celsius: 60,
-                name: "test_process".to_string(),
-                gpu_usage_percent: 50.0,
-            },
-        ];
+        let gpu_stats = vec![ProcessGpuStat {
+            pid: 1,
+            tgid: 1,
+            gpu_time_ns: 1000000,
+            memory_usage_bytes: 1024 * 1024,
+            compute_units_used: 1,
+            last_update_ns: 1000000000,
+            gpu_id: 0,
+            temperature_celsius: 60,
+            name: "test_process".to_string(),
+            gpu_usage_percent: 50.0,
+        }];
 
         metrics.process_gpu_details = Some(gpu_stats.clone());
         assert!(metrics.process_gpu_details.is_some(), "Должно быть Some");
@@ -8900,24 +8966,28 @@ mod test_process_energy {
     fn test_ebpf_metrics_with_process_network() {
         // Тест проверяет, что EbpfMetrics корректно хранит process_network_details
         let mut metrics = EbpfMetrics::default();
-        assert!(metrics.process_network_details.is_none(), "По умолчанию должно быть None");
+        assert!(
+            metrics.process_network_details.is_none(),
+            "По умолчанию должно быть None"
+        );
 
-        let network_stats = vec![
-            ProcessNetworkStat {
-                pid: 1,
-                tgid: 1,
-                packets_sent: 100,
-                packets_received: 50,
-                bytes_sent: 1024 * 1024,
-                bytes_received: 512 * 1024,
-                last_update_ns: 1000000000,
-                name: "test_process".to_string(),
-                total_network_operations: 150,
-            },
-        ];
+        let network_stats = vec![ProcessNetworkStat {
+            pid: 1,
+            tgid: 1,
+            packets_sent: 100,
+            packets_received: 50,
+            bytes_sent: 1024 * 1024,
+            bytes_received: 512 * 1024,
+            last_update_ns: 1000000000,
+            name: "test_process".to_string(),
+            total_network_operations: 150,
+        }];
 
         metrics.process_network_details = Some(network_stats.clone());
-        assert!(metrics.process_network_details.is_some(), "Должно быть Some");
+        assert!(
+            metrics.process_network_details.is_some(),
+            "Должно быть Some"
+        );
 
         if let Some(details) = &metrics.process_network_details {
             assert_eq!(details.len(), 1);
@@ -8992,7 +9062,11 @@ mod test_process_energy {
         );
 
         if let Some(details) = process_gpu_details {
-            assert_eq!(details.len(), 1, "Количество статистик использования GPU должно быть ограничено до 1");
+            assert_eq!(
+                details.len(),
+                1,
+                "Количество статистик использования GPU должно быть ограничено до 1"
+            );
             assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
         } else {
             panic!("process_gpu_details должно быть Some");
@@ -9000,25 +9074,79 @@ mod test_process_energy {
     }
 }
 
-    #[test]
-    fn test_process_disk_stat_default() {
-        // Тест проверяет, что ProcessDiskStat::default() возвращает пустые значения
-        let stat = ProcessDiskStat::default();
-        assert_eq!(stat.pid, 0, "PID по умолчанию должен быть 0");
-        assert_eq!(stat.tgid, 0, "TGID по умолчанию должен быть 0");
-        assert_eq!(stat.bytes_read, 0, "Байты прочитаны по умолчанию должны быть 0");
-        assert_eq!(stat.bytes_written, 0, "Байты записаны по умолчанию должны быть 0");
-        assert_eq!(stat.read_operations, 0, "Операции чтения по умолчанию должны быть 0");
-        assert_eq!(stat.write_operations, 0, "Операции записи по умолчанию должны быть 0");
-        assert_eq!(stat.last_update_ns, 0, "Время последнего обновления по умолчанию должно быть 0");
-        assert_eq!(stat.name, "", "Имя по умолчанию должно быть пустой строкой");
-        assert_eq!(stat.total_io_operations, 0, "Общее количество операций ввода-вывода по умолчанию должно быть 0");
-    }
+#[test]
+fn test_process_disk_stat_default() {
+    // Тест проверяет, что ProcessDiskStat::default() возвращает пустые значения
+    let stat = ProcessDiskStat::default();
+    assert_eq!(stat.pid, 0, "PID по умолчанию должен быть 0");
+    assert_eq!(stat.tgid, 0, "TGID по умолчанию должен быть 0");
+    assert_eq!(
+        stat.bytes_read, 0,
+        "Байты прочитаны по умолчанию должны быть 0"
+    );
+    assert_eq!(
+        stat.bytes_written, 0,
+        "Байты записаны по умолчанию должны быть 0"
+    );
+    assert_eq!(
+        stat.read_operations, 0,
+        "Операции чтения по умолчанию должны быть 0"
+    );
+    assert_eq!(
+        stat.write_operations, 0,
+        "Операции записи по умолчанию должны быть 0"
+    );
+    assert_eq!(
+        stat.last_update_ns, 0,
+        "Время последнего обновления по умолчанию должно быть 0"
+    );
+    assert_eq!(stat.name, "", "Имя по умолчанию должно быть пустой строкой");
+    assert_eq!(
+        stat.total_io_operations, 0,
+        "Общее количество операций ввода-вывода по умолчанию должно быть 0"
+    );
+}
 
-    #[test]
-    fn test_process_disk_stat_with_values() {
-        // Тест проверяет, что ProcessDiskStat корректно хранит значения
-        let stat = ProcessDiskStat {
+#[test]
+fn test_process_disk_stat_with_values() {
+    // Тест проверяет, что ProcessDiskStat корректно хранит значения
+    let stat = ProcessDiskStat {
+        pid: 123,
+        tgid: 456,
+        bytes_read: 1024,
+        bytes_written: 2048,
+        read_operations: 10,
+        write_operations: 20,
+        last_update_ns: 123456789,
+        name: "test_process".to_string(),
+        total_io_operations: 30,
+    };
+
+    assert_eq!(stat.pid, 123, "PID должен быть 123");
+    assert_eq!(stat.tgid, 456, "TGID должен быть 456");
+    assert_eq!(stat.bytes_read, 1024, "Байты прочитаны должны быть 1024");
+    assert_eq!(stat.bytes_written, 2048, "Байты записаны должны быть 2048");
+    assert_eq!(stat.read_operations, 10, "Операции чтения должны быть 10");
+    assert_eq!(stat.write_operations, 20, "Операции записи должны быть 20");
+    assert_eq!(
+        stat.last_update_ns, 123456789,
+        "Время последнего обновления должно быть 123456789"
+    );
+    assert_eq!(stat.name, "test_process", "Имя должно быть test_process");
+    assert_eq!(
+        stat.total_io_operations, 30,
+        "Общее количество операций ввода-вывода должно быть 30"
+    );
+}
+
+#[test]
+fn test_optimize_detailed_stats_process_disk() {
+    // Тест проверяет, что optimize_detailed_stats корректно обрабатывает process_disk_details
+    let mut collector = EbpfMetricsCollector::new(EbpfConfig::default());
+    collector.max_cached_details = 1;
+
+    let disk_stats = vec![
+        ProcessDiskStat {
             pid: 123,
             tgid: 456,
             bytes_read: 1024,
@@ -9026,276 +9154,279 @@ mod test_process_energy {
             read_operations: 10,
             write_operations: 20,
             last_update_ns: 123456789,
-            name: "test_process".to_string(),
+            name: "process1".to_string(),
             total_io_operations: 30,
-        };
+        },
+        ProcessDiskStat {
+            pid: 789,
+            tgid: 101,
+            bytes_read: 4096,
+            bytes_written: 8192,
+            read_operations: 50,
+            write_operations: 100,
+            last_update_ns: 987654321,
+            name: "process2".to_string(),
+            total_io_operations: 150,
+        },
+    ];
 
-        assert_eq!(stat.pid, 123, "PID должен быть 123");
-        assert_eq!(stat.tgid, 456, "TGID должен быть 456");
-        assert_eq!(stat.bytes_read, 1024, "Байты прочитаны должны быть 1024");
-        assert_eq!(stat.bytes_written, 2048, "Байты записаны должны быть 2048");
-        assert_eq!(stat.read_operations, 10, "Операции чтения должны быть 10");
-        assert_eq!(stat.write_operations, 20, "Операции записи должны быть 20");
-        assert_eq!(stat.last_update_ns, 123456789, "Время последнего обновления должно быть 123456789");
-        assert_eq!(stat.name, "test_process", "Имя должно быть test_process");
-        assert_eq!(stat.total_io_operations, 30, "Общее количество операций ввода-вывода должно быть 30");
-    }
+    let (
+        _syscall_details,
+        _network_details,
+        _connection_details,
+        _gpu_details,
+        _cpu_temperature_details,
+        _process_details,
+        _filesystem_details,
+        _process_energy_details,
+        _process_gpu_details,
+        _process_network_details,
+        _process_memory_details,
+        process_disk_details,
+    ) = collector.optimize_detailed_stats(
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        Some(disk_stats),
+        None,
+    );
 
-    #[test]
-    fn test_optimize_detailed_stats_process_disk() {
-        // Тест проверяет, что optimize_detailed_stats корректно обрабатывает process_disk_details
-        let mut collector = EbpfMetricsCollector::new(EbpfConfig::default());
-        collector.max_cached_details = 1;
-
-        let disk_stats = vec![
-            ProcessDiskStat {
-                pid: 123,
-                tgid: 456,
-                bytes_read: 1024,
-                bytes_written: 2048,
-                read_operations: 10,
-                write_operations: 20,
-                last_update_ns: 123456789,
-                name: "process1".to_string(),
-                total_io_operations: 30,
-            },
-            ProcessDiskStat {
-                pid: 789,
-                tgid: 101,
-                bytes_read: 4096,
-                bytes_written: 8192,
-                read_operations: 50,
-                write_operations: 100,
-                last_update_ns: 987654321,
-                name: "process2".to_string(),
-                total_io_operations: 150,
-            },
-        ];
-
-        let (
-            _syscall_details,
-            _network_details,
-            _connection_details,
-            _gpu_details,
-            _cpu_temperature_details,
-            _process_details,
-            _filesystem_details,
-            _process_energy_details,
-            _process_gpu_details,
-            _process_network_details,
-            _process_memory_details,
-            process_disk_details,
-        ) = collector.optimize_detailed_stats(
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            Some(disk_stats),
-            None,
+    if let Some(details) = process_disk_details {
+        assert_eq!(
+            details.len(),
+            1,
+            "Количество статистик использования диска должно быть ограничено до 1"
         );
-
-        if let Some(details) = process_disk_details {
-            assert_eq!(details.len(), 1, "Количество статистик использования диска должно быть ограничено до 1");
-            assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
-        } else {
-            panic!("process_disk_details должно быть Some");
-        }
+        assert_eq!(details[0].pid, 123, "Первый процесс должен иметь PID 123");
+    } else {
+        panic!("process_disk_details должно быть Some");
     }
+}
 
-    #[test]
-    fn test_comprehensive_gpu_monitoring() {
-        // Тест проверяет комплексный мониторинг GPU через eBPF
-        let config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            enable_high_performance_mode: true,
-            ..Default::default()
-        };
+#[test]
+fn test_comprehensive_gpu_monitoring() {
+    // Тест проверяет комплексный мониторинг GPU через eBPF
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
 
-        let mut collector = EbpfMetricsCollector::new(config);
-        assert!(collector.initialize().is_ok());
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
 
-        let metrics = collector.collect_metrics().unwrap();
+    let metrics = collector.collect_metrics().unwrap();
 
-        // Проверяем, что GPU метрики собираются корректно
-        #[cfg(feature = "ebpf")]
-        {
-            // В комплексном режиме должны быть более детализированные метрики
-            assert!(metrics.gpu_usage >= 0.0);
-            assert!(metrics.gpu_memory_usage >= 0);
-            
-            // Проверяем детализированную статистику GPU
-            if let Some(gpu_details) = metrics.gpu_details {
-                assert!(!gpu_details.is_empty(), "Должны быть детализированные метрики GPU");
-                
-                for stat in gpu_details {
-                    assert!(stat.gpu_usage >= 0.0, "Использование GPU должно быть неотрицательным");
-                    assert!(stat.memory_usage >= 0, "Использование памяти должно быть неотрицательным");
-                    assert!(stat.compute_units >= 0, "Количество вычислительных единиц должно быть неотрицательным");
-                    assert!(stat.power_usage >= 0, "Потребление энергии должно быть неотрицательным");
-                    assert!(stat.temperature_celsius >= 0, "Температура должна быть неотрицательной");
-                }
-            }
-        }
-        #[cfg(not(feature = "ebpf"))]
-        {
-            // Без eBPF поддержки GPU метрики должны быть 0
-            assert_eq!(metrics.gpu_usage, 0.0);
-            assert_eq!(metrics.gpu_memory_usage, 0);
-        }
-    }
-
-    #[test]
-    fn test_gpu_program_selection() {
-        // Тест проверяет выбор оптимальной eBPF программы для GPU мониторинга
-        let config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            ..Default::default()
-        };
-
-        let mut collector = EbpfMetricsCollector::new(config);
-        
-        // Проверяем, что программа загружается корректно
-        assert!(collector.initialize().is_ok());
-        
-        // Проверяем, что программа выбрана в зависимости от доступности
-        #[cfg(feature = "ebpf")]
-        {
-            if std::path::Path::new("src/ebpf_programs/gpu_monitor_comprehensive.c").exists() {
-                // Должна быть выбрана комплексная программа
-                assert!(collector.gpu_program.is_some(), "Должна быть загружена eBPF программа для GPU");
-            } else if std::path::Path::new("src/ebpf_programs/gpu_monitor_high_perf.c").exists() {
-                // Должна быть выбрана высокопроизводительная программа
-                assert!(collector.gpu_program.is_some(), "Должна быть загружена eBPF программа для GPU");
-            }
-        }
-    }
-
-    #[test]
-    fn test_gpu_error_handling() {
-        // Тест проверяет обработку ошибок в GPU мониторинге
-        let config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            ..Default::default()
-        };
-
-        let mut collector = EbpfMetricsCollector::new(config);
-        
-        // Даже если произойдет ошибка, система должна продолжать работу
-        let result = collector.collect_metrics();
-        assert!(result.is_ok(), "Сбор метрик должен завершаться успешно даже при ошибках GPU");
-        
-        let metrics = result.unwrap();
-        
-        // Проверяем, что система не падает при отсутствии GPU
-        // f64 and u64 are always >= 0, so these assertions are redundant
-        let _gpu_usage = metrics.gpu_usage;
-        let _gpu_memory_usage = metrics.gpu_memory_usage;
-    }
-
-    #[test]
-    fn test_gpu_metrics_consistency() {
-        // Тест проверяет согласованность GPU метрик при многократном сборе
-        let config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            ..Default::default()
-        };
-
-        let mut collector = EbpfMetricsCollector::new(config);
-        assert!(collector.initialize().is_ok());
-
-        // Собираем метрики несколько раз
-        let metrics1 = collector.collect_metrics().unwrap();
-        let metrics2 = collector.collect_metrics().unwrap();
-        let metrics3 = collector.collect_metrics().unwrap();
-
-        // Проверяем, что метрики согласованы
-        assert!(metrics1.gpu_usage >= 0.0);
-        assert!(metrics2.gpu_usage >= 0.0);
-        assert!(metrics3.gpu_usage >= 0.0);
-        
-        // u64 is always >= 0, so this assertion is redundant
-        let _gpu_memory_usage = metrics1.gpu_memory_usage;
-        // u64 is always >= 0, so these assertions are redundant
-        let _gpu_memory_usage2 = metrics2.gpu_memory_usage;
-        let _gpu_memory_usage3 = metrics3.gpu_memory_usage;
-    }
-
-    #[test]
-    fn test_gpu_config_serialization() {
-        // Тест проверяет сериализацию конфигурации GPU мониторинга
-        let config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            enable_process_gpu_monitoring: true,
-            ..Default::default()
-        };
-        
-        // Сериализуем конфигурацию
-        let serialized = serde_json::to_string(&config).expect("Сериализация должна завершиться успешно");
-        
-        // Десериализуем конфигурацию
-        let deserialized: EbpfConfig = serde_json::from_str(&serialized).expect("Десериализация должна завершиться успешно");
-        
-        // Проверяем, что конфигурация сохранена корректно
-        assert!(deserialized.enable_gpu_monitoring);
-        assert!(deserialized.enable_process_gpu_monitoring);
-    }
-
-    #[test]
-    fn test_gpu_metrics_with_different_modes() {
-        // Тест проверяет GPU метрики в разных режимах работы
-        
-        // Режим 1: Базовый режим
-        let basic_config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            enable_high_performance_mode: false,
-            ..Default::default()
-        };
-        
-        let mut basic_collector = EbpfMetricsCollector::new(basic_config);
-        assert!(basic_collector.initialize().is_ok());
-        let basic_metrics = basic_collector.collect_metrics().unwrap();
-        
-        // Режим 2: Высокопроизводительный режим
-        let high_perf_config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            enable_high_performance_mode: true,
-            ..Default::default()
-        };
-        
-        let mut high_perf_collector = EbpfMetricsCollector::new(high_perf_config);
-        assert!(high_perf_collector.initialize().is_ok());
-        let high_perf_metrics = high_perf_collector.collect_metrics().unwrap();
-        
-        // Проверяем, что оба режима работают корректно
-        assert!(basic_metrics.gpu_usage >= 0.0);
-        assert!(high_perf_metrics.gpu_usage >= 0.0);
-    }
-
-    #[test]
-    fn test_gpu_integration_with_other_metrics() {
-        // Тест проверяет интеграцию GPU мониторинга с другими метриками
-        let config = EbpfConfig {
-            enable_gpu_monitoring: true,
-            enable_cpu_metrics: true,
-            enable_memory_metrics: true,
-            ..Default::default()
-        };
-
-        let mut collector = EbpfMetricsCollector::new(config);
-        assert!(collector.initialize().is_ok());
-
-        let metrics = collector.collect_metrics().unwrap();
-
-        // Проверяем, что все метрики собираются корректно
+    // Проверяем, что GPU метрики собираются корректно
+    #[cfg(feature = "ebpf")]
+    {
+        // В комплексном режиме должны быть более детализированные метрики
         assert!(metrics.gpu_usage >= 0.0);
-        // f64 and u64 are always >= 0, so these assertions are redundant
-        let _cpu_usage = metrics.cpu_usage;
-        let _memory_usage = metrics.memory_usage;
-        let _gpu_usage = metrics.gpu_usage;
+        assert!(metrics.gpu_memory_usage >= 0);
+
+        // Проверяем детализированную статистику GPU
+        if let Some(gpu_details) = metrics.gpu_details {
+            assert!(
+                !gpu_details.is_empty(),
+                "Должны быть детализированные метрики GPU"
+            );
+
+            for stat in gpu_details {
+                assert!(
+                    stat.gpu_usage >= 0.0,
+                    "Использование GPU должно быть неотрицательным"
+                );
+                assert!(
+                    stat.memory_usage >= 0,
+                    "Использование памяти должно быть неотрицательным"
+                );
+                assert!(
+                    stat.compute_units >= 0,
+                    "Количество вычислительных единиц должно быть неотрицательным"
+                );
+                assert!(
+                    stat.power_usage >= 0,
+                    "Потребление энергии должно быть неотрицательным"
+                );
+                assert!(
+                    stat.temperature_celsius >= 0,
+                    "Температура должна быть неотрицательной"
+                );
+            }
+        }
     }
+    #[cfg(not(feature = "ebpf"))]
+    {
+        // Без eBPF поддержки GPU метрики должны быть 0
+        assert_eq!(metrics.gpu_usage, 0.0);
+        assert_eq!(metrics.gpu_memory_usage, 0);
+    }
+}
+
+#[test]
+fn test_gpu_program_selection() {
+    // Тест проверяет выбор оптимальной eBPF программы для GPU мониторинга
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Проверяем, что программа загружается корректно
+    assert!(collector.initialize().is_ok());
+
+    // Проверяем, что программа выбрана в зависимости от доступности
+    #[cfg(feature = "ebpf")]
+    {
+        if std::path::Path::new("src/ebpf_programs/gpu_monitor_comprehensive.c").exists() {
+            // Должна быть выбрана комплексная программа
+            assert!(
+                collector.gpu_program.is_some(),
+                "Должна быть загружена eBPF программа для GPU"
+            );
+        } else if std::path::Path::new("src/ebpf_programs/gpu_monitor_high_perf.c").exists() {
+            // Должна быть выбрана высокопроизводительная программа
+            assert!(
+                collector.gpu_program.is_some(),
+                "Должна быть загружена eBPF программа для GPU"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_gpu_error_handling() {
+    // Тест проверяет обработку ошибок в GPU мониторинге
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Даже если произойдет ошибка, система должна продолжать работу
+    let result = collector.collect_metrics();
+    assert!(
+        result.is_ok(),
+        "Сбор метрик должен завершаться успешно даже при ошибках GPU"
+    );
+
+    let metrics = result.unwrap();
+
+    // Проверяем, что система не падает при отсутствии GPU
+    // f64 and u64 are always >= 0, so these assertions are redundant
+    let _gpu_usage = metrics.gpu_usage;
+    let _gpu_memory_usage = metrics.gpu_memory_usage;
+}
+
+#[test]
+fn test_gpu_metrics_consistency() {
+    // Тест проверяет согласованность GPU метрик при многократном сборе
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+
+    // Собираем метрики несколько раз
+    let metrics1 = collector.collect_metrics().unwrap();
+    let metrics2 = collector.collect_metrics().unwrap();
+    let metrics3 = collector.collect_metrics().unwrap();
+
+    // Проверяем, что метрики согласованы
+    assert!(metrics1.gpu_usage >= 0.0);
+    assert!(metrics2.gpu_usage >= 0.0);
+    assert!(metrics3.gpu_usage >= 0.0);
+
+    // u64 is always >= 0, so this assertion is redundant
+    let _gpu_memory_usage = metrics1.gpu_memory_usage;
+    // u64 is always >= 0, so these assertions are redundant
+    let _gpu_memory_usage2 = metrics2.gpu_memory_usage;
+    let _gpu_memory_usage3 = metrics3.gpu_memory_usage;
+}
+
+#[test]
+fn test_gpu_config_serialization() {
+    // Тест проверяет сериализацию конфигурации GPU мониторинга
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_process_gpu_monitoring: true,
+        ..Default::default()
+    };
+
+    // Сериализуем конфигурацию
+    let serialized =
+        serde_json::to_string(&config).expect("Сериализация должна завершиться успешно");
+
+    // Десериализуем конфигурацию
+    let deserialized: EbpfConfig =
+        serde_json::from_str(&serialized).expect("Десериализация должна завершиться успешно");
+
+    // Проверяем, что конфигурация сохранена корректно
+    assert!(deserialized.enable_gpu_monitoring);
+    assert!(deserialized.enable_process_gpu_monitoring);
+}
+
+#[test]
+fn test_gpu_metrics_with_different_modes() {
+    // Тест проверяет GPU метрики в разных режимах работы
+
+    // Режим 1: Базовый режим
+    let basic_config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_high_performance_mode: false,
+        ..Default::default()
+    };
+
+    let mut basic_collector = EbpfMetricsCollector::new(basic_config);
+    assert!(basic_collector.initialize().is_ok());
+    let basic_metrics = basic_collector.collect_metrics().unwrap();
+
+    // Режим 2: Высокопроизводительный режим
+    let high_perf_config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_high_performance_mode: true,
+        ..Default::default()
+    };
+
+    let mut high_perf_collector = EbpfMetricsCollector::new(high_perf_config);
+    assert!(high_perf_collector.initialize().is_ok());
+    let high_perf_metrics = high_perf_collector.collect_metrics().unwrap();
+
+    // Проверяем, что оба режима работают корректно
+    assert!(basic_metrics.gpu_usage >= 0.0);
+    assert!(high_perf_metrics.gpu_usage >= 0.0);
+}
+
+#[test]
+fn test_gpu_integration_with_other_metrics() {
+    // Тест проверяет интеграцию GPU мониторинга с другими метриками
+    let config = EbpfConfig {
+        enable_gpu_monitoring: true,
+        enable_cpu_metrics: true,
+        enable_memory_metrics: true,
+        ..Default::default()
+    };
+
+    let mut collector = EbpfMetricsCollector::new(config);
+    assert!(collector.initialize().is_ok());
+
+    let metrics = collector.collect_metrics().unwrap();
+
+    // Проверяем, что все метрики собираются корректно
+    assert!(metrics.gpu_usage >= 0.0);
+    // f64 and u64 are always >= 0, so these assertions are redundant
+    let _cpu_usage = metrics.cpu_usage;
+    let _memory_usage = metrics.memory_usage;
+    let _gpu_usage = metrics.gpu_usage;
+}

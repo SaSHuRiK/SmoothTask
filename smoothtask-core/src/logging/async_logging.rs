@@ -92,7 +92,7 @@ impl AsyncLogRotator {
         if self.rotation_interval_sec > 0 {
             let current_time = SystemTime::now();
             let last_rotation = self.last_rotation_time.lock().await;
-            
+
             if let Some(last_time) = *last_rotation {
                 if let Ok(duration) = current_time.duration_since(last_time) {
                     if duration.as_secs() >= self.rotation_interval_sec {
@@ -136,7 +136,10 @@ impl AsyncLogRotator {
 
         // Проверяем, что это файл, а не директория
         if !metadata.is_file() {
-            tracing::warn!("Путь {} не является файлом, пропускаем ротацию", log_path.display());
+            tracing::warn!(
+                "Путь {} не является файлом, пропускаем ротацию",
+                log_path.display()
+            );
             return Ok(()); // Не файл, пропускаем ротацию
         }
 
@@ -262,7 +265,8 @@ impl AsyncLogRotator {
             })?;
 
             Ok(())
-        }).await?
+        })
+        .await?
     }
 
     /// Удаляет старые ротированные файлы, если превышен лимит (асинхронная версия).
@@ -429,7 +433,7 @@ impl AsyncLogRotator {
 
         // Удаляем старые файлы, если превышен лимит по общему размеру
         let mut total_size: u64 = rotated_files.iter().map(|(_, _, size)| size).sum();
-        
+
         while total_size > self.max_total_size_bytes && !rotated_files.is_empty() {
             let (file_path, _, file_size) = rotated_files.remove(0); // Удаляем самый старый файл
             fs::remove_file(&file_path).await.with_context(|| {
@@ -456,17 +460,17 @@ impl AsyncLogRotator {
     pub async fn cleanup_logs(&self, log_path: &Path) -> Result<()> {
         // Выполняем очистку по возрасту
         self.cleanup_by_age(log_path).await?;
-        
+
         // Выполняем очистку по общему размеру
         self.cleanup_by_total_size(log_path).await?;
-        
+
         // Выполняем очистку по количеству файлов
         self.cleanup_old_logs(log_path).await?;
-        
+
         // Обновляем время последней очистки
         let mut last_cleanup = self.last_cleanup_time.lock().await;
         *last_cleanup = Some(SystemTime::now());
-        
+
         Ok(())
     }
 
@@ -568,7 +572,7 @@ mod tests {
     #[test]
     fn test_async_log_rotator_creation() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let rotator = AsyncLogRotator::new(10_485_760, 5, true, 3600, 0, 0);
             assert_eq!(rotator.max_size_bytes, 10_485_760);
@@ -583,7 +587,7 @@ mod tests {
     #[test]
     fn test_async_needs_rotation_by_size() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let rotator = AsyncLogRotator::new(1000, 5, true, 0, 0, 0); // Ротация по размеру, 1000 байт
 
@@ -610,7 +614,7 @@ mod tests {
     #[test]
     fn test_async_rotate_log_file() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let temp_dir = TempDir::new().expect("temp dir");
             let log_path = temp_dir.path().join("test.log");
@@ -647,7 +651,7 @@ mod tests {
     #[test]
     fn test_async_get_log_file_size() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let temp_file = NamedTempFile::new().expect("temp file");
             let log_path = temp_file.path();
@@ -664,7 +668,9 @@ mod tests {
             writeln!(file, "Test data").expect("write data");
             drop(file);
 
-            let new_size = get_log_file_size_async(log_path).await.expect("get new size");
+            let new_size = get_log_file_size_async(log_path)
+                .await
+                .expect("get new size");
             assert!(new_size > 0, "File should have non-zero size after writing");
         });
     }
@@ -672,12 +678,13 @@ mod tests {
     #[test]
     fn test_async_rotator_config() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let rotator = AsyncLogRotator::new(1000, 3, false, 0, 0, 0);
 
             // Проверяем, что конфигурация доступна
-            let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+            let (max_size, max_files, compression, interval, max_age, max_total_size) =
+                rotator.get_config();
             assert_eq!(max_size, 1000);
             assert_eq!(max_files, 3);
             assert!(!compression);
@@ -690,7 +697,7 @@ mod tests {
     #[test]
     fn test_async_rotation_disabled() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let rotator = AsyncLogRotator::new(0, 0, false, 0, 0, 0); // Все отключено
 
@@ -705,7 +712,7 @@ mod tests {
     #[test]
     fn test_async_error_handling() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let temp_dir = TempDir::new().expect("temp dir");
             let log_path = temp_dir.path().join("test.log");
@@ -720,30 +727,36 @@ mod tests {
             // Тестируем ротацию с несуществующим файлом (должно завершиться успешно)
             let non_existent_path = temp_dir.path().join("non_existent.log");
             let result = rotator.rotate_log(&non_existent_path).await;
-            assert!(result.is_ok(), "Rotation of non-existent file should succeed");
+            assert!(
+                result.is_ok(),
+                "Rotation of non-existent file should succeed"
+            );
         });
     }
 
     #[test]
     fn test_async_update_config_not_supported() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let temp_dir = TempDir::new().expect("temp dir");
             let log_path = temp_dir.path().join("test.log");
-            
+
             let rotator = AsyncLogRotator::new(1000, 3, false, 0, 0, 0);
 
             // Проверяем, что update_config возвращает ошибку
             let result = rotator.update_config();
-            assert!(result.is_err(), "update_config should return an error in async version");
+            assert!(
+                result.is_err(),
+                "update_config should return an error in async version"
+            );
         });
     }
 
     #[test]
     fn test_async_cleanup_error_handling() {
         let runtime = create_runtime();
-        
+
         runtime.block_on(async {
             let temp_dir = TempDir::new().expect("temp dir");
             let log_path = temp_dir.path().join("test.log");
@@ -758,7 +771,10 @@ mod tests {
             // Тестируем очистку с несуществующим файлом (должно завершиться успешно)
             let non_existent_path = temp_dir.path().join("non_existent.log");
             let result = rotator.cleanup_logs(&non_existent_path).await;
-            assert!(result.is_ok(), "Cleanup of non-existent file should succeed");
+            assert!(
+                result.is_ok(),
+                "Cleanup of non-existent file should succeed"
+            );
         });
     }
 }

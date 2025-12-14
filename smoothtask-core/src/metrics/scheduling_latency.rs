@@ -203,10 +203,10 @@ impl LatencyCollector {
         };
 
         let result = sorted[index];
-        
+
         // Кэшируем результат
         self.cache_percentile(percentile, result);
-        
+
         Some(result)
     }
 
@@ -223,7 +223,7 @@ impl LatencyCollector {
     /// Проверяет кэш на наличие актуального значения перцентиля.
     fn check_cache(&self, percentile: f64) -> Option<f64> {
         let cache_key = Self::percentile_to_cache_key(percentile);
-        
+
         let cache = match self.percentile_cache.lock() {
             Ok(guard) => guard,
             Err(e) => {
@@ -234,7 +234,7 @@ impl LatencyCollector {
                 return None;
             }
         };
-        
+
         if let Some((cached_value, timestamp)) = cache.get(&cache_key) {
             let now = SystemTime::now();
             if let Ok(elapsed) = now.duration_since(*timestamp) {
@@ -247,14 +247,14 @@ impl LatencyCollector {
                 }
             }
         }
-        
+
         None
     }
 
     /// Кэширует значение перцентиля.
     fn cache_percentile(&self, percentile: f64, value: f64) {
         let cache_key = Self::percentile_to_cache_key(percentile);
-        
+
         let mut cache = match self.percentile_cache.lock() {
             Ok(guard) => guard,
             Err(e) => {
@@ -265,7 +265,7 @@ impl LatencyCollector {
                 return;
             }
         };
-        
+
         cache.insert(cache_key, (value, SystemTime::now()));
         debug!(
             "Cached percentile {}: {:.2} ms (TTL: {}s)",
@@ -818,23 +818,23 @@ mod tests {
     fn test_latency_collector_cache_functionality() {
         // Тест на функциональность кэша
         let collector = LatencyCollector::new_with_cache_ttl(1000, 1); // 1 секунда TTL
-        
+
         // Добавляем тестовые данные
         for i in 0..100 {
             collector.add_sample(i as f64 * 0.1);
         }
-        
+
         // Первое вычисление P95 - должно вычислить и закэшировать
         let p95_1 = collector.p95();
         assert!(p95_1.is_some());
-        
+
         // Второе вычисление P95 - должно использовать кэш
         let p95_2 = collector.p95();
         assert!(p95_2.is_some());
-        
+
         // Результаты должны быть одинаковыми
         assert_eq!(p95_1, p95_2);
-        
+
         // Тест P99 кэширования
         let p99_1 = collector.p99();
         let p99_2 = collector.p99();
@@ -845,29 +845,29 @@ mod tests {
     fn test_latency_collector_cache_expiration() {
         use std::thread;
         use std::time::Duration;
-        
+
         // Тест на истечение срока кэша
         let collector = LatencyCollector::new_with_cache_ttl(1000, 1); // 1 секунда TTL
-        
+
         // Добавляем тестовые данные
         for i in 0..100 {
             collector.add_sample(i as f64 * 0.1);
         }
-        
+
         // Первое вычисление
         let p95_before = collector.p95();
-        
+
         // Ждём, пока кэш истечёт
         thread::sleep(Duration::from_secs(2));
-        
+
         // Добавляем новые данные, которые изменят результат
         for i in 0..50 {
             collector.add_sample(i as f64 * 0.2); // Другие значения
         }
-        
+
         // Второе вычисление - должно вычислить заново (кэш истёк)
         let p95_after = collector.p95();
-        
+
         // Оба результата должны быть Some, но могут отличаться
         assert!(p95_before.is_some());
         assert!(p95_after.is_some());
@@ -877,7 +877,7 @@ mod tests {
     fn test_latency_collector_new_with_cache_ttl() {
         // Тест на создание коллектора с настраиваемым TTL кэша
         let collector = LatencyCollector::new_with_cache_ttl(1000, 5);
-        
+
         assert_eq!(collector.max_samples, 1000);
         assert_eq!(collector.cache_ttl_seconds, 5);
         assert!(collector.is_empty());
@@ -887,18 +887,21 @@ mod tests {
     fn test_latency_probe_thread_spawn_error() {
         // Тест на обработку ошибки создания потока
         // Используем недопустимое имя потока, чтобы вызвать ошибку
-        // Note: Это сложно протестировать напрямую, так как thread::Builder::new() 
-        // не позволяет установить недопустимое имя. Вместо этого проверяем, что 
+        // Note: Это сложно протестировать напрямую, так как thread::Builder::new()
+        // не позволяет установить недопустимое имя. Вместо этого проверяем, что
         // функция возвращает Result и может быть обработана.
         let collector = Arc::new(LatencyCollector::new(1000));
-        
+
         // Проверяем, что функция возвращает Result
-        let result: Result<LatencyProbe, SchedulingLatencyError> = 
+        let result: Result<LatencyProbe, SchedulingLatencyError> =
             LatencyProbe::new(Arc::clone(&collector), 5, 1000);
-        
+
         // В нормальных условиях это должно пройти успешно
-        assert!(result.is_ok(), "LatencyProbe should be created successfully");
-        
+        assert!(
+            result.is_ok(),
+            "LatencyProbe should be created successfully"
+        );
+
         // Проверяем, что мы можем обработать ошибку
         match result {
             Ok(_probe) => {

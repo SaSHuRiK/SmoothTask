@@ -7,8 +7,8 @@ use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::Path;
 use std::num::NonZeroUsize;
+use std::path::Path;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, error, info, warn};
 
@@ -16,7 +16,6 @@ use lru::LruCache;
 
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use crate::classify::ml_classifier::MLClassifier;
-
 
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
 
@@ -155,8 +154,6 @@ impl Default for PatternDatabase {
         }
     }
 }
-
-
 
 impl PatternDatabase {
     /// Загружает паттерны из директории с YAML файлами.
@@ -329,7 +326,10 @@ impl PatternDatabase {
     /// - директория не существует или недоступна для чтения
     /// - YAML файл имеет неверный формат
     /// - структура паттерна не соответствует ожидаемой
-    pub fn reload(&mut self, patterns_dir: impl AsRef<Path>) -> Result<crate::classify::pattern_watcher::PatternUpdateResult> {
+    pub fn reload(
+        &mut self,
+        patterns_dir: impl AsRef<Path>,
+    ) -> Result<crate::classify::pattern_watcher::PatternUpdateResult> {
         let patterns_dir = patterns_dir.as_ref();
         let mut new_patterns_by_category = HashMap::new();
         let mut new_all_patterns = Vec::new();
@@ -716,15 +716,18 @@ impl PatternDatabase {
             desktop_id.map(|s| s.to_string()),
             cgroup_path.map(|s| s.to_string()),
         );
-        
+
         // Пробуем получить результат из кэша
         if let Some(cached_matches) = self.match_cache.get(&cache_key) {
             // Преобразуем кэшированные результаты в нужный формат
             let mut matches = Vec::new();
             for (category, pattern) in cached_matches {
                 // Находим соответствующие паттерны в all_patterns
-                if let Some((found_category, found_pattern)) = self.all_patterns.iter()
-                    .find(|(cat, pat)| cat.0 == category.0 && pat.name == pattern.name) {
+                if let Some((found_category, found_pattern)) = self
+                    .all_patterns
+                    .iter()
+                    .find(|(cat, pat)| cat.0 == category.0 && pat.name == pattern.name)
+                {
                     matches.push((found_category, found_pattern));
                 }
             }
@@ -786,7 +789,7 @@ impl PatternDatabase {
     }
 
     /// Улучшенный алгоритм обнаружения приложений с расширенными эвристиками.
-    /// 
+    ///
     /// Этот метод использует дополнительные эвристики для обнаружения приложений:
     /// 1. Анализ аргументов командной строки
     /// 2. Обнаружение контейнеров и sandbox
@@ -816,23 +819,23 @@ impl PatternDatabase {
 
         if !basic_matches.is_empty() {
             // Конвертируем ссылки в owned данные
-            return basic_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+            return basic_matches
+                .into_iter()
+                .map(|(cat, pat)| (cat.clone(), pat.clone()))
+                .collect();
         }
 
         // Если базовое сопоставление не сработало, применяем улучшенные эвристики
         // Используем статические методы, которые не требуют mutable self
         // Используем drop чтобы освободить mutable borrow перед вызовом статических методов
         drop(basic_matches);
-        
+
         // Получаем все паттерны из текущей базы
         let all_patterns = self.all_patterns();
-        
+
         // Используем статический метод, который не требует доступа к self
-        let enhanced_matches = Self::apply_enhanced_detection_no_self(
-            process,
-            desktop_id,
-            all_patterns,
-        );
+        let enhanced_matches =
+            Self::apply_enhanced_detection_no_self(process, desktop_id, all_patterns);
 
         enhanced_matches
     }
@@ -860,10 +863,14 @@ impl PatternDatabase {
             if Self::is_container_or_sandbox_process(exe) {
                 // Пытаемся обнаружить реальное приложение внутри контейнера
                 if let Some(cmdline) = &process.cmdline {
-                    let container_matches = Self::detect_container_application_static(cmdline, all_patterns);
+                    let container_matches =
+                        Self::detect_container_application_static(cmdline, all_patterns);
                     if !container_matches.is_empty() {
                         // Конвертируем ссылки в owned данные
-                        return container_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+                        return container_matches
+                            .into_iter()
+                            .map(|(cat, pat)| (cat.clone(), pat.clone()))
+                            .collect();
                     }
                 }
             }
@@ -874,32 +881,41 @@ impl PatternDatabase {
             let path_matches = Self::detect_by_executable_path_static(exe, all_patterns);
             if !path_matches.is_empty() {
                 // Конвертируем ссылки в owned данные
-                return path_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+                return path_matches
+                    .into_iter()
+                    .map(|(cat, pat)| (cat.clone(), pat.clone()))
+                    .collect();
             }
         }
 
         // 3. Обнаружение по системным сервисам
         if let Some(systemd_unit) = &process.systemd_unit {
-            let service_matches = Self::detect_by_systemd_service_static(systemd_unit, all_patterns);
+            let service_matches =
+                Self::detect_by_systemd_service_static(systemd_unit, all_patterns);
             if !service_matches.is_empty() {
                 // Конвертируем ссылки в owned данные
-                return service_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+                return service_matches
+                    .into_iter()
+                    .map(|(cat, pat)| (cat.clone(), pat.clone()))
+                    .collect();
             }
         }
 
         // 4. Обнаружение по аргументам командной строки
         if let Some(cmdline) = &process.cmdline {
-            let cmdline_matches = Self::detect_by_command_line_arguments_static(cmdline, all_patterns);
+            let cmdline_matches =
+                Self::detect_by_command_line_arguments_static(cmdline, all_patterns);
             if !cmdline_matches.is_empty() {
                 // Конвертируем ссылки в owned данные
-                return cmdline_matches.into_iter().map(|(cat, pat)| (cat.clone(), pat.clone())).collect();
+                return cmdline_matches
+                    .into_iter()
+                    .map(|(cat, pat)| (cat.clone(), pat.clone()))
+                    .collect();
             }
         }
 
         Vec::new()
     }
-
-
 
     /// Обнаружение по аргументам командной строки (статическая версия).
     ///
@@ -956,8 +972,17 @@ impl PatternDatabase {
     /// `true`, если процесс является контейнером или sandbox.
     fn is_container_or_sandbox_process(exe: &str) -> bool {
         let container_exes = [
-            "docker", "podman", "lxc", "lxd", "containerd", "runc",
-            "flatpak", "snap", "firejail", "bubblewrap", "nsjail",
+            "docker",
+            "podman",
+            "lxc",
+            "lxd",
+            "containerd",
+            "runc",
+            "flatpak",
+            "snap",
+            "firejail",
+            "bubblewrap",
+            "nsjail",
         ];
 
         container_exes.contains(&exe)
@@ -1073,8 +1098,6 @@ impl PatternDatabase {
         matches
     }
 
-
-
     /// Проверяет, соответствует ли строка паттерну.
     ///
     /// Поддерживает glob паттерны:
@@ -1112,16 +1135,17 @@ impl PatternDatabase {
         // Преобразование в байты для быстрого сравнения
         let text_bytes = text.as_bytes();
         let pattern_bytes = pattern.as_bytes();
-        
+
         let mut text_idx = 0;
         let mut pattern_idx = 0;
         let mut star_idx = None;
         let mut match_idx = 0;
-        
+
         while text_idx < text_bytes.len() {
-            if pattern_idx < pattern_bytes.len() && 
-               (pattern_bytes[pattern_idx] == b'?' || 
-                pattern_bytes[pattern_idx] == text_bytes[text_idx]) {
+            if pattern_idx < pattern_bytes.len()
+                && (pattern_bytes[pattern_idx] == b'?'
+                    || pattern_bytes[pattern_idx] == text_bytes[text_idx])
+            {
                 // Совпадение символа или ?
                 text_idx += 1;
                 pattern_idx += 1;
@@ -1140,12 +1164,12 @@ impl PatternDatabase {
                 return false;
             }
         }
-        
+
         // Пропускаем оставшиеся звездочки
         while pattern_idx < pattern_bytes.len() && pattern_bytes[pattern_idx] == b'*' {
             pattern_idx += 1;
         }
-        
+
         pattern_idx == pattern_bytes.len()
     }
 }
@@ -1197,10 +1221,7 @@ pub fn classify_process(
 
     // Ищем совпадающие паттерны с использованием улучшенного алгоритма обнаружения
     let mut pattern_db_lock = pattern_db.lock().unwrap();
-    let matches = pattern_db_lock.detect_application_enhanced(
-        process,
-        desktop_id,
-    );
+    let matches = pattern_db_lock.detect_application_enhanced(process, desktop_id);
 
     if matches.is_empty() {
         debug!(
@@ -1242,7 +1263,7 @@ pub fn classify_process(
         if let Some(ml_type) = ml_result.process_type {
             // Определяем стратегию интеграции на основе уверенности и типа
             let ml_confidence = ml_result.confidence;
-            
+
             // Стратегия 1: Высокая уверенность ML (> 0.8) - всегда используем ML
             if ml_confidence > 0.8 {
                 if let Some(ref pattern_type) = process_type {
@@ -1336,10 +1357,7 @@ pub fn classify_process(
     // Паттерн-базированная классификация с улучшенным обнаружением (без ML)
     // Блокируем базу паттернов для чтения
     let mut pattern_db_lock = pattern_db.lock().unwrap();
-    let matches = pattern_db_lock.detect_application_enhanced(
-        process,
-        desktop_id,
-    );
+    let matches = pattern_db_lock.detect_application_enhanced(process, desktop_id);
 
     // Собираем все теги из совпадающих паттернов
     let mut all_tags = HashSet::new();
@@ -2955,7 +2973,7 @@ apps:
         };
 
         let matches = db.detect_application_enhanced(&process, None);
-        
+
         // Должны обнаружить Docker контейнер
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].1.name, "docker-container");
@@ -2992,7 +3010,7 @@ apps:
         };
 
         let matches = db.detect_application_enhanced(&process, None);
-        
+
         // Должны обнаружить Firefox по аргументу командной строки
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].1.name, "firefox");
@@ -3028,7 +3046,7 @@ apps:
         };
 
         let matches = db.detect_application_enhanced(&process, None);
-        
+
         // Должны обнаружить Firefox по имени файла в пути
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].1.name, "firefox");
@@ -3064,7 +3082,7 @@ apps:
         };
 
         let matches = db.detect_application_enhanced(&process, None);
-        
+
         // Должны обнаружить Firefox по имени сервиса
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].1.name, "firefox");
@@ -3079,7 +3097,9 @@ apps:
         assert!(PatternDatabase::is_container_or_sandbox_process("flatpak"));
         assert!(PatternDatabase::is_container_or_sandbox_process("snap"));
         assert!(PatternDatabase::is_container_or_sandbox_process("firejail"));
-        assert!(PatternDatabase::is_container_or_sandbox_process("bubblewrap"));
+        assert!(PatternDatabase::is_container_or_sandbox_process(
+            "bubblewrap"
+        ));
 
         // Тестируем, что обычные приложения не обнаруживаются как контейнеры
         assert!(!PatternDatabase::is_container_or_sandbox_process("firefox"));
@@ -3116,7 +3136,7 @@ apps:
         };
 
         let matches = db.detect_application_enhanced(&process, None);
-        
+
         // Не должно быть совпадений
         assert!(matches.is_empty());
     }
@@ -3152,7 +3172,7 @@ apps:
         };
 
         let matches = db.detect_application_enhanced(&process, None);
-        
+
         // Должно быть найдено через базовое сопоставление (по exe)
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].1.name, "firefox");

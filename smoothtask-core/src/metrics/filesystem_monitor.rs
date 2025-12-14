@@ -4,11 +4,11 @@
 //! Модуль для мониторинга файловой системы в реальном времени
 //! Использует inotify для отслеживания изменений в файлах и директориях
 
+use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
-use anyhow::Result;
 use tracing::{info, warn};
 
 /// Структура для хранения информации об изменении файла
@@ -65,59 +65,59 @@ impl FilesystemMonitor {
     /// Создать новый экземпляр мониторинга файловой системы
     pub fn new(config: FilesystemMonitorConfig) -> Result<Self> {
         info!("Creating new filesystem monitor with config: {:?}", config);
-        
+
         let monitor = Self {
             config,
             event_buffer: Arc::new(Mutex::new(Vec::new())),
             watch_descriptors: HashMap::new(),
         };
-        
+
         Ok(monitor)
     }
-    
+
     /// Инициализировать мониторинг
     pub fn initialize(&mut self) -> Result<()> {
         info!("Initializing filesystem monitor");
-        
+
         // В реальной реализации здесь будет инициализация inotify
         // Для тестирования используем заглушку
-        
+
         for path in &self.config.watch_paths {
             if !path.exists() {
                 warn!("Watch path does not exist: {}", path.display());
                 continue;
             }
-            
+
             // В реальной реализации здесь будет добавление пути в inotify
             // Для тестирования используем заглушку
             let wd = self.add_watch_internal(path)?;
             self.watch_descriptors.insert(path.clone(), wd);
             info!("Added watch for path: {}", path.display());
         }
-        
+
         Ok(())
     }
-    
+
     /// Добавить путь для мониторинга
     fn add_watch_internal(&self, _path: &Path) -> Result<i32> {
         // В реальной реализации здесь будет вызов inotify_add_watch
         // Для тестирования возвращаем фиктивный дескриптор
         Ok(1) // Фиктивный дескриптор
     }
-    
+
     /// Собрать события изменений файлов
     pub fn collect_events(&self) -> Result<Vec<FileChangeEvent>> {
         let mut events = Vec::new();
-        
+
         // В реальной реализации здесь будет чтение событий из inotify
         // Для тестирования используем заглушку
-        
+
         // Проверяем, есть ли события в буфере
         let buffer = self.event_buffer.lock().unwrap();
         if !buffer.is_empty() {
             events.extend(buffer.iter().cloned());
         }
-        
+
         // В реальной реализации здесь будет обработка событий inotify
         // Для тестирования добавляем тестовые события
         if events.is_empty() {
@@ -134,10 +134,10 @@ impl FilesystemMonitor {
             };
             events.push(test_event);
         }
-        
+
         Ok(events)
     }
-    
+
     /// Добавить тестовое событие (для тестирования)
     pub fn add_test_event(&self, event: FileChangeEvent) {
         let mut buffer = self.event_buffer.lock().unwrap();
@@ -147,13 +147,13 @@ impl FilesystemMonitor {
             warn!("Event buffer full, dropping event");
         }
     }
-    
+
     /// Очистить буфер событий
     pub fn clear_events(&self) {
         let mut buffer = self.event_buffer.lock().unwrap();
         buffer.clear();
     }
-    
+
     /// Получить статистику мониторинга
     pub fn get_stats(&self) -> FilesystemMonitorStats {
         let buffer = self.event_buffer.lock().unwrap();
@@ -178,7 +178,6 @@ pub struct FilesystemMonitorStats {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_filesystem_monitor_creation() {
         let config = FilesystemMonitorConfig {
@@ -187,7 +186,7 @@ mod tests {
             max_events: 100,
             event_timeout_secs: 30,
         };
-        
+
         let monitor = FilesystemMonitor::new(config);
         assert!(monitor.is_ok());
         let monitor = monitor.unwrap();
@@ -202,7 +201,7 @@ mod tests {
             max_events: 100,
             event_timeout_secs: 30,
         };
-        
+
         let mut monitor = FilesystemMonitor::new(config).unwrap();
         let result = monitor.initialize();
         assert!(result.is_ok());
@@ -217,7 +216,7 @@ mod tests {
             max_events: 100,
             event_timeout_secs: 30,
         };
-        
+
         let monitor = FilesystemMonitor::new(config).unwrap();
         let events = monitor.collect_events();
         assert!(events.is_ok());
@@ -230,7 +229,7 @@ mod tests {
     fn test_filesystem_monitor_add_event() {
         let config = FilesystemMonitorConfig::default();
         let monitor = FilesystemMonitor::new(config).unwrap();
-        
+
         let test_event = FileChangeEvent {
             path: PathBuf::from("/test/added.txt"),
             event_type: FileChangeType::Created,
@@ -238,7 +237,7 @@ mod tests {
             process_id: Some(5678),
             process_name: Some("added_process".to_string()),
         };
-        
+
         monitor.add_test_event(test_event.clone());
         let events = monitor.collect_events().unwrap();
         assert!(events.iter().any(|e| e.path == test_event.path));
@@ -252,7 +251,7 @@ mod tests {
             max_events: 50,
             event_timeout_secs: 30,
         };
-        
+
         let monitor = FilesystemMonitor::new(config).unwrap();
         let stats = monitor.get_stats();
         assert_eq!(stats.max_capacity, 50);
@@ -267,9 +266,9 @@ mod tests {
             max_events: 2, // Очень маленький буфер
             event_timeout_secs: 30,
         };
-        
+
         let monitor = FilesystemMonitor::new(config).unwrap();
-        
+
         // Добавляем события до переполнения
         for i in 0..5 {
             let event = FileChangeEvent {
@@ -281,7 +280,7 @@ mod tests {
             };
             monitor.add_test_event(event);
         }
-        
+
         let stats = monitor.get_stats();
         assert_eq!(stats.buffered_events, 2); // Должно быть только 2 события (максимум)
     }
@@ -290,7 +289,7 @@ mod tests {
     fn test_filesystem_monitor_clear_events() {
         let config = FilesystemMonitorConfig::default();
         let monitor = FilesystemMonitor::new(config).unwrap();
-        
+
         // Добавляем события
         for i in 0..5 {
             let event = FileChangeEvent {
@@ -302,7 +301,7 @@ mod tests {
             };
             monitor.add_test_event(event);
         }
-        
+
         // Очищаем события
         monitor.clear_events();
         let stats = monitor.get_stats();
@@ -321,7 +320,7 @@ mod tests {
             max_events: 100,
             event_timeout_secs: 30,
         };
-        
+
         let mut monitor = FilesystemMonitor::new(config).unwrap();
         let result = monitor.initialize();
         assert!(result.is_ok());
@@ -339,7 +338,7 @@ mod tests {
             max_events: 100,
             event_timeout_secs: 30,
         };
-        
+
         let mut monitor = FilesystemMonitor::new(config).unwrap();
         let result = monitor.initialize();
         assert!(result.is_ok());
@@ -351,7 +350,7 @@ mod tests {
     fn test_filesystem_monitor_event_types() {
         let config = FilesystemMonitorConfig::default();
         let monitor = FilesystemMonitor::new(config).unwrap();
-        
+
         // Тестируем все типы событий
         let event_types = vec![
             FileChangeType::Created,
@@ -361,7 +360,7 @@ mod tests {
             FileChangeType::Accessed,
             FileChangeType::AttributeChanged,
         ];
-        
+
         for (i, event_type) in event_types.iter().enumerate() {
             let event = FileChangeEvent {
                 path: PathBuf::from(format!("/test/type_{}.txt", i)),
@@ -372,10 +371,10 @@ mod tests {
             };
             monitor.add_test_event(event);
         }
-        
+
         let events = monitor.collect_events().unwrap();
         assert_eq!(events.len(), 6); // Должно быть 6 событий
-        
+
         // Проверяем, что все типы событий присутствуют
         for event_type in event_types {
             assert!(events.iter().any(|e| e.event_type == event_type));

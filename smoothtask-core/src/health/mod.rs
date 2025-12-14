@@ -547,28 +547,28 @@ impl Default for HealthIssueStatus {
 pub trait HealthMonitorTrait: Send + Sync {
     /// Выполнить проверку здоровья.
     async fn check_health(&self) -> Result<HealthMonitor>;
-    
+
     /// Обновить состояние здоровья.
     async fn update_health_status(&self, health_monitor: HealthMonitor) -> Result<()>;
-    
+
     /// Получить текущее состояние здоровья.
     async fn get_health_status(&self) -> Result<HealthMonitor>;
-    
+
     /// Добавить проблему здоровья.
     async fn add_health_issue(&self, issue: HealthIssue) -> Result<()>;
-    
+
     /// Разрешить проблему здоровья.
     async fn resolve_health_issue(&self, issue_id: &str) -> Result<()>;
-    
+
     /// Очистить историю проблем.
     async fn clear_issue_history(&self) -> Result<()>;
-    
+
     /// Получить статистику автоматического восстановления.
     async fn get_recovery_stats(&self) -> Result<AutoRecoveryStats>;
-    
+
     /// Очистить статистику автоматического восстановления.
     async fn clear_recovery_stats(&self) -> Result<()>;
-    
+
     /// Обновить флаги автоматического восстановления.
     async fn update_auto_recovery_flags(&self, flags: AutoRecoveryFlags) -> Result<()>;
 }
@@ -585,50 +585,50 @@ pub struct HealthMonitorImpl {
 impl HealthMonitorTrait for HealthMonitorImpl {
     async fn check_health(&self) -> Result<HealthMonitor> {
         let mut health_monitor = self.health_state.read().await.clone();
-        
+
         // Обновляем время последней проверки
         health_monitor.last_check_time = Some(Utc::now());
-        
+
         // Выполняем проверку компонентов
         health_monitor = self.check_components(health_monitor).await?;
-        
+
         // Выполняем автоматическое восстановление
         self.perform_auto_recovery(&mut health_monitor).await?;
-        
+
         // Определяем общий статус здоровья
         health_monitor.overall_status = self.determine_overall_status(&health_monitor);
-        
+
         // Рассчитываем балл здоровья
         self.update_health_score_history(&mut health_monitor);
-        
+
         Ok(health_monitor)
     }
-    
+
     async fn update_health_status(&self, health_monitor: HealthMonitor) -> Result<()> {
         let mut state = self.health_state.write().await;
         *state = health_monitor;
         Ok(())
     }
-    
+
     async fn get_health_status(&self) -> Result<HealthMonitor> {
         Ok(self.health_state.read().await.clone())
     }
-    
+
     async fn add_health_issue(&self, issue: HealthIssue) -> Result<()> {
         let mut state = self.health_state.write().await;
-        
+
         // Проверяем максимальное количество проблем в истории
         if state.issue_history.len() >= state.config.max_issue_history {
             state.issue_history.remove(0); // Удаляем самую старую проблему
         }
-        
+
         // Сохраняем информацию о проблеме перед тем, как переместить её в историю
         let component = issue.component.clone();
         let severity = issue.severity;
         let description = issue.description.clone();
-        
+
         state.issue_history.push(issue);
-        
+
         // Обновляем статус компонента, связанного с проблемой
         if let Some(component_name) = component {
             if let Some(component_status) = state.component_statuses.get_mut(&component_name) {
@@ -644,25 +644,29 @@ impl HealthMonitorTrait for HealthMonitorImpl {
                     }
                     _ => {}
                 }
-                
+
                 component_status.error_details = Some(description);
                 component_status.last_check_time = Some(Utc::now());
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn resolve_health_issue(&self, issue_id: &str) -> Result<()> {
         let mut state = self.health_state.write().await;
-        
-        if let Some(issue) = state.issue_history.iter_mut().find(|i| i.issue_id == issue_id) {
+
+        if let Some(issue) = state
+            .issue_history
+            .iter_mut()
+            .find(|i| i.issue_id == issue_id)
+        {
             // Сохраняем компонент перед обновлением статуса
             let component = issue.component.clone();
-            
+
             issue.status = HealthIssueStatus::Resolved;
             issue.resolved_time = Some(Utc::now());
-            
+
             // Обновляем статус компонента
             if let Some(component_name) = component {
                 if let Some(component_status) = state.component_statuses.get_mut(&component_name) {
@@ -672,28 +676,28 @@ impl HealthMonitorTrait for HealthMonitorImpl {
                 }
             }
         }
-        
+
         Ok(())
     }
-    
+
     async fn clear_issue_history(&self) -> Result<()> {
         let mut state = self.health_state.write().await;
         state.issue_history.clear();
         Ok(())
     }
-    
+
     /// Получить статистику автоматического восстановления.
     async fn get_recovery_stats(&self) -> Result<AutoRecoveryStats> {
         Ok(self.recovery_stats.read().await.clone())
     }
-    
+
     /// Очистить статистику автоматического восстановления.
     async fn clear_recovery_stats(&self) -> Result<()> {
         let mut stats = self.recovery_stats.write().await;
         *stats = AutoRecoveryStats::default();
         Ok(())
     }
-    
+
     /// Обновить флаги автоматического восстановления.
     async fn update_auto_recovery_flags(&self, flags: AutoRecoveryFlags) -> Result<()> {
         let mut state = self.health_state.write().await;
@@ -711,12 +715,12 @@ impl HealthMonitorImpl {
             recovery_stats: Arc::new(tokio::sync::RwLock::new(AutoRecoveryStats::default())),
         }
     }
-    
+
     /// Создать новый HealthMonitorImpl с конфигурацией по умолчанию.
     pub fn new_default() -> Self {
         Self::new(HealthMonitorConfig::default())
     }
-    
+
     /// Выполнить автоматическое восстановление компонентов.
     async fn perform_auto_recovery(&self, health_monitor: &mut HealthMonitor) -> Result<()> {
         // Проверяем, включено ли автоматическое восстановление
@@ -724,55 +728,76 @@ impl HealthMonitorImpl {
             debug!("Auto-recovery is disabled");
             return Ok(());
         }
-        
+
         let mut recovery_attempts = Vec::new();
-        
+
         // Собираем список компонентов, которые нужно восстановить
-        let components_to_recover: Vec<String> = health_monitor.component_statuses.iter()
-            .filter(|(_, component_status)| component_status.status == ComponentHealthStatus::Unhealthy)
+        let components_to_recover: Vec<String> = health_monitor
+            .component_statuses
+            .iter()
+            .filter(|(_, component_status)| {
+                component_status.status == ComponentHealthStatus::Unhealthy
+            })
             .filter(|(component_name, _)| self.is_recovery_allowed(component_name, health_monitor))
             .map(|(component_name, _)| component_name.clone())
             .collect();
-        
+
         // Выполняем восстановление для каждого компонента
         for component_name in components_to_recover {
             info!("Attempting auto-recovery for component: {}", component_name);
-            
+
             // Получаем текущий статус компонента
-            let component_status = health_monitor.component_statuses.get(&component_name)
+            let component_status = health_monitor
+                .component_statuses
+                .get(&component_name)
                 .expect("Component should exist");
-            
+
             // Выполняем восстановление
-            let recovery_result = self.attempt_component_recovery(&component_name, component_status).await;
-            
+            let recovery_result = self
+                .attempt_component_recovery(&component_name, component_status)
+                .await;
+
             // Обновляем статистику восстановления
             let mut stats = self.recovery_stats.write().await;
             stats.total_recovery_attempts += 1;
-            
+
             let recovery_attempt = RecoveryAttempt {
                 timestamp: Utc::now(),
                 component: component_name.clone(),
                 recovery_type: RecoveryType::Restart,
-                status: if recovery_result.is_ok() { RecoveryStatus::Success } else { RecoveryStatus::Failed },
+                status: if recovery_result.is_ok() {
+                    RecoveryStatus::Success
+                } else {
+                    RecoveryStatus::Failed
+                },
                 issue_description: component_status.error_details.clone().unwrap_or_default(),
-                recovery_details: Some(format!("Auto-recovery attempt: {}", if recovery_result.is_ok() { "success" } else { "failed" })),
+                recovery_details: Some(format!(
+                    "Auto-recovery attempt: {}",
+                    if recovery_result.is_ok() {
+                        "success"
+                    } else {
+                        "failed"
+                    }
+                )),
             };
-            
+
             if recovery_result.is_ok() {
                 stats.successful_recoveries += 1;
                 stats.last_recovered_component = Some(component_name.clone());
             } else {
                 stats.failed_recoveries += 1;
             }
-            
+
             stats.last_recovery_attempt_time = Some(Utc::now());
             stats.recovery_history.push(recovery_attempt.clone());
-            
+
             recovery_attempts.push(recovery_attempt);
-            
+
             // Если восстановление успешно, обновляем статус компонента
             if recovery_result.is_ok() {
-                if let Some(component_status) = health_monitor.component_statuses.get_mut(&component_name) {
+                if let Some(component_status) =
+                    health_monitor.component_statuses.get_mut(&component_name)
+                {
                     component_status.status = ComponentHealthStatus::Healthy;
                     component_status.consecutive_errors = 0;
                     component_status.error_details = None;
@@ -780,7 +805,7 @@ impl HealthMonitorImpl {
                 }
             }
         }
-        
+
         // Если были попытки восстановления, обновляем историю проблем
         if !recovery_attempts.is_empty() {
             for attempt in recovery_attempts {
@@ -788,57 +813,83 @@ impl HealthMonitorImpl {
                     issue_id: uuid::Uuid::new_v4().to_string(),
                     timestamp: attempt.timestamp,
                     issue_type: HealthIssueType::ComponentFailure,
-                    severity: if attempt.status == RecoveryStatus::Success { HealthIssueSeverity::Info } else { HealthIssueSeverity::Warning },
+                    severity: if attempt.status == RecoveryStatus::Success {
+                        HealthIssueSeverity::Info
+                    } else {
+                        HealthIssueSeverity::Warning
+                    },
                     component: Some(attempt.component.clone()),
                     description: format!("Auto-recovery attempt: {}", attempt.status),
                     error_details: Some(attempt.recovery_details.unwrap_or_default()),
                     status: HealthIssueStatus::Resolved,
                     resolved_time: Some(Utc::now()),
                 };
-                
+
                 self.add_health_issue(issue).await.ok();
             }
         }
-        
+
         Ok(())
     }
-    
+
     /// Проверка, разрешено ли восстановление для компонента.
     fn is_recovery_allowed(&self, component_name: &str, health_monitor: &HealthMonitor) -> bool {
         // Проверяем общие флаги восстановления
-        if !health_monitor.auto_recovery_flags.component_auto_recovery_enabled {
+        if !health_monitor
+            .auto_recovery_flags
+            .component_auto_recovery_enabled
+        {
             return false;
         }
-        
+
         // Проверяем, не заблокирован ли компонент
-        if health_monitor.auto_recovery_flags.blocked_recovery_components.contains(&component_name.to_string()) {
+        if health_monitor
+            .auto_recovery_flags
+            .blocked_recovery_components
+            .contains(&component_name.to_string())
+        {
             debug!("Recovery blocked for component: {}", component_name);
             return false;
         }
-        
+
         // Проверяем, разрешено ли восстановление для этого компонента
-        if !health_monitor.auto_recovery_flags.allowed_recovery_components.is_empty() {
-            if !health_monitor.auto_recovery_flags.allowed_recovery_components.contains(&component_name.to_string()) {
+        if !health_monitor
+            .auto_recovery_flags
+            .allowed_recovery_components
+            .is_empty()
+        {
+            if !health_monitor
+                .auto_recovery_flags
+                .allowed_recovery_components
+                .contains(&component_name.to_string())
+            {
                 debug!("Recovery not allowed for component: {}", component_name);
                 return false;
             }
         }
-        
+
         true
     }
-    
+
     /// Попытка восстановления компонента.
-    async fn attempt_component_recovery(&self, component_name: &str, component_status: &ComponentStatus) -> Result<()> {
-        info!("Attempting recovery for component: {} (status: {:?})", component_name, component_status.status);
-        
+    async fn attempt_component_recovery(
+        &self,
+        component_name: &str,
+        component_status: &ComponentStatus,
+    ) -> Result<()> {
+        info!(
+            "Attempting recovery for component: {} (status: {:?})",
+            component_name, component_status.status
+        );
+
         // В реальной реализации здесь будут конкретные действия по восстановлению
         // Например: перезапуск службы, сброс кэша, восстановление конфигурации и т.д.
-        
+
         // Логируем детали проблемы, если они есть
         if let Some(error_details) = &component_status.error_details {
             warn!("Component error details: {}", error_details);
         }
-        
+
         match component_name {
             "system_metrics" => {
                 // Восстановление системных метрик
@@ -857,67 +908,70 @@ impl HealthMonitorImpl {
                 self.generic_component_recovery(component_name).await?;
             }
         }
-        
+
         info!("Successfully recovered component: {}", component_name);
         Ok(())
     }
-    
+
     /// Восстановление системных метрик.
     async fn recover_system_metrics(&self) -> Result<()> {
         info!("Recovering system metrics component");
-        
+
         // В реальной реализации здесь будут действия по восстановлению
         // Например: очистка кэша, перезапуск сбора метрик и т.д.
-        
+
         // Имитируем успешное восстановление
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         Ok(())
     }
-    
+
     /// Восстановление мониторинга процессов.
     async fn recover_process_monitoring(&self) -> Result<()> {
         info!("Recovering process monitoring component");
-        
+
         // В реальной реализации здесь будут действия по восстановлению
         // Например: перезапуск мониторинга процессов, очистка состояния и т.д.
-        
+
         // Имитируем успешное восстановление
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         Ok(())
     }
-    
+
     /// Восстановление использования ресурсов.
     async fn recover_resource_usage(&self) -> Result<()> {
         info!("Recovering resource usage component");
-        
+
         // В реальной реализации здесь будут действия по восстановлению
         // Например: очистка кэша ресурсов, сброс счетчиков и т.д.
-        
+
         // Имитируем успешное восстановление
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         Ok(())
     }
-    
+
     /// Универсальное восстановление компонента.
     async fn generic_component_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing generic recovery for component: {}", component_name);
-        
+        info!(
+            "Performing generic recovery for component: {}",
+            component_name
+        );
+
         // В реальной реализации здесь будут универсальные действия по восстановлению
-        
+
         // Имитируем успешное восстановление
         tokio::time::sleep(Duration::from_millis(100)).await;
-        
+
         Ok(())
     }
-    
+
     /// Рассчитать балл здоровья системы.
     fn calculate_health_score(&self, health_monitor: &HealthMonitor) -> f32 {
         // Начинаем с максимального балла
         let mut score = 100.0;
-        
+
         // Учитываем состояние компонентов
         for (_, component_status) in &health_monitor.component_statuses {
             match component_status.status {
@@ -942,15 +996,17 @@ impl HealthMonitorImpl {
                 }
             }
         }
-        
+
         // Учитываем историю проблем
-        let recent_issues = health_monitor.issue_history.iter()
+        let recent_issues = health_monitor
+            .issue_history
+            .iter()
             .filter(|issue| issue.status == HealthIssueStatus::Open)
             .count();
-        
+
         // Каждая открытая проблема снижает балл на 2
         score -= recent_issues as f32 * 2.0;
-        
+
         // Учитываем последовательные ошибки
         for (_, component_status) in &health_monitor.component_statuses {
             if component_status.consecutive_errors > 0 {
@@ -958,32 +1014,32 @@ impl HealthMonitorImpl {
                 score -= component_status.consecutive_errors as f32;
             }
         }
-        
+
         // Ограничиваем балл в диапазоне 0-100
         score = score.clamp(0.0, 100.0);
-        
+
         score
     }
-    
+
     /// Обновить историю баллов здоровья.
     fn update_health_score_history(&self, health_monitor: &mut HealthMonitor) {
         let score = self.calculate_health_score(health_monitor);
         health_monitor.health_score = score;
-        
+
         let entry = HealthScoreEntry {
             timestamp: Utc::now(),
             score,
             status: health_monitor.overall_status,
         };
-        
+
         health_monitor.health_score_history.push(entry);
-        
+
         // Ограничиваем историю (например, 100 записей)
         if health_monitor.health_score_history.len() > 100 {
             health_monitor.health_score_history.remove(0);
         }
     }
-    
+
     /// Проверка состояния компонентов.
     async fn check_components(&self, mut health_monitor: HealthMonitor) -> Result<HealthMonitor> {
         // Проверяем основные компоненты
@@ -991,30 +1047,30 @@ impl HealthMonitorImpl {
             "system_metrics".to_string(),
             self.check_system_metrics().await?,
         );
-        
+
         health_monitor.component_statuses.insert(
             "process_monitoring".to_string(),
             self.check_process_monitoring().await?,
         );
-        
+
         health_monitor.component_statuses.insert(
             "resource_usage".to_string(),
             self.check_resource_usage().await?,
         );
-        
+
         health_monitor.component_statuses.insert(
             "configuration".to_string(),
             self.check_configuration().await?,
         );
-        
+
         Ok(health_monitor)
     }
-    
+
     /// Определить общий статус здоровья.
     fn determine_overall_status(&self, health_monitor: &HealthMonitor) -> HealthStatus {
         let mut has_critical = false;
         let mut has_warning = false;
-        
+
         for component_status in health_monitor.component_statuses.values() {
             match component_status.status {
                 ComponentHealthStatus::Unhealthy => {
@@ -1026,7 +1082,7 @@ impl HealthMonitorImpl {
                 _ => {}
             }
         }
-        
+
         if has_critical {
             HealthStatus::Degraded
         } else if has_warning {
@@ -1035,37 +1091,37 @@ impl HealthMonitorImpl {
             HealthStatus::Healthy
         }
     }
-    
+
     /// Проверка системных метрик.
     async fn check_system_metrics(&self) -> Result<ComponentStatus> {
         // Проверяем доступность системных метрик
         let proc_stat_path = Path::new("/proc/stat");
         let proc_meminfo_path = Path::new("/proc/meminfo");
         let proc_loadavg_path = Path::new("/proc/loadavg");
-        
+
         let mut status = ComponentHealthStatus::Healthy;
         let mut message = "System metrics are healthy".to_string();
         let mut error_details = None;
-        
+
         // Проверяем доступность основных файлов /proc
         if !proc_stat_path.exists() {
             status = ComponentHealthStatus::Unhealthy;
             message = "System metrics files not accessible".to_string();
             error_details = Some("/proc/stat not found".to_string());
         }
-        
+
         if !proc_meminfo_path.exists() {
             status = ComponentHealthStatus::Unhealthy;
             message = "System metrics files not accessible".to_string();
             error_details = Some("/proc/meminfo not found".to_string());
         }
-        
+
         if !proc_loadavg_path.exists() {
             status = ComponentHealthStatus::Unhealthy;
             message = "System metrics files not accessible".to_string();
             error_details = Some("/proc/loadavg not found".to_string());
         }
-        
+
         Ok(ComponentStatus {
             status,
             last_check_time: Some(Utc::now()),
@@ -1074,16 +1130,16 @@ impl HealthMonitorImpl {
             consecutive_errors: 0,
         })
     }
-    
+
     /// Проверка мониторинга процессов.
     async fn check_process_monitoring(&self) -> Result<ComponentStatus> {
         // Проверяем доступность /proc для мониторинга процессов
         let proc_path = Path::new("/proc");
-        
+
         let mut status = ComponentHealthStatus::Healthy;
         let mut message = "Process monitoring is healthy".to_string();
         let mut error_details = None;
-        
+
         if !proc_path.exists() {
             status = ComponentHealthStatus::Unhealthy;
             message = "Process monitoring not available".to_string();
@@ -1106,7 +1162,7 @@ impl HealthMonitorImpl {
                 }
             }
         }
-        
+
         Ok(ComponentStatus {
             status,
             last_check_time: Some(Utc::now()),
@@ -1115,24 +1171,24 @@ impl HealthMonitorImpl {
             consecutive_errors: 0,
         })
     }
-    
+
     /// Проверка использования ресурсов.
     async fn check_resource_usage(&self) -> Result<ComponentStatus> {
         // Проверяем использование ресурсов
         let mut status = ComponentHealthStatus::Healthy;
         let mut message = "Resource usage is healthy".to_string();
         let mut error_details = None;
-        
+
         // Проверяем доступность системных метрик
         let proc_meminfo_path = Path::new("/proc/meminfo");
-        
+
         if proc_meminfo_path.exists() {
             match std::fs::read_to_string(proc_meminfo_path) {
                 Ok(contents) => {
                     // Парсим информацию о памяти
                     let mut mem_total = 0u64;
                     let mut mem_available = 0u64;
-                    
+
                     for line in contents.lines() {
                         if line.starts_with("MemTotal:") {
                             if let Some(value) = line.split_whitespace().nth(1) {
@@ -1149,10 +1205,11 @@ impl HealthMonitorImpl {
                             }
                         }
                     }
-                    
+
                     if mem_total > 0 {
-                        let used_percent = 100.0 * (mem_total - mem_available) as f32 / mem_total as f32;
-                        
+                        let used_percent =
+                            100.0 * (mem_total - mem_available) as f32 / mem_total as f32;
+
                         if used_percent > self.config.critical_thresholds.max_memory_usage_percent {
                             status = ComponentHealthStatus::Unhealthy;
                             message = "High memory usage detected".to_string();
@@ -1175,7 +1232,7 @@ impl HealthMonitorImpl {
             message = "Memory information not available".to_string();
             error_details = Some("/proc/meminfo not found".to_string());
         }
-        
+
         Ok(ComponentStatus {
             status,
             last_check_time: Some(Utc::now()),
@@ -1184,29 +1241,29 @@ impl HealthMonitorImpl {
             consecutive_errors: 0,
         })
     }
-    
+
     /// Проверка конфигурации.
     async fn check_configuration(&self) -> Result<ComponentStatus> {
         // Проверяем конфигурацию мониторинга здоровья
         let mut status = ComponentHealthStatus::Healthy;
         let mut message = "Configuration is healthy".to_string();
         let mut error_details = None;
-        
+
         // Проверяем, что конфигурация валидна
         let config = self.health_state.read().await.config.clone();
-        
+
         if config.check_interval.as_secs() == 0 {
             status = ComponentHealthStatus::Warning;
             message = "Invalid check interval".to_string();
             error_details = Some("Check interval cannot be zero".to_string());
         }
-        
+
         if config.max_issue_history == 0 {
             status = ComponentHealthStatus::Warning;
             message = "Invalid issue history size".to_string();
             error_details = Some("Issue history size cannot be zero".to_string());
         }
-        
+
         Ok(ComponentStatus {
             status,
             last_check_time: Some(Utc::now()),

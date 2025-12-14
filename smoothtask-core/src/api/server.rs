@@ -14,16 +14,20 @@ use std::collections::HashMap;
 use std::fs;
 use std::sync::Arc;
 
-use crate::metrics::app_performance::{AppPerformanceConfig, collect_all_app_performance};
+use crate::metrics::app_performance::{collect_all_app_performance, AppPerformanceConfig};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{error, info, trace, warn};
 
 // Health module imports
-use crate::health::{create_diagnostic_analyzer, HealthIssueSeverity, HealthMonitorTrait};
+use crate::api::custom_metrics_handlers::{
+    custom_metric_add_handler, custom_metric_by_id_handler, custom_metric_disable_handler,
+    custom_metric_enable_handler, custom_metric_remove_handler, custom_metric_update_handler,
+    custom_metrics_handler,
+};
 use crate::health::diagnostics::DiagnosticAnalyzer;
-use crate::api::custom_metrics_handlers::{custom_metrics_handler, custom_metric_by_id_handler, custom_metric_update_handler, custom_metric_add_handler, custom_metric_remove_handler, custom_metric_enable_handler, custom_metric_disable_handler};
+use crate::health::{create_diagnostic_analyzer, HealthIssueSeverity, HealthMonitorTrait};
 
 /// Состояние API сервера.
 #[derive(Clone)]
@@ -303,8 +307,6 @@ pub struct ApiStateBuilder {
     pub metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
     metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
 }
-
-
 
 impl ApiStateBuilder {
     /// Создаёт новый пустой ApiStateBuilder.
@@ -987,19 +989,20 @@ async fn health_detailed_handler(State(state): State<ApiState>) -> Result<Json<V
 /// Обработчик для endpoint `/api/health/monitoring`.
 ///
 /// Возвращает текущее состояние мониторинга здоровья демона.
-async fn health_monitoring_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+async fn health_monitoring_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
     // Получаем текущее состояние мониторинга здоровья
     let health_monitor = state.health_monitor.as_ref().ok_or_else(|| {
         error!("Health monitor not available");
         StatusCode::SERVICE_UNAVAILABLE
     })?;
-    
-    let health_status = health_monitor.get_health_status().await
-        .map_err(|e| {
-            error!("Failed to get health status: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+
+    let health_status = health_monitor.get_health_status().await.map_err(|e| {
+        error!("Failed to get health status: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     Ok(Json(json!({
         "status": "ok",
         "health_status": {
@@ -1020,20 +1023,24 @@ async fn health_monitoring_handler(State(state): State<ApiState>) -> Result<Json
 /// Обработчик для endpoint `/api/health/diagnostics`.
 ///
 /// Выполняет диагностику системы и возвращает детальный отчет.
-async fn health_diagnostics_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
+async fn health_diagnostics_handler(
+    State(state): State<ApiState>,
+) -> Result<Json<Value>, StatusCode> {
     let health_monitor = state.health_monitor.as_ref().ok_or_else(|| {
         error!("Health monitor not available");
         StatusCode::SERVICE_UNAVAILABLE
     })?;
-    
+
     let diagnostic_analyzer = create_diagnostic_analyzer(health_monitor.as_ref().clone());
-    
-    let diagnostic_report = diagnostic_analyzer.run_full_diagnostics().await
+
+    let diagnostic_report = diagnostic_analyzer
+        .run_full_diagnostics()
+        .await
         .map_err(|e| {
             error!("Failed to run diagnostics: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    
+
     Ok(Json(json!({
         "status": "ok",
         "diagnostic_report": {
@@ -1054,13 +1061,12 @@ async fn health_issues_handler(State(state): State<ApiState>) -> Result<Json<Val
         error!("Health monitor not available");
         StatusCode::SERVICE_UNAVAILABLE
     })?;
-    
-    let health_status = health_monitor.get_health_status().await
-        .map_err(|e| {
-            error!("Failed to get health status: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+
+    let health_status = health_monitor.get_health_status().await.map_err(|e| {
+        error!("Failed to get health status: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     Ok(Json(json!({
         "status": "ok",
         "issues": health_status.issue_history,
@@ -1072,12 +1078,13 @@ async fn health_issues_handler(State(state): State<ApiState>) -> Result<Json<Val
 ///
 /// Возвращает метрики температуры и энергопотребления для всех GPU устройств.
 async fn gpu_temperature_power_handler() -> Result<Json<Value>, StatusCode> {
-    let gpu_metrics = crate::metrics::process_gpu::collect_global_gpu_temperature_and_power().await
+    let gpu_metrics = crate::metrics::process_gpu::collect_global_gpu_temperature_and_power()
+        .await
         .map_err(|e| {
             error!("Failed to collect GPU temperature and power metrics: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    
+
     Ok(Json(json!({
         "status": "ok",
         "gpu_metrics": gpu_metrics,
@@ -1089,12 +1096,13 @@ async fn gpu_temperature_power_handler() -> Result<Json<Value>, StatusCode> {
 ///
 /// Обновляет метрики температуры и энергопотребления GPU для процессов.
 async fn gpu_update_temp_power_handler() -> Result<Json<Value>, StatusCode> {
-    crate::metrics::process_gpu::update_global_process_gpu_temperature_and_power().await
+    crate::metrics::process_gpu::update_global_process_gpu_temperature_and_power()
+        .await
         .map_err(|e| {
             error!("Failed to update GPU temperature and power metrics: {}", e);
             StatusCode::INTERNAL_SERVER_ERROR
         })?;
-    
+
     Ok(Json(json!({
         "status": "ok",
         "message": "GPU temperature and power metrics updated successfully"
@@ -1105,14 +1113,15 @@ async fn gpu_update_temp_power_handler() -> Result<Json<Value>, StatusCode> {
 ///
 /// Возвращает метрики использования памяти для всех GPU устройств.
 async fn gpu_memory_handler() -> Result<Json<Value>, StatusCode> {
-    let gpu_metrics = crate::metrics::gpu::collect_gpu_metrics()
-        .map_err(|e| {
-            error!("Failed to collect GPU memory metrics: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-    
+    let gpu_metrics = crate::metrics::gpu::collect_gpu_metrics().map_err(|e| {
+        error!("Failed to collect GPU memory metrics: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
     // Преобразуем метрики в формат, подходящий для API
-    let gpu_memory_info: Vec<_> = gpu_metrics.devices.iter()
+    let gpu_memory_info: Vec<_> = gpu_metrics
+        .devices
+        .iter()
         .map(|device| {
             // Определяем тип GPU на основе драйвера
             let gpu_type = device.device.driver.as_ref().map(|driver| {
@@ -1126,14 +1135,17 @@ async fn gpu_memory_handler() -> Result<Json<Value>, StatusCode> {
                     driver.as_str()
                 }
             });
-            
+
             // Вычисляем процент использования памяти
             let memory_usage_percentage = if device.memory.total_bytes > 0 {
-                Some((device.memory.used_bytes as f32 / device.memory.total_bytes as f32 * 100.0) as f32)
+                Some(
+                    (device.memory.used_bytes as f32 / device.memory.total_bytes as f32 * 100.0)
+                        as f32,
+                )
             } else {
                 None
             };
-            
+
             json!({
                 "gpu_id": device.device.device_id,
                 "gpu_name": device.device.name,
@@ -1147,14 +1159,14 @@ async fn gpu_memory_handler() -> Result<Json<Value>, StatusCode> {
             })
         })
         .collect();
-    
+
     Ok(Json(json!({
         "status": "ok",
         "gpu_memory_metrics": gpu_memory_info,
         "total_gpus": gpu_memory_info.len(),
-        "total_memory_bytes": gpu_memory_info.iter().map(|gpu| 
+        "total_memory_bytes": gpu_memory_info.iter().map(|gpu|
             gpu["total_memory_bytes"].as_u64().unwrap_or(0)).sum::<u64>(),
-        "total_used_memory_bytes": gpu_memory_info.iter().map(|gpu| 
+        "total_used_memory_bytes": gpu_memory_info.iter().map(|gpu|
             gpu["used_memory_bytes"].as_u64().unwrap_or(0)).sum::<u64>(),
         "timestamp": std::time::SystemTime::now()
     })))
@@ -1176,54 +1188,46 @@ async fn version_handler() -> Json<Value> {
 /// Возвращает метрики в формате Prometheus.
 async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<String, StatusCode> {
     let mut metrics = String::new();
-    
+
     // Добавляем метрики версии
     metrics.push_str(&format!(
         "# HELP smoothtask_version SmoothTask daemon version\n"
     ));
-    metrics.push_str(&format!(
-        "# TYPE smoothtask_version gauge\n"
-    ));
+    metrics.push_str(&format!("# TYPE smoothtask_version gauge\n"));
     metrics.push_str(&format!(
         "smoothtask_version{{version=\"{}\"}} 1\n",
         DAEMON_VERSION
     ));
-    
+
     // Добавляем метрики производительности API
     let perf_metrics = state.performance_metrics.read().await;
     metrics.push_str(&format!(
         "# HELP smoothtask_api_requests_total Total number of API requests\n"
     ));
-    metrics.push_str(&format!(
-        "# TYPE smoothtask_api_requests_total counter\n"
-    ));
+    metrics.push_str(&format!("# TYPE smoothtask_api_requests_total counter\n"));
     metrics.push_str(&format!(
         "smoothtask_api_requests_total {}\n",
         perf_metrics.total_requests
     ));
-    
+
     metrics.push_str(&format!(
         "# HELP smoothtask_api_cache_hits Total number of API cache hits\n"
     ));
-    metrics.push_str(&format!(
-        "# TYPE smoothtask_api_cache_hits counter\n"
-    ));
+    metrics.push_str(&format!("# TYPE smoothtask_api_cache_hits counter\n"));
     metrics.push_str(&format!(
         "smoothtask_api_cache_hits {}\n",
         perf_metrics.cache_hits
     ));
-    
+
     metrics.push_str(&format!(
         "# HELP smoothtask_api_cache_misses Total number of API cache misses\n"
     ));
-    metrics.push_str(&format!(
-        "# TYPE smoothtask_api_cache_misses counter\n"
-    ));
+    metrics.push_str(&format!("# TYPE smoothtask_api_cache_misses counter\n"));
     metrics.push_str(&format!(
         "smoothtask_api_cache_misses {}\n",
         perf_metrics.cache_misses
     ));
-    
+
     metrics.push_str(&format!(
         "# HELP smoothtask_api_processing_time_us_total Total API processing time in microseconds\n"
     ));
@@ -1234,23 +1238,21 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
         "smoothtask_api_processing_time_us_total {}\n",
         perf_metrics.total_processing_time_us
     ));
-    
+
     // Добавляем системные метрики если доступны
     if let Some(system_metrics_arc) = &state.system_metrics {
         let system_metrics = system_metrics_arc.read().await;
-        
+
         // Память метрики
         metrics.push_str(&format!(
             "# HELP smoothtask_system_memory_total_kb Total system memory in kilobytes\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_system_memory_total_kb gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_system_memory_total_kb gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_system_memory_total_kb {}\n",
             system_metrics.memory.mem_total_kb
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_system_memory_available_kb Available system memory in kilobytes\n"
         ));
@@ -1261,18 +1263,16 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_system_memory_available_kb {}\n",
             system_metrics.memory.mem_available_kb
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_system_memory_free_kb Free system memory in kilobytes\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_system_memory_free_kb gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_system_memory_free_kb gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_system_memory_free_kb {}\n",
             system_metrics.memory.mem_free_kb
         ));
-        
+
         // PSI метрики
         metrics.push_str(&format!(
             "# HELP smoothtask_system_psi_cpu_some_avg10 CPU PSI some average 10s\n"
@@ -1286,7 +1286,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                 psi.avg10
             ));
         }
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_system_psi_memory_some_avg10 Memory PSI some average 10s\n"
         ));
@@ -1300,22 +1300,17 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             ));
         }
     }
-    
+
     // Добавляем метрики процессов если доступны
     if let Some(processes_arc) = &state.processes {
         let processes = processes_arc.read().await;
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total Total number of processes\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_processes_total gauge\n"
-        ));
-        metrics.push_str(&format!(
-            "smoothtask_processes_total {}\n",
-            processes.len()
-        ));
-        
+        metrics.push_str(&format!("# TYPE smoothtask_processes_total gauge\n"));
+        metrics.push_str(&format!("smoothtask_processes_total {}\n", processes.len()));
+
         // Добавляем метрики по классам процессов (используем teacher_priority_class)
         let mut class_counts = std::collections::HashMap::new();
         for process in processes.iter() {
@@ -1323,7 +1318,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                 *class_counts.entry(class_name.to_string()).or_insert(0) += 1;
             }
         }
-        
+
         for (class_name, count) in class_counts {
             metrics.push_str(&format!(
                 "# HELP smoothtask_processes_by_class{{class=\"{}\"}} Number of processes by priority class\n",
@@ -1339,27 +1334,25 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             ));
         }
     }
-    
+
     // Добавляем метрики групп приложений если доступны
     if let Some(app_groups_arc) = &state.app_groups {
         let app_groups = app_groups_arc.read().await;
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total Total number of application groups\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_app_groups_total gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_app_groups_total gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_app_groups_total {}\n",
             app_groups.len()
         ));
     }
-    
+
     // Добавляем метрики демона если доступны
     if let Some(daemon_stats_arc) = &state.daemon_stats {
         let daemon_stats = daemon_stats_arc.read().await;
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_daemon_total_iterations Total number of daemon iterations\n"
         ));
@@ -1370,7 +1363,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_daemon_total_iterations {}\n",
             daemon_stats.total_iterations
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_daemon_successful_iterations Successful daemon iterations\n"
         ));
@@ -1381,7 +1374,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_daemon_successful_iterations {}\n",
             daemon_stats.successful_iterations
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_daemon_error_iterations Error daemon iterations\n"
         ));
@@ -1392,7 +1385,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_daemon_error_iterations {}\n",
             daemon_stats.error_iterations
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_daemon_total_duration_ms Total daemon execution time in milliseconds\n"
         ));
@@ -1404,11 +1397,11 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             daemon_stats.total_duration_ms
         ));
     }
-    
+
     // Добавляем расширенные метрики процессов
     if let Some(processes_arc) = &state.processes {
         let processes = processes_arc.read().await;
-        
+
         // Агрегированные метрики по всем процессам
         let mut total_cpu_1s = 0.0;
         let mut total_cpu_10s = 0.0;
@@ -1423,7 +1416,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
         let mut gui_processes = 0;
         let mut terminal_processes = 0;
         let mut ssh_processes = 0;
-        
+
         for process in processes.iter() {
             // CPU метрики
             if let Some(cpu_1s) = process.cpu_share_1s {
@@ -1432,12 +1425,12 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             if let Some(cpu_10s) = process.cpu_share_10s {
                 total_cpu_10s += cpu_10s;
             }
-            
+
             // Память
             if let Some(rss) = process.rss_mb {
                 total_memory_mb += rss;
             }
-            
+
             // I/O
             if let Some(io_read) = process.io_read_bytes {
                 total_io_read += io_read;
@@ -1445,7 +1438,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             if let Some(io_write) = process.io_write_bytes {
                 total_io_write += io_write;
             }
-            
+
             // Сеть
             if let Some(network_rx) = process.network_rx_bytes {
                 total_network_rx += network_rx;
@@ -1453,17 +1446,17 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             if let Some(network_tx) = process.network_tx_bytes {
                 total_network_tx += network_tx;
             }
-            
+
             // GPU
             if let Some(gpu_util) = process.gpu_utilization {
                 total_gpu_utilization += gpu_util as f64;
             }
-            
+
             // Энергия
             if let Some(energy) = process.energy_uj {
                 total_energy_uj += energy;
             }
-            
+
             // Типы процессов
             if process.is_audio_client {
                 audio_processes += 1;
@@ -1478,7 +1471,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                 ssh_processes += 1;
             }
         }
-        
+
         // Агрегированные метрики процессов
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_cpu_share_1s Total CPU share (1s) for all processes\n"
@@ -1490,7 +1483,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_cpu_share_1s {}\n",
             total_cpu_1s
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_cpu_share_10s Total CPU share (10s) for all processes\n"
         ));
@@ -1501,7 +1494,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_cpu_share_10s {}\n",
             total_cpu_10s
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_memory_mb Total memory usage (RSS) for all processes in MB\n"
         ));
@@ -1512,7 +1505,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_memory_mb {}\n",
             total_memory_mb
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_io_read_bytes Total read bytes for all processes\n"
         ));
@@ -1523,7 +1516,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_io_read_bytes {}\n",
             total_io_read
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_io_write_bytes Total write bytes for all processes\n"
         ));
@@ -1534,7 +1527,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_io_write_bytes {}\n",
             total_io_write
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_network_rx_bytes Total received bytes for all processes\n"
         ));
@@ -1545,7 +1538,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_network_rx_bytes {}\n",
             total_network_rx
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_network_tx_bytes Total transmitted bytes for all processes\n"
         ));
@@ -1556,7 +1549,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_network_tx_bytes {}\n",
             total_network_tx
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_gpu_utilization Total GPU utilization for all processes\n"
         ));
@@ -1567,7 +1560,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_gpu_utilization {}\n",
             total_gpu_utilization
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_total_energy_uj Total energy consumption for all processes in microjoules\n"
         ));
@@ -1578,57 +1571,44 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_processes_total_energy_uj {}\n",
             total_energy_uj
         ));
-        
+
         // Метрики по типам процессов
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_audio_client Audio client processes\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_processes_audio_client gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_processes_audio_client gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_processes_audio_client {}\n",
             audio_processes
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_gui_window Processes with GUI windows\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_processes_gui_window gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_processes_gui_window gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_processes_gui_window {}\n",
             gui_processes
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_processes_terminal Processes with terminal sessions\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_processes_terminal gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_processes_terminal gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_processes_terminal {}\n",
             terminal_processes
         ));
-        
-        metrics.push_str(&format!(
-            "# HELP smoothtask_processes_ssh SSH processes\n"
-        ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_processes_ssh gauge\n"
-        ));
-        metrics.push_str(&format!(
-            "smoothtask_processes_ssh {}\n",
-            ssh_processes
-        ));
+
+        metrics.push_str(&format!("# HELP smoothtask_processes_ssh SSH processes\n"));
+        metrics.push_str(&format!("# TYPE smoothtask_processes_ssh gauge\n"));
+        metrics.push_str(&format!("smoothtask_processes_ssh {}\n", ssh_processes));
     }
-    
+
     // Добавляем метрики групп приложений если доступны
     if let Some(app_groups_arc) = &state.app_groups {
         let app_groups = app_groups_arc.read().await;
-        
+
         // Агрегированные метрики по группам приложений
         let mut total_app_cpu = 0.0;
         let mut total_app_memory = 0;
@@ -1637,7 +1617,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
         let mut total_app_network_rx = 0;
         let mut total_app_network_tx = 0;
         let mut total_app_energy = 0;
-        
+
         for app_group in app_groups.iter() {
             if let Some(cpu) = app_group.total_cpu_share {
                 total_app_cpu += cpu;
@@ -1661,7 +1641,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                 total_app_energy += energy;
             }
         }
-        
+
         // Метрики групп приложений
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_cpu_share Total CPU share for all application groups\n"
@@ -1673,7 +1653,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_cpu_share {}\n",
             total_app_cpu
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_memory_mb Total memory usage for all application groups in MB\n"
         ));
@@ -1684,7 +1664,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_memory_mb {}\n",
             total_app_memory
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_io_read_bytes Total read bytes for all application groups\n"
         ));
@@ -1695,7 +1675,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_io_read_bytes {}\n",
             total_app_io_read
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_io_write_bytes Total write bytes for all application groups\n"
         ));
@@ -1706,7 +1686,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_io_write_bytes {}\n",
             total_app_io_write
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_network_rx_bytes Total received bytes for all application groups\n"
         ));
@@ -1717,7 +1697,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_network_rx_bytes {}\n",
             total_app_network_rx
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_network_tx_bytes Total transmitted bytes for all application groups\n"
         ));
@@ -1728,7 +1708,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_network_tx_bytes {}\n",
             total_app_network_tx
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_total_energy_uj Total energy consumption for all application groups in microjoules\n"
         ));
@@ -1739,103 +1719,100 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
             "smoothtask_app_groups_total_energy_uj {}\n",
             total_app_energy
         ));
-        
+
         // Количество групп приложений с разными характеристиками
         let focused_groups = app_groups.iter().filter(|g| g.is_focused_group).count();
         let gui_groups = app_groups.iter().filter(|g| g.has_gui_window).count();
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_focused Focused application groups\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_app_groups_focused gauge\n"
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_app_groups_focused gauge\n"));
         metrics.push_str(&format!(
             "smoothtask_app_groups_focused {}\n",
             focused_groups
         ));
-        
+
         metrics.push_str(&format!(
             "# HELP smoothtask_app_groups_with_gui Application groups with GUI windows\n"
         ));
-        metrics.push_str(&format!(
-            "# TYPE smoothtask_app_groups_with_gui gauge\n"
-        ));
-        metrics.push_str(&format!(
-            "smoothtask_app_groups_with_gui {}\n",
-            gui_groups
-        ));
+        metrics.push_str(&format!("# TYPE smoothtask_app_groups_with_gui gauge\n"));
+        metrics.push_str(&format!("smoothtask_app_groups_with_gui {}\n", gui_groups));
     }
-    
+
     // Добавляем метрики здоровья если доступны
     if let Some(health_monitor) = &state.health_monitor {
         let health_status = health_monitor.get_health_status().await.ok();
-        
+
         if let Some(status) = health_status {
             metrics.push_str(&format!(
                 "# HELP smoothtask_health_score System health score (0-100)\n"
             ));
-            metrics.push_str(&format!(
-                "# TYPE smoothtask_health_score gauge\n"
-            ));
+            metrics.push_str(&format!("# TYPE smoothtask_health_score gauge\n"));
             metrics.push_str(&format!(
                 "smoothtask_health_score {}\n",
                 status.health_score
             ));
-            
+
             // Количество проблем по уровню серьезности
-            let critical_issues = status.issue_history.iter()
-                .filter(|issue| matches!(issue.severity, crate::health::HealthIssueSeverity::Critical))
+            let critical_issues = status
+                .issue_history
+                .iter()
+                .filter(|issue| {
+                    matches!(issue.severity, crate::health::HealthIssueSeverity::Critical)
+                })
                 .count();
-            
-            let warning_issues = status.issue_history.iter()
-                .filter(|issue| matches!(issue.severity, crate::health::HealthIssueSeverity::Warning))
+
+            let warning_issues = status
+                .issue_history
+                .iter()
+                .filter(|issue| {
+                    matches!(issue.severity, crate::health::HealthIssueSeverity::Warning)
+                })
                 .count();
-            
+
             metrics.push_str(&format!(
                 "# HELP smoothtask_health_critical_issues Number of critical health issues\n"
             ));
-            metrics.push_str(&format!(
-                "# TYPE smoothtask_health_critical_issues gauge\n"
-            ));
+            metrics.push_str(&format!("# TYPE smoothtask_health_critical_issues gauge\n"));
             metrics.push_str(&format!(
                 "smoothtask_health_critical_issues {}\n",
                 critical_issues
             ));
-            
+
             metrics.push_str(&format!(
                 "# HELP smoothtask_health_warning_issues Number of warning health issues\n"
             ));
-            metrics.push_str(&format!(
-                "# TYPE smoothtask_health_warning_issues gauge\n"
-            ));
+            metrics.push_str(&format!("# TYPE smoothtask_health_warning_issues gauge\n"));
             metrics.push_str(&format!(
                 "smoothtask_health_warning_issues {}\n",
                 warning_issues
             ));
-            
+
             metrics.push_str(&format!(
                 "# HELP smoothtask_health_total_issues Total number of health issues\n"
             ));
-            metrics.push_str(&format!(
-                "# TYPE smoothtask_health_total_issues gauge\n"
-            ));
+            metrics.push_str(&format!("# TYPE smoothtask_health_total_issues gauge\n"));
             metrics.push_str(&format!(
                 "smoothtask_health_total_issues {}\n",
                 status.issue_history.len()
             ));
         }
     }
-    
+
     // Добавляем пользовательские метрики если доступны
     if let Some(custom_metrics_manager) = &state.custom_metrics_manager {
         let custom_metrics_values = custom_metrics_manager.get_all_metrics_values().await.ok();
-        
+
         if let Some(values) = custom_metrics_values {
             for (metric_id, value) in &values {
                 // Получаем конфигурацию метрики для определения типа
-                let metric_config = custom_metrics_manager.get_metric_config(&metric_id).await.ok().flatten();
-                
+                let metric_config = custom_metrics_manager
+                    .get_metric_config(&metric_id)
+                    .await
+                    .ok()
+                    .flatten();
+
                 // Определяем тип метрики на основе конфигурации или значения
                 let metric_type = if let Some(config) = metric_config {
                     match config.metric_type {
@@ -1853,7 +1830,7 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                         crate::metrics::custom::CustomMetricValue::String(_) => "string",
                     }
                 };
-                
+
                 // Добавляем HELP и TYPE комментарии для пользовательской метрики
                 metrics.push_str(&format!(
                     "# HELP smoothtask_custom_metric{{id=\"{}\"}} Custom metric {}\n",
@@ -1863,23 +1840,25 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                     "# TYPE smoothtask_custom_metric{{id=\"{}\"}} {}\n",
                     metric_id, metric_type
                 ));
-                
+
                 // Добавляем значение метрики
                 let metric_value = match &value.value {
                     crate::metrics::custom::CustomMetricValue::Integer(v) => v.to_string(),
                     crate::metrics::custom::CustomMetricValue::Float(v) => v.to_string(),
-                    crate::metrics::custom::CustomMetricValue::Boolean(v) => if *v { "1" } else { "0" }.to_string(),
+                    crate::metrics::custom::CustomMetricValue::Boolean(v) => {
+                        if *v { "1" } else { "0" }.to_string()
+                    }
                     crate::metrics::custom::CustomMetricValue::String(v) => {
                         // Для строковых метрик используем 1 если строка не пустая, 0 если пустая
                         if v.is_empty() { "0" } else { "1" }.to_string()
                     }
                 };
-                
+
                 metrics.push_str(&format!(
                     "smoothtask_custom_metric{{id=\"{}\",type=\"{}\"}} {}\n",
                     metric_id, metric_type, metric_value
                 ));
-                
+
                 // Добавляем метрику статуса
                 metrics.push_str(&format!(
                     "# HELP smoothtask_custom_metric_status{{id=\"{}\"}} Status of custom metric {}\n",
@@ -1889,18 +1868,18 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                     "# TYPE smoothtask_custom_metric_status{{id=\"{}\"}} gauge\n",
                     metric_id
                 ));
-                
+
                 let status_value = match value.status {
                     crate::metrics::custom::MetricStatus::Ok => 1,
                     crate::metrics::custom::MetricStatus::Error { .. } => 3,
                     crate::metrics::custom::MetricStatus::Disabled => 4,
                 };
-                
+
                 metrics.push_str(&format!(
                     "smoothtask_custom_metric_status{{id=\"{}\"}} {}\n",
                     metric_id, status_value
                 ));
-                
+
                 // Добавляем метрику времени последнего обновления
                 metrics.push_str(&format!(
                     "# HELP smoothtask_custom_metric_last_update{{id=\"{}\"}} Last update timestamp of custom metric {}\n",
@@ -1910,27 +1889,25 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
                     "# TYPE smoothtask_custom_metric_last_update{{id=\"{}\"}} gauge\n",
                     metric_id
                 ));
-                
+
                 metrics.push_str(&format!(
                     "smoothtask_custom_metric_last_update{{id=\"{}\"}} {}\n",
                     metric_id, value.timestamp
                 ));
             }
-            
+
             // Добавляем общую метрику количества пользовательских метрик
             metrics.push_str(&format!(
                 "# HELP smoothtask_custom_metrics_total Total number of custom metrics\n"
             ));
-            metrics.push_str(&format!(
-                "# TYPE smoothtask_custom_metrics_total gauge\n"
-            ));
+            metrics.push_str(&format!("# TYPE smoothtask_custom_metrics_total gauge\n"));
             metrics.push_str(&format!(
                 "smoothtask_custom_metrics_total {}\n",
                 values.len()
             ));
         }
     }
-    
+
     Ok(metrics)
 }
 
@@ -2498,7 +2475,8 @@ fn get_network_info() -> Value {
         let mut total_tx_packets = 0u64;
         let mut interfaces = vec![];
 
-        for line in net_dev.lines().skip(2) { // Пропускаем заголовки
+        for line in net_dev.lines().skip(2) {
+            // Пропускаем заголовки
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 17 {
                 let interface_name = parts[0].trim_end_matches(':');
@@ -2856,35 +2834,71 @@ async fn performance_handler(State(state): State<ApiState>) -> Result<Json<Value
 /// JSON объект с метриками производительности для каждой группы приложений,
 /// включая использование CPU, памяти, ввода-вывода и статус производительности.
 async fn app_performance_handler(
-    State(_state): State<ApiState>
+    State(_state): State<ApiState>,
 ) -> Result<Json<Value>, StatusCode> {
     // Собираем метрики производительности приложений
     let app_performance_config = AppPerformanceConfig::default();
-    
+
     let result = collect_all_app_performance(Some(app_performance_config));
-    
+
     match result {
         Ok(metrics_map) => {
             // Преобразуем метрики в JSON
             let mut json_metrics = serde_json::Map::new();
             let total_app_groups = metrics_map.len();
-            
+
             for (app_group_id, app_metrics) in metrics_map {
                 let mut group_json = serde_json::Map::new();
                 group_json.insert("app_group_id".to_string(), json!(app_metrics.app_group_id));
-                group_json.insert("app_group_name".to_string(), json!(app_metrics.app_group_name));
-                group_json.insert("process_count".to_string(), json!(app_metrics.process_count));
-                group_json.insert("total_cpu_usage".to_string(), json!(app_metrics.total_cpu_usage));
-                group_json.insert("average_cpu_usage".to_string(), json!(app_metrics.average_cpu_usage));
-                group_json.insert("peak_cpu_usage".to_string(), json!(app_metrics.peak_cpu_usage));
-                group_json.insert("total_memory_mb".to_string(), json!(app_metrics.total_memory_mb));
-                group_json.insert("average_memory_mb".to_string(), json!(app_metrics.average_memory_mb));
-                group_json.insert("total_io_bytes_per_sec".to_string(), json!(app_metrics.total_io_bytes_per_sec));
-                group_json.insert("total_context_switches".to_string(), json!(app_metrics.total_context_switches));
-                group_json.insert("processes_with_windows".to_string(), json!(app_metrics.processes_with_windows));
-                group_json.insert("processes_with_audio".to_string(), json!(app_metrics.processes_with_audio));
-                group_json.insert("processes_with_terminals".to_string(), json!(app_metrics.processes_with_terminals));
-                
+                group_json.insert(
+                    "app_group_name".to_string(),
+                    json!(app_metrics.app_group_name),
+                );
+                group_json.insert(
+                    "process_count".to_string(),
+                    json!(app_metrics.process_count),
+                );
+                group_json.insert(
+                    "total_cpu_usage".to_string(),
+                    json!(app_metrics.total_cpu_usage),
+                );
+                group_json.insert(
+                    "average_cpu_usage".to_string(),
+                    json!(app_metrics.average_cpu_usage),
+                );
+                group_json.insert(
+                    "peak_cpu_usage".to_string(),
+                    json!(app_metrics.peak_cpu_usage),
+                );
+                group_json.insert(
+                    "total_memory_mb".to_string(),
+                    json!(app_metrics.total_memory_mb),
+                );
+                group_json.insert(
+                    "average_memory_mb".to_string(),
+                    json!(app_metrics.average_memory_mb),
+                );
+                group_json.insert(
+                    "total_io_bytes_per_sec".to_string(),
+                    json!(app_metrics.total_io_bytes_per_sec),
+                );
+                group_json.insert(
+                    "total_context_switches".to_string(),
+                    json!(app_metrics.total_context_switches),
+                );
+                group_json.insert(
+                    "processes_with_windows".to_string(),
+                    json!(app_metrics.processes_with_windows),
+                );
+                group_json.insert(
+                    "processes_with_audio".to_string(),
+                    json!(app_metrics.processes_with_audio),
+                );
+                group_json.insert(
+                    "processes_with_terminals".to_string(),
+                    json!(app_metrics.processes_with_terminals),
+                );
+
                 // Добавляем статус производительности
                 let status_str = match app_metrics.performance_status {
                     crate::metrics::app_performance::PerformanceStatus::Good => "good",
@@ -2893,14 +2907,15 @@ async fn app_performance_handler(
                     crate::metrics::app_performance::PerformanceStatus::Unknown => "unknown",
                 };
                 group_json.insert("performance_status".to_string(), json!(status_str));
-                
+
                 // Добавляем теги
-                let tags_array: Vec<Value> = app_metrics.tags.iter().map(|tag| json!(tag)).collect();
+                let tags_array: Vec<Value> =
+                    app_metrics.tags.iter().map(|tag| json!(tag)).collect();
                 group_json.insert("tags".to_string(), json!(tags_array));
-                
+
                 json_metrics.insert(app_group_id, Value::Object(group_json));
             }
-            
+
             Ok(Json(json!({
                 "status": "ok",
                 "app_performance_metrics": json_metrics,
@@ -2948,7 +2963,7 @@ async fn logs_handler(
             "error",
             "Invalid query parameters",
             None,
-            Some("Valid levels: error, warn, info, debug, trace. Max limit: 1000")
+            Some("Valid levels: error, warn, info, debug, trace. Max limit: 1000"),
         );
         return Ok(Json(error_response));
     }
@@ -3047,12 +3062,12 @@ async fn cache_monitoring_handler(
 ) -> Result<Json<Value>, StatusCode> {
     // Получаем текущие метрики производительности API
     let perf_metrics = state.performance_metrics.read().await;
-    
+
     // Получаем информацию о кэше
     let cache_info = match &state.cache {
         Some(cache_arc) => {
             let cache = cache_arc.read().await;
-            
+
             // Считаем количество кэшированных элементов
             let cached_count = [
                 cache.cached_processes_json.is_some() as u32,
@@ -3064,12 +3079,14 @@ async fn cache_monitoring_handler(
                 cache.cached_process_gpu_json.is_some() as u32,
                 cache.cached_process_network_json.is_some() as u32,
                 cache.cached_process_disk_json.is_some() as u32,
-            ].iter().sum::<u32>();
-            
+            ]
+            .iter()
+            .sum::<u32>();
+
             // Считаем количество активных (не устаревших) элементов
             let mut active_count = 0;
             let current_time = Instant::now();
-            
+
             if let Some((_, time)) = &cache.cached_processes_json {
                 if current_time.duration_since(*time).as_secs() < cache.cache_ttl_seconds {
                     active_count += 1;
@@ -3115,14 +3132,14 @@ async fn cache_monitoring_handler(
                     active_count += 1;
                 }
             }
-            
+
             // Вычисляем процент активных элементов
             let active_percentage = if cached_count > 0 {
                 (active_count as f64 / cached_count as f64) * 100.0
             } else {
                 0.0
             };
-            
+
             // Определяем статус здоровья кэша
             let health_status = if cached_count == 0 {
                 "idle"
@@ -3131,14 +3148,14 @@ async fn cache_monitoring_handler(
             } else {
                 "healthy"
             };
-            
+
             let health_message = match health_status {
                 "healthy" => "Кэш работает эффективно".to_string(),
                 "warning" => "Много устаревших элементов в кэше".to_string(),
                 "idle" => "Кэш не используется".to_string(),
                 _ => "Неизвестный статус".to_string(),
             };
-            
+
             json!({
                 "enabled": true,
                 "cache_type": "api_response_cache",
@@ -3175,7 +3192,7 @@ async fn cache_monitoring_handler(
             })
         }
     };
-    
+
     // Вычисляем эффективность кэширования
     let total_requests = perf_metrics.total_requests;
     let cache_hit_rate = if total_requests > 0 {
@@ -3183,9 +3200,9 @@ async fn cache_monitoring_handler(
     } else {
         0.0
     };
-    
+
     let cache_miss_rate = 100.0 - cache_hit_rate;
-    
+
     // Определяем общий статус здоровья
     let overall_health_status = if !cache_info["enabled"].as_bool().unwrap_or(false) {
         "disabled"
@@ -3198,7 +3215,7 @@ async fn cache_monitoring_handler(
     } else {
         "critical"
     };
-    
+
     let overall_health_message = match overall_health_status {
         "healthy" => "Кэширование работает отлично".to_string(),
         "warning" => "Кэширование может быть улучшено".to_string(),
@@ -3206,7 +3223,7 @@ async fn cache_monitoring_handler(
         "disabled" => "Кэширование отключено".to_string(),
         _ => "Неизвестный статус".to_string(),
     };
-    
+
     Ok(Json(json!({
         "status": "ok",
         "cache_monitoring": {
@@ -3352,21 +3369,45 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/health/monitoring", get(health_monitoring_handler))
         .route("/api/health/diagnostics", get(health_diagnostics_handler))
         .route("/api/health/issues", get(health_issues_handler))
-        .route("/api/gpu/temperature-power", get(gpu_temperature_power_handler))
+        .route(
+            "/api/gpu/temperature-power",
+            get(gpu_temperature_power_handler),
+        )
         .route("/api/gpu/memory", get(gpu_memory_handler))
-        .route("/api/gpu/update-temp-power", get(gpu_update_temp_power_handler))
+        .route(
+            "/api/gpu/update-temp-power",
+            get(gpu_update_temp_power_handler),
+        )
         .route("/api/version", get(version_handler))
         .route("/api/endpoints", get(endpoints_handler))
         .route("/metrics", get(prometheus_metrics_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
         .route("/api/custom-metrics", get(custom_metrics_handler))
-        .route("/api/custom-metrics/:metric_id", get(custom_metric_by_id_handler))
-        .route("/api/custom-metrics/:metric_id/update", post(custom_metric_update_handler))
-        .route("/api/custom-metrics/:metric_id/add", post(custom_metric_add_handler))
-        .route("/api/custom-metrics/:metric_id/remove", post(custom_metric_remove_handler))
-        .route("/api/custom-metrics/:metric_id/enable", post(custom_metric_enable_handler))
-        .route("/api/custom-metrics/:metric_id/disable", post(custom_metric_disable_handler))
+        .route(
+            "/api/custom-metrics/:metric_id",
+            get(custom_metric_by_id_handler),
+        )
+        .route(
+            "/api/custom-metrics/:metric_id/update",
+            post(custom_metric_update_handler),
+        )
+        .route(
+            "/api/custom-metrics/:metric_id/add",
+            post(custom_metric_add_handler),
+        )
+        .route(
+            "/api/custom-metrics/:metric_id/remove",
+            post(custom_metric_remove_handler),
+        )
+        .route(
+            "/api/custom-metrics/:metric_id/enable",
+            post(custom_metric_enable_handler),
+        )
+        .route(
+            "/api/custom-metrics/:metric_id/disable",
+            post(custom_metric_disable_handler),
+        )
         .route("/api/responsiveness", get(responsiveness_handler))
         .route("/api/processes", get(processes_handler))
         .route("/api/processes/:pid", get(process_by_pid_handler))
@@ -3453,7 +3494,7 @@ async fn metrics_handler(State(state): State<ApiState>) -> Result<Json<Value>, S
             "status": "ok",
             "system_metrics": null,
             "message": "System metrics not available (daemon may not be running or no metrics collected yet)"
-        })))
+        }))),
     }
 }
 
@@ -3655,7 +3696,7 @@ async fn process_memory_handler(State(state): State<ApiState>) -> Result<Json<Va
     // Пробуем получить доступ к данным процессов
     if let Some(processes_arc) = &state.processes {
         let processes = processes_arc.read().await;
-        
+
         // Фильтруем процессы с доступными метриками памяти
         let memory_processes: Vec<_> = processes
             .iter()
@@ -3676,14 +3717,8 @@ async fn process_memory_handler(State(state): State<ApiState>) -> Result<Json<Va
             .collect();
 
         if !memory_processes.is_empty() {
-            let total_rss_mb: u64 = processes
-                .iter()
-                .filter_map(|proc| proc.rss_mb)
-                .sum();
-            let total_swap_mb: u64 = processes
-                .iter()
-                .filter_map(|proc| proc.swap_mb)
-                .sum();
+            let total_rss_mb: u64 = processes.iter().filter_map(|proc| proc.rss_mb).sum();
+            let total_swap_mb: u64 = processes.iter().filter_map(|proc| proc.swap_mb).sum();
 
             result = json!({
                 "status": "ok",
@@ -3764,7 +3799,9 @@ async fn process_memory_handler(State(state): State<ApiState>) -> Result<Json<Va
                 result["total_file_backed_memory"] = json!(total_file_backed_memory);
                 result["total_major_faults"] = json!(total_major_faults);
                 result["total_minor_faults"] = json!(total_minor_faults);
-                result["message"] = json!("Process memory monitoring data retrieved successfully (with eBPF details)");
+                result["message"] = json!(
+                    "Process memory monitoring data retrieved successfully (with eBPF details)"
+                );
             }
         }
     }
@@ -3831,9 +3868,16 @@ async fn process_gpu_handler(State(state): State<ApiState>) -> Result<Json<Value
             if let Some(process_gpu_details) = &ebpf_metrics.process_gpu_details {
                 if !process_gpu_details.is_empty() {
                     // Успешно получили данные о использовании GPU процессами
-                    let total_gpu_time_ns: u64 = process_gpu_details.iter().map(|p| p.gpu_time_ns).sum();
-                    let total_memory_bytes: u64 = process_gpu_details.iter().map(|p| p.memory_usage_bytes).sum();
-                    let total_compute_units: u64 = process_gpu_details.iter().map(|p| p.compute_units_used).sum();
+                    let total_gpu_time_ns: u64 =
+                        process_gpu_details.iter().map(|p| p.gpu_time_ns).sum();
+                    let total_memory_bytes: u64 = process_gpu_details
+                        .iter()
+                        .map(|p| p.memory_usage_bytes)
+                        .sum();
+                    let total_compute_units: u64 = process_gpu_details
+                        .iter()
+                        .map(|p| p.compute_units_used)
+                        .sum();
 
                     result = json!({
                         "status": "ok",
@@ -4069,8 +4113,6 @@ async fn process_disk_handler(State(state): State<ApiState>) -> Result<Json<Valu
 
     Ok(Json(result))
 }
-
-
 
 /// Обработчик для endpoint `/api/appgroups`.
 ///
@@ -4372,7 +4414,10 @@ async fn config_update_handler(
                 };
             }
 
-            if let Some(enable_snapshot) = payload.get("enable_snapshot_logging").and_then(|v| v.as_bool()) {
+            if let Some(enable_snapshot) = payload
+                .get("enable_snapshot_logging")
+                .and_then(|v| v.as_bool())
+            {
                 config_guard.enable_snapshot_logging = enable_snapshot;
             }
 
@@ -5079,8 +5124,9 @@ mod tests {
     #[test]
     fn test_api_state_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
-            PressureMetrics, SystemCallMetrics, InodeMetrics, SwapMetrics, SystemMetrics, TemperatureMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, InodeMetrics, LoadAvg, MemoryInfo,
+            NetworkMetrics, PowerMetrics, PressureMetrics, SwapMetrics, SystemCallMetrics,
+            SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -5133,8 +5179,9 @@ mod tests {
     fn test_api_state_with_all() {
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
-            PressureMetrics, SystemCallMetrics, SystemMetrics, TemperatureMetrics, InodeMetrics, SwapMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, InodeMetrics, LoadAvg, MemoryInfo,
+            NetworkMetrics, PowerMetrics, PressureMetrics, SwapMetrics, SystemCallMetrics,
+            SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -5259,8 +5306,9 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_handler_with_metrics() {
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
-            PressureMetrics, SystemCallMetrics, SystemMetrics, TemperatureMetrics, InodeMetrics, SwapMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, InodeMetrics, LoadAvg, MemoryInfo,
+            NetworkMetrics, PowerMetrics, PressureMetrics, SwapMetrics, SystemCallMetrics,
+            SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -5319,8 +5367,9 @@ mod tests {
     #[test]
     fn test_api_server_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
-            PressureMetrics, SystemCallMetrics, SystemMetrics, TemperatureMetrics, InodeMetrics, SwapMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, InodeMetrics, LoadAvg, MemoryInfo,
+            NetworkMetrics, PowerMetrics, PressureMetrics, SwapMetrics, SystemCallMetrics,
+            SystemMetrics, TemperatureMetrics,
         };
         let addr: SocketAddr = "127.0.0.1:8082".parse().unwrap();
         let metrics = SystemMetrics {
@@ -5673,9 +5722,9 @@ mod tests {
     async fn test_config_update_handler_with_config() {
         // Тест для config_update_handler когда конфигурация доступна
         use crate::config::config_struct::{
-            CacheIntervals, Config, LoggingConfig, MLClassifierConfig,
-            NotificationBackend, NotificationConfig, NotificationLevel, Paths,
-            PatternAutoUpdateConfig, PolicyMode, Thresholds,
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig, NotificationBackend,
+            NotificationConfig, NotificationLevel, Paths, PatternAutoUpdateConfig, PolicyMode,
+            Thresholds,
         };
         use crate::metrics::ebpf::EbpfConfig;
 
@@ -5748,10 +5797,7 @@ mod tests {
         let json = result.unwrap();
         let value: Value = json.0;
         assert_eq!(value["status"], "success");
-        assert_eq!(
-            value["message"],
-            "Configuration updated successfully"
-        );
+        assert_eq!(value["message"], "Configuration updated successfully");
         assert!(value["config"].is_object());
         assert_eq!(value["config"]["polling_interval_ms"], 500);
         assert_eq!(value["config"]["max_candidates"], 200);
@@ -5765,7 +5811,7 @@ mod tests {
         assert_eq!(config_guard.max_candidates, 200);
         assert_eq!(config_guard.dry_run_default, true);
         match config_guard.policy_mode {
-            PolicyMode::Hybrid => {},
+            PolicyMode::Hybrid => {}
             _ => panic!("Policy mode should be Hybrid"),
         }
         assert_eq!(config_guard.enable_snapshot_logging, false);
@@ -5775,9 +5821,9 @@ mod tests {
     async fn test_config_update_handler_partial_update() {
         // Тест для config_update_handler с частичным обновлением
         use crate::config::config_struct::{
-            CacheIntervals, Config, LoggingConfig, MLClassifierConfig,
-            NotificationBackend, NotificationConfig, NotificationLevel, Paths,
-            PatternAutoUpdateConfig, PolicyMode, Thresholds,
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig, NotificationBackend,
+            NotificationConfig, NotificationLevel, Paths, PatternAutoUpdateConfig, PolicyMode,
+            Thresholds,
         };
         use crate::metrics::ebpf::EbpfConfig;
 
@@ -6724,8 +6770,9 @@ apps:
         let addr: SocketAddr = "127.0.0.1:8084".parse().unwrap();
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
-            PressureMetrics, SystemCallMetrics, SystemMetrics, TemperatureMetrics, InodeMetrics, SwapMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, InodeMetrics, LoadAvg, MemoryInfo,
+            NetworkMetrics, PowerMetrics, PressureMetrics, SwapMetrics, SystemCallMetrics,
+            SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
             cpu_times: CpuTimes {
@@ -8458,7 +8505,7 @@ max_candidates: 200
     async fn test_api_error_handling_not_found() {
         // Тест: проверка обработки ошибок "не найдено"
         use crate::logging::snapshots::ProcessRecord;
-        
+
         // Создаем тестовые процессы
         let mut test_process = ProcessRecord::default();
         test_process.pid = 123;
@@ -8468,9 +8515,9 @@ max_candidates: 200
         test_process.state = "running".to_string();
         test_process.start_time = 123456789;
         test_process.uptime_sec = 60;
-        
+
         let test_processes = vec![test_process];
-        
+
         let server = ApiServer::with_all(
             "127.0.0.1:0".parse().unwrap(),
             None,
@@ -8585,10 +8632,7 @@ max_candidates: 200
         // Проверяем, что все компоненты помечены как недоступные (так как сервер пустой)
         let components = &json["components"];
         assert_eq!(components["daemon_stats"].as_bool(), Some(false));
-        assert_eq!(
-            components["system_metrics"].as_bool(),
-            Some(false)
-        );
+        assert_eq!(components["system_metrics"].as_bool(), Some(false));
         assert_eq!(components["processes"].as_bool(), Some(false));
 
         // Проверяем общий статус
@@ -9212,16 +9256,14 @@ mod test_process_energy_api {
         use super::ApiCache;
 
         let cache = Arc::new(RwLock::new(ApiCache::new(60)));
-        
+
         // Добавляем некоторые кэшированные данные
         let mut cache_write = cache.write().await;
         cache_write.cached_processes_json = Some((json!({"test": "data"}), Instant::now()));
         cache_write.cached_metrics_json = Some((json!({"cpu": 50}), Instant::now()));
         drop(cache_write); // Освобождаем блокировку
 
-        let state = ApiStateBuilder::new()
-            .with_cache(Some(cache))
-            .build();
+        let state = ApiStateBuilder::new().with_cache(Some(cache)).build();
 
         let result = cache_monitoring_handler(State(state)).await;
 
@@ -9268,17 +9310,16 @@ mod test_process_energy_api {
         use super::ApiCache;
 
         let cache = Arc::new(RwLock::new(ApiCache::new(1))); // Очень короткое TTL
-        
+
         // Добавляем кэшированные данные
         let mut cache_write = cache.write().await;
         let now = Instant::now();
-        cache_write.cached_processes_json = Some((json!({"test": "data"}), now - Duration::from_secs(2))); // Устаревшие данные
+        cache_write.cached_processes_json =
+            Some((json!({"test": "data"}), now - Duration::from_secs(2))); // Устаревшие данные
         cache_write.cached_metrics_json = Some((json!({"cpu": 50}), now)); // Актуальные данные
         drop(cache_write);
 
-        let state = ApiStateBuilder::new()
-            .with_cache(Some(cache))
-            .build();
+        let state = ApiStateBuilder::new().with_cache(Some(cache)).build();
 
         let result = cache_monitoring_handler(State(state)).await;
 
@@ -9288,12 +9329,12 @@ mod test_process_energy_api {
 
         let monitoring = &value["cache_monitoring"];
         let api_cache = &monitoring["api_cache"];
-        
+
         // Должно быть 2 кэшированных элемента, но только 1 активный
         assert_eq!(api_cache["statistics"]["total_cached_items"], 2);
         assert_eq!(api_cache["statistics"]["active_items"], 1);
         assert_eq!(api_cache["statistics"]["stale_items"], 1);
-        
+
         // Должно быть предупреждение из-за устаревших элементов
         assert_eq!(api_cache["health"]["status"], "warning");
     }
@@ -9503,26 +9544,21 @@ mod test_process_network_api {
 
         // Проверяем, что ответ содержит ожидаемые поля
         assert_eq!(
-            json_value["status"],
-            "degraded",
+            json_value["status"], "degraded",
             "Статус должен быть degraded при отсутствии метрик"
         );
         assert!(
             json_value["process_network"].is_null(),
             "Данные об использовании сети должны быть null"
         );
-        assert_eq!(
-            json_value["count"],
-            0,
-            "Количество процессов должно быть 0"
-        );
+        assert_eq!(json_value["count"], 0, "Количество процессов должно быть 0");
     }
 
     #[tokio::test]
     async fn test_process_network_handler_with_metrics() {
         // Тест проверяет, что обработчик корректно работает с доступными метриками
         use crate::metrics::ebpf::ProcessNetworkStat;
-        
+
         let network_stats = vec![
             ProcessNetworkStat {
                 pid: 123,
@@ -9568,33 +9604,24 @@ mod test_process_network_api {
 
         // Проверяем, что ответ содержит ожидаемые данные
         assert_eq!(
-            json_value["status"],
-            "ok",
+            json_value["status"], "ok",
             "Статус должен быть ok при наличии метрик"
         );
+        assert_eq!(json_value["count"], 2, "Количество процессов должно быть 2");
         assert_eq!(
-            json_value["count"],
-            2,
-            "Количество процессов должно быть 2"
-        );
-        assert_eq!(
-            json_value["total_packets_sent"],
-            300,
+            json_value["total_packets_sent"], 300,
             "Общее количество отправленных пакетов должно быть 300"
         );
         assert_eq!(
-            json_value["total_packets_received"],
-            150,
+            json_value["total_packets_received"], 150,
             "Общее количество полученных пакетов должно быть 150"
         );
         assert_eq!(
-            json_value["total_bytes_sent"],
-            3072,
+            json_value["total_bytes_sent"], 3072,
             "Общее количество отправленных байт должно быть 3072"
         );
         assert_eq!(
-            json_value["total_bytes_received"],
-            1536,
+            json_value["total_bytes_received"], 1536,
             "Общее количество полученных байт должно быть 1536"
         );
 
@@ -9615,7 +9642,7 @@ mod test_process_network_api {
     async fn test_process_network_handler_cache() {
         // Тест проверяет, что обработчик корректно использует кэш
         use crate::metrics::ebpf::ProcessNetworkStat;
-        
+
         let network_stats = vec![ProcessNetworkStat {
             pid: 123,
             tgid: 456,
@@ -9663,124 +9690,48 @@ mod test_process_network_api {
     }
 }
 
-
-
-
 // Import types needed for disk testing
 #[allow(unused_imports)]
-use crate::metrics::system::SystemMetrics;
-#[allow(unused_imports)]
 use crate::metrics::ebpf::EbpfMetrics;
+#[allow(unused_imports)]
+use crate::metrics::system::SystemMetrics;
 
-    #[tokio::test]
-    async fn test_process_disk_handler_with_no_metrics() {
-        // Тест проверяет, что обработчик корректно работает без метрик
-        let state = ApiState::default();
+#[tokio::test]
+async fn test_process_disk_handler_with_no_metrics() {
+    // Тест проверяет, что обработчик корректно работает без метрик
+    let state = ApiState::default();
 
-        let response = process_disk_handler(State(state)).await;
-        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
+    let response = process_disk_handler(State(state)).await;
+    assert!(response.is_ok(), "Обработчик должен успешно выполниться");
 
-        let json_response = response.unwrap();
-        let json_value = json_response.0;
+    let json_response = response.unwrap();
+    let json_value = json_response.0;
 
-        assert_eq!(
-            json_value["status"], "degraded",
-            "Статус должен быть degraded при отсутствии метрик"
-        );
-        assert_eq!(
-            json_value["count"], 0,
-            "Количество процессов должно быть 0 при отсутствии метрик"
-        );
-        assert_eq!(
-            json_value["total_bytes_read"], 0,
-            "Общее количество прочитанных байт должно быть 0 при отсутствии метрик"
-        );
-        assert_eq!(
-            json_value["total_bytes_written"], 0,
-            "Общее количество записанных байт должно быть 0 при отсутствии метрик"
-        );
-    }
+    assert_eq!(
+        json_value["status"], "degraded",
+        "Статус должен быть degraded при отсутствии метрик"
+    );
+    assert_eq!(
+        json_value["count"], 0,
+        "Количество процессов должно быть 0 при отсутствии метрик"
+    );
+    assert_eq!(
+        json_value["total_bytes_read"], 0,
+        "Общее количество прочитанных байт должно быть 0 при отсутствии метрик"
+    );
+    assert_eq!(
+        json_value["total_bytes_written"], 0,
+        "Общее количество записанных байт должно быть 0 при отсутствии метрик"
+    );
+}
 
-    #[tokio::test]
-    async fn test_process_disk_handler_with_metrics() {
-        // Тест проверяет, что обработчик корректно работает с метриками
-        use crate::metrics::ebpf::ProcessDiskStat;
+#[tokio::test]
+async fn test_process_disk_handler_with_metrics() {
+    // Тест проверяет, что обработчик корректно работает с метриками
+    use crate::metrics::ebpf::ProcessDiskStat;
 
-        let disk_stats = vec![
-            ProcessDiskStat {
-                pid: 123,
-                tgid: 456,
-                bytes_read: 1024,
-                bytes_written: 2048,
-                read_operations: 10,
-                write_operations: 20,
-                last_update_ns: 123456789,
-                name: "test_process".to_string(),
-                total_io_operations: 30,
-            },
-            ProcessDiskStat {
-                pid: 789,
-                tgid: 1011,
-                bytes_read: 4096,
-                bytes_written: 8192,
-                read_operations: 50,
-                write_operations: 100,
-                last_update_ns: 123456790,
-                name: "another_process".to_string(),
-                total_io_operations: 150,
-            },
-        ];
-
-        let mut system_metrics = SystemMetrics::default();
-        let ebpf_metrics = EbpfMetrics {
-            process_disk_details: Some(disk_stats.clone()),
-            ..EbpfMetrics::default()
-        };
-        system_metrics.ebpf = Some(ebpf_metrics);
-
-        let state = ApiState {
-            metrics: Some(Arc::new(RwLock::new(system_metrics))),
-            ..ApiState::default()
-        };
-
-        let response = process_disk_handler(State(state)).await;
-        assert!(response.is_ok(), "Обработчик должен успешно выполниться");
-
-        let json_response = response.unwrap();
-        let json_value = json_response.0;
-
-        assert_eq!(
-            json_value["status"], "ok",
-            "Статус должен быть ok при наличии метрик"
-        );
-        assert_eq!(
-            json_value["count"], 2,
-            "Количество процессов должно быть 2"
-        );
-        assert_eq!(
-            json_value["total_bytes_read"], 5120,
-            "Общее количество прочитанных байт должно быть 5120"
-        );
-        assert_eq!(
-            json_value["total_bytes_written"], 10240,
-            "Общее количество записанных байт должно быть 10240"
-        );
-        assert_eq!(
-            json_value["total_read_operations"], 60,
-            "Общее количество операций чтения должно быть 60"
-        );
-        assert_eq!(
-            json_value["total_write_operations"], 120,
-            "Общее количество операций записи должно быть 120"
-        );
-    }
-
-    #[tokio::test]
-    async fn test_process_disk_handler_cache() {
-        // Тест проверяет, что кэширование работает корректно
-        use crate::metrics::ebpf::ProcessDiskStat;
-
-        let disk_stats = vec![ProcessDiskStat {
+    let disk_stats = vec![
+        ProcessDiskStat {
             pid: 123,
             tgid: 456,
             bytes_read: 1024,
@@ -9790,344 +9741,580 @@ use crate::metrics::ebpf::EbpfMetrics;
             last_update_ns: 123456789,
             name: "test_process".to_string(),
             total_io_operations: 30,
-        }];
+        },
+        ProcessDiskStat {
+            pid: 789,
+            tgid: 1011,
+            bytes_read: 4096,
+            bytes_written: 8192,
+            read_operations: 50,
+            write_operations: 100,
+            last_update_ns: 123456790,
+            name: "another_process".to_string(),
+            total_io_operations: 150,
+        },
+    ];
 
-        let mut system_metrics = SystemMetrics::default();
-        let ebpf_metrics = EbpfMetrics {
-            process_disk_details: Some(disk_stats.clone()),
-            ..EbpfMetrics::default()
-        };
-        system_metrics.ebpf = Some(ebpf_metrics);
+    let mut system_metrics = SystemMetrics::default();
+    let ebpf_metrics = EbpfMetrics {
+        process_disk_details: Some(disk_stats.clone()),
+        ..EbpfMetrics::default()
+    };
+    system_metrics.ebpf = Some(ebpf_metrics);
 
-        let state = ApiState {
-            metrics: Some(Arc::new(RwLock::new(system_metrics))),
-            ..ApiState::default()
-        };
+    let state = ApiState {
+        metrics: Some(Arc::new(RwLock::new(system_metrics))),
+        ..ApiState::default()
+    };
 
-        // Первый вызов - кэш пуст
-        let response1 = process_disk_handler(State(state.clone())).await;
+    let response = process_disk_handler(State(state)).await;
+    assert!(response.is_ok(), "Обработчик должен успешно выполниться");
 
-        // Второй вызов - должен использовать кэш
-        let response2 = process_disk_handler(State(state.clone())).await;
+    let json_response = response.unwrap();
+    let json_value = json_response.0;
 
-        assert!(response1.is_ok(), "Первый вызов должен успешно выполниться");
-        assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
+    assert_eq!(
+        json_value["status"], "ok",
+        "Статус должен быть ok при наличии метрик"
+    );
+    assert_eq!(json_value["count"], 2, "Количество процессов должно быть 2");
+    assert_eq!(
+        json_value["total_bytes_read"], 5120,
+        "Общее количество прочитанных байт должно быть 5120"
+    );
+    assert_eq!(
+        json_value["total_bytes_written"], 10240,
+        "Общее количество записанных байт должно быть 10240"
+    );
+    assert_eq!(
+        json_value["total_read_operations"], 60,
+        "Общее количество операций чтения должно быть 60"
+    );
+    assert_eq!(
+        json_value["total_write_operations"], 120,
+        "Общее количество операций записи должно быть 120"
+    );
+}
 
-        let json_response1 = response1.unwrap();
-        let json_response2 = response2.unwrap();
+#[tokio::test]
+async fn test_process_disk_handler_cache() {
+    // Тест проверяет, что кэширование работает корректно
+    use crate::metrics::ebpf::ProcessDiskStat;
 
-        // Результаты должны быть идентичны (кроме timestamp, который может отличаться)
-        let json1 = &json_response1.0;
-        let json2 = &json_response2.0;
-        
-        // Проверяем, что основные данные идентичны
-        assert_eq!(
-            json1["status"], json2["status"],
-            "Статусы должны быть идентичны"
-        );
-        assert_eq!(
-            json1["process_disk"], json2["process_disk"],
-            "Данные процессов должны быть идентичны"
-        );
-        assert_eq!(
-            json1["count"], json2["count"],
-            "Количество процессов должно быть идентично"
-        );
-        assert_eq!(
-            json1["total_bytes_read"], json2["total_bytes_read"],
-            "Общее количество прочитанных байт должно быть идентично"
-        );
-        assert_eq!(
-            json1["total_bytes_written"], json2["total_bytes_written"],
-            "Общее количество записанных байт должно быть идентично"
-        );
-        assert_eq!(
-            json1["total_read_operations"], json2["total_read_operations"],
-            "Общее количество операций чтения должно быть идентично"
-        );
-        assert_eq!(
-            json1["total_write_operations"], json2["total_write_operations"],
-            "Общее количество операций записи должно быть идентично"
-        );
-        
-        // Проверяем, что кэш был использован во втором вызове
-        // Note: В текущей реализации кэш не используется между разными вызовами
-        // потому что каждый вызов создает новый state. Это ожидаемое поведение для этого теста.
-        // В реальном использовании кэш будет работать между разными HTTP запросами.
-        // assert_eq!(
-        //     json2["cache_info"]["cached"], true,
-        //     "Второй вызов должен использовать кэш"
-        // );
-    }
+    let disk_stats = vec![ProcessDiskStat {
+        pid: 123,
+        tgid: 456,
+        bytes_read: 1024,
+        bytes_written: 2048,
+        read_operations: 10,
+        write_operations: 20,
+        last_update_ns: 123456789,
+        name: "test_process".to_string(),
+        total_io_operations: 30,
+    }];
 
-    #[tokio::test]
-    async fn test_health_monitoring_handler() {
-        // Тест проверяет обработчик health_monitoring_handler
-        use crate::health::{create_health_monitor, HealthMonitorConfig};
-        
-        let health_monitor = create_health_monitor(HealthMonitorConfig::default());
-        let state = ApiStateBuilder::new()
-            .with_health_monitor(Some(Arc::new(health_monitor)))
-            .build();
-        
-        let result = health_monitoring_handler(State(state)).await;
-        assert!(result.is_ok(), "Health monitoring handler should succeed");
-        
-        let json = result.unwrap();
-        assert_eq!(json["status"], "ok", "Status should be ok");
-        assert!(json["health_status"].is_object(), "Should contain health_status object");
-    }
+    let mut system_metrics = SystemMetrics::default();
+    let ebpf_metrics = EbpfMetrics {
+        process_disk_details: Some(disk_stats.clone()),
+        ..EbpfMetrics::default()
+    };
+    system_metrics.ebpf = Some(ebpf_metrics);
 
-    #[tokio::test]
-    async fn test_health_diagnostics_handler() {
-        // Тест проверяет обработчик health_diagnostics_handler
-        use crate::health::{create_health_monitor, HealthMonitorConfig};
-        
-        let health_monitor = create_health_monitor(HealthMonitorConfig::default());
-        let state = ApiStateBuilder::new()
-            .with_health_monitor(Some(Arc::new(health_monitor)))
-            .build();
-        
-        let result = health_diagnostics_handler(State(state)).await;
-        assert!(result.is_ok(), "Health diagnostics handler should succeed");
-        
-        let json = result.unwrap();
-        assert_eq!(json["status"], "ok", "Status should be ok");
-        assert!(json["diagnostic_report"].is_object(), "Should contain diagnostic_report object");
-    }
+    let state = ApiState {
+        metrics: Some(Arc::new(RwLock::new(system_metrics))),
+        ..ApiState::default()
+    };
 
-    #[tokio::test]
-    async fn test_health_issues_handler() {
-        // Тест проверяет обработчик health_issues_handler
-        use crate::health::{create_health_monitor, HealthMonitorConfig};
-        
-        let health_monitor = create_health_monitor(HealthMonitorConfig::default());
-        let state = ApiStateBuilder::new()
-            .with_health_monitor(Some(Arc::new(health_monitor)))
-            .build();
-        
-        let result = health_issues_handler(State(state)).await;
-        assert!(result.is_ok(), "Health issues handler should succeed");
-        
-        let json = result.unwrap();
-        assert_eq!(json["status"], "ok", "Status should be ok");
-        assert!(json["issues"].is_array(), "Should contain issues array");
-    }
+    // Первый вызов - кэш пуст
+    let response1 = process_disk_handler(State(state.clone())).await;
 
-    #[tokio::test]
-    async fn test_gpu_temperature_power_handler() {
-        // Тест проверяет обработчик gpu_temperature_power_handler
-        let result = gpu_temperature_power_handler().await;
-        assert!(result.is_ok(), "GPU temperature power handler should succeed");
-        
-        let json = result.unwrap();
-        assert_eq!(json["status"], "ok", "Status should be ok");
-        assert!(json["gpu_metrics"].is_array(), "Should contain gpu_metrics array");
-    }
+    // Второй вызов - должен использовать кэш
+    let response2 = process_disk_handler(State(state.clone())).await;
 
-    #[tokio::test]
-    async fn test_gpu_memory_handler() {
-        // Тест проверяет обработчик gpu_memory_handler
-        let result = gpu_memory_handler().await;
-        assert!(result.is_ok(), "GPU memory handler should succeed");
-        
-        let json = result.unwrap();
-        assert_eq!(json["status"], "ok", "Status should be ok");
-        assert!(json["gpu_memory_metrics"].is_array(), "Should contain gpu_memory_metrics array");
-        assert!(json["total_gpus"].is_number(), "Should contain total_gpus count");
-        assert!(json["total_memory_bytes"].is_number(), "Should contain total_memory_bytes");
-        assert!(json["total_used_memory_bytes"].is_number(), "Should contain total_used_memory_bytes");
-        
-        // Проверяем, что метрики памяти содержат ожидаемые поля
-        let memory_metrics = json["gpu_memory_metrics"].as_array();
-        if let Some(metrics) = memory_metrics {
-            for metric in metrics {
-                assert!(metric["gpu_id"].is_null() || metric["gpu_id"].is_string(), "Each metric should have gpu_id (may be null)");
-                assert!(metric["gpu_name"].is_string(), "Each metric should have gpu_name");
-                assert!(metric["gpu_type"].is_null() || metric["gpu_type"].is_string(), "Each metric should have gpu_type (may be null)");
-                assert!(metric["gpu_driver"].is_null() || metric["gpu_driver"].is_string(), "Each metric should have gpu_driver (may be null)");
-                assert!(metric["total_memory_bytes"].is_number(), "Each metric should have total_memory_bytes");
-                assert!(metric["used_memory_bytes"].is_number(), "Each metric should have used_memory_bytes");
-                assert!(metric["free_memory_bytes"].is_number(), "Each metric should have free_memory_bytes");
-                assert!(metric["memory_usage_percentage"].is_null() || metric["memory_usage_percentage"].is_number(), "Each metric should have memory_usage_percentage (may be null)");
-                assert!(metric["timestamp"].is_string(), "Each metric should have timestamp");
-            }
+    assert!(response1.is_ok(), "Первый вызов должен успешно выполниться");
+    assert!(response2.is_ok(), "Второй вызов должен успешно выполниться");
+
+    let json_response1 = response1.unwrap();
+    let json_response2 = response2.unwrap();
+
+    // Результаты должны быть идентичны (кроме timestamp, который может отличаться)
+    let json1 = &json_response1.0;
+    let json2 = &json_response2.0;
+
+    // Проверяем, что основные данные идентичны
+    assert_eq!(
+        json1["status"], json2["status"],
+        "Статусы должны быть идентичны"
+    );
+    assert_eq!(
+        json1["process_disk"], json2["process_disk"],
+        "Данные процессов должны быть идентичны"
+    );
+    assert_eq!(
+        json1["count"], json2["count"],
+        "Количество процессов должно быть идентично"
+    );
+    assert_eq!(
+        json1["total_bytes_read"], json2["total_bytes_read"],
+        "Общее количество прочитанных байт должно быть идентично"
+    );
+    assert_eq!(
+        json1["total_bytes_written"], json2["total_bytes_written"],
+        "Общее количество записанных байт должно быть идентично"
+    );
+    assert_eq!(
+        json1["total_read_operations"], json2["total_read_operations"],
+        "Общее количество операций чтения должно быть идентично"
+    );
+    assert_eq!(
+        json1["total_write_operations"], json2["total_write_operations"],
+        "Общее количество операций записи должно быть идентично"
+    );
+
+    // Проверяем, что кэш был использован во втором вызове
+    // Note: В текущей реализации кэш не используется между разными вызовами
+    // потому что каждый вызов создает новый state. Это ожидаемое поведение для этого теста.
+    // В реальном использовании кэш будет работать между разными HTTP запросами.
+    // assert_eq!(
+    //     json2["cache_info"]["cached"], true,
+    //     "Второй вызов должен использовать кэш"
+    // );
+}
+
+#[tokio::test]
+async fn test_health_monitoring_handler() {
+    // Тест проверяет обработчик health_monitoring_handler
+    use crate::health::{create_health_monitor, HealthMonitorConfig};
+
+    let health_monitor = create_health_monitor(HealthMonitorConfig::default());
+    let state = ApiStateBuilder::new()
+        .with_health_monitor(Some(Arc::new(health_monitor)))
+        .build();
+
+    let result = health_monitoring_handler(State(state)).await;
+    assert!(result.is_ok(), "Health monitoring handler should succeed");
+
+    let json = result.unwrap();
+    assert_eq!(json["status"], "ok", "Status should be ok");
+    assert!(
+        json["health_status"].is_object(),
+        "Should contain health_status object"
+    );
+}
+
+#[tokio::test]
+async fn test_health_diagnostics_handler() {
+    // Тест проверяет обработчик health_diagnostics_handler
+    use crate::health::{create_health_monitor, HealthMonitorConfig};
+
+    let health_monitor = create_health_monitor(HealthMonitorConfig::default());
+    let state = ApiStateBuilder::new()
+        .with_health_monitor(Some(Arc::new(health_monitor)))
+        .build();
+
+    let result = health_diagnostics_handler(State(state)).await;
+    assert!(result.is_ok(), "Health diagnostics handler should succeed");
+
+    let json = result.unwrap();
+    assert_eq!(json["status"], "ok", "Status should be ok");
+    assert!(
+        json["diagnostic_report"].is_object(),
+        "Should contain diagnostic_report object"
+    );
+}
+
+#[tokio::test]
+async fn test_health_issues_handler() {
+    // Тест проверяет обработчик health_issues_handler
+    use crate::health::{create_health_monitor, HealthMonitorConfig};
+
+    let health_monitor = create_health_monitor(HealthMonitorConfig::default());
+    let state = ApiStateBuilder::new()
+        .with_health_monitor(Some(Arc::new(health_monitor)))
+        .build();
+
+    let result = health_issues_handler(State(state)).await;
+    assert!(result.is_ok(), "Health issues handler should succeed");
+
+    let json = result.unwrap();
+    assert_eq!(json["status"], "ok", "Status should be ok");
+    assert!(json["issues"].is_array(), "Should contain issues array");
+}
+
+#[tokio::test]
+async fn test_gpu_temperature_power_handler() {
+    // Тест проверяет обработчик gpu_temperature_power_handler
+    let result = gpu_temperature_power_handler().await;
+    assert!(
+        result.is_ok(),
+        "GPU temperature power handler should succeed"
+    );
+
+    let json = result.unwrap();
+    assert_eq!(json["status"], "ok", "Status should be ok");
+    assert!(
+        json["gpu_metrics"].is_array(),
+        "Should contain gpu_metrics array"
+    );
+}
+
+#[tokio::test]
+async fn test_gpu_memory_handler() {
+    // Тест проверяет обработчик gpu_memory_handler
+    let result = gpu_memory_handler().await;
+    assert!(result.is_ok(), "GPU memory handler should succeed");
+
+    let json = result.unwrap();
+    assert_eq!(json["status"], "ok", "Status should be ok");
+    assert!(
+        json["gpu_memory_metrics"].is_array(),
+        "Should contain gpu_memory_metrics array"
+    );
+    assert!(
+        json["total_gpus"].is_number(),
+        "Should contain total_gpus count"
+    );
+    assert!(
+        json["total_memory_bytes"].is_number(),
+        "Should contain total_memory_bytes"
+    );
+    assert!(
+        json["total_used_memory_bytes"].is_number(),
+        "Should contain total_used_memory_bytes"
+    );
+
+    // Проверяем, что метрики памяти содержат ожидаемые поля
+    let memory_metrics = json["gpu_memory_metrics"].as_array();
+    if let Some(metrics) = memory_metrics {
+        for metric in metrics {
+            assert!(
+                metric["gpu_id"].is_null() || metric["gpu_id"].is_string(),
+                "Each metric should have gpu_id (may be null)"
+            );
+            assert!(
+                metric["gpu_name"].is_string(),
+                "Each metric should have gpu_name"
+            );
+            assert!(
+                metric["gpu_type"].is_null() || metric["gpu_type"].is_string(),
+                "Each metric should have gpu_type (may be null)"
+            );
+            assert!(
+                metric["gpu_driver"].is_null() || metric["gpu_driver"].is_string(),
+                "Each metric should have gpu_driver (may be null)"
+            );
+            assert!(
+                metric["total_memory_bytes"].is_number(),
+                "Each metric should have total_memory_bytes"
+            );
+            assert!(
+                metric["used_memory_bytes"].is_number(),
+                "Each metric should have used_memory_bytes"
+            );
+            assert!(
+                metric["free_memory_bytes"].is_number(),
+                "Each metric should have free_memory_bytes"
+            );
+            assert!(
+                metric["memory_usage_percentage"].is_null()
+                    || metric["memory_usage_percentage"].is_number(),
+                "Each metric should have memory_usage_percentage (may be null)"
+            );
+            assert!(
+                metric["timestamp"].is_string(),
+                "Each metric should have timestamp"
+            );
         }
     }
+}
 
-    #[tokio::test]
-    async fn test_gpu_update_temp_power_handler() {
-        // Тест проверяет обработчик gpu_update_temp_power_handler
-        let result = gpu_update_temp_power_handler().await;
-        assert!(result.is_ok(), "GPU update temp power handler should succeed");
-        
-        let json = result.unwrap();
-        assert_eq!(json["status"], "ok", "Status should be ok");
-        assert_eq!(json["message"], "GPU temperature and power metrics updated successfully");
-    }
+#[tokio::test]
+async fn test_gpu_update_temp_power_handler() {
+    // Тест проверяет обработчик gpu_update_temp_power_handler
+    let result = gpu_update_temp_power_handler().await;
+    assert!(
+        result.is_ok(),
+        "GPU update temp power handler should succeed"
+    );
 
-    #[tokio::test]
-    async fn test_prometheus_metrics_handler() {
-        // Тест проверяет обработчик prometheus_metrics_handler
-        use crate::DaemonStats;
-        
-        // Создаём тестовое состояние API
-        let state = ApiStateBuilder::new()
-            .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
-            .with_system_metrics(Some(Arc::new(RwLock::new(SystemMetrics::default()))))
-            .with_processes(Some(Arc::new(RwLock::new(Vec::new()))))
-            .with_app_groups(Some(Arc::new(RwLock::new(Vec::new()))))
-            .build();
-        
-        let result = prometheus_metrics_handler(State(state)).await;
-        assert!(result.is_ok(), "Prometheus metrics handler should succeed");
-        
-        let metrics = result.unwrap();
-        
-        // Проверяем, что метрики содержат ожидаемые компоненты
-        assert!(metrics.contains("smoothtask_version"), "Should contain version metric");
-        assert!(metrics.contains("smoothtask_api_requests_total"), "Should contain API requests metric");
-        assert!(metrics.contains("smoothtask_system_cpu_usage_percentage"), "Should contain CPU usage metric");
-        assert!(metrics.contains("smoothtask_system_memory_total_bytes"), "Should contain memory metric");
-        assert!(metrics.contains("smoothtask_processes_total"), "Should contain processes metric");
-        assert!(metrics.contains("smoothtask_app_groups_total"), "Should contain app groups metric");
-        assert!(metrics.contains("smoothtask_daemon_uptime_seconds"), "Should contain daemon uptime metric");
-        
-        // Проверяем формат Prometheus
-        assert!(metrics.contains("# HELP"), "Should contain HELP comments");
-        assert!(metrics.contains("# TYPE"), "Should contain TYPE declarations");
-        
-        // Проверяем, что метрики не пустые
-        assert!(!metrics.is_empty(), "Metrics should not be empty");
-        
-        // Проверяем, что метрики содержат числовые значения
-        assert!(metrics.lines().any(|line| line.contains(" 1") || line.contains(" 0")), "Should contain numeric values");
-    }
-    
-    #[tokio::test]
-    async fn test_prometheus_process_metrics() {
-        use crate::logging::snapshots::{ProcessRecord, AppGroupRecord};
-        use crate::DaemonStats;
-        
-        // Создаём тестовые процессы с различными метриками
-        let mut test_processes = Vec::new();
-        
-        // Процесс с CPU, памятью и I/O
-        let mut process1 = ProcessRecord::default();
-        process1.pid = 100;
-        process1.cpu_share_1s = Some(15.5);
-        process1.cpu_share_10s = Some(12.3);
-        process1.rss_mb = Some(256);
-        process1.io_read_bytes = Some(1024 * 1024); // 1 MB
-        process1.io_write_bytes = Some(512 * 1024); // 0.5 MB
-        process1.network_rx_bytes = Some(100 * 1024); // 100 KB
-        process1.network_tx_bytes = Some(50 * 1024); // 50 KB
-        process1.gpu_utilization = Some(0.25); // 25%
-        process1.energy_uj = Some(1000000); // 1000 mJ
-        process1.is_audio_client = true;
-        process1.has_gui_window = true;
-        process1.env_term = Some("xterm".to_string());
-        process1.env_ssh = false;
-        test_processes.push(process1);
-        
-        // Процесс с другими метриками
-        let mut process2 = ProcessRecord::default();
-        process2.pid = 200;
-        process2.cpu_share_1s = Some(5.2);
-        process2.cpu_share_10s = Some(6.8);
-        process2.rss_mb = Some(128);
-        process2.io_read_bytes = Some(2048 * 1024); // 2 MB
-        process2.io_write_bytes = Some(1024 * 1024); // 1 MB
-        process2.network_rx_bytes = Some(200 * 1024); // 200 KB
-        process2.network_tx_bytes = Some(100 * 1024); // 100 KB
-        process2.gpu_utilization = Some(0.10); // 10%
-        process2.energy_uj = Some(500000); // 500 mJ
-        process2.is_audio_client = false;
-        process2.has_gui_window = false;
-        process2.env_term = None;
-        process2.env_ssh = true;
-        test_processes.push(process2);
-        
-        // Создаём тестовые группы приложений
-        let mut test_app_groups = Vec::new();
-        
-        let app_group1 = AppGroupRecord {
-            app_group_id: "test-group-1".to_string(),
-            root_pid: 100,
-            process_ids: vec![100, 200],
-            app_name: Some("TestApp".to_string()),
-            total_cpu_share: Some(20.7),
-            total_io_read_bytes: Some(3072 * 1024), // 3 MB
-            total_io_write_bytes: Some(1536 * 1024), // 1.5 MB
-            total_io_read_operations: None,
-            total_io_write_operations: None,
-            total_io_operations: None,
-            io_data_source: None,
-            total_rss_mb: Some(384),
-            has_gui_window: true,
-            is_focused_group: true,
-            tags: Vec::new(),
-            priority_class: None,
-            total_energy_uj: Some(1500000), // 1500 mJ
-            total_power_w: None,
-            total_network_rx_bytes: Some(300 * 1024), // 300 KB
-            total_network_tx_bytes: Some(150 * 1024), // 150 KB
-            total_network_rx_packets: None,
-            total_network_tx_packets: None,
-            total_network_tcp_connections: None,
-            total_network_udp_connections: None,
-            network_data_source: None,
-        };
-        test_app_groups.push(app_group1);
-        
-        // Создаём состояние API с тестовыми данными
-        let state = ApiStateBuilder::new()
-            .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
-            .with_system_metrics(Some(Arc::new(RwLock::new(SystemMetrics::default()))))
-            .with_processes(Some(Arc::new(RwLock::new(test_processes))))
-            .with_app_groups(Some(Arc::new(RwLock::new(test_app_groups))))
-            .build();
-        
-        let result = prometheus_metrics_handler(State(state)).await;
-        assert!(result.is_ok(), "Prometheus metrics handler should succeed with process data");
-        
-        let metrics = result.unwrap();
-        
-        // Проверяем агрегированные метрики процессов
-        assert!(metrics.contains("smoothtask_processes_total_cpu_share_1s"), "Should contain total CPU share 1s metric");
-        assert!(metrics.contains("smoothtask_processes_total_cpu_share_10s"), "Should contain total CPU share 10s metric");
-        assert!(metrics.contains("smoothtask_processes_total_memory_mb"), "Should contain total memory metric");
-        assert!(metrics.contains("smoothtask_processes_total_io_read_bytes"), "Should contain total I/O read metric");
-        assert!(metrics.contains("smoothtask_processes_total_io_write_bytes"), "Should contain total I/O write metric");
-        assert!(metrics.contains("smoothtask_processes_total_network_rx_bytes"), "Should contain total network RX metric");
-        assert!(metrics.contains("smoothtask_processes_total_network_tx_bytes"), "Should contain total network TX metric");
-        assert!(metrics.contains("smoothtask_processes_total_gpu_utilization"), "Should contain total GPU utilization metric");
-        assert!(metrics.contains("smoothtask_processes_total_energy_uj"), "Should contain total energy metric");
-        
-        // Проверяем метрики по типам процессов
-        assert!(metrics.contains("smoothtask_processes_audio_client"), "Should contain audio client processes metric");
-        assert!(metrics.contains("smoothtask_processes_gui_window"), "Should contain GUI window processes metric");
-        assert!(metrics.contains("smoothtask_processes_terminal"), "Should contain terminal processes metric");
-        assert!(metrics.contains("smoothtask_processes_ssh"), "Should contain SSH processes metric");
-        
-        // Проверяем метрики групп приложений
-        assert!(metrics.contains("smoothtask_app_groups_total_cpu_share"), "Should contain app groups total CPU share metric");
-        assert!(metrics.contains("smoothtask_app_groups_total_memory_mb"), "Should contain app groups total memory metric");
-        assert!(metrics.contains("smoothtask_app_groups_total_io_read_bytes"), "Should contain app groups total I/O read metric");
-        assert!(metrics.contains("smoothtask_app_groups_total_io_write_bytes"), "Should contain app groups total I/O write metric");
-        assert!(metrics.contains("smoothtask_app_groups_total_network_rx_bytes"), "Should contain app groups total network RX metric");
-        assert!(metrics.contains("smoothtask_app_groups_total_network_tx_bytes"), "Should contain app groups total network TX metric");
-        assert!(metrics.contains("smoothtask_app_groups_total_energy_uj"), "Should contain app groups total energy metric");
-        assert!(metrics.contains("smoothtask_app_groups_focused"), "Should contain focused app groups metric");
-        assert!(metrics.contains("smoothtask_app_groups_with_gui"), "Should contain GUI app groups metric");
-        
-        // Проверяем, что метрики содержат ожидаемые значения
-        assert!(metrics.contains("20.7"), "Should contain expected CPU value");
-        assert!(metrics.contains("384"), "Should contain expected memory value");
-        
-        // Проверяем формат метрик
-        assert!(metrics.contains("# HELP smoothtask_processes_total_cpu_share_1s"), "Should have HELP for CPU metric");
-        assert!(metrics.contains("# TYPE smoothtask_processes_total_cpu_share_1s gauge"), "Should have TYPE for CPU metric");
-    }
+    let json = result.unwrap();
+    assert_eq!(json["status"], "ok", "Status should be ok");
+    assert_eq!(
+        json["message"],
+        "GPU temperature and power metrics updated successfully"
+    );
+}
 
+#[tokio::test]
+async fn test_prometheus_metrics_handler() {
+    // Тест проверяет обработчик prometheus_metrics_handler
+    use crate::DaemonStats;
 
+    // Создаём тестовое состояние API
+    let state = ApiStateBuilder::new()
+        .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
+        .with_system_metrics(Some(Arc::new(RwLock::new(SystemMetrics::default()))))
+        .with_processes(Some(Arc::new(RwLock::new(Vec::new()))))
+        .with_app_groups(Some(Arc::new(RwLock::new(Vec::new()))))
+        .build();
+
+    let result = prometheus_metrics_handler(State(state)).await;
+    assert!(result.is_ok(), "Prometheus metrics handler should succeed");
+
+    let metrics = result.unwrap();
+
+    // Проверяем, что метрики содержат ожидаемые компоненты
+    assert!(
+        metrics.contains("smoothtask_version"),
+        "Should contain version metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_api_requests_total"),
+        "Should contain API requests metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_system_cpu_usage_percentage"),
+        "Should contain CPU usage metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_system_memory_total_bytes"),
+        "Should contain memory metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total"),
+        "Should contain processes metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total"),
+        "Should contain app groups metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_daemon_uptime_seconds"),
+        "Should contain daemon uptime metric"
+    );
+
+    // Проверяем формат Prometheus
+    assert!(metrics.contains("# HELP"), "Should contain HELP comments");
+    assert!(
+        metrics.contains("# TYPE"),
+        "Should contain TYPE declarations"
+    );
+
+    // Проверяем, что метрики не пустые
+    assert!(!metrics.is_empty(), "Metrics should not be empty");
+
+    // Проверяем, что метрики содержат числовые значения
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line.contains(" 1") || line.contains(" 0")),
+        "Should contain numeric values"
+    );
+}
+
+#[tokio::test]
+async fn test_prometheus_process_metrics() {
+    use crate::logging::snapshots::{AppGroupRecord, ProcessRecord};
+    use crate::DaemonStats;
+
+    // Создаём тестовые процессы с различными метриками
+    let mut test_processes = Vec::new();
+
+    // Процесс с CPU, памятью и I/O
+    let mut process1 = ProcessRecord::default();
+    process1.pid = 100;
+    process1.cpu_share_1s = Some(15.5);
+    process1.cpu_share_10s = Some(12.3);
+    process1.rss_mb = Some(256);
+    process1.io_read_bytes = Some(1024 * 1024); // 1 MB
+    process1.io_write_bytes = Some(512 * 1024); // 0.5 MB
+    process1.network_rx_bytes = Some(100 * 1024); // 100 KB
+    process1.network_tx_bytes = Some(50 * 1024); // 50 KB
+    process1.gpu_utilization = Some(0.25); // 25%
+    process1.energy_uj = Some(1000000); // 1000 mJ
+    process1.is_audio_client = true;
+    process1.has_gui_window = true;
+    process1.env_term = Some("xterm".to_string());
+    process1.env_ssh = false;
+    test_processes.push(process1);
+
+    // Процесс с другими метриками
+    let mut process2 = ProcessRecord::default();
+    process2.pid = 200;
+    process2.cpu_share_1s = Some(5.2);
+    process2.cpu_share_10s = Some(6.8);
+    process2.rss_mb = Some(128);
+    process2.io_read_bytes = Some(2048 * 1024); // 2 MB
+    process2.io_write_bytes = Some(1024 * 1024); // 1 MB
+    process2.network_rx_bytes = Some(200 * 1024); // 200 KB
+    process2.network_tx_bytes = Some(100 * 1024); // 100 KB
+    process2.gpu_utilization = Some(0.10); // 10%
+    process2.energy_uj = Some(500000); // 500 mJ
+    process2.is_audio_client = false;
+    process2.has_gui_window = false;
+    process2.env_term = None;
+    process2.env_ssh = true;
+    test_processes.push(process2);
+
+    // Создаём тестовые группы приложений
+    let mut test_app_groups = Vec::new();
+
+    let app_group1 = AppGroupRecord {
+        app_group_id: "test-group-1".to_string(),
+        root_pid: 100,
+        process_ids: vec![100, 200],
+        app_name: Some("TestApp".to_string()),
+        total_cpu_share: Some(20.7),
+        total_io_read_bytes: Some(3072 * 1024),  // 3 MB
+        total_io_write_bytes: Some(1536 * 1024), // 1.5 MB
+        total_io_read_operations: None,
+        total_io_write_operations: None,
+        total_io_operations: None,
+        io_data_source: None,
+        total_rss_mb: Some(384),
+        has_gui_window: true,
+        is_focused_group: true,
+        tags: Vec::new(),
+        priority_class: None,
+        total_energy_uj: Some(1500000), // 1500 mJ
+        total_power_w: None,
+        total_network_rx_bytes: Some(300 * 1024), // 300 KB
+        total_network_tx_bytes: Some(150 * 1024), // 150 KB
+        total_network_rx_packets: None,
+        total_network_tx_packets: None,
+        total_network_tcp_connections: None,
+        total_network_udp_connections: None,
+        network_data_source: None,
+    };
+    test_app_groups.push(app_group1);
+
+    // Создаём состояние API с тестовыми данными
+    let state = ApiStateBuilder::new()
+        .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
+        .with_system_metrics(Some(Arc::new(RwLock::new(SystemMetrics::default()))))
+        .with_processes(Some(Arc::new(RwLock::new(test_processes))))
+        .with_app_groups(Some(Arc::new(RwLock::new(test_app_groups))))
+        .build();
+
+    let result = prometheus_metrics_handler(State(state)).await;
+    assert!(
+        result.is_ok(),
+        "Prometheus metrics handler should succeed with process data"
+    );
+
+    let metrics = result.unwrap();
+
+    // Проверяем агрегированные метрики процессов
+    assert!(
+        metrics.contains("smoothtask_processes_total_cpu_share_1s"),
+        "Should contain total CPU share 1s metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_cpu_share_10s"),
+        "Should contain total CPU share 10s metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_memory_mb"),
+        "Should contain total memory metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_io_read_bytes"),
+        "Should contain total I/O read metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_io_write_bytes"),
+        "Should contain total I/O write metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_network_rx_bytes"),
+        "Should contain total network RX metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_network_tx_bytes"),
+        "Should contain total network TX metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_gpu_utilization"),
+        "Should contain total GPU utilization metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_total_energy_uj"),
+        "Should contain total energy metric"
+    );
+
+    // Проверяем метрики по типам процессов
+    assert!(
+        metrics.contains("smoothtask_processes_audio_client"),
+        "Should contain audio client processes metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_gui_window"),
+        "Should contain GUI window processes metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_terminal"),
+        "Should contain terminal processes metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_processes_ssh"),
+        "Should contain SSH processes metric"
+    );
+
+    // Проверяем метрики групп приложений
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_cpu_share"),
+        "Should contain app groups total CPU share metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_memory_mb"),
+        "Should contain app groups total memory metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_io_read_bytes"),
+        "Should contain app groups total I/O read metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_io_write_bytes"),
+        "Should contain app groups total I/O write metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_network_rx_bytes"),
+        "Should contain app groups total network RX metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_network_tx_bytes"),
+        "Should contain app groups total network TX metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_total_energy_uj"),
+        "Should contain app groups total energy metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_focused"),
+        "Should contain focused app groups metric"
+    );
+    assert!(
+        metrics.contains("smoothtask_app_groups_with_gui"),
+        "Should contain GUI app groups metric"
+    );
+
+    // Проверяем, что метрики содержат ожидаемые значения
+    assert!(
+        metrics.contains("20.7"),
+        "Should contain expected CPU value"
+    );
+    assert!(
+        metrics.contains("384"),
+        "Should contain expected memory value"
+    );
+
+    // Проверяем формат метрик
+    assert!(
+        metrics.contains("# HELP smoothtask_processes_total_cpu_share_1s"),
+        "Should have HELP for CPU metric"
+    );
+    assert!(
+        metrics.contains("# TYPE smoothtask_processes_total_cpu_share_1s gauge"),
+        "Should have TYPE for CPU metric"
+    );
+}

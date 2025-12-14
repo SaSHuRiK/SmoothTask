@@ -707,7 +707,7 @@ async fn test_cpu_temperature_endpoint_without_metrics() {
 async fn test_cpu_temperature_endpoint_with_metrics() {
     // Тест: endpoint температуры CPU с метриками
     // Упрощенная версия, которая тестирует поведение при недоступности eBPF
-    
+
     // Создаем сервер без коллектора метрик (симулируем недоступность eBPF)
     let server = ApiServer::new("127.0.0.1:0".parse().unwrap());
     let handle = server.start().await.expect("Сервер должен запуститься");

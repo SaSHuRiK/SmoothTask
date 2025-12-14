@@ -333,7 +333,7 @@ pub fn create_audio_introspector_with_fallback() -> Box<dyn AudioIntrospector> {
 ///
 /// // Создать улучшенный интроспектор с кэшированием на 1 секунду
 /// let mut introspector = EnhancedAudioIntrospector::new(Duration::from_secs(1));
-/// 
+///
 /// // Получить метрики (будут кэшированы на 1 секунду)
 /// let metrics = introspector.audio_metrics();
 /// ```
@@ -344,8 +344,8 @@ pub struct EnhancedAudioIntrospector {
     error_count: u32,
     last_error_time: Option<SystemTime>,
     max_error_count: u32,
-    device_error_count: HashMap<String, u32>,  // Подсчет ошибок по устройствам
-    last_successful_metrics: Option<AudioMetrics>,  // Последние успешные метрики для graceful degradation
+    device_error_count: HashMap<String, u32>, // Подсчет ошибок по устройствам
+    last_successful_metrics: Option<AudioMetrics>, // Последние успешные метрики для graceful degradation
 }
 
 impl EnhancedAudioIntrospector {
@@ -366,7 +366,7 @@ impl EnhancedAudioIntrospector {
     /// ```
     pub fn new(cache_duration: Duration, max_error_count: u32) -> Self {
         let base_introspector = create_audio_introspector_with_fallback();
-        
+
         Self {
             base_introspector,
             cache_duration,
@@ -409,25 +409,28 @@ impl EnhancedAudioIntrospector {
     pub fn set_max_error_count(&mut self, count: u32) {
         self.max_error_count = count;
     }
-    
+
     /// Получить последние успешные метрики (если есть).
     pub fn last_successful_metrics(&self) -> Option<&AudioMetrics> {
         self.last_successful_metrics.as_ref()
     }
-    
+
     /// Получить текущий счетчик ошибок по устройствам.
     pub fn device_error_count(&self) -> &HashMap<String, u32> {
         &self.device_error_count
     }
-    
+
     /// Сбросить счетчик ошибок для конкретного устройства.
     pub fn reset_device_error_count(&mut self, device_id: &str) {
         self.device_error_count.remove(device_id);
     }
-    
+
     /// Увеличить счетчик ошибок для конкретного устройства.
     pub fn increment_device_error_count(&mut self, device_id: &str) {
-        let count = self.device_error_count.entry(device_id.to_string()).or_insert(0);
+        let count = self
+            .device_error_count
+            .entry(device_id.to_string())
+            .or_insert(0);
         *count += 1;
     }
 }
@@ -454,19 +457,19 @@ impl AudioIntrospector for EnhancedAudioIntrospector {
                 self.last_metrics = Some((SystemTime::now(), metrics.clone()));
                 self.error_count = 0; // Сбрасываем счетчик ошибок при успехе
                 self.last_successful_metrics = Some(metrics.clone()); // Сохраняем последние успешные метрики
-                
+
                 // Обновляем состояние здоровья
                 let health_status = self.get_audio_health_status();
                 let mut metrics_with_health = metrics.clone();
                 metrics_with_health.health_status = health_status;
-                
+
                 Ok(metrics_with_health)
             }
             Err(e) => {
                 // Произошла ошибка, обновляем счетчик ошибок
                 self.error_count += 1;
                 self.last_error_time = Some(SystemTime::now());
-                
+
                 // Логируем ошибку с практическими рекомендациями
                 tracing::error!(
                     "Ошибка при получении аудио метрик (попытка {}): {}. Рекомендации: {}",
@@ -474,14 +477,14 @@ impl AudioIntrospector for EnhancedAudioIntrospector {
                     e,
                     self.get_error_recommendations()
                 );
-                
+
                 // Проверяем, превышен ли лимит ошибок
                 if self.error_count >= self.max_error_count {
                     tracing::warn!(
                         "Превышен лимит ошибок аудио метрик ({} ошибок). Переход в режим graceful degradation.",
                         self.max_error_count
                     );
-                    
+
                     // Возвращаем последние успешные метрики или пустые метрики (graceful degradation)
                     if let Some(last_successful) = &self.last_successful_metrics {
                         let mut metrics_with_health = last_successful.clone();
@@ -512,31 +515,35 @@ impl EnhancedAudioIntrospector {
     /// Получить рекомендации по устранению ошибок на основе текущего состояния.
     pub fn get_error_recommendations(&self) -> String {
         let mut recommendations = Vec::new();
-        
+
         // Базовые рекомендации для аудио ошибок
         recommendations.push("Проверьте, что PipeWire или PulseAudio установлен и запущен");
         recommendations.push("Убедитесь, что у пользователя есть права на доступ к аудио-устройствам (группа 'audio')");
-        
+
         // Дополнительные рекомендации при многократных ошибках
         if self.error_count > 1 {
-            recommendations.push("Попробуйте перезапустить аудио-сервер: systemctl --user restart pipewire");
-            recommendations.push("Проверьте логи аудио-сервера: journalctl --user -u pipewire -n 50");
-            recommendations.push("Проверьте, что демон PipeWire запущен: systemctl --user status pipewire");
+            recommendations
+                .push("Попробуйте перезапустить аудио-сервер: systemctl --user restart pipewire");
+            recommendations
+                .push("Проверьте логи аудио-сервера: journalctl --user -u pipewire -n 50");
+            recommendations
+                .push("Проверьте, что демон PipeWire запущен: systemctl --user status pipewire");
             recommendations.push("Убедитесь, что у вас установлены необходимые пакеты: sudo apt install pipewire pipewire-tools");
         }
-        
+
         // Рекомендации при частом превышении лимита
         if self.error_count >= self.max_error_count {
             recommendations.push("Рассмотрите возможность увеличения max_error_count или проверки конфигурации аудио-системы");
-            recommendations.push("Проверьте конфигурацию PipeWire в ~/.config/pipewire/ или /etc/pipewire/");
+            recommendations
+                .push("Проверьте конфигурацию PipeWire в ~/.config/pipewire/ или /etc/pipewire/");
             recommendations.push("Попробуйте сбросить конфигурацию аудио: rm -rf ~/.config/pipewire/ && systemctl --user restart pipewire");
         }
-        
+
         // Рекомендации для устройств с ошибками
         if !self.device_error_count.is_empty() {
             recommendations.push("Некоторые аудио-устройства могут быть недоступны. Проверьте подключение устройств и права доступа");
         }
-        
+
         recommendations.join("; ")
     }
 }
@@ -555,10 +562,7 @@ pub fn create_enhanced_audio_introspector() -> EnhancedAudioIntrospector {
     // Разумные значения по умолчанию:
     // - Кэширование на 500 мс (уменьшает нагрузку, но не слишком устаревшие данные)
     // - Максимум 3 ошибки подряд перед переходом в режим graceful degradation
-    EnhancedAudioIntrospector::new(
-        std::time::Duration::from_millis(500),
-        3
-    )
+    EnhancedAudioIntrospector::new(std::time::Duration::from_millis(500), 3)
 }
 
 /// Состояние здоровья аудио подсистемы.
@@ -583,7 +587,7 @@ impl EnhancedAudioIntrospector {
             AudioHealthStatus::Healthy
         }
     }
-    
+
     /// Обновить состояние здоровья на основе текущих ошибок.
     pub fn update_health_status(&mut self) -> AudioHealthStatus {
         self.get_audio_health_status()
@@ -609,7 +613,7 @@ impl EnhancedAudioIntrospector {
 ///     3,
 ///     4  // Количество потоков
 /// );
-/// 
+///
 /// // Получить метрики с параллельным сбором
 /// let metrics = introspector.audio_metrics();
 /// ```
@@ -650,7 +654,7 @@ impl ParallelAudioIntrospector {
     /// ```
     pub fn new(cache_duration: Duration, max_error_count: u32, thread_count: usize) -> Self {
         let base_introspector = create_audio_introspector_with_fallback();
-        
+
         Self {
             base_introspector,
             cache_duration,
@@ -685,25 +689,28 @@ impl ParallelAudioIntrospector {
     pub fn thread_count(&self) -> usize {
         self.thread_count
     }
-    
+
     /// Получить последние успешные метрики (если есть).
     pub fn last_successful_metrics(&self) -> Option<&AudioMetrics> {
         self.last_successful_metrics.as_ref()
     }
-    
+
     /// Получить текущий счетчик ошибок по устройствам.
     pub fn device_error_count(&self) -> &HashMap<String, u32> {
         &self.device_error_count
     }
-    
+
     /// Сбросить счетчик ошибок для конкретного устройства.
     pub fn reset_device_error_count(&mut self, device_id: &str) {
         self.device_error_count.remove(device_id);
     }
-    
+
     /// Увеличить счетчик ошибок для конкретного устройства.
     pub fn increment_device_error_count(&mut self, device_id: &str) {
-        let count = self.device_error_count.entry(device_id.to_string()).or_insert(0);
+        let count = self
+            .device_error_count
+            .entry(device_id.to_string())
+            .or_insert(0);
         *count += 1;
     }
 
@@ -713,19 +720,19 @@ impl ParallelAudioIntrospector {
     /// В реальной реализации это могло бы быть несколько аудио устройств или интерфейсов.
     fn collect_audio_metrics_parallel(&mut self) -> Result<AudioMetrics> {
         let start_time = SystemTime::now();
-        
+
         // В реальной реализации здесь мог бы быть параллельный сбор данных
         // из нескольких аудио источников с использованием tokio или rayon
         // Для этой демонстрации мы просто используем базовый интроспектор
-        
+
         let result = self.base_introspector.audio_metrics();
-        
+
         if self.enable_benchmarking {
             if let Ok(end_time) = SystemTime::now().duration_since(start_time) {
                 self.last_benchmark_duration = Some(end_time);
             }
         }
-        
+
         result
     }
 }
@@ -758,7 +765,7 @@ impl AudioIntrospector for ParallelAudioIntrospector {
                 // Произошла ошибка, обновляем счетчик ошибок
                 self.error_count += 1;
                 self.last_error_time = Some(SystemTime::now());
-                
+
                 // Логируем ошибку с практическими рекомендациями
                 tracing::error!(
                     "Ошибка при параллельном сборе аудио метрик (попытка {}): {}. Рекомендации: {}",
@@ -766,14 +773,14 @@ impl AudioIntrospector for ParallelAudioIntrospector {
                     e,
                     self.get_error_recommendations()
                 );
-                
+
                 // Проверяем, превышен ли лимит ошибок
                 if self.error_count >= self.max_error_count {
                     tracing::warn!(
                         "Превышен лимит ошибок аудио метрик ({} ошибок). Переход в режим graceful degradation.",
                         self.max_error_count
                     );
-                    
+
                     // Возвращаем последние успешные метрики или пустые метрики (graceful degradation)
                     if let Some(last_successful) = &self.last_successful_metrics {
                         Ok(last_successful.clone())
@@ -828,36 +835,51 @@ impl ParallelAudioIntrospector {
     /// Получить рекомендации по устранению ошибок на основе текущего состояния.
     pub fn get_error_recommendations(&self) -> String {
         let mut recommendations: Vec<String> = Vec::new();
-        
+
         // Базовые рекомендации для аудио ошибок
-        recommendations.push("Проверьте, что PipeWire или PulseAudio установлен и запущен".to_string());
+        recommendations
+            .push("Проверьте, что PipeWire или PulseAudio установлен и запущен".to_string());
         recommendations.push("Убедитесь, что у пользователя есть права на доступ к аудио-устройствам (группа 'audio')".to_string());
-        
+
         // Дополнительные рекомендации при многократных ошибках
         if self.error_count > 1 {
-            recommendations.push("Попробуйте перезапустить аудио-сервер: systemctl --user restart pipewire".to_string());
-            recommendations.push("Проверьте логи аудио-сервера: journalctl --user -u pipewire -n 50".to_string());
-            recommendations.push("Проверьте, что демон PipeWire запущен: systemctl --user status pipewire".to_string());
+            recommendations.push(
+                "Попробуйте перезапустить аудио-сервер: systemctl --user restart pipewire"
+                    .to_string(),
+            );
+            recommendations.push(
+                "Проверьте логи аудио-сервера: journalctl --user -u pipewire -n 50".to_string(),
+            );
+            recommendations.push(
+                "Проверьте, что демон PipeWire запущен: systemctl --user status pipewire"
+                    .to_string(),
+            );
             recommendations.push("Убедитесь, что у вас установлены необходимые пакеты: sudo apt install pipewire pipewire-tools".to_string());
         }
-        
+
         // Рекомендации при частом превышении лимита
         if self.error_count >= self.max_error_count {
             recommendations.push("Рассмотрите возможность увеличения max_error_count или проверки конфигурации аудио-системы".to_string());
-            recommendations.push("Проверьте конфигурацию PipeWire в ~/.config/pipewire/ или /etc/pipewire/".to_string());
+            recommendations.push(
+                "Проверьте конфигурацию PipeWire в ~/.config/pipewire/ или /etc/pipewire/"
+                    .to_string(),
+            );
             recommendations.push("Попробуйте сбросить конфигурацию аудио: rm -rf ~/.config/pipewire/ && systemctl --user restart pipewire".to_string());
         }
-        
+
         // Рекомендации для устройств с ошибками
         if !self.device_error_count.is_empty() {
             recommendations.push("Некоторые аудио-устройства могут быть недоступны. Проверьте подключение устройств и права доступа".to_string());
         }
-        
+
         // Рекомендации для параллельного сбора
         if self.thread_count > 1 {
-            recommendations.push(format!("Попробуйте уменьшить количество потоков ({} потоков) для уменьшения нагрузки", self.thread_count));
+            recommendations.push(format!(
+                "Попробуйте уменьшить количество потоков ({} потоков) для уменьшения нагрузки",
+                self.thread_count
+            ));
         }
-        
+
         recommendations.join("; ")
     }
 }
@@ -877,11 +899,7 @@ pub fn create_parallel_audio_introspector() -> ParallelAudioIntrospector {
     // - Кэширование на 500 мс
     // - Максимум 3 ошибки подряд
     // - 2 потока для параллельного сбора (баланс между производительностью и нагрузкой)
-    ParallelAudioIntrospector::new(
-        std::time::Duration::from_millis(500),
-        3,
-        2
-    )
+    ParallelAudioIntrospector::new(std::time::Duration::from_millis(500), 3, 2)
 }
 
 /// Бенчмарк для измерения производительности аудио метрик.
@@ -895,14 +913,17 @@ pub fn create_parallel_audio_introspector() -> ParallelAudioIntrospector {
 /// let benchmark_result = benchmark_audio_metrics(&mut introspector, 10);
 /// println!("Среднее время выполнения: {:?}", benchmark_result);
 /// ```
-pub fn benchmark_audio_metrics(introspector: &mut EnhancedAudioIntrospector, iterations: usize) -> Option<Duration> {
+pub fn benchmark_audio_metrics(
+    introspector: &mut EnhancedAudioIntrospector,
+    iterations: usize,
+) -> Option<Duration> {
     let start_time = SystemTime::now();
-    
+
     for _ in 0..iterations {
         // Включаем бенчмаркинг для этого вызова
         let _ = introspector.audio_metrics();
     }
-    
+
     if let Ok(total_duration) = SystemTime::now().duration_since(start_time) {
         Some(total_duration / iterations as u32)
     } else {
@@ -1302,11 +1323,8 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_creation() {
         // Тест проверяет создание EnhancedAudioIntrospector
-        let introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            5
-        );
-        
+        let introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 5);
+
         assert_eq!(introspector.error_count(), 0);
         assert!(!introspector.is_error_limit_exceeded());
         assert_eq!(introspector.cache_duration, Duration::from_millis(100));
@@ -1315,18 +1333,15 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_reset() {
         // Тест проверяет функцию reset()
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Симулируем ошибки
         introspector.error_count = 2;
         introspector.last_error_time = Some(SystemTime::now());
-        
+
         // Сбрасываем
         introspector.reset();
-        
+
         assert_eq!(introspector.error_count(), 0);
         assert!(introspector.last_error_time.is_none());
         assert!(introspector.last_metrics.is_none());
@@ -1335,27 +1350,24 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_cache() {
         // Тест проверяет кэширование метрик
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_secs(1),
-            3
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_secs(1), 3);
+
         // Создаём статический интроспектор для теста
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
         let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
-        
+
         // Заменяем базовый интроспектор на статический для теста
         introspector.base_introspector = Box::new(static_introspector);
-        
+
         // Первый вызов - кэш пуст, должны получить метрики
         let first_call = introspector.audio_metrics().unwrap();
         assert_eq!(first_call.xrun_count, 0);
-        
+
         // Второй вызов в пределах cache_duration - должны получить кэш
         let second_call = introspector.audio_metrics().unwrap();
         assert_eq!(second_call.xrun_count, 0);
-        
+
         // Проверяем, что кэш сохранён
         assert!(introspector.last_metrics.is_some());
     }
@@ -1365,39 +1377,39 @@ mod tests {
         // Тест проверяет обработку ошибок
         // Создаём интроспектор, который всегда возвращает ошибку
         struct FailingIntrospector;
-        
+
         impl AudioIntrospector for FailingIntrospector {
             fn audio_metrics(&mut self) -> Result<AudioMetrics> {
                 Err(anyhow::anyhow!("Test error"))
             }
-            
+
             fn clients(&self) -> Result<Vec<AudioClientInfo>> {
                 Err(anyhow::anyhow!("Test error"))
             }
         }
-        
+
         let mut introspector = EnhancedAudioIntrospector {
             base_introspector: Box::new(FailingIntrospector),
             cache_duration: Duration::from_millis(100),
             last_metrics: None,
             error_count: 0,
             last_error_time: None,
-            max_error_count: 2,  // Маленький лимит для теста
+            max_error_count: 2, // Маленький лимит для теста
             device_error_count: HashMap::new(),
             last_successful_metrics: None,
         };
-        
+
         // Первая ошибка - должна быть проброшена
         let result1 = introspector.audio_metrics();
         assert!(result1.is_err());
         assert_eq!(introspector.error_count(), 1);
-        
+
         // Вторая ошибка - должен быть достигнут лимит и сразу перейти в graceful degradation
         let result2 = introspector.audio_metrics();
         assert!(result2.is_ok()); // Graceful degradation начинается сразу при достижении лимита
         assert_eq!(introspector.error_count(), 2);
         assert!(introspector.is_error_limit_exceeded());
-        
+
         // Третья ошибка - должна быть graceful degradation (пустые метрики)
         let result3 = introspector.audio_metrics();
         assert!(result3.is_ok());
@@ -1408,11 +1420,8 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_error_recommendations() {
         // Тест проверяет генерацию рекомендаций
-        let introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Проверяем базовые рекомендации
         let recommendations = introspector.get_error_recommendations();
         assert!(recommendations.contains("PipeWire"));
@@ -1423,11 +1432,8 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_clients() {
         // Тест проверяет, что clients() работает через базовый интроспектор
-        let introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Создаём статический интроспектор с клиентами
         let clients = vec![AudioClientInfo {
             pid: 1234,
@@ -1437,16 +1443,16 @@ mod tests {
             latency_ms: None,
             client_name: None,
         }];
-        
+
         let static_introspector = StaticAudioIntrospector::new(
             AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
-            clients.clone()
+            clients.clone(),
         );
-        
+
         // Заменяем базовый интроспектор
         let mut introspector = introspector;
         introspector.base_introspector = Box::new(static_introspector);
-        
+
         // Проверяем, что clients() возвращает правильные данные
         let result = introspector.clients();
         assert!(result.is_ok());
@@ -1459,7 +1465,7 @@ mod tests {
     fn test_create_enhanced_audio_introspector() {
         // Тест проверяет утилиту create_enhanced_audio_introspector
         let introspector = create_enhanced_audio_introspector();
-        
+
         // Проверяем значения по умолчанию
         assert_eq!(introspector.cache_duration, Duration::from_millis(500));
         assert_eq!(introspector.max_error_count, 3);
@@ -1470,24 +1476,24 @@ mod tests {
     fn test_enhanced_audio_introspector_cache_expiry() {
         // Тест проверяет истечение срока кэша
         let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),  // Очень короткий кэш
-            3
+            Duration::from_millis(100), // Очень короткий кэш
+            3,
         );
-        
+
         // Создаём статический интроспектор
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
         let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
-        
+
         introspector.base_introspector = Box::new(static_introspector);
-        
+
         // Первый вызов
         let _first_call = introspector.audio_metrics().unwrap();
         assert!(introspector.last_metrics.is_some());
-        
+
         // Ждём истечения кэша
         std::thread::sleep(Duration::from_millis(150));
-        
+
         // Второй вызов - кэш должен быть устаревшим
         let second_call = introspector.audio_metrics().unwrap();
         assert_eq!(second_call.xrun_count, 0);
@@ -1496,19 +1502,18 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_error_recovery() {
         // Тест проверяет восстановление после ошибок
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            2
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 2);
+
         // Создаём интроспектор, который сначала возвращает ошибку, потом успех
         struct RecoveringIntrospector {
             call_count: std::sync::atomic::AtomicUsize,
         }
-        
+
         impl AudioIntrospector for RecoveringIntrospector {
             fn audio_metrics(&mut self) -> Result<AudioMetrics> {
-                let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let count = self
+                    .call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if count < 2 {
                     Err(anyhow::anyhow!("Temporary error"))
                 } else {
@@ -1516,26 +1521,26 @@ mod tests {
                     Ok(AudioMetrics::empty(now, now))
                 }
             }
-            
+
             fn clients(&self) -> Result<Vec<AudioClientInfo>> {
                 Ok(vec![])
             }
         }
-        
+
         introspector.base_introspector = Box::new(RecoveringIntrospector {
             call_count: std::sync::atomic::AtomicUsize::new(0),
         });
-        
+
         // Первый вызов должен вернуть ошибку
         assert!(introspector.audio_metrics().is_err());
-        
+
         // Второй вызов должен сразу перейти в graceful degradation (лимит = 2)
         assert!(introspector.audio_metrics().is_ok());
         assert!(introspector.is_error_limit_exceeded());
-        
+
         // Третий вызов должен быть graceful degradation
         assert!(introspector.audio_metrics().is_ok());
-        
+
         // Четвёртый вызов - теперь интроспектор возвращает успех,
         // но мы всё ещё в режиме graceful degradation
         let _result = introspector.audio_metrics();
@@ -1547,15 +1552,12 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_setters() {
         // Тест проверяет методы установки параметров
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Устанавливаем новые значения
         introspector.set_cache_duration(Duration::from_secs(2));
         introspector.set_max_error_count(10);
-        
+
         // Проверяем, что значения изменились
         assert_eq!(introspector.cache_duration, Duration::from_secs(2));
         assert_eq!(introspector.max_error_count, 10);
@@ -1564,12 +1566,8 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_creation() {
         // Тест проверяет создание ParallelAudioIntrospector
-        let introspector = ParallelAudioIntrospector::new(
-            Duration::from_millis(100),
-            3,
-            4
-        );
-        
+        let introspector = ParallelAudioIntrospector::new(Duration::from_millis(100), 3, 4);
+
         assert_eq!(introspector.error_count(), 0);
         assert!(!introspector.is_error_limit_exceeded());
         assert_eq!(introspector.cache_duration, Duration::from_millis(100));
@@ -1579,14 +1577,10 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_thread_count() {
         // Тест проверяет установку количества потоков
-        let mut introspector = ParallelAudioIntrospector::new(
-            Duration::from_millis(100),
-            3,
-            2
-        );
-        
+        let mut introspector = ParallelAudioIntrospector::new(Duration::from_millis(100), 3, 2);
+
         assert_eq!(introspector.thread_count(), 2);
-        
+
         introspector.set_thread_count(8);
         assert_eq!(introspector.thread_count(), 8);
     }
@@ -1594,16 +1588,12 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_benchmarking() {
         // Тест проверяет функциональность бенчмаркинга
-        let mut introspector = ParallelAudioIntrospector::new(
-            Duration::from_millis(100),
-            3,
-            2
-        );
-        
+        let mut introspector = ParallelAudioIntrospector::new(Duration::from_millis(100), 3, 2);
+
         // Включаем бенчмаркинг
         introspector.enable_benchmarking(true);
         assert!(introspector.enable_benchmarking);
-        
+
         // Выключаем бенчмаркинг
         introspector.enable_benchmarking(false);
         assert!(!introspector.enable_benchmarking);
@@ -1612,28 +1602,24 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_cache() {
         // Тест проверяет кэширование в параллельном интроспекторе
-        let mut introspector = ParallelAudioIntrospector::new(
-            Duration::from_secs(1),
-            3,
-            2
-        );
-        
+        let mut introspector = ParallelAudioIntrospector::new(Duration::from_secs(1), 3, 2);
+
         // Создаём статический интроспектор для теста
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
         let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
-        
+
         // Заменяем базовый интроспектор на статический для теста
         introspector.base_introspector = Box::new(static_introspector);
-        
+
         // Первый вызов - кэш пуст, должны получить метрики
         let first_call = introspector.audio_metrics().unwrap();
         assert_eq!(first_call.xrun_count, 0);
-        
+
         // Второй вызов в пределах cache_duration - должны получить кэш
         let second_call = introspector.audio_metrics().unwrap();
         assert_eq!(second_call.xrun_count, 0);
-        
+
         // Проверяем, что кэш сохранён
         assert!(introspector.last_metrics.is_some());
     }
@@ -1643,36 +1629,36 @@ mod tests {
         // Тест проверяет обработку ошибок в параллельном интроспекторе
         let mut introspector = ParallelAudioIntrospector::new(
             Duration::from_millis(100),
-            2,  // Маленький лимит для теста
-            2
+            2, // Маленький лимит для теста
+            2,
         );
-        
+
         // Создаём интроспектор, который всегда возвращает ошибку
         struct FailingIntrospector;
-        
+
         impl AudioIntrospector for FailingIntrospector {
             fn audio_metrics(&mut self) -> Result<AudioMetrics> {
                 Err(anyhow::anyhow!("Test error"))
             }
-            
+
             fn clients(&self) -> Result<Vec<AudioClientInfo>> {
                 Err(anyhow::anyhow!("Test error"))
             }
         }
-        
+
         introspector.base_introspector = Box::new(FailingIntrospector);
-        
+
         // Первая ошибка - должна быть проброшена
         let result1 = introspector.audio_metrics();
         assert!(result1.is_err());
         assert_eq!(introspector.error_count(), 1);
-        
+
         // Вторая ошибка - должен быть достигнут лимит и сразу перейти в graceful degradation
         let result2 = introspector.audio_metrics();
         assert!(result2.is_ok()); // Graceful degradation начинается сразу при достижении лимита
         assert_eq!(introspector.error_count(), 2);
         assert!(introspector.is_error_limit_exceeded());
-        
+
         // Третья ошибка - должна быть graceful degradation (пустые метрики)
         let result3 = introspector.audio_metrics();
         assert!(result3.is_ok());
@@ -1684,7 +1670,7 @@ mod tests {
     fn test_create_parallel_audio_introspector() {
         // Тест проверяет утилиту create_parallel_audio_introspector
         let introspector = create_parallel_audio_introspector();
-        
+
         // Проверяем значения по умолчанию
         assert_eq!(introspector.cache_duration, Duration::from_millis(500));
         assert_eq!(introspector.max_error_count, 3);
@@ -1695,21 +1681,18 @@ mod tests {
     #[test]
     fn test_benchmark_audio_metrics() {
         // Тест проверяет функцию бенчмаркинга
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Создаём статический интроспектор для теста
         let now = SystemTime::now();
         let test_metrics = AudioMetrics::empty(now, now);
         let static_introspector = StaticAudioIntrospector::new(test_metrics.clone(), vec![]);
-        
+
         introspector.base_introspector = Box::new(static_introspector);
-        
+
         // Запускаем бенчмарк с 5 итерациями
         let result = benchmark_audio_metrics(&mut introspector, 5);
-        
+
         // Проверяем, что результат есть (даже если очень маленький)
         assert!(result.is_some());
         let duration = result.unwrap();
@@ -1723,9 +1706,9 @@ mod tests {
         let introspector = ParallelAudioIntrospector::new(
             Duration::from_millis(100),
             3,
-            4  // Много потоков для теста
+            4, // Много потоков для теста
         );
-        
+
         // Проверяем, что рекомендации включают информацию о потоках
         let recommendations = introspector.get_error_recommendations();
         assert!(recommendations.contains("PipeWire"));
@@ -1736,12 +1719,8 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_clients() {
         // Тест проверяет, что clients() работает через базовый интроспектор
-        let introspector = ParallelAudioIntrospector::new(
-            Duration::from_millis(100),
-            3,
-            2
-        );
-        
+        let introspector = ParallelAudioIntrospector::new(Duration::from_millis(100), 3, 2);
+
         // Создаём статический интроспектор с клиентами
         let clients = vec![AudioClientInfo {
             pid: 1234,
@@ -1751,16 +1730,16 @@ mod tests {
             latency_ms: None,
             client_name: None,
         }];
-        
+
         let static_introspector = StaticAudioIntrospector::new(
             AudioMetrics::empty(SystemTime::now(), SystemTime::now()),
-            clients.clone()
+            clients.clone(),
         );
-        
+
         // Заменяем базовый интроспектор
         let mut introspector = introspector;
         introspector.base_introspector = Box::new(static_introspector);
-        
+
         // Проверяем, что clients() возвращает правильные данные
         let result = introspector.clients();
         assert!(result.is_ok());
@@ -1774,17 +1753,19 @@ mod tests {
         // Тест проверяет graceful degradation с сохранением последних успешных метрик
         let mut introspector = EnhancedAudioIntrospector::new(
             Duration::from_millis(1), // Очень короткий кэш для теста
-            2
+            2,
         );
-        
+
         // Создаём интроспектор, который сначала возвращает успешные метрики, потом ошибки
         struct RecoveringIntrospector {
             call_count: std::sync::atomic::AtomicUsize,
         }
-        
+
         impl AudioIntrospector for RecoveringIntrospector {
             fn audio_metrics(&mut self) -> Result<AudioMetrics> {
-                let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let count = self
+                    .call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if count == 0 {
                     // Первый вызов возвращает успешные метрики
                     let mut metrics = AudioMetrics::empty(SystemTime::now(), SystemTime::now());
@@ -1795,35 +1776,35 @@ mod tests {
                     Err(anyhow::anyhow!("Simulated error"))
                 }
             }
-            
+
             fn clients(&self) -> Result<Vec<AudioClientInfo>> {
                 Ok(vec![])
             }
         }
-        
+
         introspector.base_introspector = Box::new(RecoveringIntrospector {
             call_count: std::sync::atomic::AtomicUsize::new(0),
         });
-        
+
         // Первый вызов должен вернуть успешные метрики
         let result1 = introspector.audio_metrics();
         assert!(result1.is_ok());
         let metrics1 = result1.unwrap();
         assert_eq!(metrics1.xrun_count, 3);
-        
+
         // Ждём, чтобы кэш устарел
         std::thread::sleep(Duration::from_millis(2));
-        
+
         // Второй вызов должен вернуть ошибку (лимит еще не достигнут)
         let result2 = introspector.audio_metrics();
         assert!(result2.is_err());
-        
+
         // Третий вызов должен вернуть graceful degradation с последними успешными метриками
         let result3 = introspector.audio_metrics();
         assert!(result3.is_ok());
         let metrics3 = result3.unwrap();
         assert_eq!(metrics3.xrun_count, 3); // Должны быть последние успешные метрики
-        
+
         // Проверяем, что последние успешные метрики сохранены
         assert!(introspector.last_successful_metrics().is_some());
         let last_successful = introspector.last_successful_metrics().unwrap();
@@ -1833,24 +1814,21 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_device_error_handling() {
         // Тест проверяет обработку ошибок по устройствам
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Проверяем, что счетчики ошибок по устройствам изначально пусты
         assert!(introspector.device_error_count().is_empty());
-        
+
         // Увеличиваем счетчик ошибок для устройства
         introspector.increment_device_error_count("device1");
         introspector.increment_device_error_count("device1");
         introspector.increment_device_error_count("device2");
-        
+
         // Проверяем счетчики
         let device_errors = introspector.device_error_count();
         assert_eq!(device_errors.get("device1"), Some(&2));
         assert_eq!(device_errors.get("device2"), Some(&1));
-        
+
         // Сбрасываем счетчик для device1
         introspector.reset_device_error_count("device1");
         assert!(introspector.device_error_count().get("device1").is_none());
@@ -1860,27 +1838,24 @@ mod tests {
     #[test]
     fn test_enhanced_audio_introspector_detailed_error_recommendations() {
         // Тест проверяет, что рекомендации включают детальную информацию
-        let mut introspector = EnhancedAudioIntrospector::new(
-            Duration::from_millis(100),
-            3
-        );
-        
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 3);
+
         // Увеличиваем счетчик ошибок
         introspector.error_count = 2;
-        
+
         // Добавляем ошибки устройств
         introspector.increment_device_error_count("device1");
-        
+
         let recommendations = introspector.get_error_recommendations();
-        
+
         // Проверяем, что рекомендации содержат базовую информацию
         assert!(recommendations.contains("PipeWire"));
         assert!(recommendations.contains("PulseAudio"));
-        
+
         // Проверяем, что рекомендации содержат дополнительную информацию при многократных ошибках
         assert!(recommendations.contains("systemctl --user restart pipewire"));
         assert!(recommendations.contains("journalctl --user -u pipewire"));
-        
+
         // Проверяем, что рекомендации содержат информацию об устройствах
         assert!(recommendations.contains("аудио-устройства"));
     }
@@ -1888,20 +1863,18 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_graceful_degradation() {
         // Тест проверяет graceful degradation в параллельном интроспекторе
-        let mut introspector = ParallelAudioIntrospector::new(
-            Duration::from_millis(100),
-            2,
-            2
-        );
-        
+        let mut introspector = ParallelAudioIntrospector::new(Duration::from_millis(100), 2, 2);
+
         // Создаём интроспектор, который сначала возвращает успешные метрики, потом ошибки
         struct RecoveringIntrospector {
             call_count: std::sync::atomic::AtomicUsize,
         }
-        
+
         impl AudioIntrospector for RecoveringIntrospector {
             fn audio_metrics(&mut self) -> Result<AudioMetrics> {
-                let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let count = self
+                    .call_count
+                    .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
                 if count == 0 {
                     // Первый вызов возвращает успешные метрики
                     let mut metrics = AudioMetrics::empty(SystemTime::now(), SystemTime::now());
@@ -1912,22 +1885,22 @@ mod tests {
                     Err(anyhow::anyhow!("Simulated error"))
                 }
             }
-            
+
             fn clients(&self) -> Result<Vec<AudioClientInfo>> {
                 Ok(vec![])
             }
         }
-        
+
         introspector.base_introspector = Box::new(RecoveringIntrospector {
             call_count: std::sync::atomic::AtomicUsize::new(0),
         });
-        
+
         // Первый вызов должен вернуть успешные метрики
         let result1 = introspector.audio_metrics();
         assert!(result1.is_ok());
         let metrics1 = result1.unwrap();
         assert_eq!(metrics1.xrun_count, 5);
-        
+
         // Третий вызов должен вернуть graceful degradation с последними успешными метриками
         let result3 = introspector.audio_metrics();
         assert!(result3.is_ok());
@@ -1938,23 +1911,19 @@ mod tests {
     #[test]
     fn test_parallel_audio_introspector_device_error_handling() {
         // Тест проверяет обработку ошибок по устройствам в параллельном интроспекторе
-        let mut introspector = ParallelAudioIntrospector::new(
-            Duration::from_millis(100),
-            3,
-            2
-        );
-        
+        let mut introspector = ParallelAudioIntrospector::new(Duration::from_millis(100), 3, 2);
+
         // Проверяем, что счетчики ошибок по устройствам изначально пусты
         assert!(introspector.device_error_count().is_empty());
-        
+
         // Увеличиваем счетчик ошибок для устройства
         introspector.increment_device_error_count("device1");
         introspector.increment_device_error_count("device1");
-        
+
         // Проверяем счетчики
         let device_errors = introspector.device_error_count();
         assert_eq!(device_errors.get("device1"), Some(&2));
-        
+
         // Сбрасываем счетчик для device1
         introspector.reset_device_error_count("device1");
         assert!(introspector.device_error_count().get("device1").is_none());
@@ -1966,24 +1935,24 @@ mod tests {
         let mut introspector = ParallelAudioIntrospector::new(
             Duration::from_millis(100),
             3,
-            4  // Много потоков для теста
+            4, // Много потоков для теста
         );
-        
+
         // Увеличиваем счетчик ошибок
         introspector.error_count = 2;
-        
+
         // Добавляем ошибки устройств
         introspector.increment_device_error_count("device1");
-        
+
         let recommendations = introspector.get_error_recommendations();
-        
+
         // Проверяем, что рекомендации содержат базовую информацию
         assert!(recommendations.contains("PipeWire"));
         assert!(recommendations.contains("PulseAudio"));
-        
+
         // Проверяем, что рекомендации содержат информацию о потоках
         assert!(recommendations.contains("4 потоков"));
-        
+
         // Проверяем, что рекомендации содержат информацию об устройствах
         assert!(recommendations.contains("аудио-устройства"));
     }
@@ -1992,71 +1961,86 @@ mod tests {
     fn test_audio_introspector_fallback_with_detailed_errors() {
         // Тест проверяет, что fallback механизм работает с улучшенной обработкой ошибок
         let mut introspector = create_audio_introspector_with_fallback();
-        
+
         // Проверяем, что интроспектор может быть использован
         let metrics = introspector.audio_metrics();
         // В тестовой среде без PipeWire это может быть ошибка, что нормально
         assert!(metrics.is_ok() || metrics.is_err());
-        
+
         let clients = introspector.clients();
         assert!(clients.is_ok() || clients.is_err());
-        
+
         // Если метрики успешно получены, проверяем их валидность
         if let Ok(metrics) = metrics {
             assert!(metrics.validate_period());
         }
     }
-    
+
     #[test]
     fn test_audio_health_status_enum() {
         // Тест проверяет, что AudioHealthStatus корректно определен
         use super::AudioHealthStatus::*;
-        
+
         // Проверяем все варианты перечисления
         assert_eq!(Healthy as u8, 0);
         assert_eq!(Degraded as u8, 1);
         assert_eq!(Critical as u8, 2);
     }
-    
+
     #[test]
     fn test_audio_metrics_health_status() {
         // Тест проверяет, что AudioMetrics содержит поле health_status
         let now = SystemTime::now();
         let metrics = AudioMetrics::empty(now, now);
-        
+
         // По умолчанию состояние должно быть Healthy
         assert_eq!(metrics.health_status, AudioHealthStatus::Healthy);
-        
+
         // Проверяем, что поле можно изменить
         let mut metrics_with_status = metrics;
         metrics_with_status.health_status = AudioHealthStatus::Degraded;
-        assert_eq!(metrics_with_status.health_status, AudioHealthStatus::Degraded);
+        assert_eq!(
+            metrics_with_status.health_status,
+            AudioHealthStatus::Degraded
+        );
     }
-    
+
     #[test]
     fn test_enhanced_audio_introspector_health_monitoring() {
         // Тест проверяет функциональность мониторинга здоровья
         let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 2);
-        
+
         // Изначально состояние должно быть Healthy
-        assert_eq!(introspector.get_audio_health_status(), AudioHealthStatus::Healthy);
-        
+        assert_eq!(
+            introspector.get_audio_health_status(),
+            AudioHealthStatus::Healthy
+        );
+
         // После ошибок состояние должно измениться
         introspector.error_count = 1;
-        assert_eq!(introspector.get_audio_health_status(), AudioHealthStatus::Degraded);
-        
+        assert_eq!(
+            introspector.get_audio_health_status(),
+            AudioHealthStatus::Degraded
+        );
+
         introspector.error_count = 2;
-        assert_eq!(introspector.get_audio_health_status(), AudioHealthStatus::Critical);
-        
+        assert_eq!(
+            introspector.get_audio_health_status(),
+            AudioHealthStatus::Critical
+        );
+
         // Проверяем, что update_health_status работает
-        assert_eq!(introspector.update_health_status(), AudioHealthStatus::Critical);
+        assert_eq!(
+            introspector.update_health_status(),
+            AudioHealthStatus::Critical
+        );
     }
-    
+
     #[test]
     fn test_audio_health_status_serialization() {
         // Тест проверяет, что AudioHealthStatus можно сериализовать/десериализовать
         use super::AudioHealthStatus::*;
-        
+
         let metrics = AudioMetrics {
             xrun_count: 0,
             xruns: Vec::new(),
@@ -2065,16 +2049,16 @@ mod tests {
             period_start: SystemTime::now(),
             period_end: SystemTime::now(),
         };
-        
+
         // Проверяем, что метрики можно сериализовать
         let json = serde_json::to_string(&metrics);
         assert!(json.is_ok());
-        
+
         // Проверяем, что можно десериализовать обратно
         let json_str = json.unwrap();
         let deserialized: Result<AudioMetrics, _> = serde_json::from_str(&json_str);
         assert!(deserialized.is_ok());
-        
+
         let deserialized_metrics = deserialized.unwrap();
         assert_eq!(deserialized_metrics.health_status, Degraded);
     }

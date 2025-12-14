@@ -1,10 +1,7 @@
 //! Утилиты для валидации входных данных API.
 
 use anyhow::Result;
-use axum::{
-    http::StatusCode,
-    response::Json,
-};
+use axum::{http::StatusCode, response::Json};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::time::Instant;
@@ -26,7 +23,7 @@ pub fn validate_logs_params(params: &HashMap<String, String>) -> Result<(), Stat
     // Проверяем уровень логирования
     if let Some(level) = params.get("level") {
         match level.as_str() {
-            "error" | "warn" | "info" | "debug" | "trace" => {},
+            "error" | "warn" | "info" | "debug" | "trace" => {}
             _ => {
                 return Err(StatusCode::BAD_REQUEST);
             }
@@ -38,7 +35,7 @@ pub fn validate_logs_params(params: &HashMap<String, String>) -> Result<(), Stat
         if let Err(_) = limit.parse::<usize>() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let limit_value = limit.parse::<usize>().unwrap();
         if limit_value > 1000 {
             return Err(StatusCode::BAD_REQUEST);
@@ -68,7 +65,7 @@ pub fn validate_custom_notification_payload(payload: &Value) -> Result<(), Statu
         if !notification_type.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let type_str = notification_type.as_str().unwrap();
         if !matches!(type_str, "critical" | "warning" | "info") {
             return Err(StatusCode::BAD_REQUEST);
@@ -80,7 +77,7 @@ pub fn validate_custom_notification_payload(payload: &Value) -> Result<(), Statu
         if !title.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let title_str = title.as_str().unwrap();
         if title_str.is_empty() || title_str.len() > 100 {
             return Err(StatusCode::BAD_REQUEST);
@@ -92,7 +89,7 @@ pub fn validate_custom_notification_payload(payload: &Value) -> Result<(), Statu
         if !message.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let message_str = message.as_str().unwrap();
         if message_str.is_empty() || message_str.len() > 500 {
             return Err(StatusCode::BAD_REQUEST);
@@ -104,7 +101,7 @@ pub fn validate_custom_notification_payload(payload: &Value) -> Result<(), Statu
         if !details.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let details_str = details.as_str().unwrap();
         if details_str.len() > 1000 {
             return Err(StatusCode::BAD_REQUEST);
@@ -141,7 +138,7 @@ pub fn validate_notifications_config_payload(payload: &Value) -> Result<(), Stat
         if !backend.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let backend_str = backend.as_str().unwrap();
         if !matches!(backend_str, "stub" | "libnotify" | "dbus") {
             return Err(StatusCode::BAD_REQUEST);
@@ -153,7 +150,7 @@ pub fn validate_notifications_config_payload(payload: &Value) -> Result<(), Stat
         if !app_name.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let app_name_str = app_name.as_str().unwrap();
         if app_name_str.is_empty() || app_name_str.len() > 50 {
             return Err(StatusCode::BAD_REQUEST);
@@ -165,7 +162,7 @@ pub fn validate_notifications_config_payload(payload: &Value) -> Result<(), Stat
         if !min_level.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let min_level_str = min_level.as_str().unwrap();
         if !matches!(min_level_str, "critical" | "warning" | "info") {
             return Err(StatusCode::BAD_REQUEST);
@@ -189,7 +186,7 @@ pub fn validate_process_pid(pid: i32) -> Result<(), StatusCode> {
     if pid <= 0 || pid > 999999 {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     Ok(())
 }
 
@@ -207,12 +204,15 @@ pub fn validate_app_group_id(app_group_id: &str) -> Result<(), StatusCode> {
     if app_group_id.is_empty() || app_group_id.len() > 100 {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     // Проверяем, что ID содержит только допустимые символы
-    if !app_group_id.chars().all(|c| c.is_ascii() && !c.is_control()) {
+    if !app_group_id
+        .chars()
+        .all(|c| c.is_ascii() && !c.is_control())
+    {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     Ok(())
 }
 
@@ -230,12 +230,15 @@ pub fn validate_custom_metric_id(metric_id: &str) -> Result<(), StatusCode> {
     if metric_id.is_empty() || metric_id.len() > 50 {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     // Проверяем, что ID содержит только допустимые символы
-    if !metric_id.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-') {
+    if !metric_id
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+    {
         return Err(StatusCode::BAD_REQUEST);
     }
-    
+
     Ok(())
 }
 
@@ -264,7 +267,7 @@ pub fn validate_custom_metric_add_payload(payload: &Value) -> Result<(), StatusC
         if !name.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let name_str = name.as_str().unwrap();
         if name_str.is_empty() || name_str.len() > 100 {
             return Err(StatusCode::BAD_REQUEST);
@@ -276,7 +279,7 @@ pub fn validate_custom_metric_add_payload(payload: &Value) -> Result<(), StatusC
         if !source_type.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let source_type_str = source_type.as_str().unwrap();
         if !matches!(source_type_str, "file" | "command" | "http" | "static") {
             return Err(StatusCode::BAD_REQUEST);
@@ -315,12 +318,13 @@ pub fn validate_custom_metric_update_payload(payload: &Value) -> Result<(), Stat
     }
 
     // Проверяем, что хотя бы одно поле для обновления предоставлено
-    if !payload.get("name").is_some() && 
-       !payload.get("source_type").is_some() && 
-       !payload.get("source_config").is_some() &&
-       !payload.get("interval_seconds").is_some() &&
-       !payload.get("timeout_seconds").is_some() &&
-       !payload.get("enabled").is_some() {
+    if !payload.get("name").is_some()
+        && !payload.get("source_type").is_some()
+        && !payload.get("source_config").is_some()
+        && !payload.get("interval_seconds").is_some()
+        && !payload.get("timeout_seconds").is_some()
+        && !payload.get("enabled").is_some()
+    {
         return Err(StatusCode::BAD_REQUEST);
     }
 
@@ -329,7 +333,7 @@ pub fn validate_custom_metric_update_payload(payload: &Value) -> Result<(), Stat
         if !name.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let name_str = name.as_str().unwrap();
         if name_str.is_empty() || name_str.len() > 100 {
             return Err(StatusCode::BAD_REQUEST);
@@ -341,7 +345,7 @@ pub fn validate_custom_metric_update_payload(payload: &Value) -> Result<(), Stat
         if !source_type.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let source_type_str = source_type.as_str().unwrap();
         if !matches!(source_type_str, "file" | "command" | "http" | "static") {
             return Err(StatusCode::BAD_REQUEST);
@@ -392,7 +396,7 @@ pub fn validate_cache_config_payload(payload: &Value) -> Result<(), StatusCode> 
         if !ttl.is_number() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let ttl_value = ttl.as_u64().unwrap_or(0);
         if ttl_value < 10 || ttl_value > 3600 {
             return Err(StatusCode::BAD_REQUEST);
@@ -429,7 +433,7 @@ pub fn validate_config_update_payload(payload: &Value) -> Result<(), StatusCode>
         if !interval.is_number() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let interval_value = interval.as_u64().unwrap_or(0);
         if interval_value < 100 || interval_value > 60000 {
             return Err(StatusCode::BAD_REQUEST);
@@ -441,7 +445,7 @@ pub fn validate_config_update_payload(payload: &Value) -> Result<(), StatusCode>
         if !max_candidates.is_number() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let max_candidates_value = max_candidates.as_u64().unwrap_or(0);
         if max_candidates_value < 10 || max_candidates_value > 1000 {
             return Err(StatusCode::BAD_REQUEST);
@@ -460,7 +464,7 @@ pub fn validate_config_update_payload(payload: &Value) -> Result<(), StatusCode>
         if !policy_mode.is_string() {
             return Err(StatusCode::BAD_REQUEST);
         }
-        
+
         let policy_mode_str = policy_mode.as_str().unwrap();
         if !matches!(policy_mode_str, "rules-only" | "hybrid") {
             return Err(StatusCode::BAD_REQUEST);
@@ -489,7 +493,10 @@ pub fn validate_config_update_payload(payload: &Value) -> Result<(), StatusCode>
 ///
 /// * `String` - Детальное сообщение об ошибке
 pub fn create_validation_error_message(field: &str, error_type: &str, details: &str) -> String {
-    format!("Validation error for field '{}': {} ({})", field, error_type, details)
+    format!(
+        "Validation error for field '{}': {} ({})",
+        field, error_type, details
+    )
 }
 
 /// Создает JSON ответ с ошибкой валидации.
@@ -583,15 +590,15 @@ pub fn handle_api_error(
     _status_code: StatusCode,
 ) -> Result<Json<Value>, StatusCode> {
     error!("API error in {}: {}", context, error);
-    
+
     let error_response = create_api_error_response(
         "error",
         "internal_error",
         "Internal server error",
         Some(&format!("Error in {}: {}", context, error)),
-        Some("Please check server logs for details")
+        Some("Please check server logs for details"),
     );
-    
+
     Ok(Json(error_response))
 }
 
@@ -610,10 +617,13 @@ pub fn handle_missing_component_error(component: &str, suggestion: &str) -> Json
         "error",
         "component_unavailable",
         &format!("Component '{}' is not available", component),
-        Some(&format!("The {} component is required but not available", component)),
-        Some(suggestion)
+        Some(&format!(
+            "The {} component is required but not available",
+            component
+        )),
+        Some(suggestion),
     );
-    
+
     Json(error_response)
 }
 
@@ -671,11 +681,7 @@ pub fn create_detailed_validation_error_response(
 /// # Возвращает
 ///
 /// * `Value` - JSON объект с информацией об ошибке аутентификации
-pub fn create_auth_error_response(
-    error_type: &str,
-    message: &str,
-    details: Option<&str>,
-) -> Value {
+pub fn create_auth_error_response(error_type: &str, message: &str, details: Option<&str>) -> Value {
     let mut error_json = json!({
         "status": "error",
         "error": error_type,
@@ -735,25 +741,23 @@ pub fn handle_api_error_with_metrics(
     perf_metrics: Option<&mut ApiPerformanceMetrics>,
 ) -> Result<Json<Value>, StatusCode> {
     error!("API error in {}: {}", context, error);
-    
+
     // Обновляем метрики ошибок, если предоставлены
     if let Some(metrics) = perf_metrics {
         metrics.total_requests += 1;
         metrics.last_request_time = Some(Instant::now());
     }
-    
+
     let error_response = create_api_error_response(
         "error",
         "internal_error",
         "Internal server error",
         Some(&format!("Error in {}: {}", context, error)),
-        Some("Please check server logs for details")
+        Some("Please check server logs for details"),
     );
-    
+
     Ok(Json(error_response))
 }
-
-
 
 #[cfg(test)]
 mod tests {
@@ -765,7 +769,7 @@ mod tests {
         let mut params = HashMap::new();
         params.insert("level".to_string(), "info".to_string());
         params.insert("limit".to_string(), "50".to_string());
-        
+
         let result = validate_logs_params(&params);
         assert!(result.is_ok());
     }
@@ -774,7 +778,7 @@ mod tests {
     fn test_validate_logs_params_invalid_level() {
         let mut params = HashMap::new();
         params.insert("level".to_string(), "invalid".to_string());
-        
+
         let result = validate_logs_params(&params);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -783,7 +787,7 @@ mod tests {
     fn test_validate_logs_params_invalid_limit() {
         let mut params = HashMap::new();
         params.insert("limit".to_string(), "invalid".to_string());
-        
+
         let result = validate_logs_params(&params);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -792,7 +796,7 @@ mod tests {
     fn test_validate_logs_params_limit_too_high() {
         let mut params = HashMap::new();
         params.insert("limit".to_string(), "1500".to_string());
-        
+
         let result = validate_logs_params(&params);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -805,7 +809,7 @@ mod tests {
             "message": "Test message",
             "details": "Test details"
         });
-        
+
         let result = validate_custom_notification_payload(&payload);
         assert!(result.is_ok());
     }
@@ -815,7 +819,7 @@ mod tests {
         let payload = json!({
             "type": "invalid"
         });
-        
+
         let result = validate_custom_notification_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -825,7 +829,7 @@ mod tests {
         let payload = json!({
             "title": ""
         });
-        
+
         let result = validate_custom_notification_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -838,7 +842,7 @@ mod tests {
             "app_name": "SmoothTask",
             "min_level": "info"
         });
-        
+
         let result = validate_notifications_config_payload(&payload);
         assert!(result.is_ok());
     }
@@ -848,7 +852,7 @@ mod tests {
         let payload = json!({
             "backend": "invalid"
         });
-        
+
         let result = validate_notifications_config_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -867,9 +871,9 @@ mod tests {
             "error",
             "Invalid input",
             Some("title"),
-            Some("must be between 1-100 characters")
+            Some("must be between 1-100 characters"),
         );
-        
+
         assert_eq!(response["status"], "error");
         assert_eq!(response["error"], "validation_error");
         assert_eq!(response["field"], "title");
@@ -883,9 +887,9 @@ mod tests {
             "internal_error",
             "Internal server error",
             Some("Database connection failed"),
-            Some("Check database configuration")
+            Some("Check database configuration"),
         );
-        
+
         assert_eq!(response["status"], "error");
         assert_eq!(response["error"], "internal_error");
         assert_eq!(response["message"], "Internal server error");
@@ -895,11 +899,9 @@ mod tests {
 
     #[test]
     fn test_handle_missing_component_error() {
-        let response = handle_missing_component_error(
-            "database",
-            "Please configure database connection"
-        );
-        
+        let response =
+            handle_missing_component_error("database", "Please configure database connection");
+
         assert_eq!(response["status"], "error");
         assert_eq!(response["error"], "component_unavailable");
         assert!(response["message"].as_str().unwrap().contains("database"));
@@ -909,7 +911,7 @@ mod tests {
     fn test_handle_api_error() {
         let error = anyhow::anyhow!("Test error");
         let result = handle_api_error(error, "test_context", StatusCode::INTERNAL_SERVER_ERROR);
-        
+
         assert!(result.is_ok());
         let json_response = result.unwrap();
         assert_eq!(json_response["status"], "error");
@@ -926,7 +928,7 @@ mod tests {
     fn test_validate_process_pid_invalid() {
         let result = validate_process_pid(-1);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
-        
+
         let result = validate_process_pid(1000000);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -941,10 +943,10 @@ mod tests {
     fn test_validate_app_group_id_invalid() {
         let result = validate_app_group_id("");
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
-        
+
         let result = validate_app_group_id(&"a".repeat(101));
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
-        
+
         let result = validate_app_group_id("test\x00group");
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -953,7 +955,7 @@ mod tests {
     fn test_validate_custom_metric_id_valid() {
         let result = validate_custom_metric_id("test_metric_123");
         assert!(result.is_ok());
-        
+
         let result = validate_custom_metric_id("test-metric-456");
         assert!(result.is_ok());
     }
@@ -962,10 +964,10 @@ mod tests {
     fn test_validate_custom_metric_id_invalid() {
         let result = validate_custom_metric_id("");
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
-        
+
         let result = validate_custom_metric_id(&"a".repeat(51));
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
-        
+
         let result = validate_custom_metric_id("test metric");
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -979,7 +981,7 @@ mod tests {
             "interval_seconds": 60,
             "timeout_seconds": 10
         });
-        
+
         let result = validate_custom_metric_add_payload(&payload);
         assert!(result.is_ok());
     }
@@ -989,7 +991,7 @@ mod tests {
         let payload = json!({
             "name": "test_metric"
         });
-        
+
         let result = validate_custom_metric_add_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1000,7 +1002,7 @@ mod tests {
             "name": "",
             "source_type": "file"
         });
-        
+
         let result = validate_custom_metric_add_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1011,7 +1013,7 @@ mod tests {
             "name": "test_metric",
             "source_type": "invalid"
         });
-        
+
         let result = validate_custom_metric_add_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1022,7 +1024,7 @@ mod tests {
             "name": "updated_metric",
             "enabled": true
         });
-        
+
         let result = validate_custom_metric_update_payload(&payload);
         assert!(result.is_ok());
     }
@@ -1030,7 +1032,7 @@ mod tests {
     #[test]
     fn test_validate_custom_metric_update_payload_no_fields() {
         let payload = json!({});
-        
+
         let result = validate_custom_metric_update_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1040,7 +1042,7 @@ mod tests {
         let payload = json!({
             "interval_seconds": 4000
         });
-        
+
         let result = validate_custom_metric_update_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1051,7 +1053,7 @@ mod tests {
             "ttl_seconds": 60,
             "enabled": true
         });
-        
+
         let result = validate_cache_config_payload(&payload);
         assert!(result.is_ok());
     }
@@ -1061,14 +1063,14 @@ mod tests {
         let payload = json!({
             "ttl_seconds": 5
         });
-        
+
         let result = validate_cache_config_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
-        
+
         let payload = json!({
             "ttl_seconds": 4000
         });
-        
+
         let result = validate_cache_config_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1078,7 +1080,7 @@ mod tests {
         let payload = json!({
             "enabled": "true"
         });
-        
+
         let result = validate_cache_config_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1090,9 +1092,9 @@ mod tests {
             "invalid_length",
             Some("ab"),
             Some("must be 3-20 characters"),
-            Some("Please provide a username between 3-20 characters")
+            Some("Please provide a username between 3-20 characters"),
         );
-        
+
         assert_eq!(response["status"], "error");
         assert_eq!(response["error"], "validation_error");
         assert_eq!(response["field"], "username");
@@ -1107,9 +1109,9 @@ mod tests {
         let response = create_auth_error_response(
             "unauthorized",
             "Authentication required",
-            Some("Please provide valid credentials")
+            Some("Please provide valid credentials"),
         );
-        
+
         assert_eq!(response["status"], "error");
         assert_eq!(response["error"], "unauthorized");
         assert_eq!(response["message"], "Authentication required");
@@ -1119,7 +1121,7 @@ mod tests {
     #[test]
     fn test_create_rate_limit_error_response() {
         let response = create_rate_limit_error_response(60, 100, 0);
-        
+
         assert_eq!(response["status"], "error");
         assert_eq!(response["error"], "rate_limit_exceeded");
         assert_eq!(response["retry_after_seconds"], 60);
@@ -1136,7 +1138,7 @@ mod tests {
             "policy_mode": "hybrid",
             "enable_snapshot_logging": false
         });
-        
+
         let result = validate_config_update_payload(&payload);
         assert!(result.is_ok());
     }
@@ -1146,7 +1148,7 @@ mod tests {
         let payload = json!({
             "polling_interval_ms": 500
         });
-        
+
         let result = validate_config_update_payload(&payload);
         assert!(result.is_ok());
     }
@@ -1156,7 +1158,7 @@ mod tests {
         let payload = json!({
             "polling_interval_ms": 50
         });
-        
+
         let result = validate_config_update_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1166,7 +1168,7 @@ mod tests {
         let payload = json!({
             "max_candidates": 5
         });
-        
+
         let result = validate_config_update_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1176,7 +1178,7 @@ mod tests {
         let payload = json!({
             "policy_mode": "invalid"
         });
-        
+
         let result = validate_config_update_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
@@ -1202,10 +1204,8 @@ mod tests {
         let payload = json!({
             "polling_interval_ms": "not_a_number"
         });
-        
+
         let result = validate_config_update_payload(&payload);
         assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
-
-
 }

@@ -4,7 +4,9 @@
 //! для получения метрик аудио-стека без прямой зависимости от PipeWire API.
 //! Это простой подход, который работает через вызов команды `pw-dump` и парсинг JSON.
 
-use crate::metrics::audio::{AudioClientInfo, AudioHealthStatus, AudioIntrospector, AudioMetrics, XrunInfo};
+use crate::metrics::audio::{
+    AudioClientInfo, AudioHealthStatus, AudioIntrospector, AudioMetrics, XrunInfo,
+};
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -1263,21 +1265,21 @@ mod pipewire_introspector_tests {
         use serde_json::{json, Map};
 
         let mut props = Map::new();
-        
+
         // Тест 1: volume в диапазоне 0.0-1.0
         props.insert("audio.volume".to_string(), json!(0.75));
         assert_eq!(parse_volume_level(&props), Some(0.75));
-        
+
         // Тест 2: volume вне диапазона (должен быть нормализован)
         props.clear();
         props.insert("volume".to_string(), json!(1.5));
         assert_eq!(parse_volume_level(&props), Some(1.0));
-        
+
         // Тест 3: volume в строковом формате
         props.clear();
         props.insert("node.volume".to_string(), json!("0.5"));
         assert_eq!(parse_volume_level(&props), Some(0.5));
-        
+
         // Тест 4: отсутствие volume
         props.clear();
         assert_eq!(parse_volume_level(&props), None);
@@ -1289,21 +1291,21 @@ mod pipewire_introspector_tests {
         use serde_json::{json, Map};
 
         let mut props = Map::new();
-        
+
         // Тест 1: latency в миллисекундах
         props.insert("audio.latency".to_string(), json!(50));
         assert_eq!(parse_latency_ms(&props), Some(50));
-        
+
         // Тест 2: latency в секундах (должен быть конвертирован)
         props.clear();
         props.insert("latency".to_string(), json!(0.1));
         assert_eq!(parse_latency_ms(&props), Some(100));
-        
+
         // Тест 3: latency в строковом формате
         props.clear();
         props.insert("node.latency.ms".to_string(), json!("25"));
         assert_eq!(parse_latency_ms(&props), Some(25));
-        
+
         // Тест 4: отсутствие latency
         props.clear();
         assert_eq!(parse_latency_ms(&props), None);
@@ -1315,16 +1317,16 @@ mod pipewire_introspector_tests {
         use serde_json::{json, Map};
 
         let mut props = Map::new();
-        
+
         // Тест 1: простое название
         props.insert("application.name".to_string(), json!("Firefox"));
         assert_eq!(parse_client_name(&props), Some("Firefox".to_string()));
-        
+
         // Тест 2: название с пробелами
         props.clear();
         props.insert("node.name".to_string(), json!("  Chrome Audio  "));
         assert_eq!(parse_client_name(&props), Some("Chrome Audio".to_string()));
-        
+
         // Тест 3: отсутствие названия
         props.clear();
         assert_eq!(parse_client_name(&props), None);
@@ -1334,16 +1336,16 @@ mod pipewire_introspector_tests {
     fn test_parse_f32() {
         // Тест проверяет парсинг f32 значений
         use serde_json::json;
-        
+
         // Тест 1: число
         assert_eq!(parse_f32(&json!(0.75)), Some(0.75));
-        
+
         // Тест 2: строка
         assert_eq!(parse_f32(&json!("0.5")), Some(0.5));
-        
+
         // Тест 3: строка с пробелами
         assert_eq!(parse_f32(&json!("  0.25  ")), Some(0.25));
-        
+
         // Тест 4: некорректное значение
         assert_eq!(parse_f32(&json!("abc")), None);
     }
@@ -1351,7 +1353,7 @@ mod pipewire_introspector_tests {
     #[test]
     fn test_audio_client_info_with_new_fields() {
         // Тест проверяет создание клиентов с новыми полями
-        
+
         // Тест 1: клиент с громкостью
         let client = AudioClientInfo {
             pid: 1234,
@@ -1365,7 +1367,7 @@ mod pipewire_introspector_tests {
         assert_eq!(client.volume_level, Some(0.8));
         assert_eq!(client.latency_ms, None);
         assert_eq!(client.client_name, None);
-        
+
         // Тест 2: клиент с задержкой
         let client = AudioClientInfo {
             pid: 5678,
@@ -1379,7 +1381,7 @@ mod pipewire_introspector_tests {
         assert_eq!(client.volume_level, None);
         assert_eq!(client.latency_ms, Some(100));
         assert_eq!(client.client_name, None);
-        
+
         // Тест 3: клиент с названием
         let client = AudioClientInfo {
             pid: 9999,
@@ -1398,7 +1400,7 @@ mod pipewire_introspector_tests {
     #[test]
     fn test_audio_client_info_equality() {
         // Тест проверяет, что AudioClientInfo корректно реализует PartialEq
-        
+
         let client1 = AudioClientInfo {
             pid: 1234,
             buffer_size_samples: Some(1024),
@@ -1407,7 +1409,7 @@ mod pipewire_introspector_tests {
             latency_ms: Some(50),
             client_name: Some("Test".to_string()),
         };
-        
+
         let client2 = AudioClientInfo {
             pid: 1234,
             buffer_size_samples: Some(1024),
@@ -1416,9 +1418,9 @@ mod pipewire_introspector_tests {
             latency_ms: Some(50),
             client_name: Some("Test".to_string()),
         };
-        
+
         assert_eq!(client1, client2);
-        
+
         let client3 = AudioClientInfo {
             pid: 1234,
             buffer_size_samples: Some(1024),
@@ -1427,7 +1429,7 @@ mod pipewire_introspector_tests {
             latency_ms: Some(50),
             client_name: Some("Test".to_string()),
         };
-        
+
         assert_ne!(client1, client3);
     }
 }

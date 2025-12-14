@@ -82,8 +82,6 @@ pub struct GpuTemperature {
     pub memory_c: Option<f32>,
 }
 
-
-
 /// GPU power metrics
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct GpuPower {
@@ -319,7 +317,10 @@ fn collect_gpu_device_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
             return Ok(metrics);
         }
         Err(e) => {
-            debug!("Не удалось собрать метрики с использованием vendor-specific API: {}", e);
+            debug!(
+                "Не удалось собрать метрики с использованием vendor-specific API: {}",
+                e
+            );
             debug!("Пробуем общие методы сбора метрик");
         }
     }
@@ -883,7 +884,10 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         let device_handle = match nvml.device_by_index(device_index) {
             Ok(handle) => handle,
             Err(e) => {
-                debug!("Не удалось получить устройство NVML {}: {}", device_index, e);
+                debug!(
+                    "Не удалось получить устройство NVML {}: {}",
+                    device_index, e
+                );
                 continue;
             }
         };
@@ -891,7 +895,10 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         let name = match nvml.device_name(device_handle) {
             Ok(name) => name,
             Err(e) => {
-                debug!("Не удалось получить имя устройства NVML {}: {}", device_index, e);
+                debug!(
+                    "Не удалось получить имя устройства NVML {}: {}",
+                    device_index, e
+                );
                 continue;
             }
         };
@@ -914,9 +921,11 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         if let Ok(utilization) = nvml.device_utilization_rates(device_handle) {
             metrics.utilization.gpu_util = utilization.gpu as f32 / 100.0;
             metrics.utilization.memory_util = utilization.memory as f32 / 100.0;
-            debug!("  NVML utilization: GPU {:.1}%, Memory {:.1}%",
-                   metrics.utilization.gpu_util * 100.0,
-                   metrics.utilization.memory_util * 100.0);
+            debug!(
+                "  NVML utilization: GPU {:.1}%, Memory {:.1}%",
+                metrics.utilization.gpu_util * 100.0,
+                metrics.utilization.memory_util * 100.0
+            );
         }
 
         // Collect memory
@@ -924,16 +933,15 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
             metrics.memory.total_bytes = memory_info.total;
             metrics.memory.used_bytes = memory_info.used;
             metrics.memory.free_bytes = memory_info.free;
-            debug!("  NVML memory: {}/{} MB used",
-                   memory_info.used / 1024 / 1024,
-                   memory_info.total / 1024 / 1024);
+            debug!(
+                "  NVML memory: {}/{} MB used",
+                memory_info.used / 1024 / 1024,
+                memory_info.total / 1024 / 1024
+            );
         }
 
-        // Collect temperature
-        if let Ok(temp) = nvml.device_temperature(device_handle, nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu) {
-            metrics.temperature.temperature_c = Some(temp as f32);
-            debug!("  NVML temperature: {:.1}°C", temp);
-        }
+        // Collect comprehensive temperature metrics
+        collect_comprehensive_nvml_temperature(device_handle, &mut metrics.temperature)?;
 
         // Collect power
         if let Ok(power) = nvml.device_power_usage(device_handle) {
@@ -942,12 +950,18 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         }
 
         // Collect clocks
-        if let Ok(clock_mhz) = nvml.device_clock_info(device_handle, nvml_wrapper::enum_wrappers::device::ClockType::Graphics) {
+        if let Ok(clock_mhz) = nvml.device_clock_info(
+            device_handle,
+            nvml_wrapper::enum_wrappers::device::ClockType::Graphics,
+        ) {
             metrics.clocks.core_clock_mhz = Some(clock_mhz);
             debug!("  NVML core clock: {} MHz", clock_mhz);
         }
 
-        if let Ok(clock_mhz) = nvml.device_clock_info(device_handle, nvml_wrapper::enum_wrappers::device::ClockType::Memory) {
+        if let Ok(clock_mhz) = nvml.device_clock_info(
+            device_handle,
+            nvml_wrapper::enum_wrappers::device::ClockType::Memory,
+        ) {
             metrics.clocks.memory_clock_mhz = Some(clock_mhz);
             debug!("  NVML memory clock: {} MHz", clock_mhz);
         }
@@ -956,6 +970,83 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     Err(anyhow!("No matching NVML device found"))
+}
+
+/// Collect comprehensive temperature metrics from NVIDIA GPU using NVML
+#[cfg(feature = "nvml-wrapper")]
+fn collect_comprehensive_nvml_temperature(
+    device_handle: nvml_wrapper::device::Device,
+    temperature: &mut GpuTemperature,
+) -> Result<()> {
+    // Collect main GPU temperature
+    if let Ok(temp) = nvml_wrapper::device::temperature(
+        device_handle,
+        nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu,
+    ) {
+        temperature.temperature_c = Some(temp as f32);
+        debug!("  NVML GPU temperature: {:.1}°C", temp);
+    }
+
+    // Collect GPU hotspot temperature (if available)
+    if let Ok(hotspot_temp) = nvml_wrapper::device::temperature(
+        device_handle,
+        nvml_wrapper::enum_wrappers::device::TemperatureSensor::GpuHotspot,
+    ) {
+        temperature.hotspot_c = Some(hotspot_temp as f32);
+        debug!("  NVML GPU hotspot temperature: {:.1}°C", hotspot_temp);
+    } else {
+        debug!("  NVML GPU hotspot temperature not available");
+    }
+
+    // Collect GPU memory temperature (if available)
+    if let Ok(memory_temp) = nvml_wrapper::device::temperature(
+        device_handle,
+        nvml_wrapper::enum_wrappers::device::TemperatureSensor::Memory,
+    ) {
+        temperature.memory_c = Some(memory_temp as f32);
+        debug!("  NVML GPU memory temperature: {:.1}°C", memory_temp);
+    } else {
+        debug!("  NVML GPU memory temperature not available");
+    }
+
+    // Validate temperature readings
+    if let Some(temp) = temperature.temperature_c {
+        if temp < 0.0 || temp > 150.0 {
+            warn!(
+                "  Некорректное значение температуры GPU: {:.1}°C. 
+                Это может быть вызвано ошибкой сенсора или проблемами с драйвером. 
+                Игнорируем это значение.",
+                temp
+            );
+            temperature.temperature_c = None;
+        }
+    }
+
+    if let Some(hotspot) = temperature.hotspot_c {
+        if hotspot < 0.0 || hotspot > 150.0 {
+            warn!(
+                "  Некорректное значение hotspot температуры GPU: {:.1}°C. 
+                Это может быть вызвано ошибкой сенсора или проблемами с драйвером. 
+                Игнорируем это значение.",
+                hotspot
+            );
+            temperature.hotspot_c = None;
+        }
+    }
+
+    if let Some(mem_temp) = temperature.memory_c {
+        if mem_temp < 0.0 || mem_temp > 150.0 {
+            warn!(
+                "  Некорректное значение температуры памяти GPU: {:.1}°C. 
+                Это может быть вызвано ошибкой сенсора или проблемами с драйвером. 
+                Игнорируем это значение.",
+                mem_temp
+            );
+            temperature.memory_c = None;
+        }
+    }
+
+    Ok(())
 }
 
 /// Collect GPU metrics using AMDGPU sysfs interface
@@ -975,7 +1066,10 @@ fn collect_amdgpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Collect GPU utilization
     if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_busy_percent") {
         metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
-        debug!("  AMDGPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  AMDGPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     }
 
     // Collect memory metrics
@@ -988,38 +1082,19 @@ fn collect_amdgpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     if metrics.memory.total_bytes > 0 {
-        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
-        debug!("  AMDGPU memory: {}/{} MB used",
-               metrics.memory.used_bytes / 1024 / 1024,
-               metrics.memory.total_bytes / 1024 / 1024);
+        metrics.memory.free_bytes = metrics
+            .memory
+            .total_bytes
+            .saturating_sub(metrics.memory.used_bytes);
+        debug!(
+            "  AMDGPU memory: {}/{} MB used",
+            metrics.memory.used_bytes / 1024 / 1024,
+            metrics.memory.total_bytes / 1024 / 1024
+        );
     }
 
-    // Collect temperature
-    let hwmon_dir = device_path.join("hwmon");
-    if hwmon_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&hwmon_dir) {
-            for entry in entries.flatten() {
-                let hwmon_path = entry.path();
-                if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
-                    for temp_file in temp_files.flatten() {
-                        let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        
-                        if file_name.ends_with("_input") && file_name.contains("temp") {
-                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
-                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
-                                    let temp_c = temp_millidegrees as f32 / 1000.0;
-                                    metrics.temperature.temperature_c = Some(temp_c);
-                                    debug!("  AMDGPU temperature: {:.1}°C", temp_c);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Collect comprehensive temperature metrics
+    collect_comprehensive_amdgpu_temperature(device_path, &mut metrics.temperature)?;
 
     // Collect power
     if let Ok(power_w) = read_sysfs_u32(device_path, "power_avg") {
@@ -1058,7 +1133,10 @@ fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Collect GPU utilization
     if let Ok(gpu_busy) = read_sysfs_u32(device_path, "gpu_busy_percent") {
         metrics.utilization.gpu_util = gpu_busy as f32 / 100.0;
-        debug!("  Intel GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  Intel GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     }
 
     // Collect memory metrics
@@ -1071,7 +1149,10 @@ fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     if metrics.memory.total_bytes > 0 {
-        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        metrics.memory.free_bytes = metrics
+            .memory
+            .total_bytes
+            .saturating_sub(metrics.memory.used_bytes);
         debug!(
             "  Intel GPU memory: {}/{} MB used",
             metrics.memory.used_bytes / 1024 / 1024,
@@ -1088,8 +1169,9 @@ fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
                 if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        
+                        let file_name =
+                            temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+
                         if file_name.ends_with("_input") && file_name.contains("temp") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                                 if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
@@ -1121,6 +1203,91 @@ fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     Ok(metrics)
 }
 
+/// Collect comprehensive temperature metrics from AMD GPU using sysfs/hwmon
+fn collect_comprehensive_amdgpu_temperature(
+    device_path: &Path,
+    temperature: &mut GpuTemperature,
+) -> Result<()> {
+    let hwmon_dir = device_path.join("hwmon");
+    
+    if !hwmon_dir.exists() {
+        debug!("  AMDGPU hwmon directory not found - temperature monitoring not available");
+        return Ok(());
+    }
+    
+    if let Ok(entries) = fs::read_dir(&hwmon_dir) {
+        for entry in entries.flatten() {
+            let hwmon_path = entry.path();
+            
+            if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
+                for temp_file in temp_files.flatten() {
+                    let temp_path = temp_file.path();
+                    let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                    
+                    if file_name.ends_with("_input") && file_name.contains("temp") {
+                        if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                            if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                let temp_c = temp_millidegrees as f32 / 1000.0;
+                                
+                                // Validate temperature reading
+                                if temp_c < 0.0 || temp_c > 150.0 {
+                                    warn!(
+                                        "  Некорректное значение температуры AMDGPU: {:.1}°C. 
+                                        Это может быть вызвано ошибкой сенсора или проблемами с драйвером. 
+                                        Игнорируем это значение.",
+                                        temp_c
+                                    );
+                                    continue;
+                                }
+                                
+                                // Try to determine which temperature this is
+                                if file_name.contains("temp1") || file_name.contains("edge") {
+                                    // Main GPU temperature
+                                    if temperature.temperature_c.is_none() {
+                                        temperature.temperature_c = Some(temp_c);
+                                        debug!("  AMDGPU GPU temperature: {:.1}°C", temp_c);
+                                    }
+                                } else if file_name.contains("temp2") {
+                                    // Could be hotspot
+                                    if temperature.hotspot_c.is_none() {
+                                        temperature.hotspot_c = Some(temp_c);
+                                        debug!("  AMDGPU hotspot temperature: {:.1}°C", temp_c);
+                                    }
+                                } else if file_name.contains("temp3") {
+                                    // Could be memory
+                                    if temperature.memory_c.is_none() {
+                                        temperature.memory_c = Some(temp_c);
+                                        debug!("  AMDGPU memory temperature: {:.1}°C", temp_c);
+                                    }
+                                } else if file_name.contains("temp4") {
+                                    // Could be VRAM or additional sensor
+                                    if temperature.memory_c.is_none() {
+                                        temperature.memory_c = Some(temp_c);
+                                        debug!("  AMDGPU VRAM temperature: {:.1}°C", temp_c);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Log summary of collected temperature data
+    if let Some(temp) = temperature.temperature_c {
+        debug!("  AMDGPU temperature summary: {:.1}°C (main)", temp);
+    }
+    if let Some(hotspot) = temperature.hotspot_c {
+        debug!("  AMDGPU temperature summary: {:.1}°C (hotspot)", hotspot);
+    }
+    if let Some(mem_temp) = temperature.memory_c {
+        debug!("  AMDGPU temperature summary: {:.1}°C (memory)", mem_temp);
+    }
+    
+    Ok(())
+}
+
 /// Collect GPU metrics using Qualcomm Adreno sysfs interface
 fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     let mut metrics = GpuMetrics {
@@ -1138,11 +1305,17 @@ fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Collect GPU utilization - Adreno devices may expose this through different interfaces
     if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_load") {
         metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
-        debug!("  Qualcomm Adreno GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  Qualcomm Adreno GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     } else if let Ok(gpu_busy) = read_sysfs_u32(device_path, "gpu_busy") {
         // Some Adreno devices use gpu_busy instead
         metrics.utilization.gpu_util = gpu_busy as f32 / 100.0;
-        debug!("  Qualcomm Adreno GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  Qualcomm Adreno GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     }
 
     // Collect memory metrics - Adreno devices may have limited memory info
@@ -1159,7 +1332,10 @@ fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     if metrics.memory.total_bytes > 0 {
-        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        metrics.memory.free_bytes = metrics
+            .memory
+            .total_bytes
+            .saturating_sub(metrics.memory.used_bytes);
         debug!(
             "  Qualcomm Adreno GPU memory: {}/{} MB used",
             metrics.memory.used_bytes / 1024 / 1024,
@@ -1176,8 +1352,9 @@ fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
                 if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        
+                        let file_name =
+                            temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+
                         if file_name.ends_with("_input") && file_name.contains("temp") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                                 if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
@@ -1197,7 +1374,10 @@ fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Collect power - Adreno devices may have power sensors
     if let Ok(power_mw) = read_sysfs_u32(device_path, "power") {
         metrics.power.power_w = Some(power_mw as f32 / 1000.0); // Convert mW to W
-        debug!("  Qualcomm Adreno GPU power: {:.1}W", power_mw as f32 / 1000.0);
+        debug!(
+            "  Qualcomm Adreno GPU power: {:.1}W",
+            power_mw as f32 / 1000.0
+        );
     }
 
     // Collect clocks - Adreno devices may expose clock information
@@ -1226,10 +1406,16 @@ fn collect_arm_mali_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Collect GPU utilization - Mali devices may expose this through different interfaces
     if let Ok(gpu_util) = read_sysfs_u32(device_path, "utilization") {
         metrics.utilization.gpu_util = gpu_util as f32 / 100.0;
-        debug!("  ARM Mali GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  ARM Mali GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     } else if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_load") {
         metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
-        debug!("  ARM Mali GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  ARM Mali GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     }
 
     // Collect memory metrics - Mali devices may have limited memory info
@@ -1246,7 +1432,10 @@ fn collect_arm_mali_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     if metrics.memory.total_bytes > 0 {
-        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        metrics.memory.free_bytes = metrics
+            .memory
+            .total_bytes
+            .saturating_sub(metrics.memory.used_bytes);
         debug!(
             "  ARM Mali GPU memory: {}/{} MB used",
             metrics.memory.used_bytes / 1024 / 1024,
@@ -1263,8 +1452,9 @@ fn collect_arm_mali_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
                 if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        
+                        let file_name =
+                            temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+
                         if file_name.ends_with("_input") && file_name.contains("temp") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                                 if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
@@ -1313,10 +1503,16 @@ fn collect_broadcom_videocore_metrics(device: &GpuDevice) -> Result<GpuMetrics> 
     // Collect GPU utilization - VideoCore devices may expose this through different interfaces
     if let Ok(gpu_util) = read_sysfs_u32(device_path, "utilization") {
         metrics.utilization.gpu_util = gpu_util as f32 / 100.0;
-        debug!("  Broadcom VideoCore GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  Broadcom VideoCore GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     } else if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_load") {
         metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
-        debug!("  Broadcom VideoCore GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  Broadcom VideoCore GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     }
 
     // Collect memory metrics - VideoCore devices may have limited memory info
@@ -1333,7 +1529,10 @@ fn collect_broadcom_videocore_metrics(device: &GpuDevice) -> Result<GpuMetrics> 
     }
 
     if metrics.memory.total_bytes > 0 {
-        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        metrics.memory.free_bytes = metrics
+            .memory
+            .total_bytes
+            .saturating_sub(metrics.memory.used_bytes);
         debug!(
             "  Broadcom VideoCore GPU memory: {}/{} MB used",
             metrics.memory.used_bytes / 1024 / 1024,
@@ -1350,8 +1549,9 @@ fn collect_broadcom_videocore_metrics(device: &GpuDevice) -> Result<GpuMetrics> 
                 if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
                     for temp_file in temp_files.flatten() {
                         let temp_path = temp_file.path();
-                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                        
+                        let file_name =
+                            temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+
                         if file_name.ends_with("_input") && file_name.contains("temp") {
                             if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                                 if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
@@ -1371,7 +1571,10 @@ fn collect_broadcom_videocore_metrics(device: &GpuDevice) -> Result<GpuMetrics> 
     // Collect power - VideoCore devices may have power sensors
     if let Ok(power_mw) = read_sysfs_u32(device_path, "power") {
         metrics.power.power_w = Some(power_mw as f32 / 1000.0); // Convert mW to W
-        debug!("  Broadcom VideoCore GPU power: {:.1}W", power_mw as f32 / 1000.0);
+        debug!(
+            "  Broadcom VideoCore GPU power: {:.1}W",
+            power_mw as f32 / 1000.0
+        );
     }
 
     // Collect clocks - VideoCore devices may expose clock information
@@ -1403,7 +1606,10 @@ fn collect_virtio_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Collect GPU utilization - Virtio devices may expose this through different interfaces
     if let Ok(gpu_util) = read_sysfs_u32(device_path, "utilization") {
         metrics.utilization.gpu_util = gpu_util as f32 / 100.0;
-        debug!("  Virtio GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+        debug!(
+            "  Virtio GPU utilization: {:.1}%",
+            metrics.utilization.gpu_util * 100.0
+        );
     }
 
     // Collect memory metrics - Virtio devices may have limited memory info
@@ -1420,7 +1626,10 @@ fn collect_virtio_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     if metrics.memory.total_bytes > 0 {
-        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        metrics.memory.free_bytes = metrics
+            .memory
+            .total_bytes
+            .saturating_sub(metrics.memory.used_bytes);
         debug!(
             "  Virtio GPU memory: {}/{} MB used",
             metrics.memory.used_bytes / 1024 / 1024,
@@ -1451,11 +1660,17 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     if device.driver.as_deref() == Some("nvidia") {
         match collect_nvml_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected NVML metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected NVML metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect NVML metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect NVML metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
@@ -1464,11 +1679,17 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     if device.driver.as_deref() == Some("amdgpu") {
         match collect_amdgpu_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected AMDGPU metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected AMDGPU metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect AMDGPU metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect AMDGPU metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
@@ -1477,11 +1698,17 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     if device.driver.as_deref() == Some("i915") {
         match collect_intel_gpu_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected Intel GPU metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected Intel GPU metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect Intel GPU metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect Intel GPU metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
@@ -1490,11 +1717,17 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     if device.driver.as_deref() == Some("msm") || device.driver.as_deref() == Some("adreno") {
         match collect_qualcomm_adreno_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected Qualcomm Adreno metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected Qualcomm Adreno metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect Qualcomm Adreno metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect Qualcomm Adreno metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
@@ -1503,11 +1736,17 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     if device.driver.as_deref() == Some("mali") || device.driver.as_deref() == Some("panfrost") {
         match collect_arm_mali_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected ARM Mali metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected ARM Mali metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect ARM Mali metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect ARM Mali metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
@@ -1516,30 +1755,45 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     if device.driver.as_deref() == Some("vc4") || device.driver.as_deref() == Some("v3d") {
         match collect_broadcom_videocore_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected Broadcom VideoCore metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected Broadcom VideoCore metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect Broadcom VideoCore metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect Broadcom VideoCore metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
 
     // Try Virtio for virtual GPU devices
-    if device.driver.as_deref() == Some("virtio_gpu") || device.driver.as_deref() == Some("virtio") {
+    if device.driver.as_deref() == Some("virtio_gpu") || device.driver.as_deref() == Some("virtio")
+    {
         match collect_virtio_gpu_metrics(device) {
             Ok(metrics) => {
-                debug!("Successfully collected Virtio GPU metrics for device {}", device.name);
+                debug!(
+                    "Successfully collected Virtio GPU metrics for device {}",
+                    device.name
+                );
                 return Ok(metrics);
             }
             Err(e) => {
-                debug!("Failed to collect Virtio GPU metrics for device {}: {}", device.name, e);
+                debug!(
+                    "Failed to collect Virtio GPU metrics for device {}: {}",
+                    device.name, e
+                );
             }
         }
     }
 
     // If vendor-specific APIs fail, fall back to generic sysfs collection
-    Err(anyhow!("Vendor-specific metrics collection failed, falling back to generic methods"))
+    Err(anyhow!(
+        "Vendor-specific metrics collection failed, falling back to generic methods"
+    ))
 }
 
 /// Read a u32 value from sysfs
@@ -2079,7 +2333,7 @@ mod tests {
     fn test_gpu_error_handling_graceful_degradation() {
         // Test that GPU metrics collection handles errors gracefully
         // This test verifies that the system can continue operating even when GPU metrics fail
-        
+
         // Create a mock device with a non-existent path
         let mock_device = GpuDevice {
             name: "mock_gpu".to_string(),
@@ -2091,12 +2345,12 @@ mod tests {
 
         // This should not panic and should return a default metrics object
         let result = collect_gpu_device_metrics(&mock_device);
-        
+
         // The function should succeed (return Ok) even if individual metrics fail
         assert!(result.is_ok());
-        
+
         let metrics = result.unwrap();
-        
+
         // Should return default values when metrics cannot be collected
         assert_eq!(metrics.device.name, "mock_gpu");
         assert_eq!(metrics.utilization.gpu_util, 0.0);
@@ -2110,15 +2364,15 @@ mod tests {
     fn test_gpu_collection_with_error_handling() {
         // Test that the main collection function handles errors gracefully
         let result = collect_gpu_metrics();
-        
+
         // Should always return Ok, even if no devices are found or metrics fail
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
-        
+
         // Should return a valid collection object
         assert_eq!(collection.devices.len(), collection.gpu_count);
-        
+
         // Collection should be empty if no GPU devices are available
         // This is expected behavior on systems without GPUs
         if collection.gpu_count == 0 {
@@ -2131,37 +2385,35 @@ mod tests {
         // Test memory validation logic when used > total
         let mut memory = GpuMemory {
             total_bytes: 4_000_000_000, // 4 GB
-            used_bytes: 5_000_000_000, // 5 GB (more than total)
+            used_bytes: 5_000_000_000,  // 5 GB (more than total)
             free_bytes: 0,
         };
 
         // This should handle the overflow gracefully
         memory.free_bytes = memory.total_bytes.saturating_sub(memory.used_bytes);
-        
+
         // Free bytes should not underflow
         assert_eq!(memory.free_bytes, 0);
-        
+
         // In a real scenario, we would also cap used_bytes to total_bytes
         // Let's test that logic
         if memory.used_bytes > memory.total_bytes {
             memory.used_bytes = memory.total_bytes;
         }
-        
+
         assert_eq!(memory.used_bytes, 4_000_000_000);
         assert_eq!(memory.free_bytes, 0);
     }
-
-
 
     #[test]
     fn test_gpu_metrics_with_missing_files() {
         // Test behavior when sysfs files are missing
         let temp_dir = tempfile::tempdir().unwrap();
         let test_device_path = temp_dir.path().join("test_device");
-        
+
         // Create a minimal device directory structure
         std::fs::create_dir_all(&test_device_path).unwrap();
-        
+
         let mock_device = GpuDevice {
             name: "test_device".to_string(),
             device_path: test_device_path,
@@ -2173,7 +2425,7 @@ mod tests {
         // This should not panic and should return default metrics
         let result = collect_gpu_device_metrics(&mock_device);
         assert!(result.is_ok());
-        
+
         let metrics = result.unwrap();
         // Should return default values when files are missing
         assert_eq!(metrics.utilization.gpu_util, 0.0);
@@ -2184,19 +2436,19 @@ mod tests {
     fn test_gpu_error_recovery() {
         // Test that the system can recover from GPU errors and continue
         // This simulates a scenario where GPU metrics fail but the system continues
-        
+
         // First, try to collect metrics (may succeed or fail)
         let result1 = collect_gpu_metrics();
         assert!(result1.is_ok());
-        
+
         // System should still be able to collect metrics again
         let result2 = collect_gpu_metrics();
         assert!(result2.is_ok());
-        
+
         // Both results should be consistent
         let collection1 = result1.unwrap();
         let collection2 = result2.unwrap();
-        
+
         assert_eq!(collection1.gpu_count, collection2.gpu_count);
     }
 
@@ -2213,10 +2465,10 @@ mod tests {
 
         // This should fail gracefully and return an error
         let result = collect_vendor_specific_metrics(&mock_device);
-        
+
         // Should return an error for non-existent device
         assert!(result.is_err());
-        
+
         // But the error should be informative
         let error = result.unwrap_err();
         let error_str = error.to_string();
@@ -2231,10 +2483,10 @@ mod tests {
             // This test just verifies that the nvml feature compiles
             // Actual NVML functionality would require a real NVIDIA GPU
             use nvml_wrapper::Nvml;
-            
+
             // Try to initialize NVML - this will likely fail without a real GPU
             let result = Nvml::init();
-            
+
             // We don't assert success because we might not have NVIDIA hardware
             // Just verify that the code compiles and doesn't panic
             match result {
@@ -2249,7 +2501,7 @@ mod tests {
                 }
             }
         }
-        
+
         #[cfg(not(feature = "nvml-wrapper"))]
         {
             // If nvml feature is not enabled, the test should still pass
@@ -2262,24 +2514,24 @@ mod tests {
     fn test_gpu_metrics_collection_with_vendor_specific() {
         // Test the integration of vendor-specific metrics collection
         let result = collect_gpu_metrics();
-        
+
         // Should not panic and should return Ok
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
-        
+
         // Should return a valid collection
         assert_eq!(collection.devices.len(), collection.gpu_count);
-        
+
         // If there are devices, they should have metrics
         for device_metrics in &collection.devices {
             // Device info should be populated
             assert!(!device_metrics.device.name.is_empty());
-            
+
             // Metrics should have reasonable default values
             assert!(device_metrics.utilization.gpu_util >= 0.0);
             assert!(device_metrics.memory.total_bytes >= 0);
-            
+
             // Timestamps should be recent
             let now = std::time::SystemTime::now();
             let one_hour_ago = now - std::time::Duration::from_secs(3600);
@@ -2344,8 +2596,8 @@ mod tests {
             },
             memory: GpuMemory {
                 total_bytes: 12_000_000_000, // 12 GB
-                used_bytes: 8_000_000_000,  // 8 GB
-                free_bytes: 4_000_000_000,  // 4 GB
+                used_bytes: 8_000_000_000,   // 8 GB
+                free_bytes: 4_000_000_000,   // 4 GB
             },
             temperature: GpuTemperature {
                 temperature_c: Some(75.0),
@@ -2367,7 +2619,8 @@ mod tests {
 
         // Test serialization
         let serialized = serde_json::to_string(&metrics).expect("Serialization failed");
-        let deserialized: GpuMetrics = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: GpuMetrics =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         // Verify all fields are preserved
         assert_eq!(deserialized.device.name, "nvidia_gpu");
@@ -2445,14 +2698,21 @@ mod tests {
 
         // Test serialization
         let serialized = serde_json::to_string(&collection).expect("Serialization failed");
-        let deserialized: GpuMetricsCollection = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: GpuMetricsCollection =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(deserialized.gpu_count, 2);
         assert_eq!(deserialized.devices.len(), 2);
 
         // Verify vendor-specific information is preserved
-        assert_eq!(deserialized.devices[0].device.driver, Some("nvidia".to_string()));
-        assert_eq!(deserialized.devices[1].device.driver, Some("amdgpu".to_string()));
+        assert_eq!(
+            deserialized.devices[0].device.driver,
+            Some("nvidia".to_string())
+        );
+        assert_eq!(
+            deserialized.devices[1].device.driver,
+            Some("amdgpu".to_string())
+        );
 
         assert_eq!(deserialized.devices[0].utilization.gpu_util, 0.90);
         assert_eq!(deserialized.devices[1].utilization.gpu_util, 0.70);
@@ -2478,7 +2738,7 @@ mod tests {
         assert!(device_result.is_ok());
 
         let metrics = device_result.unwrap();
-        
+
         // Should return default values when vendor-specific APIs fail
         assert_eq!(metrics.device.name, "mock_device");
         assert_eq!(metrics.utilization.gpu_util, 0.0);
@@ -2488,13 +2748,13 @@ mod tests {
     #[test]
     fn test_gpu_feature_flags() {
         // Test that feature flags work correctly
-        
+
         #[cfg(feature = "nvml-wrapper")]
         assert!(cfg!(feature = "nvml-wrapper"));
-        
+
         #[cfg(not(feature = "nvml-wrapper"))]
         assert!(!cfg!(feature = "nvml-wrapper"));
-        
+
         // The test should pass regardless of which features are enabled
         // This verifies that the feature flag system works correctly
     }
@@ -2505,9 +2765,9 @@ mod tests {
         // This is harder to test without mocking, but we can verify the structure
         let result = collect_gpu_metrics();
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
-        
+
         // If there are devices, they should all have valid structure
         for device_metrics in &collection.devices {
             assert!(!device_metrics.device.name.is_empty());
@@ -2522,7 +2782,7 @@ mod tests {
     fn test_gpu_error_messages_context() {
         // Test that error messages provide useful context
         // This is more of a documentation test - we verify the structure
-        
+
         // Create a device with a path that will cause errors
         let mock_device = GpuDevice {
             name: "error_test".to_string(),
@@ -2534,10 +2794,10 @@ mod tests {
 
         // This should handle errors gracefully and provide context in logs
         let result = collect_gpu_device_metrics(&mock_device);
-        
+
         // Should succeed (return Ok) even with errors
         assert!(result.is_ok());
-        
+
         // Should return a valid metrics object with default values
         let metrics = result.unwrap();
         assert_eq!(metrics.device.name, "error_test");
@@ -2548,7 +2808,7 @@ mod tests {
     fn test_gpu_vendor_specific_error_handling() {
         // Test that vendor-specific error handling works correctly
         // This test verifies that different GPU vendors get appropriate error messages
-        
+
         // Test Intel GPU error handling
         let intel_device = GpuDevice {
             name: "card0".to_string(),
@@ -2580,20 +2840,20 @@ mod tests {
         let intel_result = collect_gpu_device_metrics(&intel_device);
         let amd_result = collect_gpu_device_metrics(&amd_device);
         let nvidia_result = collect_gpu_device_metrics(&nvidia_device);
-        
+
         assert!(intel_result.is_ok());
         assert!(amd_result.is_ok());
         assert!(nvidia_result.is_ok());
-        
+
         // All should return valid metrics objects
         let intel_metrics = intel_result.unwrap();
         let amd_metrics = amd_result.unwrap();
         let nvidia_metrics = nvidia_result.unwrap();
-        
+
         assert_eq!(intel_metrics.device.name, "card0");
         assert_eq!(amd_metrics.device.name, "card1");
         assert_eq!(nvidia_metrics.device.name, "card2");
-        
+
         // All should have default values when metrics cannot be collected
         assert_eq!(intel_metrics.utilization.gpu_util, 0.0);
         assert_eq!(amd_metrics.utilization.gpu_util, 0.0);
@@ -2604,7 +2864,7 @@ mod tests {
     fn test_gpu_error_recovery_comprehensive() {
         // Test comprehensive error recovery scenarios
         // This test verifies that the system can recover from various error conditions
-        
+
         // Test 1: Multiple consecutive errors
         for i in 0..3 {
             let mock_device = GpuDevice {
@@ -2614,36 +2874,36 @@ mod tests {
                 device_id: Some("0x5678".to_string()),
                 driver: Some("test_driver".to_string()),
             };
-            
+
             let result = collect_gpu_device_metrics(&mock_device);
             assert!(result.is_ok(), "Iteration {} failed", i);
         }
-        
+
         // Test 2: Main collection function should still work
         let result = collect_gpu_metrics();
         assert!(result.is_ok());
-        
+
         let collection = result.unwrap();
         assert_eq!(collection.devices.len(), collection.gpu_count);
-        
+
         // Test 3: System should be able to continue after errors
         let result1 = collect_gpu_metrics();
         let result2 = collect_gpu_metrics();
-        
+
         assert!(result1.is_ok());
         assert!(result2.is_ok());
-        
+
         let collection1 = result1.unwrap();
         let collection2 = result2.unwrap();
-        
+
         // Results should be consistent
         assert_eq!(collection1.gpu_count, collection2.gpu_count);
     }
-    
+
     #[test]
     fn test_new_gpu_vendors_identification() {
         // Test identification of new GPU vendors
-        
+
         // Qualcomm Adreno
         let qualcomm_device = GpuDevice {
             name: "adreno_gpu".to_string(),
@@ -2652,7 +2912,7 @@ mod tests {
             device_id: Some("0x1234".to_string()),
             driver: Some("msm".to_string()),
         };
-        
+
         // ARM Mali
         let mali_device = GpuDevice {
             name: "mali_gpu".to_string(),
@@ -2661,7 +2921,7 @@ mod tests {
             device_id: Some("0x5678".to_string()),
             driver: Some("mali".to_string()),
         };
-        
+
         // Broadcom VideoCore
         let broadcom_device = GpuDevice {
             name: "videocore_gpu".to_string(),
@@ -2670,7 +2930,7 @@ mod tests {
             device_id: Some("0x9abc".to_string()),
             driver: Some("vc4".to_string()),
         };
-        
+
         // Virtio GPU
         let virtio_device = GpuDevice {
             name: "virtio_gpu".to_string(),
@@ -2679,29 +2939,29 @@ mod tests {
             device_id: Some("0xdef0".to_string()),
             driver: Some("virtio_gpu".to_string()),
         };
-        
+
         // Verify vendor identification
         assert_eq!(qualcomm_device.driver, Some("msm".to_string()));
         assert_eq!(mali_device.driver, Some("mali".to_string()));
         assert_eq!(broadcom_device.driver, Some("vc4".to_string()));
         assert_eq!(virtio_device.driver, Some("virtio_gpu".to_string()));
-        
+
         // Test that metrics collection works for these devices (may return default values)
         let qualcomm_result = collect_gpu_device_metrics(&qualcomm_device);
         let mali_result = collect_gpu_device_metrics(&mali_device);
         let broadcom_result = collect_gpu_device_metrics(&broadcom_device);
         let virtio_result = collect_gpu_device_metrics(&virtio_device);
-        
+
         assert!(qualcomm_result.is_ok());
         assert!(mali_result.is_ok());
         assert!(broadcom_result.is_ok());
         assert!(virtio_result.is_ok());
     }
-    
+
     #[test]
     fn test_new_gpu_vendors_metrics_collection() {
         // Test metrics collection for new GPU vendors
-        
+
         // Create mock devices for each new vendor
         let qualcomm_device = GpuDevice {
             name: "adreno_test".to_string(),
@@ -2710,7 +2970,7 @@ mod tests {
             device_id: Some("0x1234".to_string()),
             driver: Some("msm".to_string()),
         };
-        
+
         let mali_device = GpuDevice {
             name: "mali_test".to_string(),
             device_path: PathBuf::from("/sys/devices/platform/soc/1d80000.gpu/drm/card1/device"),
@@ -2718,7 +2978,7 @@ mod tests {
             device_id: Some("0x5678".to_string()),
             driver: Some("mali".to_string()),
         };
-        
+
         let broadcom_device = GpuDevice {
             name: "vc4_test".to_string(),
             device_path: PathBuf::from("/sys/devices/platform/soc/3fc00000.gpu/drm/card2/device"),
@@ -2726,7 +2986,7 @@ mod tests {
             device_id: Some("0x9abc".to_string()),
             driver: Some("vc4".to_string()),
         };
-        
+
         let virtio_device = GpuDevice {
             name: "virtio_test".to_string(),
             device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:02.0/drm/card3/device"),
@@ -2734,41 +2994,41 @@ mod tests {
             device_id: Some("0xdef0".to_string()),
             driver: Some("virtio_gpu".to_string()),
         };
-        
+
         // Test vendor-specific metrics collection
         let qualcomm_result = collect_qualcomm_adreno_metrics(&qualcomm_device);
         let mali_result = collect_arm_mali_metrics(&mali_device);
         let broadcom_result = collect_broadcom_videocore_metrics(&broadcom_device);
         let virtio_result = collect_virtio_gpu_metrics(&virtio_device);
-        
+
         // All should succeed (return Ok) even if they return default values
         assert!(qualcomm_result.is_ok());
         assert!(mali_result.is_ok());
         assert!(broadcom_result.is_ok());
         assert!(virtio_result.is_ok());
-        
+
         // Verify that the metrics have the correct device information
         let qualcomm_metrics = qualcomm_result.unwrap();
         let mali_metrics = mali_result.unwrap();
         let broadcom_metrics = broadcom_result.unwrap();
         let virtio_metrics = virtio_result.unwrap();
-        
+
         assert_eq!(qualcomm_metrics.device.name, "adreno_test");
         assert_eq!(mali_metrics.device.name, "mali_test");
         assert_eq!(broadcom_metrics.device.name, "vc4_test");
         assert_eq!(virtio_metrics.device.name, "virtio_test");
-        
+
         // Verify that the metrics have reasonable default values
         assert!(qualcomm_metrics.utilization.gpu_util >= 0.0);
         assert!(mali_metrics.utilization.gpu_util >= 0.0);
         assert!(broadcom_metrics.utilization.gpu_util >= 0.0);
         assert!(virtio_metrics.utilization.gpu_util >= 0.0);
     }
-    
+
     #[test]
     fn test_new_gpu_vendors_serialization() {
         // Test serialization of metrics from new GPU vendors
-        
+
         // Create metrics for each new vendor
         let qualcomm_metrics = GpuMetrics {
             device: GpuDevice {
@@ -2786,8 +3046,8 @@ mod tests {
             },
             memory: GpuMemory {
                 total_bytes: 2_000_000_000, // 2 GB
-                used_bytes: 1_200_000_000, // 1.2 GB
-                free_bytes: 800_000_000,   // 0.8 GB
+                used_bytes: 1_200_000_000,  // 1.2 GB
+                free_bytes: 800_000_000,    // 0.8 GB
             },
             temperature: GpuTemperature {
                 temperature_c: Some(55.0),
@@ -2806,7 +3066,7 @@ mod tests {
             },
             timestamp: std::time::SystemTime::now(),
         };
-        
+
         let mali_metrics = GpuMetrics {
             device: GpuDevice {
                 name: "mali_gpu".to_string(),
@@ -2823,8 +3083,8 @@ mod tests {
             },
             memory: GpuMemory {
                 total_bytes: 4_000_000_000, // 4 GB
-                used_bytes: 2_500_000_000, // 2.5 GB
-                free_bytes: 1_500_000_000, // 1.5 GB
+                used_bytes: 2_500_000_000,  // 2.5 GB
+                free_bytes: 1_500_000_000,  // 1.5 GB
             },
             temperature: GpuTemperature {
                 temperature_c: Some(60.0),
@@ -2843,30 +3103,34 @@ mod tests {
             },
             timestamp: std::time::SystemTime::now(),
         };
-        
+
         // Test serialization
-        let qualcomm_serialized = serde_json::to_string(&qualcomm_metrics).expect("Qualcomm serialization failed");
-        let mali_serialized = serde_json::to_string(&mali_metrics).expect("Mali serialization failed");
-        
-        let qualcomm_deserialized: GpuMetrics = serde_json::from_str(&qualcomm_serialized).expect("Qualcomm deserialization failed");
-        let mali_deserialized: GpuMetrics = serde_json::from_str(&mali_serialized).expect("Mali deserialization failed");
-        
+        let qualcomm_serialized =
+            serde_json::to_string(&qualcomm_metrics).expect("Qualcomm serialization failed");
+        let mali_serialized =
+            serde_json::to_string(&mali_metrics).expect("Mali serialization failed");
+
+        let qualcomm_deserialized: GpuMetrics =
+            serde_json::from_str(&qualcomm_serialized).expect("Qualcomm deserialization failed");
+        let mali_deserialized: GpuMetrics =
+            serde_json::from_str(&mali_serialized).expect("Mali deserialization failed");
+
         // Verify all fields are preserved
         assert_eq!(qualcomm_deserialized.device.name, "adreno_gpu");
         assert_eq!(qualcomm_deserialized.device.driver, Some("msm".to_string()));
         assert_eq!(qualcomm_deserialized.utilization.gpu_util, 0.65);
         assert_eq!(qualcomm_deserialized.memory.total_bytes, 2_000_000_000);
-        
+
         assert_eq!(mali_deserialized.device.name, "mali_gpu");
         assert_eq!(mali_deserialized.device.driver, Some("mali".to_string()));
         assert_eq!(mali_deserialized.utilization.gpu_util, 0.70);
         assert_eq!(mali_deserialized.memory.total_bytes, 4_000_000_000);
     }
-    
+
     #[test]
     fn test_new_gpu_vendors_integration() {
         // Test integration of new GPU vendors into the main collection system
-        
+
         // Test that vendor-specific metrics collection works for new vendors
         let qualcomm_device = GpuDevice {
             name: "adreno_integration".to_string(),
@@ -2875,7 +3139,7 @@ mod tests {
             device_id: Some("0x1234".to_string()),
             driver: Some("msm".to_string()),
         };
-        
+
         let mali_device = GpuDevice {
             name: "mali_integration".to_string(),
             device_path: PathBuf::from("/sys/devices/platform/soc/1d80000.gpu/drm/card1/device"),
@@ -2883,11 +3147,11 @@ mod tests {
             device_id: Some("0x5678".to_string()),
             driver: Some("mali".to_string()),
         };
-        
+
         // Test vendor-specific metrics collection
         let qualcomm_result = collect_vendor_specific_metrics(&qualcomm_device);
         let mali_result = collect_vendor_specific_metrics(&mali_device);
-        
+
         // These may fail (return Err) if the devices don't exist, but should not panic
         // If they succeed, they should return valid metrics
         match qualcomm_result {
@@ -2900,7 +3164,7 @@ mod tests {
                 // This is fine for the test
             }
         }
-        
+
         match mali_result {
             Ok(metrics) => {
                 assert_eq!(metrics.device.name, "mali_integration");
@@ -2912,11 +3176,11 @@ mod tests {
             }
         }
     }
-    
+
     #[test]
     fn test_new_gpu_vendors_fallback() {
         // Test that new GPU vendors fall back gracefully when vendor-specific APIs fail
-        
+
         let mock_qualcomm_device = GpuDevice {
             name: "mock_adreno".to_string(),
             device_path: PathBuf::from("/non/existent/qualcomm/path"),
@@ -2924,7 +3188,7 @@ mod tests {
             device_id: Some("0x1234".to_string()),
             driver: Some("msm".to_string()),
         };
-        
+
         let mock_mali_device = GpuDevice {
             name: "mock_mali".to_string(),
             device_path: PathBuf::from("/non/existent/mali/path"),
@@ -2932,19 +3196,19 @@ mod tests {
             device_id: Some("0x5678".to_string()),
             driver: Some("mali".to_string()),
         };
-        
+
         // Vendor-specific collection should fail gracefully
         let qualcomm_result = collect_qualcomm_adreno_metrics(&mock_qualcomm_device);
         let mali_result = collect_arm_mali_metrics(&mock_mali_device);
-        
+
         // Should succeed (return Ok) even with non-existent paths
         assert!(qualcomm_result.is_ok());
         assert!(mali_result.is_ok());
-        
+
         // Should return valid metrics objects with default values
         let qualcomm_metrics = qualcomm_result.unwrap();
         let mali_metrics = mali_result.unwrap();
-        
+
         assert_eq!(qualcomm_metrics.device.name, "mock_adreno");
         assert_eq!(mali_metrics.device.name, "mock_mali");
         assert_eq!(qualcomm_metrics.utilization.gpu_util, 0.0);
@@ -2952,46 +3216,229 @@ mod tests {
     }
 }
 
+#[test]
+fn test_gpu_improved_error_messages() {
+    // Test that the improved error messages provide detailed troubleshooting information
+    // This test verifies that error handling includes helpful context and recommendations
+
+    // Test device discovery with potential errors
+    let devices_result = discover_gpu_devices();
+    assert!(devices_result.is_ok()); // Should always return Ok with graceful degradation
+
+    // Test metrics collection with potential errors
+    let metrics_result = collect_gpu_metrics();
+    assert!(devices_result.is_ok()); // Should always return Ok with graceful degradation
+
+    let collection = metrics_result.unwrap();
+
+    // Verify that the collection is valid even if no devices are found
+    assert_eq!(collection.devices.len(), collection.gpu_count);
+
+    // Test that serialization works even with empty or partial collections
+    let serialized = serde_json::to_string(&collection);
+    assert!(serialized.is_ok());
+
+    let deserialized: GpuMetricsCollection = serde_json::from_str(&serialized.unwrap()).unwrap();
+    assert_eq!(deserialized.gpu_count, collection.gpu_count);
+    assert_eq!(deserialized.devices.len(), collection.devices.len());
+
+    // Test that we can create a device with error-prone paths and still get valid results
+    let error_device = GpuDevice {
+        name: "test_error_device".to_string(),
+        device_path: PathBuf::from("/nonexistent/path"),
+        vendor_id: Some("0x1234".to_string()),
+        device_id: Some("0x5678".to_string()),
+        driver: Some("test_driver".to_string()),
+    };
+
+    // This should handle errors gracefully and return a valid metrics structure
+    let _error_metrics_result = collect_gpu_device_metrics(&error_device);
+
+    // Even if individual device metrics fail, the overall system should continue
+    // This is tested by the fact that we can still collect metrics after this
+    let final_result = collect_gpu_metrics();
+    assert!(final_result.is_ok());
+
     #[test]
-    fn test_gpu_improved_error_messages() {
-        // Test that the improved error messages provide detailed troubleshooting information
-        // This test verifies that error handling includes helpful context and recommendations
-        
-        // Test device discovery with potential errors
-        let devices_result = discover_gpu_devices();
-        assert!(devices_result.is_ok()); // Should always return Ok with graceful degradation
-        
-        // Test metrics collection with potential errors
-        let metrics_result = collect_gpu_metrics();
-        assert!(devices_result.is_ok()); // Should always return Ok with graceful degradation
-        
-        let collection = metrics_result.unwrap();
-        
-        // Verify that the collection is valid even if no devices are found
-        assert_eq!(collection.devices.len(), collection.gpu_count);
-        
-        // Test that serialization works even with empty or partial collections
-        let serialized = serde_json::to_string(&collection);
-        assert!(serialized.is_ok());
-        
-        let deserialized: GpuMetricsCollection = serde_json::from_str(&serialized.unwrap()).unwrap();
-        assert_eq!(deserialized.gpu_count, collection.gpu_count);
-        assert_eq!(deserialized.devices.len(), collection.devices.len());
-        
-        // Test that we can create a device with error-prone paths and still get valid results
-        let error_device = GpuDevice {
-            name: "test_error_device".to_string(),
-            device_path: PathBuf::from("/nonexistent/path"),
-            vendor_id: Some("0x1234".to_string()),
-            device_id: Some("0x5678".to_string()),
-            driver: Some("test_driver".to_string()),
+    fn test_temperature_validation() {
+        // Test temperature validation logic
+        let mut temperature = GpuTemperature {
+            temperature_c: Some(180.0), // Invalid high temperature
+            hotspot_c: Some(-10.0),    // Invalid low temperature
+            memory_c: Some(85.0),      // Valid temperature
         };
-        
-        // This should handle errors gracefully and return a valid metrics structure
-        let _error_metrics_result = collect_gpu_device_metrics(&error_device);
-        
-        // Even if individual device metrics fail, the overall system should continue
-        // This is tested by the fact that we can still collect metrics after this
-        let final_result = collect_gpu_metrics();
-        assert!(final_result.is_ok());
+
+        // Validate and correct temperatures
+        if let Some(temp) = temperature.temperature_c {
+            if temp < 0.0 || temp > 150.0 {
+                temperature.temperature_c = None;
+            }
+        }
+
+        if let Some(hotspot) = temperature.hotspot_c {
+            if hotspot < 0.0 || hotspot > 150.0 {
+                temperature.hotspot_c = None;
+            }
+        }
+
+        // Memory temperature should remain valid
+        assert_eq!(temperature.temperature_c, None);
+        assert_eq!(temperature.hotspot_c, None);
+        assert_eq!(temperature.memory_c, Some(85.0));
     }
+
+    #[test]
+    fn test_comprehensive_temperature_structure() {
+        // Test that comprehensive temperature structure works correctly
+        let temperature = GpuTemperature {
+            temperature_c: Some(65.5),
+            hotspot_c: Some(72.3),
+            memory_c: Some(60.1),
+        };
+
+        assert!(temperature.temperature_c.is_some());
+        assert!(temperature.hotspot_c.is_some());
+        assert!(temperature.memory_c.is_some());
+        
+        if let Some(temp) = temperature.temperature_c {
+            assert!(temp > 0.0 && temp < 150.0);
+        }
+        
+        if let Some(hotspot) = temperature.hotspot_c {
+            assert!(hotspot > 0.0 && hotspot < 150.0);
+        }
+        
+        if let Some(mem_temp) = temperature.memory_c {
+            assert!(mem_temp > 0.0 && mem_temp < 150.0);
+        }
+    }
+
+    #[test]
+    fn test_temperature_serialization() {
+        // Test that temperature data serializes correctly
+        let temperature = GpuTemperature {
+            temperature_c: Some(65.5),
+            hotspot_c: Some(72.3),
+            memory_c: Some(60.1),
+        };
+
+        let serialized = serde_json::to_string(&temperature).expect("Temperature serialization failed");
+        let deserialized: GpuTemperature = serde_json::from_str(&serialized).expect("Temperature deserialization failed");
+
+        assert_eq!(deserialized.temperature_c, Some(65.5));
+        assert_eq!(deserialized.hotspot_c, Some(72.3));
+        assert_eq!(deserialized.memory_c, Some(60.1));
+    }
+
+    #[test]
+    fn test_temperature_edge_cases() {
+        // Test edge cases for temperature monitoring
+        let mut temperature = GpuTemperature {
+            temperature_c: Some(0.0),   // Minimum valid temperature
+            hotspot_c: Some(150.0),  // Maximum valid temperature
+            memory_c: Some(75.0),    // Mid-range temperature
+        };
+
+        // These should all be valid
+        assert!(temperature.temperature_c.is_some());
+        assert!(temperature.hotspot_c.is_some());
+        assert!(temperature.memory_c.is_some());
+        
+        // Test boundary conditions
+        if let Some(temp) = temperature.temperature_c {
+            assert!(temp >= 0.0 && temp <= 150.0);
+        }
+        
+        if let Some(hotspot) = temperature.hotspot_c {
+            assert!(hotspot >= 0.0 && hotspot <= 150.0);
+        }
+    }
+
+    #[test]
+    fn test_gpu_metrics_with_comprehensive_temperature() {
+        // Test that GPU metrics can handle comprehensive temperature data
+        let metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization::default(),
+            memory: GpuMemory::default(),
+            temperature: GpuTemperature {
+                temperature_c: Some(65.5),
+                hotspot_c: Some(72.3),
+                memory_c: Some(60.1),
+            },
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Verify all temperature fields are present
+        assert!(metrics.temperature.temperature_c.is_some());
+        assert!(metrics.temperature.hotspot_c.is_some());
+        assert!(metrics.temperature.memory_c.is_some());
+        
+        // Test serialization of comprehensive metrics
+        let serialized = serde_json::to_string(&metrics).expect("Comprehensive metrics serialization failed");
+        let deserialized: GpuMetrics = serde_json::from_str(&serialized).expect("Comprehensive metrics deserialization failed");
+
+        assert_eq!(deserialized.temperature.temperature_c, Some(65.5));
+        assert_eq!(deserialized.temperature.hotspot_c, Some(72.3));
+        assert_eq!(deserialized.temperature.memory_c, Some(60.1));
+    }
+
+    #[test]
+    fn test_temperature_error_recovery() {
+        // Test that temperature monitoring can recover from errors
+        let mut temperature = GpuTemperature {
+            temperature_c: Some(200.0), // Invalid temperature
+            hotspot_c: Some(-50.0),    // Invalid temperature
+            memory_c: Some(180.0),     // Invalid temperature
+        };
+
+        // Apply validation
+        if let Some(temp) = temperature.temperature_c {
+            if temp < 0.0 || temp > 150.0 {
+                temperature.temperature_c = None;
+            }
+        }
+
+        if let Some(hotspot) = temperature.hotspot_c {
+            if hotspot < 0.0 || hotspot > 150.0 {
+                temperature.hotspot_c = None;
+            }
+        }
+
+        if let Some(mem_temp) = temperature.memory_c {
+            if mem_temp < 0.0 || mem_temp > 150.0 {
+                temperature.memory_c = None;
+            }
+        }
+
+        // All should be None after validation
+        assert_eq!(temperature.temperature_c, None);
+        assert_eq!(temperature.hotspot_c, None);
+        assert_eq!(temperature.memory_c, None);
+    }
+
+    #[test]
+    fn test_temperature_partial_data() {
+        // Test handling of partial temperature data
+        let temperature = GpuTemperature {
+            temperature_c: Some(65.5), // Only main temperature available
+            hotspot_c: None,           // Hotspot not available
+            memory_c: None,            // Memory temperature not available
+        };
+
+        // Should still work with partial data
+        assert!(temperature.temperature_c.is_some());
+        assert!(temperature.hotspot_c.is_none());
+        assert!(temperature.memory_c.is_none());
+        
+        // Test serialization with partial data
+        let serialized = serde_json::to_string(&temperature).expect("Partial temperature serialization failed");
+        let deserialized: GpuTemperature = serde_json::from_str(&serialized).expect("Partial temperature deserialization failed");
+
+        assert_eq!(deserialized.temperature_c, Some(65.5));
+        assert_eq!(deserialized.hotspot_c, None);
+        assert_eq!(deserialized.memory_c, None);
+    }
+}

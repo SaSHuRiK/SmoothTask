@@ -15,16 +15,17 @@ use tempfile::TempDir;
 fn create_test_pattern_file(dir: &Path, filename: &str, content: &str) {
     use std::fs;
     use std::io::Write;
-    
+
     let file_path = dir.join(filename);
     let mut file = fs::File::create(file_path).expect("create pattern file");
-    file.write_all(content.as_bytes()).expect("write pattern content");
+    file.write_all(content.as_bytes())
+        .expect("write pattern content");
 }
 
 /// Бенчмарк для сопоставления glob паттернов
 fn glob_pattern_matching_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Glob Pattern Matching");
-    
+
     // Тестовые данные
     let test_cases = vec![
         ("firefox", "firefox"),
@@ -36,26 +37,24 @@ fn glob_pattern_matching_benchmark(c: &mut Criterion) {
         ("firefox-a-bin", "firefox-?-bin"),
         ("long-application-name", "long-*-name"),
     ];
-    
+
     for (text, pattern) in test_cases {
         group.bench_function(format!("match {}/{}", text, pattern), |b| {
-            b.iter(|| {
-                PatternDatabase::matches_pattern(black_box(text), black_box(pattern))
-            })
+            b.iter(|| PatternDatabase::matches_pattern(black_box(text), black_box(pattern)))
         });
     }
-    
+
     group.finish();
 }
 
 /// Бенчмарк для классификации процессов
 fn process_classification_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Process Classification");
-    
+
     // Создаем временную директорию с тестовыми паттернами
     let temp_dir = TempDir::new().expect("temp dir");
     let patterns_dir = temp_dir.path();
-    
+
     // Создаем тестовые паттерны
     create_test_pattern_file(
         patterns_dir,
@@ -77,10 +76,10 @@ apps:
     tags: ["ide", "gui_interactive"]
 "#,
     );
-    
+
     // Загружаем базу паттернов
     let pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
-    
+
     // Тестовые процессы
     let test_processes = vec![
         ProcessRecord {
@@ -124,50 +123,40 @@ apps:
             ..Default::default()
         },
     ];
-    
+
     // Бенчмарк для первого запуска (без кэша)
     group.bench_function("first classification (no cache)", |b| {
         b.iter(|| {
             for process in &test_processes {
                 let mut proc = process.clone();
                 let db_arc = std::sync::Arc::new(std::sync::Mutex::new(pattern_db.clone()));
-                smoothtask_core::classify::rules::classify_process(
-                    &mut proc,
-                    &db_arc,
-                    None,
-                    None,
-                );
+                smoothtask_core::classify::rules::classify_process(&mut proc, &db_arc, None, None);
             }
         })
     });
-    
+
     // Бенчмарк для повторного запуска (с кэшем)
     group.bench_function("repeat classification (with cache)", |b| {
         b.iter(|| {
             for process in &test_processes {
                 let mut proc = process.clone();
                 let db_arc = std::sync::Arc::new(std::sync::Mutex::new(pattern_db.clone()));
-                smoothtask_core::classify::rules::classify_process(
-                    &mut proc,
-                    &db_arc,
-                    None,
-                    None,
-                );
+                smoothtask_core::classify::rules::classify_process(&mut proc, &db_arc, None, None);
             }
         })
     });
-    
+
     group.finish();
 }
 
 /// Бенчмарк для массовой классификации процессов
 fn bulk_classification_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Bulk Classification");
-    
+
     // Создаем временную директорию с тестовыми паттернами
     let temp_dir = TempDir::new().expect("temp dir");
     let patterns_dir = temp_dir.path();
-    
+
     // Создаем расширенные тестовые паттерны
     create_test_pattern_file(
         patterns_dir,
@@ -201,10 +190,10 @@ apps:
     tags: ["terminal"]
 "#,
     );
-    
+
     // Загружаем базу паттернов
     let pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
-    
+
     // Создаем большой набор тестовых процессов
     let mut processes = Vec::new();
     for i in 0..100 {
@@ -216,7 +205,7 @@ apps:
             4 => "unknown-app",
             _ => "firefox",
         };
-        
+
         processes.push(ProcessRecord {
             pid: 1000 + i,
             ppid: 1,
@@ -226,34 +215,29 @@ apps:
             ..Default::default()
         });
     }
-    
+
     // Бенчмарк для массовой классификации
     group.bench_function("bulk classification 100 processes", |b| {
         b.iter(|| {
             for process in &processes {
                 let mut proc = process.clone();
                 let db_arc = std::sync::Arc::new(std::sync::Mutex::new(pattern_db.clone()));
-                smoothtask_core::classify::rules::classify_process(
-                    &mut proc,
-                    &db_arc,
-                    None,
-                    None,
-                );
+                smoothtask_core::classify::rules::classify_process(&mut proc, &db_arc, None, None);
             }
         })
     });
-    
+
     group.finish();
 }
 
 /// Бенчмарк для кэширования паттернов
 fn pattern_caching_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("Pattern Caching");
-    
+
     // Создаем временную директорию с тестовыми паттернами
     let temp_dir = TempDir::new().expect("temp dir");
     let patterns_dir = temp_dir.path();
-    
+
     // Создаем тестовые паттерны
     create_test_pattern_file(
         patterns_dir,
@@ -269,10 +253,10 @@ apps:
     tags: ["test"]
 "#,
     );
-    
+
     // Загружаем базу паттернов
     let mut pattern_db = PatternDatabase::load(patterns_dir).expect("load patterns");
-    
+
     // Тестируем кэширование одинаковых запросов
     group.bench_function("cached pattern matching", |b| {
         b.iter(|| {
@@ -281,7 +265,7 @@ apps:
             black_box(matches);
         })
     });
-    
+
     // Тестируем кэширование разных запросов
     group.bench_function("mixed pattern matching", |b| {
         b.iter(|| {
@@ -294,14 +278,14 @@ apps:
             black_box((matches1, matches2, matches3));
         })
     });
-    
+
     group.finish();
 }
 
 criterion_group!(
     name = classification_benches;
     config = Criterion::default().sample_size(10);
-    targets = 
+    targets =
         glob_pattern_matching_benchmark,
         process_classification_benchmark,
         bulk_classification_benchmark,

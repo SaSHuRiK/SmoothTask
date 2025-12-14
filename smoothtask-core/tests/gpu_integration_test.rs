@@ -3,20 +3,22 @@
 //! These tests verify the integration of GPU metrics collection
 //! with various GPU vendors and the rest of the SmoothTask system.
 
-use smoothtask_core::metrics::gpu::{collect_gpu_metrics, GpuMetricsCollection, GpuDevice, discover_gpu_devices};
+use smoothtask_core::metrics::gpu::{
+    collect_gpu_metrics, discover_gpu_devices, GpuDevice, GpuMetricsCollection,
+};
 
 #[tokio::test]
 async fn test_gpu_integration_basic() {
     // Test basic GPU metrics collection
     let result = collect_gpu_metrics();
-    
+
     // Should either succeed or fail gracefully
     match result {
         Ok(metrics) => {
             // If successful, verify the structure
             assert!(metrics.gpu_count >= 0);
             assert!(metrics.devices.len() == metrics.gpu_count);
-            
+
             // Verify each device has valid metrics
             for device_metrics in &metrics.devices {
                 assert!(!device_metrics.device.name.is_empty());
@@ -28,7 +30,11 @@ async fn test_gpu_integration_basic() {
             let error_str = e.to_string();
             assert!(!error_str.is_empty());
             // Should contain some indication of what went wrong
-            assert!(error_str.contains("GPU") || error_str.contains("failed") || error_str.contains("not found"));
+            assert!(
+                error_str.contains("GPU")
+                    || error_str.contains("failed")
+                    || error_str.contains("not found")
+            );
         }
     }
 }
@@ -37,12 +43,12 @@ async fn test_gpu_integration_basic() {
 async fn test_gpu_device_discovery() {
     // Test GPU device discovery
     let devices_result = discover_gpu_devices();
-    
+
     match devices_result {
         Ok(devices) => {
             // Should return a list of devices (may be empty)
             assert!(devices.len() >= 0);
-            
+
             // Each device should have valid structure
             for device in &devices {
                 assert!(!device.name.is_empty());
@@ -61,9 +67,9 @@ async fn test_gpu_device_discovery() {
 async fn test_gpu_vendor_specific_integration() {
     // Test that vendor-specific GPU metrics work in integration
     // This tests the collect_vendor_specific_metrics function indirectly
-    
+
     let result = collect_gpu_metrics();
-    
+
     // The function should handle all GPU types gracefully
     match result {
         Ok(metrics) => {
@@ -71,7 +77,7 @@ async fn test_gpu_vendor_specific_integration() {
             for device_metrics in &metrics.devices {
                 // Device should have a name
                 assert!(!device_metrics.device.name.is_empty());
-                
+
                 // Metrics should be either default or populated
                 // This verifies that vendor-specific collection didn't crash
                 assert!(device_metrics.utilization.gpu_util >= 0.0);
@@ -89,19 +95,19 @@ async fn test_gpu_vendor_specific_integration() {
 async fn test_gpu_metrics_structure() {
     // Test that GPU metrics structure is valid
     let result = collect_gpu_metrics();
-    
+
     match result {
         Ok(metrics) => {
             // Verify the collection structure
             assert!(metrics.gpu_count >= 0);
             assert!(metrics.devices.len() == metrics.gpu_count);
-            
+
             // Test that we can create a GpuMetricsCollection manually
             let manual_collection = GpuMetricsCollection {
                 devices: vec![],
                 gpu_count: 0,
             };
-            
+
             assert_eq!(manual_collection.gpu_count, 0);
             assert!(manual_collection.devices.is_empty());
         }
@@ -111,7 +117,7 @@ async fn test_gpu_metrics_structure() {
                 devices: vec![],
                 gpu_count: 0,
             };
-            
+
             assert_eq!(manual_collection.gpu_count, 0);
             assert!(manual_collection.devices.is_empty());
         }
@@ -128,12 +134,12 @@ async fn test_gpu_device_structure() {
         device_id: Some("0x1234".to_string()),
         driver: Some("i915".to_string()),
     };
-    
+
     assert_eq!(device.name, "test_device");
     assert_eq!(device.vendor_id, Some("0x8086".to_string()));
     assert_eq!(device.device_id, Some("0x1234".to_string()));
     assert_eq!(device.driver, Some("i915".to_string()));
-    
+
     // Test default device
     let default_device = GpuDevice::default();
     assert!(default_device.name.is_empty());
@@ -146,9 +152,9 @@ async fn test_gpu_device_structure() {
 async fn test_gpu_error_handling() {
     // Test that GPU metrics collection handles errors gracefully
     // This is particularly important for systems without GPUs
-    
+
     let result = collect_gpu_metrics();
-    
+
     // Should either succeed or return a proper error
     match result {
         Ok(_) => {
@@ -159,12 +165,14 @@ async fn test_gpu_error_handling() {
             // Error case - should be informative
             let error_str = e.to_string();
             assert!(!error_str.is_empty());
-            
+
             // Error should mention GPU or related concepts
-            assert!(error_str.contains("GPU") || 
-                   error_str.contains("device") || 
-                   error_str.contains("failed") ||
-                   error_str.contains("not found"));
+            assert!(
+                error_str.contains("GPU")
+                    || error_str.contains("device")
+                    || error_str.contains("failed")
+                    || error_str.contains("not found")
+            );
         }
     }
 }
@@ -173,7 +181,7 @@ async fn test_gpu_error_handling() {
 async fn test_gpu_metrics_with_mock_devices() {
     // Test GPU metrics collection with mock devices
     // This verifies that the system can handle various GPU configurations
-    
+
     // Create some mock devices that would be processed by vendor-specific collection
     let mock_devices = vec![
         GpuDevice {
@@ -198,7 +206,7 @@ async fn test_gpu_metrics_with_mock_devices() {
             driver: Some("mali".to_string()),
         },
     ];
-    
+
     // Verify that all mock devices have valid structure
     for device in &mock_devices {
         assert!(!device.name.is_empty());
@@ -206,7 +214,7 @@ async fn test_gpu_metrics_with_mock_devices() {
         assert!(device.device_id.is_some());
         assert!(device.driver.is_some());
     }
-    
+
     // The actual collection would be tested by the real collect_gpu_metrics function
     // This test just verifies that the device structures are valid for vendor-specific collection
 }
@@ -214,22 +222,22 @@ async fn test_gpu_metrics_with_mock_devices() {
 #[tokio::test]
 async fn test_gpu_integration_edge_cases() {
     // Test GPU integration with edge cases
-    
+
     // Test with empty device list
     let empty_collection = GpuMetricsCollection {
         devices: vec![],
         gpu_count: 0,
     };
-    
+
     assert_eq!(empty_collection.gpu_count, 0);
     assert!(empty_collection.devices.is_empty());
-    
+
     // Test that device discovery doesn't panic
     let _ = discover_gpu_devices();
-    
+
     // Test that metrics collection doesn't panic
     let _ = collect_gpu_metrics();
-    
+
     // All tests passed if we get here without panicking
     assert!(true);
 }
@@ -238,16 +246,16 @@ async fn test_gpu_integration_edge_cases() {
 async fn test_gpu_vendor_detection_integration() {
     // Test that GPU vendor detection works in integration
     // This verifies that the system can identify different GPU vendors
-    
+
     let devices_result = discover_gpu_devices();
-    
+
     match devices_result {
         Ok(devices) => {
             // If we found devices, they should have vendor information
             for device in &devices {
                 // Device should have a name
                 assert!(!device.name.is_empty());
-                
+
                 // Vendor ID, device ID, and driver may be None if not available
                 // but the structure should be valid
                 assert!(device.vendor_id.is_none() || device.vendor_id.is_some());
@@ -266,13 +274,13 @@ async fn test_gpu_vendor_detection_integration() {
 async fn test_gpu_metrics_collection_consistency() {
     // Test that GPU metrics collection is consistent
     // Multiple calls should either both succeed or both fail
-    
+
     let result1 = collect_gpu_metrics();
     let result2 = collect_gpu_metrics();
-    
+
     // Both results should have the same success/failure status
     assert_eq!(result1.is_ok(), result2.is_ok());
-    
+
     // If both succeed, they should have similar structures
     if let (Ok(metrics1), Ok(metrics2)) = (result1, result2) {
         assert_eq!(metrics1.gpu_count, metrics2.gpu_count);
@@ -291,21 +299,22 @@ async fn test_gpu_metrics_collection_consistency() {
 // - Broadcom VideoCore GPUs (vc4 driver)
 // - Virtio virtual GPUs (virtio_gpu driver)
 
-
-
 #[tokio::test]
 async fn test_cpu_temperature_collection() {
     // Test CPU temperature collection
     use smoothtask_core::metrics::system::collect_cpu_temperature;
-    
+
     let result = collect_cpu_temperature();
-    
+
     match result {
         Ok(temp) => {
             // Temperature may be None if not available
             if let Some(temperature) = temp {
                 // Temperature should be a reasonable value
-                assert!(temperature >= 0.0 && temperature < 200.0, "Temperature should be in reasonable range");
+                assert!(
+                    temperature >= 0.0 && temperature < 200.0,
+                    "Temperature should be in reasonable range"
+                );
             }
         }
         Err(e) => {

@@ -32,14 +32,18 @@ fn safe_parse_f32(s: &str, fallback: f32) -> f32 {
 /// Возвращает температуру в градусах Цельсия или `None`, если данные недоступны.
 #[allow(dead_code)]
 pub fn collect_cpu_temperature() -> Result<Option<f32>> {
-    let thermal_zones = fs::read_dir("/sys/class/thermal")
-        .context("Не удалось прочитать /sys/class/thermal")?;
+    let thermal_zones =
+        fs::read_dir("/sys/class/thermal").context("Не удалось прочитать /sys/class/thermal")?;
 
     for entry in thermal_zones {
         let entry = entry.context("Ошибка при чтении записи в /sys/class/thermal")?;
         let path = entry.path();
-        
-        if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("thermal_zone")) {
+
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map_or(false, |n| n.starts_with("thermal_zone"))
+        {
             let temp_path = path.join("temp");
             if let Ok(temp_str) = fs::read_to_string(&temp_path) {
                 if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
@@ -58,20 +62,28 @@ pub fn collect_cpu_temperature() -> Result<Option<f32>> {
 #[allow(dead_code)]
 pub fn collect_detailed_cpu_temperature() -> Result<Vec<CpuThermalZone>> {
     let mut thermal_zones_info = Vec::new();
-    
-    let thermal_zones = fs::read_dir("/sys/class/thermal")
-        .context("Не удалось прочитать /sys/class/thermal")?;
+
+    let thermal_zones =
+        fs::read_dir("/sys/class/thermal").context("Не удалось прочитать /sys/class/thermal")?;
 
     for entry in thermal_zones {
         let entry = entry.context("Ошибка при чтении записи в /sys/class/thermal")?;
         let path = entry.path();
-        
-        if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("thermal_zone")) {
-            let zone_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
-            
+
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map_or(false, |n| n.starts_with("thermal_zone"))
+        {
+            let zone_name = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string();
+
             // Попробуем получить тип зоны
             let zone_type = read_thermal_zone_type(&path);
-            
+
             // Попробуем получить температуру
             let temp_path = path.join("temp");
             let temperature = if let Ok(temp_str) = fs::read_to_string(&temp_path) {
@@ -83,10 +95,10 @@ pub fn collect_detailed_cpu_temperature() -> Result<Vec<CpuThermalZone>> {
             } else {
                 None
             };
-            
+
             // Попробуем получить критическую температуру
             let critical_temp = read_thermal_zone_critical_temp(&path);
-            
+
             if temperature.is_some() {
                 thermal_zones_info.push(CpuThermalZone {
                     zone_name,
@@ -527,19 +539,19 @@ impl HardwareMetrics {
         } else {
             self.pci_devices
         };
-        
+
         let usb_devices = if self.usb_devices.is_empty() {
             Vec::new()
         } else {
             self.usb_devices
         };
-        
+
         let storage_devices = if self.storage_devices.is_empty() {
             Vec::new()
         } else {
             self.storage_devices
         };
-        
+
         HardwareMetrics {
             fan_speeds_rpm: if self.fan_speeds_rpm.is_empty() {
                 Vec::new()
@@ -1178,9 +1190,8 @@ pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetric
     );
 
     // Третья группа задач
-    let (temperature, power) =
-        rayon::join(collect_temperature_metrics, collect_power_metrics);
-    
+    let (temperature, power) = rayon::join(collect_temperature_metrics, collect_power_metrics);
+
     // Собираем метрики аппаратных сенсоров
     let hardware = collect_hardware_metrics();
 
@@ -1214,34 +1225,34 @@ pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetric
 }
 
 /// Собрать системные метрики с адаптивным приоритетом на основе текущей нагрузки
-/// 
+///
 /// Эта функция использует адаптивный подход к сбору метрик, где приоритет метрик
 /// определяется на основе текущей нагрузки системы. В условиях высокой нагрузки
 /// собираются только критические метрики, что позволяет снизить накладные расходы.
-/// 
+///
 /// # Аргументы
-/// 
+///
 /// * `paths` - Пути к системным файлам
 /// * `cache` - Опциональный кэш для хранения метрик
 /// * `current_load` - Текущая нагрузка системы (1-минутный load average)
 /// * `priority_overrides` - Опциональные переопределения приоритетов для конкретных метрик
-/// 
+///
 /// # Возвращаемое значение
-/// 
+///
 /// Системные метрики с адаптивным уровнем детализации
-/// 
+///
 /// # Примеры
-/// 
+///
 /// ```rust
 /// use smoothtask_core::metrics::system::{collect_system_metrics_adaptive, ProcPaths};
-/// 
+///
 /// let paths = ProcPaths::default();
 /// let load_avg = 2.5; // Текущая нагрузка системы
 /// let metrics = collect_system_metrics_adaptive(&paths, None, load_avg, None);
 /// ```
-/// 
+///
 /// # Примечания
-/// 
+///
 /// - При нагрузке < 1.0 собираются все метрики (включая опциональные)
 /// - При нагрузке 1.0-3.0 пропускаются опциональные метрики
 /// - При нагрузке 3.0-5.0 пропускаются метрики низкого и опционального приоритета
@@ -1250,7 +1261,7 @@ pub fn collect_system_metrics_adaptive(
     paths: &ProcPaths,
     cache: Option<&SharedSystemMetricsCache>,
     current_load: f64,
-    _priority_overrides: Option<&[SystemMetricPriority]>
+    _priority_overrides: Option<&[SystemMetricPriority]>,
 ) -> Result<SystemMetrics> {
     // Определяем, какие метрики следует собирать на основе текущей нагрузки
     let collect_temperature = SystemMetricPriority::Medium.should_collect(current_load);
@@ -1276,19 +1287,47 @@ pub fn collect_system_metrics_adaptive(
             // Собираем дополнительные метрики в зависимости от приоритета
             let (temperature, power) = if collect_temperature || collect_power {
                 rayon::join(
-                    || if collect_temperature { collect_temperature_metrics() } else { TemperatureMetrics::default() },
-                    || if collect_power { collect_power_metrics() } else { PowerMetrics::default() },
+                    || {
+                        if collect_temperature {
+                            collect_temperature_metrics()
+                        } else {
+                            TemperatureMetrics::default()
+                        }
+                    },
+                    || {
+                        if collect_power {
+                            collect_power_metrics()
+                        } else {
+                            PowerMetrics::default()
+                        }
+                    },
                 )
             } else {
                 (TemperatureMetrics::default(), PowerMetrics::default())
             };
 
-            let hardware = if collect_hardware { collect_hardware_metrics() } else { HardwareMetrics::default() };
+            let hardware = if collect_hardware {
+                collect_hardware_metrics()
+            } else {
+                HardwareMetrics::default()
+            };
 
             let (network, disk) = if collect_network || collect_disk {
                 rayon::join(
-                    || if collect_network { collect_network_metrics() } else { NetworkMetrics::default() },
-                    || if collect_disk { collect_disk_metrics() } else { DiskMetrics::default() },
+                    || {
+                        if collect_network {
+                            collect_network_metrics()
+                        } else {
+                            NetworkMetrics::default()
+                        }
+                    },
+                    || {
+                        if collect_disk {
+                            collect_disk_metrics()
+                        } else {
+                            DiskMetrics::default()
+                        }
+                    },
                 )
             } else {
                 (NetworkMetrics::default(), DiskMetrics::default())
@@ -1296,8 +1335,20 @@ pub fn collect_system_metrics_adaptive(
 
             let (gpu, ebpf) = if collect_gpu || collect_ebpf {
                 rayon::join(
-                    || if collect_gpu { collect_gpu_metrics() } else { GpuMetricsCollection::default() },
-                    || if collect_ebpf { collect_ebpf_metrics() } else { None },
+                    || {
+                        if collect_gpu {
+                            collect_gpu_metrics()
+                        } else {
+                            GpuMetricsCollection::default()
+                        }
+                    },
+                    || {
+                        if collect_ebpf {
+                            collect_ebpf_metrics()
+                        } else {
+                            None
+                        }
+                    },
                 )
             } else {
                 (GpuMetricsCollection::default(), None)
@@ -1315,9 +1366,21 @@ pub fn collect_system_metrics_adaptive(
                 disk,
                 gpu: if collect_gpu { Some(gpu) } else { None },
                 ebpf,
-                system_calls: if collect_system_calls { collect_system_call_metrics() } else { SystemCallMetrics::default() },
-                inode: if collect_inode { collect_inode_metrics() } else { InodeMetrics::default() },
-                swap: if collect_swap { collect_swap_metrics() } else { SwapMetrics::default() },
+                system_calls: if collect_system_calls {
+                    collect_system_call_metrics()
+                } else {
+                    SystemCallMetrics::default()
+                },
+                inode: if collect_inode {
+                    collect_inode_metrics()
+                } else {
+                    InodeMetrics::default()
+                },
+                swap: if collect_swap {
+                    collect_swap_metrics()
+                } else {
+                    SwapMetrics::default()
+                },
             })
         });
     }
@@ -1331,19 +1394,47 @@ pub fn collect_system_metrics_adaptive(
     // Собираем дополнительные метрики в зависимости от приоритета
     let (temperature, power) = if collect_temperature || collect_power {
         rayon::join(
-            || if collect_temperature { collect_temperature_metrics() } else { TemperatureMetrics::default() },
-            || if collect_power { collect_power_metrics() } else { PowerMetrics::default() },
+            || {
+                if collect_temperature {
+                    collect_temperature_metrics()
+                } else {
+                    TemperatureMetrics::default()
+                }
+            },
+            || {
+                if collect_power {
+                    collect_power_metrics()
+                } else {
+                    PowerMetrics::default()
+                }
+            },
         )
     } else {
         (TemperatureMetrics::default(), PowerMetrics::default())
     };
 
-    let hardware = if collect_hardware { collect_hardware_metrics() } else { HardwareMetrics::default() };
+    let hardware = if collect_hardware {
+        collect_hardware_metrics()
+    } else {
+        HardwareMetrics::default()
+    };
 
     let (network, disk) = if collect_network || collect_disk {
         rayon::join(
-            || if collect_network { collect_network_metrics() } else { NetworkMetrics::default() },
-            || if collect_disk { collect_disk_metrics() } else { DiskMetrics::default() },
+            || {
+                if collect_network {
+                    collect_network_metrics()
+                } else {
+                    NetworkMetrics::default()
+                }
+            },
+            || {
+                if collect_disk {
+                    collect_disk_metrics()
+                } else {
+                    DiskMetrics::default()
+                }
+            },
         )
     } else {
         (NetworkMetrics::default(), DiskMetrics::default())
@@ -1351,8 +1442,20 @@ pub fn collect_system_metrics_adaptive(
 
     let (gpu, ebpf) = if collect_gpu || collect_ebpf {
         rayon::join(
-            || if collect_gpu { collect_gpu_metrics() } else { GpuMetricsCollection::default() },
-            || if collect_ebpf { collect_ebpf_metrics() } else { None },
+            || {
+                if collect_gpu {
+                    collect_gpu_metrics()
+                } else {
+                    GpuMetricsCollection::default()
+                }
+            },
+            || {
+                if collect_ebpf {
+                    collect_ebpf_metrics()
+                } else {
+                    None
+                }
+            },
         )
     } else {
         (GpuMetricsCollection::default(), None)
@@ -1370,9 +1473,21 @@ pub fn collect_system_metrics_adaptive(
         disk,
         gpu: if collect_gpu { Some(gpu) } else { None },
         ebpf,
-        system_calls: if collect_system_calls { collect_system_call_metrics() } else { SystemCallMetrics::default() },
-        inode: if collect_inode { collect_inode_metrics() } else { InodeMetrics::default() },
-        swap: if collect_swap { collect_swap_metrics() } else { SwapMetrics::default() },
+        system_calls: if collect_system_calls {
+            collect_system_call_metrics()
+        } else {
+            SystemCallMetrics::default()
+        },
+        inode: if collect_inode {
+            collect_inode_metrics()
+        } else {
+            InodeMetrics::default()
+        },
+        swap: if collect_swap {
+            collect_swap_metrics()
+        } else {
+            SwapMetrics::default()
+        },
     })
 }
 
@@ -1603,53 +1718,70 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
     // Собираем метрики температуры и энергопотребления с приоритетом eBPF
     let mut temperature = collect_temperature_metrics();
     let mut power = collect_power_metrics();
-    
+
     // Собираем метрики аппаратных сенсоров
     let hardware = collect_hardware_metrics();
-    
+
     // Пробуем использовать eBPF метрики как основной источник, если доступно
     if let Some(ebpf_metrics) = collect_ebpf_metrics() {
         // Приоритет 1: eBPF температура CPU (наиболее точная)
         if ebpf_metrics.cpu_temperature > 0 {
             temperature.cpu_temperature_c = Some(ebpf_metrics.cpu_temperature as f32);
-            tracing::info!("Using eBPF CPU temperature: {:.1}°C", ebpf_metrics.cpu_temperature as f32);
+            tracing::info!(
+                "Using eBPF CPU temperature: {:.1}°C",
+                ebpf_metrics.cpu_temperature as f32
+            );
         }
-        
+
         // Приоритет 2: eBPF максимальная температура CPU
         if ebpf_metrics.cpu_max_temperature > 0 {
             // Используем максимальную температуру для более точного мониторинга
             if temperature.cpu_temperature_c.is_none() {
                 temperature.cpu_temperature_c = Some(ebpf_metrics.cpu_max_temperature as f32);
             }
-            tracing::debug!("eBPF CPU max temperature: {:.1}°C", ebpf_metrics.cpu_max_temperature as f32);
+            tracing::debug!(
+                "eBPF CPU max temperature: {:.1}°C",
+                ebpf_metrics.cpu_max_temperature as f32
+            );
         }
-        
+
         // Приоритет 3: Детализированная статистика температуры CPU (наиболее точная)
         if let Some(cpu_temp_details) = ebpf_metrics.cpu_temperature_details {
             if !cpu_temp_details.is_empty() {
                 // Используем среднюю температуру из детализированной статистики
-                let avg_temp = cpu_temp_details.iter()
+                let avg_temp = cpu_temp_details
+                    .iter()
                     .map(|stat| stat.temperature_celsius as f32)
-                    .sum::<f32>() / cpu_temp_details.len() as f32;
-                
+                    .sum::<f32>()
+                    / cpu_temp_details.len() as f32;
+
                 temperature.cpu_temperature_c = Some(avg_temp);
-                tracing::info!("Using eBPF detailed CPU temperature (avg of {} cores): {:.1}°C", 
-                    cpu_temp_details.len(), avg_temp);
+                tracing::info!(
+                    "Using eBPF detailed CPU temperature (avg of {} cores): {:.1}°C",
+                    cpu_temp_details.len(),
+                    avg_temp
+                );
             }
         }
-        
+
         // Приоритет 4: eBPF температура GPU
         if ebpf_metrics.gpu_temperature > 0 {
             temperature.gpu_temperature_c = Some(ebpf_metrics.gpu_temperature as f32);
-            tracing::info!("Using eBPF GPU temperature: {:.1}°C", ebpf_metrics.gpu_temperature as f32);
+            tracing::info!(
+                "Using eBPF GPU temperature: {:.1}°C",
+                ebpf_metrics.gpu_temperature as f32
+            );
         }
-        
+
         // Приоритет 5: eBPF энергопотребление
         if ebpf_metrics.gpu_power_usage > 0 {
             power.gpu_power_w = Some(ebpf_metrics.gpu_power_usage as f32 / 1_000_000.0); // Convert from microWatts to Watts
-            tracing::info!("Using eBPF GPU power: {:.2}W", power.gpu_power_w.unwrap_or(0.0));
+            tracing::info!(
+                "Using eBPF GPU power: {:.2}W",
+                power.gpu_power_w.unwrap_or(0.0)
+            );
         }
-        
+
         if ebpf_metrics.cpu_usage > 0.0 {
             tracing::debug!("eBPF CPU usage: {:.1}%", ebpf_metrics.cpu_usage * 100.0);
         }
@@ -1715,14 +1847,14 @@ impl SystemMetricPriority {
             SystemMetricPriority::Optional => 5,
         }
     }
-    
+
     /// Проверка, следует ли собирать метрики с данным приоритетом при текущей нагрузке
     pub fn should_collect(&self, current_load: f64) -> bool {
         match self {
             SystemMetricPriority::Critical => true,
             SystemMetricPriority::High => current_load < 5.0, // Собирать при нагрузке < 5.0
             SystemMetricPriority::Medium => current_load < 3.0, // Собирать при нагрузке < 3.0
-            SystemMetricPriority::Low => current_load < 1.5, // Собирать при нагрузке < 1.5
+            SystemMetricPriority::Low => current_load < 1.5,  // Собирать при нагрузке < 1.5
             SystemMetricPriority::Debug => current_load < 1.0, // Собирать только при очень низкой нагрузке
             SystemMetricPriority::Optional => false, // Опциональные метрики не собираются автоматически
         }
@@ -1739,7 +1871,7 @@ impl SystemMetricPriority {
 pub fn collect_system_metrics_optimized(
     paths: &ProcPaths,
     cache: Option<&SharedSystemMetricsCache>,
-    _priority_metrics: Option<&[SystemMetricPriority]>
+    _priority_metrics: Option<&[SystemMetricPriority]>,
 ) -> Result<SystemMetrics> {
     // Если кэш доступен, используем его
     if let Some(cache) = cache {
@@ -1752,27 +1884,18 @@ pub fn collect_system_metrics_optimized(
             let pressure = read_and_parse_psi_metrics(paths)?;
 
             // Собираем температуру и мощность параллельно
-            let (temperature, power) = rayon::join(
-                || collect_temperature_metrics(),
-                || collect_power_metrics(),
-            );
+            let (temperature, power) =
+                rayon::join(|| collect_temperature_metrics(), || collect_power_metrics());
 
             // Собираем аппаратные метрики
             let hardware = collect_hardware_metrics();
 
             // Собираем сетевые и дисковые метрики параллельно
-            let (network, disk) = rayon::join(
-                || collect_network_metrics(),
-                || collect_disk_metrics(),
-            );
+            let (network, disk) =
+                rayon::join(|| collect_network_metrics(), || collect_disk_metrics());
 
             // Собираем GPU и eBPF метрики параллельно
-            let (gpu, ebpf) = rayon::join(
-                || collect_gpu_metrics(),
-                || collect_ebpf_metrics(),
-            );
-
-
+            let (gpu, ebpf) = rayon::join(|| collect_gpu_metrics(), || collect_ebpf_metrics());
 
             Ok(SystemMetrics {
                 cpu_times,
@@ -1800,27 +1923,17 @@ pub fn collect_system_metrics_optimized(
     let pressure = read_and_parse_psi_metrics(paths)?;
 
     // Собираем температуру и мощность параллельно
-    let (temperature, power) = rayon::join(
-        || collect_temperature_metrics(),
-        || collect_power_metrics(),
-    );
+    let (temperature, power) =
+        rayon::join(|| collect_temperature_metrics(), || collect_power_metrics());
 
     // Собираем аппаратные метрики
     let hardware = collect_hardware_metrics();
 
     // Собираем сетевые и дисковые метрики параллельно
-    let (network, disk) = rayon::join(
-        || collect_network_metrics(),
-        || collect_disk_metrics(),
-    );
+    let (network, disk) = rayon::join(|| collect_network_metrics(), || collect_disk_metrics());
 
     // Собираем GPU и eBPF метрики параллельно
-    let (gpu, ebpf) = rayon::join(
-        || collect_gpu_metrics(),
-        || collect_ebpf_metrics(),
-    );
-
-
+    let (gpu, ebpf) = rayon::join(|| collect_gpu_metrics(), || collect_ebpf_metrics());
 
     Ok(SystemMetrics {
         cpu_times,
@@ -1845,15 +1958,13 @@ pub fn collect_system_metrics_optimized(
 #[derive(Debug, PartialEq)]
 #[allow(dead_code)]
 enum TemperatureSourcePriority {
-    IntelCoreTemp,      // Наиболее точный для Intel CPU
-    AmdK10Temp,         // Наиболее точный для AMD CPU
-    AmdGpu,             // Специфичный для AMD GPU
-    NvidiaGpu,          // Специфичный для NVIDIA GPU
-    ThermalZone,        // Универсальный интерфейс термальных зон
-    GenericHwmon,       // Общий hwmon интерфейс
+    IntelCoreTemp, // Наиболее точный для Intel CPU
+    AmdK10Temp,    // Наиболее точный для AMD CPU
+    AmdGpu,        // Специфичный для AMD GPU
+    NvidiaGpu,     // Специфичный для NVIDIA GPU
+    ThermalZone,   // Универсальный интерфейс термальных зон
+    GenericHwmon,  // Общий hwmon интерфейс
 }
-
-
 
 /// Вспомогательная функция для определения приоритета источника температуры
 fn determine_temperature_source_priority(
@@ -1916,7 +2027,7 @@ fn determine_temperature_source_priority(
 }
 
 /// Собирает метрики температуры из sysfs/hwmon
-/// 
+///
 /// Расширенная версия с поддержкой нескольких источников температуры CPU:
 /// - Intel CoreTemp (coretemp)
 /// - AMD K10Temp (k10temp)
@@ -1985,13 +2096,16 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                         tracing::debug!("Successfully read temperature: {:.1}°C from {}", temp_c, temp_path.display());
 
                                                                         // Извлекаем имя hwmon устройства для определения приоритета
-                                                                        let hwmon_name = path.file_name()
-                                                                            .and_then(|s| s.to_str());
+                                                                        let hwmon_name = path
+                                                                            .file_name()
+                                                                            .and_then(|s| {
+                                                                                s.to_str()
+                                                                            });
 
                                                                         // Расширенная логика определения типа устройства
                                                                         // с приоритезацией источников
                                                                         let source_priority = determine_temperature_source_priority(&path, &file_name, hwmon_name);
-                                                                        
+
                                                                         match source_priority {
                                                                             TemperatureSourcePriority::IntelCoreTemp => {
                                                                                 // Intel CoreTemp - наиболее точный источник для Intel CPU
@@ -2096,10 +2210,7 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!(
-                                    "Failed to process hwmon device: {}",
-                                    e
-                                );
+                                tracing::warn!("Failed to process hwmon device: {}", e);
                             }
                         }
                     }
@@ -2416,17 +2527,17 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
 /// структурированную информацию о состоянии аппаратных компонентов.
 fn collect_hardware_metrics() -> HardwareMetrics {
     let mut hardware = HardwareMetrics::default();
-    
+
     // Логируем начало процесса сбора аппаратных метрик
     tracing::info!("Starting hardware sensors metrics collection");
-    
+
     // Попробуем найти аппаратные сенсоры в /sys/class/hwmon/
     let hwmon_dir = Path::new("/sys/class/hwmon");
     tracing::debug!(
         "Attempting to read hardware sensors from hwmon interface at: {}",
         hwmon_dir.display()
     );
-    
+
     if !hwmon_dir.exists() {
         tracing::warn!("hwmon directory not found at: {}", hwmon_dir.display());
     } else {
@@ -2441,7 +2552,7 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                 let path = entry.path();
                                 let path_str = path.to_string_lossy().into_owned();
                                 tracing::debug!("Processing hwmon device: {}", path_str);
-                                
+
                                 // Ищем файлы fan*_input в каждом hwmon устройстве
                                 match fs::read_dir(&path) {
                                     Ok(files) => {
@@ -2453,43 +2564,68 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                         .file_name()
                                                         .and_then(|s| s.to_str())
                                                         .unwrap_or("");
-                                                    
+
                                                     // Обрабатываем скорости вентиляторов
-                                                    if file_name.starts_with("fan") && file_name.ends_with("_input") {
+                                                    if file_name.starts_with("fan")
+                                                        && file_name.ends_with("_input")
+                                                    {
                                                         tracing::debug!(
                                                             "Found fan speed sensor file: {}",
                                                             file_path.display()
                                                         );
-                                                        
+
                                                         match fs::read_to_string(&file_path) {
                                                             Ok(fan_content) => {
-                                                                match fan_content.trim().parse::<u32>() {
+                                                                match fan_content
+                                                                    .trim()
+                                                                    .parse::<u32>()
+                                                                {
                                                                     Ok(fan_speed) => {
-                                                                        let fan_speed_f32 = fan_speed as f32;
-                                                                        hardware.fan_speeds_rpm.push(fan_speed_f32);
+                                                                        let fan_speed_f32 =
+                                                                            fan_speed as f32;
+                                                                        hardware
+                                                                            .fan_speeds_rpm
+                                                                            .push(fan_speed_f32);
                                                                         tracing::debug!(
                                                                             "Successfully read fan speed: {} RPM from {}",
                                                                             fan_speed_f32, file_path.display()
                                                                         );
-                                                                        
+
                                                                         // Пробуем определить тип вентилятора по имени файла
-                                                                        if file_name.contains("cpu") || file_name == "fan1_input" {
-                                                                            if hardware.cpu_fan_speed_rpm.is_none() {
+                                                                        if file_name.contains("cpu")
+                                                                            || file_name
+                                                                                == "fan1_input"
+                                                                        {
+                                                                            if hardware
+                                                                                .cpu_fan_speed_rpm
+                                                                                .is_none()
+                                                                            {
                                                                                 hardware.cpu_fan_speed_rpm = Some(fan_speed_f32);
                                                                                 tracing::info!(
                                                                                     "CPU fan speed detected: {} RPM",
                                                                                     fan_speed_f32
                                                                                 );
                                                                             }
-                                                                        } else if file_name.contains("gpu") || file_name == "fan2_input" {
-                                                                            if hardware.gpu_fan_speed_rpm.is_none() {
+                                                                        } else if file_name
+                                                                            .contains("gpu")
+                                                                            || file_name
+                                                                                == "fan2_input"
+                                                                        {
+                                                                            if hardware
+                                                                                .gpu_fan_speed_rpm
+                                                                                .is_none()
+                                                                            {
                                                                                 hardware.gpu_fan_speed_rpm = Some(fan_speed_f32);
                                                                                 tracing::info!(
                                                                                     "GPU fan speed detected: {} RPM",
                                                                                     fan_speed_f32
                                                                                 );
                                                                             }
-                                                                        } else if file_name.contains("chassis") || file_name == "fan3_input" {
+                                                                        } else if file_name
+                                                                            .contains("chassis")
+                                                                            || file_name
+                                                                                == "fan3_input"
+                                                                        {
                                                                             if hardware.chassis_fan_speed_rpm.is_none() {
                                                                                 hardware.chassis_fan_speed_rpm = Some(fan_speed_f32);
                                                                                 tracing::info!(
@@ -2517,28 +2653,43 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                         }
                                                     }
                                                     // Обрабатываем напряжения
-                                                    else if file_name.starts_with("in") && file_name.ends_with("_input") {
+                                                    else if file_name.starts_with("in")
+                                                        && file_name.ends_with("_input")
+                                                    {
                                                         tracing::debug!(
                                                             "Found voltage sensor file: {}",
                                                             file_path.display()
                                                         );
-                                                        
+
                                                         match fs::read_to_string(&file_path) {
                                                             Ok(voltage_content) => {
-                                                                match voltage_content.trim().parse::<u32>() {
+                                                                match voltage_content
+                                                                    .trim()
+                                                                    .parse::<u32>()
+                                                                {
                                                                     Ok(voltage_microvolts) => {
                                                                         // Конвертируем микровольты в вольты
-                                                                        let voltage_v = voltage_microvolts as f32 / 1_000_000.0;
-                                                                        
+                                                                        let voltage_v =
+                                                                            voltage_microvolts
+                                                                                as f32
+                                                                                / 1_000_000.0;
+
                                                                         // Извлекаем имя напряжения из имени файла
-                                                                        let voltage_name = file_name
-                                                                            .trim_end_matches("_input")
-                                                                            .trim_start_matches("in");
-                                                                        
+                                                                        let voltage_name =
+                                                                            file_name
+                                                                                .trim_end_matches(
+                                                                                    "_input",
+                                                                                )
+                                                                                .trim_start_matches(
+                                                                                    "in",
+                                                                                );
+
                                                                         // Пробуем получить более описательное имя из файла name
-                                                                        let name_file = path.join("name");
-                                                                        let voltage_label = if name_file.exists() {
-                                                                            match fs::read_to_string(&name_file) {
+                                                                        let name_file =
+                                                                            path.join("name");
+                                                                        let voltage_label =
+                                                                            if name_file.exists() {
+                                                                                match fs::read_to_string(&name_file) {
                                                                                 Ok(name_content) => {
                                                                                     let name = name_content.trim().to_string();
                                                                                     if name.is_empty() {
@@ -2549,11 +2700,17 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                                                 }
                                                                                 Err(_) => format!("voltage_{}", voltage_name)
                                                                             }
-                                                                        } else {
-                                                                            format!("voltage_{}", voltage_name)
-                                                                        };
-                                                                        
-                                                                        hardware.voltages_v.insert(voltage_label.clone(), voltage_v);
+                                                                            } else {
+                                                                                format!(
+                                                                                    "voltage_{}",
+                                                                                    voltage_name
+                                                                                )
+                                                                            };
+
+                                                                        hardware.voltages_v.insert(
+                                                                            voltage_label.clone(),
+                                                                            voltage_v,
+                                                                        );
                                                                         tracing::debug!(
                                                                             "Successfully read voltage: {} V from {} ({})",
                                                                             voltage_v, file_path.display(), voltage_label
@@ -2577,28 +2734,43 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                         }
                                                     }
                                                     // Обрабатываем токи
-                                                    else if file_name.starts_with("curr") && file_name.ends_with("_input") {
+                                                    else if file_name.starts_with("curr")
+                                                        && file_name.ends_with("_input")
+                                                    {
                                                         tracing::debug!(
                                                             "Found current sensor file: {}",
                                                             file_path.display()
                                                         );
-                                                         
+
                                                         match fs::read_to_string(&file_path) {
                                                             Ok(current_content) => {
-                                                                match current_content.trim().parse::<u32>() {
+                                                                match current_content
+                                                                    .trim()
+                                                                    .parse::<u32>()
+                                                                {
                                                                     Ok(current_microamperes) => {
                                                                         // Конвертируем микроамперы в амперы
-                                                                        let current_a = current_microamperes as f32 / 1_000_000.0;
-                                                                         
+                                                                        let current_a =
+                                                                            current_microamperes
+                                                                                as f32
+                                                                                / 1_000_000.0;
+
                                                                         // Извлекаем имя тока из имени файла
-                                                                        let current_name = file_name
-                                                                            .trim_end_matches("_input")
-                                                                            .trim_start_matches("curr");
-                                                                         
+                                                                        let current_name =
+                                                                            file_name
+                                                                                .trim_end_matches(
+                                                                                    "_input",
+                                                                                )
+                                                                                .trim_start_matches(
+                                                                                    "curr",
+                                                                                );
+
                                                                         // Пробуем получить более описательное имя из файла name
-                                                                        let name_file = path.join("name");
-                                                                        let current_label = if name_file.exists() {
-                                                                            match fs::read_to_string(&name_file) {
+                                                                        let name_file =
+                                                                            path.join("name");
+                                                                        let current_label =
+                                                                            if name_file.exists() {
+                                                                                match fs::read_to_string(&name_file) {
                                                                                 Ok(name_content) => {
                                                                                     let name = name_content.trim().to_string();
                                                                                     if name.is_empty() {
@@ -2609,11 +2781,17 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                                                 }
                                                                                 Err(_) => format!("current_{}", current_name)
                                                                             }
-                                                                        } else {
-                                                                            format!("current_{}", current_name)
-                                                                        };
-                                                                         
-                                                                        hardware.currents_a.insert(current_label.clone(), current_a);
+                                                                            } else {
+                                                                                format!(
+                                                                                    "current_{}",
+                                                                                    current_name
+                                                                                )
+                                                                            };
+
+                                                                        hardware.currents_a.insert(
+                                                                            current_label.clone(),
+                                                                            current_a,
+                                                                        );
                                                                         tracing::debug!(
                                                                             "Successfully read current: {} A from {} ({})",
                                                                             current_a, file_path.display(), current_label
@@ -2637,28 +2815,41 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                         }
                                                     }
                                                     // Обрабатываем мощность
-                                                    else if file_name.starts_with("power") && file_name.ends_with("_input") {
+                                                    else if file_name.starts_with("power")
+                                                        && file_name.ends_with("_input")
+                                                    {
                                                         tracing::debug!(
                                                             "Found power sensor file: {}",
                                                             file_path.display()
                                                         );
-                                                         
+
                                                         match fs::read_to_string(&file_path) {
                                                             Ok(power_content) => {
-                                                                match power_content.trim().parse::<u32>() {
+                                                                match power_content
+                                                                    .trim()
+                                                                    .parse::<u32>()
+                                                                {
                                                                     Ok(power_microwatts) => {
                                                                         // Конвертируем микроватты в ватты
-                                                                        let power_w = power_microwatts as f32 / 1_000_000.0;
-                                                                         
+                                                                        let power_w =
+                                                                            power_microwatts as f32
+                                                                                / 1_000_000.0;
+
                                                                         // Извлекаем имя мощности из имени файла
                                                                         let power_name = file_name
-                                                                            .trim_end_matches("_input")
-                                                                            .trim_start_matches("power");
-                                                                         
+                                                                            .trim_end_matches(
+                                                                                "_input",
+                                                                            )
+                                                                            .trim_start_matches(
+                                                                                "power",
+                                                                            );
+
                                                                         // Пробуем получить более описательное имя из файла name
-                                                                        let name_file = path.join("name");
-                                                                        let power_label = if name_file.exists() {
-                                                                            match fs::read_to_string(&name_file) {
+                                                                        let name_file =
+                                                                            path.join("name");
+                                                                        let power_label =
+                                                                            if name_file.exists() {
+                                                                                match fs::read_to_string(&name_file) {
                                                                                 Ok(name_content) => {
                                                                                     let name = name_content.trim().to_string();
                                                                                     if name.is_empty() {
@@ -2669,11 +2860,17 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                                                 }
                                                                                 Err(_) => format!("power_{}", power_name)
                                                                             }
-                                                                        } else {
-                                                                            format!("power_{}", power_name)
-                                                                        };
-                                                                         
-                                                                        hardware.power_w.insert(power_label.clone(), power_w);
+                                                                            } else {
+                                                                                format!(
+                                                                                    "power_{}",
+                                                                                    power_name
+                                                                                )
+                                                                            };
+
+                                                                        hardware.power_w.insert(
+                                                                            power_label.clone(),
+                                                                            power_w,
+                                                                        );
                                                                         tracing::debug!(
                                                                             "Successfully read power: {} W from {} ({})",
                                                                             power_w, file_path.display(), power_label
@@ -2697,28 +2894,42 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                         }
                                                     }
                                                     // Обрабатываем энергию
-                                                    else if file_name.starts_with("energy") && file_name.ends_with("_input") {
+                                                    else if file_name.starts_with("energy")
+                                                        && file_name.ends_with("_input")
+                                                    {
                                                         tracing::debug!(
                                                             "Found energy sensor file: {}",
                                                             file_path.display()
                                                         );
-                                                         
+
                                                         match fs::read_to_string(&file_path) {
                                                             Ok(energy_content) => {
-                                                                match energy_content.trim().parse::<u32>() {
+                                                                match energy_content
+                                                                    .trim()
+                                                                    .parse::<u32>()
+                                                                {
                                                                     Ok(energy_microjoules) => {
                                                                         // Конвертируем микроджоули в джоули
-                                                                        let energy_j = energy_microjoules as f32 / 1_000_000.0;
-                                                                         
+                                                                        let energy_j =
+                                                                            energy_microjoules
+                                                                                as f32
+                                                                                / 1_000_000.0;
+
                                                                         // Извлекаем имя энергии из имени файла
                                                                         let energy_name = file_name
-                                                                            .trim_end_matches("_input")
-                                                                            .trim_start_matches("energy");
-                                                                         
+                                                                            .trim_end_matches(
+                                                                                "_input",
+                                                                            )
+                                                                            .trim_start_matches(
+                                                                                "energy",
+                                                                            );
+
                                                                         // Пробуем получить более описательное имя из файла name
-                                                                        let name_file = path.join("name");
-                                                                        let energy_label = if name_file.exists() {
-                                                                            match fs::read_to_string(&name_file) {
+                                                                        let name_file =
+                                                                            path.join("name");
+                                                                        let energy_label =
+                                                                            if name_file.exists() {
+                                                                                match fs::read_to_string(&name_file) {
                                                                                 Ok(name_content) => {
                                                                                     let name = name_content.trim().to_string();
                                                                                     if name.is_empty() {
@@ -2729,11 +2940,17 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                                                 }
                                                                                 Err(_) => format!("energy_{}", energy_name)
                                                                             }
-                                                                        } else {
-                                                                            format!("energy_{}", energy_name)
-                                                                        };
-                                                                         
-                                                                        hardware.energy_j.insert(energy_label.clone(), energy_j);
+                                                                            } else {
+                                                                                format!(
+                                                                                    "energy_{}",
+                                                                                    energy_name
+                                                                                )
+                                                                            };
+
+                                                                        hardware.energy_j.insert(
+                                                                            energy_label.clone(),
+                                                                            energy_j,
+                                                                        );
                                                                         tracing::debug!(
                                                                             "Successfully read energy: {} J from {} ({})",
                                                                             energy_j, file_path.display(), energy_label
@@ -2757,28 +2974,43 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                         }
                                                     }
                                                     // Обрабатываем влажность
-                                                    else if file_name.starts_with("humidity") && file_name.ends_with("_input") {
+                                                    else if file_name.starts_with("humidity")
+                                                        && file_name.ends_with("_input")
+                                                    {
                                                         tracing::debug!(
                                                             "Found humidity sensor file: {}",
                                                             file_path.display()
                                                         );
-                                                         
+
                                                         match fs::read_to_string(&file_path) {
                                                             Ok(humidity_content) => {
-                                                                match humidity_content.trim().parse::<u32>() {
+                                                                match humidity_content
+                                                                    .trim()
+                                                                    .parse::<u32>()
+                                                                {
                                                                     Ok(humidity_millipercent) => {
                                                                         // Конвертируем миллипроценты в проценты
-                                                                        let humidity_percent = humidity_millipercent as f32 / 1000.0;
-                                                                         
+                                                                        let humidity_percent =
+                                                                            humidity_millipercent
+                                                                                as f32
+                                                                                / 1000.0;
+
                                                                         // Извлекаем имя влажности из имени файла
-                                                                        let humidity_name = file_name
-                                                                            .trim_end_matches("_input")
-                                                                            .trim_start_matches("humidity");
-                                                                         
+                                                                        let humidity_name =
+                                                                            file_name
+                                                                                .trim_end_matches(
+                                                                                    "_input",
+                                                                                )
+                                                                                .trim_start_matches(
+                                                                                    "humidity",
+                                                                                );
+
                                                                         // Пробуем получить более описательное имя из файла name
-                                                                        let name_file = path.join("name");
-                                                                        let humidity_label = if name_file.exists() {
-                                                                            match fs::read_to_string(&name_file) {
+                                                                        let name_file =
+                                                                            path.join("name");
+                                                                        let humidity_label =
+                                                                            if name_file.exists() {
+                                                                                match fs::read_to_string(&name_file) {
                                                                                 Ok(name_content) => {
                                                                                     let name = name_content.trim().to_string();
                                                                                     if name.is_empty() {
@@ -2789,11 +3021,20 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                                                 }
                                                                                 Err(_) => format!("humidity_{}", humidity_name)
                                                                             }
-                                                                        } else {
-                                                                            format!("humidity_{}", humidity_name)
-                                                                        };
-                                                                         
-                                                                        hardware.humidity_percent.insert(humidity_label.clone(), humidity_percent);
+                                                                            } else {
+                                                                                format!(
+                                                                                    "humidity_{}",
+                                                                                    humidity_name
+                                                                                )
+                                                                            };
+
+                                                                        hardware
+                                                                            .humidity_percent
+                                                                            .insert(
+                                                                                humidity_label
+                                                                                    .clone(),
+                                                                                humidity_percent,
+                                                                            );
                                                                         tracing::debug!(
                                                                             "Successfully read humidity: {}% from {} ({})",
                                                                             humidity_percent, file_path.display(), humidity_label
@@ -2836,10 +3077,7 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                 }
                             }
                             Err(e) => {
-                                tracing::warn!(
-                                    "Failed to process hwmon device: {}",
-                                    e
-                                );
+                                tracing::warn!("Failed to process hwmon device: {}", e);
                             }
                         }
                     }
@@ -2854,7 +3092,7 @@ fn collect_hardware_metrics() -> HardwareMetrics {
             }
         }
     }
-    
+
     // Собираем метрики PCI устройств
     match collect_pci_device_metrics() {
         Ok(pci_devices) => {
@@ -2865,13 +3103,10 @@ fn collect_hardware_metrics() -> HardwareMetrics {
             );
         }
         Err(e) => {
-            tracing::warn!(
-                "Failed to collect PCI device metrics: {}",
-                e
-            );
+            tracing::warn!("Failed to collect PCI device metrics: {}", e);
         }
     }
-    
+
     // Собираем метрики USB устройств
     match collect_usb_device_metrics() {
         Ok(usb_devices) => {
@@ -2882,13 +3117,10 @@ fn collect_hardware_metrics() -> HardwareMetrics {
             );
         }
         Err(e) => {
-            tracing::warn!(
-                "Failed to collect USB device metrics: {}",
-                e
-            );
+            tracing::warn!("Failed to collect USB device metrics: {}", e);
         }
     }
-    
+
     // Собираем метрики устройств хранения
     match collect_storage_device_metrics() {
         Ok(storage_devices) => {
@@ -2899,19 +3131,21 @@ fn collect_hardware_metrics() -> HardwareMetrics {
             );
         }
         Err(e) => {
-            tracing::warn!(
-                "Failed to collect storage device metrics: {}",
-                e
-            );
+            tracing::warn!("Failed to collect storage device metrics: {}", e);
         }
     }
-    
+
     // Логируем результаты
-    if hardware.fan_speeds_rpm.is_empty() && hardware.voltages_v.is_empty() && 
-       hardware.currents_a.is_empty() && hardware.power_w.is_empty() && 
-       hardware.energy_j.is_empty() && hardware.humidity_percent.is_empty() &&
-       hardware.pci_devices.is_empty() && hardware.usb_devices.is_empty() && 
-       hardware.storage_devices.is_empty() {
+    if hardware.fan_speeds_rpm.is_empty()
+        && hardware.voltages_v.is_empty()
+        && hardware.currents_a.is_empty()
+        && hardware.power_w.is_empty()
+        && hardware.energy_j.is_empty()
+        && hardware.humidity_percent.is_empty()
+        && hardware.pci_devices.is_empty()
+        && hardware.usb_devices.is_empty()
+        && hardware.storage_devices.is_empty()
+    {
         tracing::warn!(
             "No hardware sensor metrics available - hwmon interfaces not found or accessible. Check if hardware sensors are properly configured and accessible."
         );
@@ -2929,7 +3163,7 @@ fn collect_hardware_metrics() -> HardwareMetrics {
             hardware.storage_devices.len()
         );
     }
-    
+
     hardware
 }
 
@@ -2941,7 +3175,7 @@ fn collect_hardware_metrics() -> HardwareMetrics {
 /// - Фаллбек на базовые метрики, если детальная информация недоступна
 fn collect_system_call_metrics() -> SystemCallMetrics {
     let mut metrics = SystemCallMetrics::default();
-    
+
     // Пробуем прочитать информацию о системных вызовах из /proc/stat
     // На некоторых системах есть информация о системных вызовах в /proc/stat
     if let Ok(stat_contents) = fs::read_to_string("/proc/stat") {
@@ -2958,7 +3192,7 @@ fn collect_system_call_metrics() -> SystemCallMetrics {
             }
         }
     }
-    
+
     // Пробуем получить информацию о системных вызовах из /proc/sys/kernel
     // На некоторых системах есть счетчики системных вызовов
     let syscall_dir = Path::new("/proc/sys/kernel");
@@ -2974,7 +3208,11 @@ fn collect_system_call_metrics() -> SystemCallMetrics {
                                     // Это может быть счетчик системных вызовов
                                     if metrics.total_calls == 0 {
                                         metrics.total_calls = value;
-                                        tracing::debug!("Found system call counter in {}: {}", file_name, value);
+                                        tracing::debug!(
+                                            "Found system call counter in {}: {}",
+                                            file_name,
+                                            value
+                                        );
                                     }
                                 }
                             }
@@ -2984,7 +3222,7 @@ fn collect_system_call_metrics() -> SystemCallMetrics {
             }
         }
     }
-    
+
     // Если не удалось получить точные данные, используем фаллбек
     // На некоторых системах системные вызовы можно оценить по другим метрикам
     if metrics.total_calls == 0 {
@@ -2992,9 +3230,12 @@ fn collect_system_call_metrics() -> SystemCallMetrics {
         // Фаллбек: использовать 0 или оценить по другим метрикам
         // В реальной системе это может быть улучшено с помощью eBPF или других инструментов
     } else {
-        tracing::info!("System call metrics collected: {} total calls", metrics.total_calls);
+        tracing::info!(
+            "System call metrics collected: {} total calls",
+            metrics.total_calls
+        );
     }
-    
+
     metrics
 }
 
@@ -3006,70 +3247,75 @@ fn collect_system_call_metrics() -> SystemCallMetrics {
 /// - Использует df -i или аналогичные команды как фаллбек
 fn collect_inode_metrics() -> InodeMetrics {
     let mut metrics = InodeMetrics::default();
-    
+
     // Пробуем прочитать информацию о монтировании файловой системы
     if let Ok(mounts_contents) = fs::read_to_string("/proc/mounts") {
         let mut total_inodes = 0u64;
         let mut free_inodes = 0u64;
         let mut used_inodes = 0u64;
         let mut mount_count = 0u32;
-        
+
         // Анализируем каждую строку в /proc/mounts
         for line in mounts_contents.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 4 {
                 let mount_point = parts[1];
                 let _fs_type = parts[2];
-                
+
                 // Пробуем получить статистику inode для этой файловой системы
                 // На некоторых системах это доступно через /sys/fs или другие интерфейсы
-                
+
                 // Для корневой файловой системы пробуем получить статистику
                 if mount_point == "/" {
                     // Пробуем использовать df -i через вызов команды (требует дополнительных прав)
                     // В реальной системе это может быть улучшено
-                    
+
                     // Фаллбек: использовать базовые значения или оценить
                     // В реальной системе это может быть улучшено с помощью вызова df -i
-                    
+
                     // Пробуем прочитать из /sys/fs для некоторых файловых систем
                     let sys_fs_path = Path::new("/sys/fs");
                     if sys_fs_path.exists() {
                         // Это упрощенная логика - в реальной системе нужно анализировать конкретные FS
                         // Для примера используем некоторые разумные значения
                         total_inodes = 1_000_000; // Примерное значение
-                        free_inodes = 500_000;    // Примерное значение
+                        free_inodes = 500_000; // Примерное значение
                         used_inodes = total_inodes - free_inodes;
                         mount_count += 1;
-                        
+
                         tracing::debug!(
                             "Estimated inode usage for {}: total={}, free={}, used={}",
-                            mount_point, total_inodes, free_inodes, used_inodes
+                            mount_point,
+                            total_inodes,
+                            free_inodes,
+                            used_inodes
                         );
                     }
                 }
             }
         }
-        
+
         // Если удалось получить данные хотя бы для одной файловой системы
         if mount_count > 0 {
             metrics.total_inodes = total_inodes;
             metrics.free_inodes = free_inodes;
             metrics.used_inodes = used_inodes;
-            
+
             // Вычисляем процент использования
             if total_inodes > 0 {
                 metrics.usage_percentage = Some(used_inodes as f64 / total_inodes as f64 * 100.0);
             }
-            
+
             tracing::info!(
                 "Inode metrics collected: total={}, free={}, used={}, usage={:.1}%",
-                total_inodes, free_inodes, used_inodes,
+                total_inodes,
+                free_inodes,
+                used_inodes,
                 metrics.usage_percentage.unwrap_or(0.0)
             );
         }
     }
-    
+
     // Если не удалось получить данные, используем фаллбек
     if metrics.total_inodes == 0 {
         tracing::warn!("Inode metrics not available - using fallback values");
@@ -3080,7 +3326,7 @@ fn collect_inode_metrics() -> InodeMetrics {
         metrics.used_inodes = 250_000;
         metrics.usage_percentage = Some(25.0);
     }
-    
+
     metrics
 }
 
@@ -3092,7 +3338,7 @@ fn collect_inode_metrics() -> InodeMetrics {
 /// - /proc/swaps для информации о swap устройствах
 fn collect_swap_metrics() -> SwapMetrics {
     let mut metrics = SwapMetrics::default();
-    
+
     // Пробуем прочитать базовую информацию о swap из /proc/meminfo
     if let Ok(meminfo_contents) = fs::read_to_string("/proc/meminfo") {
         for line in meminfo_contents.lines() {
@@ -3112,14 +3358,15 @@ fn collect_swap_metrics() -> SwapMetrics {
                 }
             }
         }
-        
+
         // Вычисляем использованный swap и процент
         if metrics.total_kb > 0 {
             metrics.used_kb = metrics.total_kb.saturating_sub(metrics.free_kb);
-            metrics.usage_percentage = Some(metrics.used_kb as f64 / metrics.total_kb as f64 * 100.0);
+            metrics.usage_percentage =
+                Some(metrics.used_kb as f64 / metrics.total_kb as f64 * 100.0);
         }
     }
-    
+
     // Пробуем получить статистику страниц из /proc/vmstat
     if let Ok(vmstat_contents) = fs::read_to_string("/proc/vmstat") {
         for line in vmstat_contents.lines() {
@@ -3142,54 +3389,56 @@ fn collect_swap_metrics() -> SwapMetrics {
             }
         }
     }
-    
+
     // Пробуем получить информацию о swap устройствах из /proc/swaps
     if let Ok(swaps_contents) = fs::read_to_string("/proc/swaps") {
         // Первая строка - заголовок, пропускаем
         let mut swap_devices = 0u32;
-        
+
         for line in swaps_contents.lines().skip(1) {
             // Формат: <filename> <type> <size> <used> <priority>
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 5 {
                 swap_devices += 1;
-                
+
                 // Можно добавить детальную информацию о каждом swap устройстве
                 // Для простоты просто считаем количество
             }
         }
-        
+
         tracing::debug!("Found {} swap devices", swap_devices);
     }
-    
+
     // Вычисляем активность swap (если есть данные о страницах)
     if let (Some(pages_in), Some(pages_out)) = (metrics.pages_in, metrics.pages_out) {
         // В реальной системе нужно отслеживать изменения во времени
         // Для примера используем сумму как показатель активности
         let total_activity = pages_in + pages_out;
         metrics.activity = Some(total_activity as f64);
-        
+
         tracing::debug!(
             "Swap activity detected: {} pages in, {} pages out, total activity: {}",
-            pages_in, pages_out, total_activity
+            pages_in,
+            pages_out,
+            total_activity
         );
     }
-    
+
     // Логируем результаты
     if metrics.total_kb > 0 {
         tracing::info!(
             "Swap metrics collected: total={} KB, free={} KB, used={} KB, usage={:.1}%",
-            metrics.total_kb, metrics.free_kb, metrics.used_kb,
+            metrics.total_kb,
+            metrics.free_kb,
+            metrics.used_kb,
             metrics.usage_percentage.unwrap_or(0.0)
         );
     } else {
         tracing::warn!("No swap configured or swap metrics not available");
     }
-    
+
     metrics
 }
-
-
 
 /// Собирает метрики энергопотребления через RAPL и другие интерфейсы
 ///
@@ -3339,7 +3588,7 @@ fn collect_power_metrics() -> PowerMetrics {
             }
         }
     }
-    
+
     // Добавляем мониторинг мощности через hwmon интерфейс
     // Некоторые системы предоставляют мощность через hwmon (например, power1_input)
     let hwmon_dir = Path::new("/sys/class/hwmon");
@@ -3347,7 +3596,7 @@ fn collect_power_metrics() -> PowerMetrics {
         if let Ok(hwmon_entries) = fs::read_dir(hwmon_dir) {
             for hwmon_entry in hwmon_entries.flatten() {
                 let hwmon_path = hwmon_entry.path();
-                
+
                 // Ищем файлы power*_input в каждом hwmon устройстве
                 if let Ok(power_files) = fs::read_dir(&hwmon_path) {
                     for power_file in power_files.flatten() {
@@ -3356,30 +3605,43 @@ fn collect_power_metrics() -> PowerMetrics {
                             .file_name()
                             .and_then(|s| s.to_str())
                             .unwrap_or("");
-                        
+
                         if file_name.starts_with("power") && file_name.ends_with("_input") {
                             if let Ok(power_content) = fs::read_to_string(&power_path) {
                                 if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
                                     let power_w = power_microwatts as f32 / 1_000_000.0;
-                                    
+
                                     // Пробуем определить тип устройства по имени файла
                                     if file_name == "power1_input" {
                                         // Основное энергопотребление устройства
                                         if power.system_power_w.is_none() {
                                             power.system_power_w = Some(power_w);
-                                            tracing::debug!("System power detected via hwmon: {} W", power_w);
+                                            tracing::debug!(
+                                                "System power detected via hwmon: {} W",
+                                                power_w
+                                            );
                                         }
-                                    } else if file_name.contains("cpu") || file_name == "power2_input" {
+                                    } else if file_name.contains("cpu")
+                                        || file_name == "power2_input"
+                                    {
                                         // Энергопотребление CPU
                                         if power.cpu_power_w.is_none() {
                                             power.cpu_power_w = Some(power_w);
-                                            tracing::debug!("CPU power detected via hwmon: {} W", power_w);
+                                            tracing::debug!(
+                                                "CPU power detected via hwmon: {} W",
+                                                power_w
+                                            );
                                         }
-                                    } else if file_name.contains("gpu") || file_name == "power3_input" {
+                                    } else if file_name.contains("gpu")
+                                        || file_name == "power3_input"
+                                    {
                                         // Энергопотребление GPU
                                         if power.gpu_power_w.is_none() {
                                             power.gpu_power_w = Some(power_w);
-                                            tracing::debug!("GPU power detected via hwmon: {} W", power_w);
+                                            tracing::debug!(
+                                                "GPU power detected via hwmon: {} W",
+                                                power_w
+                                            );
                                         }
                                     }
                                 }
@@ -3520,23 +3782,29 @@ fn collect_disk_metrics() -> DiskMetrics {
 fn collect_gpu_metrics() -> crate::metrics::gpu::GpuMetricsCollection {
     // Сначала пытаемся использовать расширенные NVML и AMDGPU метрики
     let mut gpu_collection = crate::metrics::gpu::collect_gpu_metrics().unwrap_or_default();
-    
+
     // Добавляем расширенные метрики от NVML (для NVIDIA GPU)
     if let Ok(nvml_metrics) = crate::metrics::nvml_wrapper::collect_nvml_metrics() {
         if !nvml_metrics.devices.is_empty() {
-            info!("Добавлены расширенные NVIDIA GPU метрики для {} устройств", nvml_metrics.devices.len());
+            info!(
+                "Добавлены расширенные NVIDIA GPU метрики для {} устройств",
+                nvml_metrics.devices.len()
+            );
             gpu_collection = integrate_nvml_metrics(gpu_collection, nvml_metrics);
         }
     }
-    
+
     // Добавляем расширенные метрики от AMDGPU (для AMD GPU)
     if let Ok(amdgpu_metrics) = crate::metrics::amdgpu_wrapper::collect_amdgpu_metrics() {
         if !amdgpu_metrics.devices.is_empty() {
-            info!("Добавлены расширенные AMD GPU метрики для {} устройств", amdgpu_metrics.devices.len());
+            info!(
+                "Добавлены расширенные AMD GPU метрики для {} устройств",
+                amdgpu_metrics.devices.len()
+            );
             gpu_collection = integrate_amdgpu_metrics(gpu_collection, amdgpu_metrics);
         }
     }
-    
+
     gpu_collection
 }
 
@@ -3545,24 +3813,32 @@ fn integrate_nvml_metrics(
     mut gpu_collection: crate::metrics::gpu::GpuMetricsCollection,
     nvml_metrics: crate::metrics::nvml_wrapper::NvmlMetricsCollection,
 ) -> crate::metrics::gpu::GpuMetricsCollection {
-    use crate::metrics::gpu::{GpuDevice, GpuMetrics, GpuUtilization, GpuMemory, GpuTemperature, GpuPower, GpuClocks};
-    
+    use crate::metrics::gpu::{
+        GpuClocks, GpuDevice, GpuMemory, GpuMetrics, GpuPower, GpuTemperature, GpuUtilization,
+    };
+
     for nvml_device in nvml_metrics.devices {
         let gpu_device = GpuDevice {
             name: nvml_device.device.name.clone(),
             device_path: PathBuf::from(nvml_device.device.device_path.clone()),
             vendor_id: Some("0x10de".to_string()), // NVIDIA vendor ID
-            device_id: None, // Could be extracted from device info
+            device_id: None,                       // Could be extracted from device info
             driver: Some("nvidia".to_string()),
         };
-        
+
         let gpu_metrics = GpuMetrics {
             device: gpu_device,
             utilization: GpuUtilization {
                 gpu_util: nvml_device.utilization.gpu_util as f32 / 100.0,
                 memory_util: nvml_device.utilization.memory_util as f32 / 100.0,
-                encoder_util: nvml_device.utilization.encoder_util.map(|v| v as f32 / 100.0),
-                decoder_util: nvml_device.utilization.decoder_util.map(|v| v as f32 / 100.0),
+                encoder_util: nvml_device
+                    .utilization
+                    .encoder_util
+                    .map(|v| v as f32 / 100.0),
+                decoder_util: nvml_device
+                    .utilization
+                    .decoder_util
+                    .map(|v| v as f32 / 100.0),
             },
             memory: GpuMemory {
                 total_bytes: nvml_device.memory.total_bytes,
@@ -3586,10 +3862,10 @@ fn integrate_nvml_metrics(
             },
             timestamp: nvml_device.timestamp,
         };
-        
+
         gpu_collection.devices.push(gpu_metrics);
     }
-    
+
     gpu_collection.gpu_count = gpu_collection.devices.len();
     gpu_collection
 }
@@ -3599,8 +3875,10 @@ fn integrate_amdgpu_metrics(
     mut gpu_collection: crate::metrics::gpu::GpuMetricsCollection,
     amdgpu_metrics: crate::metrics::amdgpu_wrapper::AmdGpuMetricsCollection,
 ) -> crate::metrics::gpu::GpuMetricsCollection {
-    use crate::metrics::gpu::{GpuDevice, GpuMetrics, GpuUtilization, GpuMemory, GpuTemperature, GpuPower, GpuClocks};
-    
+    use crate::metrics::gpu::{
+        GpuClocks, GpuDevice, GpuMemory, GpuMetrics, GpuPower, GpuTemperature, GpuUtilization,
+    };
+
     for amdgpu_device in amdgpu_metrics.devices {
         let gpu_device = GpuDevice {
             name: amdgpu_device.device.name.clone(),
@@ -3609,14 +3887,17 @@ fn integrate_amdgpu_metrics(
             device_id: Some(amdgpu_device.device.device_id.clone()),
             driver: Some("amdgpu".to_string()),
         };
-        
+
         let gpu_metrics = GpuMetrics {
             device: gpu_device,
             utilization: GpuUtilization {
                 gpu_util: amdgpu_device.utilization.gpu_util as f32 / 100.0,
                 memory_util: amdgpu_device.utilization.memory_util as f32 / 100.0,
                 encoder_util: None, // AMD doesn't typically expose encoder util separately
-                decoder_util: amdgpu_device.utilization.video_util.map(|v| v as f32 / 100.0),
+                decoder_util: amdgpu_device
+                    .utilization
+                    .video_util
+                    .map(|v| v as f32 / 100.0),
             },
             memory: GpuMemory {
                 total_bytes: amdgpu_device.memory.total_bytes,
@@ -3640,10 +3921,10 @@ fn integrate_amdgpu_metrics(
             },
             timestamp: amdgpu_device.timestamp,
         };
-        
+
         gpu_collection.devices.push(gpu_metrics);
     }
-    
+
     gpu_collection.gpu_count = gpu_collection.devices.len();
     gpu_collection
 }
@@ -3946,41 +4227,41 @@ fn parse_pressure_record(line: &str) -> Result<PressureRecord> {
 pub fn collect_pci_device_metrics() -> Result<Vec<PciDeviceMetrics>> {
     let mut devices = Vec::new();
     let pci_devices_path = Path::new("/sys/bus/pci/devices");
-    
+
     if !pci_devices_path.exists() {
         warn!("PCI devices path not found: {}", pci_devices_path.display());
         return Ok(devices);
     }
-    
-    let entries = fs::read_dir(pci_devices_path)
-        .context("Failed to read PCI devices directory")?;
-    
+
+    let entries = fs::read_dir(pci_devices_path).context("Failed to read PCI devices directory")?;
+
     for entry in entries {
         let entry = entry.context("Error reading PCI device entry")?;
         let device_path = entry.path();
-        
+
         // Skip non-device directories
         if !device_path.is_dir() {
             continue;
         }
-        
-        let device_id = device_path.file_name()
+
+        let device_id = device_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         // Read vendor and device IDs
         let (vendor_id, device_class) = read_pci_device_info(&device_path);
-        
+
         // Read device status
         let status = read_pci_device_status(&device_path);
-        
+
         // Read temperature if available
         let temperature = read_pci_device_temperature(&device_path);
-        
+
         // Read power if available
         let power = read_pci_device_power(&device_path);
-        
+
         devices.push(PciDeviceMetrics {
             device_id,
             vendor_id,
@@ -3991,7 +4272,7 @@ pub fn collect_pci_device_metrics() -> Result<Vec<PciDeviceMetrics>> {
             power_w: power,
         });
     }
-    
+
     Ok(devices)
 }
 
@@ -4000,11 +4281,11 @@ fn read_pci_device_info(device_path: &Path) -> (String, String) {
     let vendor_id = fs::read_to_string(device_path.join("vendor"))
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "0x0000".to_string());
-    
+
     let device_class = fs::read_to_string(device_path.join("class"))
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "0x000000".to_string());
-    
+
     (vendor_id, device_class)
 }
 
@@ -4071,41 +4352,41 @@ fn read_pci_device_power(device_path: &Path) -> Option<f32> {
 pub fn collect_usb_device_metrics() -> Result<Vec<UsbDeviceMetrics>> {
     let mut devices = Vec::new();
     let usb_devices_path = Path::new("/sys/bus/usb/devices");
-    
+
     if !usb_devices_path.exists() {
         warn!("USB devices path not found: {}", usb_devices_path.display());
         return Ok(devices);
     }
-    
-    let entries = fs::read_dir(usb_devices_path)
-        .context("Failed to read USB devices directory")?;
-    
+
+    let entries = fs::read_dir(usb_devices_path).context("Failed to read USB devices directory")?;
+
     for entry in entries {
         let entry = entry.context("Error reading USB device entry")?;
         let device_path = entry.path();
-        
+
         // Skip non-device directories (like usb1, usb2, etc.)
         if !device_path.is_dir() {
             continue;
         }
-        
-        let device_id = device_path.file_name()
+
+        let device_id = device_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         // Skip USB bus controllers (like usb1, usb2)
         if device_id.starts_with("usb") && device_id.len() <= 4 {
             continue;
         }
-        
+
         // Read device information
         let (vendor_id, product_id) = read_usb_device_ids(&device_path);
         let speed = read_usb_device_speed(&device_path);
         let status = read_usb_device_status(&device_path);
         let power = read_usb_device_power(&device_path);
         let temperature = read_usb_device_temperature(&device_path);
-        
+
         devices.push(UsbDeviceMetrics {
             device_id,
             vendor_id,
@@ -4116,7 +4397,7 @@ pub fn collect_usb_device_metrics() -> Result<Vec<UsbDeviceMetrics>> {
             temperature_c: temperature,
         });
     }
-    
+
     Ok(devices)
 }
 
@@ -4125,11 +4406,11 @@ fn read_usb_device_ids(device_path: &Path) -> (String, String) {
     let vendor_id = fs::read_to_string(device_path.join("idVendor"))
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "0000".to_string());
-    
+
     let product_id = fs::read_to_string(device_path.join("idProduct"))
         .map(|s| s.trim().to_string())
         .unwrap_or_else(|_| "0000".to_string());
-    
+
     (vendor_id, product_id)
 }
 
@@ -4157,7 +4438,7 @@ fn read_usb_device_status(device_path: &Path) -> String {
     let authorized = fs::read_to_string(device_path.join("authorized"))
         .map(|s| s.trim() == "1")
         .unwrap_or(false);
-    
+
     if authorized {
         "connected".to_string()
     } else {
@@ -4172,7 +4453,7 @@ fn read_usb_device_power(device_path: &Path) -> Option<u32> {
         // This gives us the power mode, not actual consumption
         // For actual power, we'd need more advanced monitoring
     }
-    
+
     // Try to read from power directory if available
     let power_path = device_path.join("power");
     if power_path.exists() {
@@ -4215,52 +4496,55 @@ fn read_usb_device_temperature(device_path: &Path) -> Option<f32> {
 #[allow(dead_code)]
 pub fn collect_storage_device_metrics() -> Result<Vec<StorageDeviceMetrics>> {
     let mut devices = Vec::new();
-    
+
     // Collect SATA devices from /sys/block/
     collect_sata_devices(&mut devices)?;
-    
+
     // Collect NVMe devices from /sys/class/nvme/
     collect_nvme_devices(&mut devices)?;
-    
+
     Ok(devices)
 }
 
 /// Собрать метрики SATA устройств
 fn collect_sata_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
     let block_path = Path::new("/sys/block");
-    
+
     if !block_path.exists() {
         warn!("Block devices path not found: {}", block_path.display());
         return Ok(());
     }
-    
-    let entries = fs::read_dir(block_path)
-        .context("Failed to read block devices directory")?;
-    
+
+    let entries = fs::read_dir(block_path).context("Failed to read block devices directory")?;
+
     for entry in entries {
         let entry = entry.context("Error reading block device entry")?;
         let device_path = entry.path();
-        
+
         if !device_path.is_dir() {
             continue;
         }
-        
-        let device_id = device_path.file_name()
+
+        let device_id = device_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         // Skip non-SATA devices (like nvme, loop, ram, etc.)
-        if device_id.starts_with("nvme") || device_id.starts_with("loop") || device_id.starts_with("ram") {
+        if device_id.starts_with("nvme")
+            || device_id.starts_with("loop")
+            || device_id.starts_with("ram")
+        {
             continue;
         }
-        
+
         let model = read_storage_device_model(&device_path);
         let serial = read_storage_device_serial(&device_path);
         let temperature = read_storage_device_temperature(&device_path);
         let health = read_storage_device_health(&device_path);
         let capacity = read_storage_device_capacity(&device_path);
-        
+
         devices.push(StorageDeviceMetrics {
             device_id,
             device_type: "SATA".to_string(),
@@ -4270,44 +4554,44 @@ fn collect_sata_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
             health_status: health,
             total_capacity_bytes: capacity,
             used_capacity_bytes: None, // Would require filesystem info
-            read_speed_bps: None,     // Would require performance monitoring
-            write_speed_bps: None,    // Would require performance monitoring
+            read_speed_bps: None,      // Would require performance monitoring
+            write_speed_bps: None,     // Would require performance monitoring
         });
     }
-    
+
     Ok(())
 }
 
 /// Собрать метрики NVMe устройств
 fn collect_nvme_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
     let nvme_path = Path::new("/sys/class/nvme");
-    
+
     if !nvme_path.exists() {
         return Ok(());
     }
-    
-    let entries = fs::read_dir(nvme_path)
-        .context("Failed to read NVMe devices directory")?;
-    
+
+    let entries = fs::read_dir(nvme_path).context("Failed to read NVMe devices directory")?;
+
     for entry in entries {
         let entry = entry.context("Error reading NVMe device entry")?;
         let device_path = entry.path();
-        
+
         if !device_path.is_dir() {
             continue;
         }
-        
-        let device_id = device_path.file_name()
+
+        let device_id = device_path
+            .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("unknown")
             .to_string();
-        
+
         let model = read_storage_device_model(&device_path);
         let serial = read_storage_device_serial(&device_path);
         let temperature = read_storage_device_temperature(&device_path);
         let health = read_storage_device_health(&device_path);
         let capacity = read_storage_device_capacity(&device_path);
-        
+
         devices.push(StorageDeviceMetrics {
             device_id,
             device_type: "NVMe".to_string(),
@@ -4317,48 +4601,41 @@ fn collect_nvme_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
             health_status: health,
             total_capacity_bytes: capacity,
             used_capacity_bytes: None, // Would require filesystem info
-            read_speed_bps: None,     // Would require performance monitoring
-            write_speed_bps: None,    // Would require performance monitoring
+            read_speed_bps: None,      // Would require performance monitoring
+            write_speed_bps: None,     // Would require performance monitoring
         });
     }
-    
+
     Ok(())
 }
 
 /// Прочитать модель устройства хранения
 fn read_storage_device_model(device_path: &Path) -> String {
     // Try different locations for model information
-    let model_paths = [
-        "device/model",
-        "model",
-        "device/name",
-    ];
-    
+    let model_paths = ["device/model", "model", "device/name"];
+
     for path in &model_paths {
         let full_path = device_path.join(path);
         if let Ok(model) = fs::read_to_string(&full_path) {
             return model.trim().to_string();
         }
     }
-    
+
     "Unknown".to_string()
 }
 
 /// Прочитать серийный номер устройства хранения
 fn read_storage_device_serial(device_path: &Path) -> String {
     // Try different locations for serial number
-    let serial_paths = [
-        "device/serial",
-        "serial",
-    ];
-    
+    let serial_paths = ["device/serial", "serial"];
+
     for path in &serial_paths {
         let full_path = device_path.join(path);
         if let Ok(serial) = fs::read_to_string(&full_path) {
             return serial.trim().to_string();
         }
     }
-    
+
     "Unknown".to_string()
 }
 
@@ -4419,8 +4696,8 @@ fn read_storage_device_capacity(device_path: &Path) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::path::Path;
+    use tempfile::TempDir;
 
     const PROC_STAT: &str = "cpu  2255 34 2290 22625563 6290 127 456 0 0 0\n\
 cpu0 1132 17 1441 11311777 3675 33 226 0 0 0\n";
@@ -5127,34 +5404,34 @@ SwapFree:        4096000 kB
     #[test]
     fn test_system_metric_priority_should_collect() {
         // Тест проверяет логику определения, следует ли собирать метрики при разной нагрузке
-        
+
         // Критические метрики всегда собираются
         assert!(SystemMetricPriority::Critical.should_collect(0.5));
         assert!(SystemMetricPriority::Critical.should_collect(2.0));
         assert!(SystemMetricPriority::Critical.should_collect(5.0));
         assert!(SystemMetricPriority::Critical.should_collect(10.0));
-        
+
         // Метрики высокого приоритета собираются при нагрузке < 5.0
         assert!(SystemMetricPriority::High.should_collect(0.5));
         assert!(SystemMetricPriority::High.should_collect(2.0));
         assert!(SystemMetricPriority::High.should_collect(4.9));
         assert!(!SystemMetricPriority::High.should_collect(5.0));
         assert!(!SystemMetricPriority::High.should_collect(10.0));
-        
+
         // Метрики среднего приоритета собираются при нагрузке < 3.0
         assert!(SystemMetricPriority::Medium.should_collect(0.5));
         assert!(SystemMetricPriority::Medium.should_collect(2.0));
         assert!(SystemMetricPriority::Medium.should_collect(2.9));
         assert!(!SystemMetricPriority::Medium.should_collect(3.0));
         assert!(!SystemMetricPriority::Medium.should_collect(10.0));
-        
+
         // Метрики низкого приоритета собираются при нагрузке < 1.5
         assert!(SystemMetricPriority::Low.should_collect(0.5));
         assert!(SystemMetricPriority::Low.should_collect(1.0));
         assert!(SystemMetricPriority::Low.should_collect(1.4));
         assert!(!SystemMetricPriority::Low.should_collect(1.5));
         assert!(!SystemMetricPriority::Low.should_collect(10.0));
-        
+
         // Отладочные метрики собираются только при очень низкой нагрузке
         assert!(SystemMetricPriority::Debug.should_collect(0.5));
         assert!(SystemMetricPriority::Debug.should_collect(0.9));
@@ -5177,13 +5454,13 @@ SwapFree:        4096000 kB
     fn test_collect_system_metrics_adaptive_low_load() {
         // Тест проверяет, что при низкой нагрузке собираются все метрики
         let paths = ProcPaths::default();
-        
+
         // При низкой нагрузке (0.5) должны собираться все метрики
         let result = collect_system_metrics_adaptive(&paths, None, 0.5, None);
-        
+
         assert!(result.is_ok());
         let metrics = result.unwrap();
-        
+
         // Критические метрики должны быть собраны
         assert!(metrics.cpu_times.user > 0);
         assert!(metrics.memory.mem_total_kb > 0);
@@ -5194,13 +5471,13 @@ SwapFree:        4096000 kB
     fn test_collect_system_metrics_adaptive_high_load() {
         // Тест проверяет, что при высокой нагрузке собираются только критические метрики
         let paths = ProcPaths::default();
-        
+
         // При высокой нагрузке (6.0) должны собираться только критические метрики
         let result = collect_system_metrics_adaptive(&paths, None, 6.0, None);
-        
+
         assert!(result.is_ok());
         let metrics = result.unwrap();
-        
+
         // Критические метрики должны быть собраны
         assert!(metrics.cpu_times.user > 0);
         assert!(metrics.memory.mem_total_kb > 0);
@@ -5526,7 +5803,7 @@ SwapFree:        4096000 kB
         // Тест проверяет, что интеграция NVML метрик работает с пустой коллекцией
         let empty_collection = crate::metrics::gpu::GpuMetricsCollection::default();
         let empty_nvml = crate::metrics::nvml_wrapper::NvmlMetricsCollection::default();
-        
+
         let result = integrate_nvml_metrics(empty_collection, empty_nvml);
         assert_eq!(result.devices.len(), 0);
         assert_eq!(result.gpu_count, 0);
@@ -5537,7 +5814,7 @@ SwapFree:        4096000 kB
         // Тест проверяет, что интеграция AMDGPU метрик работает с пустой коллекцией
         let empty_collection = crate::metrics::gpu::GpuMetricsCollection::default();
         let empty_amdgpu = crate::metrics::amdgpu_wrapper::AmdGpuMetricsCollection::default();
-        
+
         let result = integrate_amdgpu_metrics(empty_collection, empty_amdgpu);
         assert_eq!(result.devices.len(), 0);
         assert_eq!(result.gpu_count, 0);
@@ -6256,44 +6533,49 @@ SwapFree:        4096000 kB
     #[test]
     fn test_temperature_source_priority_detection() {
         // Тест проверяет корректную работу функции определения приоритета источников температуры
-        
+
         // Тестируем определение Intel CoreTemp
         let intel_path = Path::new("/sys/class/hwmon/coretemp1");
-        let source_priority = determine_temperature_source_priority(intel_path, "temp1_input", Some("coretemp1"));
+        let source_priority =
+            determine_temperature_source_priority(intel_path, "temp1_input", Some("coretemp1"));
         match source_priority {
-            TemperatureSourcePriority::IntelCoreTemp => {},
+            TemperatureSourcePriority::IntelCoreTemp => {}
             _ => panic!("Expected IntelCoreTemp priority for coretemp device"),
         }
 
         // Тестируем определение AMD K10Temp
         let k10temp_path = Path::new("/sys/class/hwmon/k10temp1");
-        let source_priority = determine_temperature_source_priority(k10temp_path, "temp1_input", Some("k10temp1"));
+        let source_priority =
+            determine_temperature_source_priority(k10temp_path, "temp1_input", Some("k10temp1"));
         match source_priority {
-            TemperatureSourcePriority::AmdK10Temp => {},
+            TemperatureSourcePriority::AmdK10Temp => {}
             _ => panic!("Expected AmdK10Temp priority for k10temp device"),
         }
 
         // Тестируем определение по имени файла (Intel Package)
         let package_path = Path::new("/sys/class/hwmon/hwmon0");
-        let source_priority = determine_temperature_source_priority(package_path, "Package_temp1_input", None);
+        let source_priority =
+            determine_temperature_source_priority(package_path, "Package_temp1_input", None);
         match source_priority {
-            TemperatureSourcePriority::IntelCoreTemp => {},
+            TemperatureSourcePriority::IntelCoreTemp => {}
             _ => panic!("Expected IntelCoreTemp priority for Package temperature file"),
         }
 
         // Тестируем определение по имени файла (AMD Tdie)
         let tdie_path = Path::new("/sys/class/hwmon/hwmon1");
-        let source_priority = determine_temperature_source_priority(tdie_path, "Tdie_temp1_input", None);
+        let source_priority =
+            determine_temperature_source_priority(tdie_path, "Tdie_temp1_input", None);
         match source_priority {
-            TemperatureSourcePriority::AmdK10Temp => {},
+            TemperatureSourcePriority::AmdK10Temp => {}
             _ => panic!("Expected AmdK10Temp priority for Tdie temperature file"),
         }
 
         // Тестируем общий hwmon интерфейс (наименьший приоритет)
         let generic_path = Path::new("/sys/class/hwmon/hwmon2");
-        let source_priority = determine_temperature_source_priority(generic_path, "temp1_input", Some("hwmon2"));
+        let source_priority =
+            determine_temperature_source_priority(generic_path, "temp1_input", Some("hwmon2"));
         match source_priority {
-            TemperatureSourcePriority::GenericHwmon => {},
+            TemperatureSourcePriority::GenericHwmon => {}
             _ => panic!("Expected GenericHwmon priority for generic hwmon device"),
         }
     }
@@ -6302,11 +6584,15 @@ SwapFree:        4096000 kB
     fn test_enhanced_temperature_collection_fallback() {
         // Тест проверяет, что расширенный сбор температурных метрик корректно обрабатывает отсутствие источников
         let temp_metrics = collect_temperature_metrics();
-        
+
         // В тестовой среде без реальных температурных сенсоров должны получить None значения
         // Это нормальное поведение, так как тестовая среда не имеет доступа к реальным устройствам
-        assert!(temp_metrics.cpu_temperature_c.is_none() || temp_metrics.cpu_temperature_c.is_some());
-        assert!(temp_metrics.gpu_temperature_c.is_none() || temp_metrics.gpu_temperature_c.is_some());
+        assert!(
+            temp_metrics.cpu_temperature_c.is_none() || temp_metrics.cpu_temperature_c.is_some()
+        );
+        assert!(
+            temp_metrics.gpu_temperature_c.is_none() || temp_metrics.gpu_temperature_c.is_some()
+        );
     }
 }
 
@@ -6399,7 +6685,7 @@ mod hardware_sensor_tests {
         // Тест проверяет работу функции collect_hardware_metrics в среде без hwmon
         // В тестовой среде hwmon обычно недоступен, поэтому функция должна вернуть пустые метрики
         let hardware = collect_hardware_metrics();
-        
+
         // В тестовой среде ожидаем пустые значения
         assert!(hardware.fan_speeds_rpm.is_empty());
         assert!(hardware.voltages_v.is_empty());
@@ -6414,54 +6700,54 @@ mod hardware_sensor_tests {
         let temp_dir = tempdir().expect("Failed to create temp directory");
         let hwmon_dir = temp_dir.path().join("hwmon");
         std::fs::create_dir(&hwmon_dir).expect("Failed to create hwmon directory");
-        
+
         // Создаем mock hwmon устройство
         let hwmon_device_dir = hwmon_dir.join("hwmon0");
         std::fs::create_dir(&hwmon_device_dir).expect("Failed to create hwmon device directory");
-        
+
         // Создаем mock файлы для вентиляторов
         let fan1_file = hwmon_device_dir.join("fan1_input");
         std::fs::write(&fan1_file, "1200").expect("Failed to write fan1_input");
-        
+
         let fan2_file = hwmon_device_dir.join("fan2_input");
         std::fs::write(&fan2_file, "1500").expect("Failed to write fan2_input");
-        
+
         let fan3_file = hwmon_device_dir.join("fan3_input");
         std::fs::write(&fan3_file, "1800").expect("Failed to write fan3_input");
-        
+
         // Создаем mock файлы для напряжений
         let in1_file = hwmon_device_dir.join("in1_input");
         std::fs::write(&in1_file, "1200000").expect("Failed to write in1_input"); // 1.2V
-        
+
         let in2_file = hwmon_device_dir.join("in2_input");
         std::fs::write(&in2_file, "3300000").expect("Failed to write in2_input"); // 3.3V
-        
+
         // Создаем mock файлы для токов
         let curr1_file = hwmon_device_dir.join("curr1_input");
         std::fs::write(&curr1_file, "500000").expect("Failed to write curr1_input"); // 0.5A
-        
+
         // Создаем mock файлы для мощности
         let power1_file = hwmon_device_dir.join("power1_input");
         std::fs::write(&power1_file, "60000000").expect("Failed to write power1_input"); // 60W
-        
+
         // Создаем mock файлы для энергии
         let energy1_file = hwmon_device_dir.join("energy1_input");
         std::fs::write(&energy1_file, "1000000").expect("Failed to write energy1_input"); // 1J
-        
+
         // Создаем mock файлы для влажности
         let humidity1_file = hwmon_device_dir.join("humidity1_input");
         std::fs::write(&humidity1_file, "45000").expect("Failed to write humidity1_input"); // 45%
-        
+
         // Создаем mock файл name для устройства
         let name_file = hwmon_device_dir.join("name");
         std::fs::write(&name_file, "test_sensor").expect("Failed to write name file");
-        
+
         // Меняем временно переменную окружения для теста
         // Note: В реальном коде нужно использовать mock для Path::new("/sys/class/hwmon")
         // Для теста мы просто проверим, что функция не падает и возвращает пустые значения
         // в тестовой среде
         let hardware = collect_hardware_metrics();
-        
+
         // В тестовой среде функция все равно будет читать из /sys/class/hwmon,
         // поэтому мы просто проверяем, что функция не падает
         // В реальной среде с mock данными она бы вернула правильные значения
@@ -6474,7 +6760,7 @@ mod hardware_sensor_tests {
         assert_eq!(safe_parse_u32("123", 0), 123);
         assert_eq!(safe_parse_u32("invalid", 50), 50);
         assert_eq!(safe_parse_u32("", 100), 100);
-        
+
         assert_eq!(safe_parse_f32("123.45", 0.0), 123.45);
         assert_eq!(safe_parse_f32("invalid", 50.0), 50.0);
         assert_eq!(safe_parse_f32("", 100.0), 100.0);
@@ -6484,7 +6770,7 @@ mod hardware_sensor_tests {
     fn test_hardware_metrics_struct_default() {
         // Тестируем, что структура HardwareMetrics правильно инициализируется по умолчанию
         let hardware = HardwareMetrics::default();
-        
+
         assert!(hardware.fan_speeds_rpm.is_empty());
         assert!(hardware.voltages_v.is_empty());
         assert!(hardware.currents_a.is_empty());
@@ -6500,7 +6786,7 @@ mod hardware_sensor_tests {
     fn test_hardware_metrics_struct_partial() {
         // Тестируем частичную инициализацию структуры
         let mut hardware = HardwareMetrics::default();
-        
+
         // Добавляем некоторые значения
         hardware.fan_speeds_rpm.push(1200.0);
         hardware.fan_speeds_rpm.push(1500.0);
@@ -6508,9 +6794,11 @@ mod hardware_sensor_tests {
         hardware.currents_a.insert("cpu_current".to_string(), 0.5);
         hardware.power_w.insert("cpu_power".to_string(), 60.0);
         hardware.energy_j.insert("cpu_energy".to_string(), 1.0);
-        hardware.humidity_percent.insert("ambient_humidity".to_string(), 45.0);
+        hardware
+            .humidity_percent
+            .insert("ambient_humidity".to_string(), 45.0);
         hardware.cpu_fan_speed_rpm = Some(1200.0);
-        
+
         // Проверяем значения
         assert_eq!(hardware.fan_speeds_rpm.len(), 2);
         assert_eq!(hardware.fan_speeds_rpm[0], 1200.0);
@@ -6524,7 +6812,10 @@ mod hardware_sensor_tests {
         assert_eq!(hardware.energy_j.len(), 1);
         assert_eq!(hardware.energy_j.get("cpu_energy"), Some(&1.0));
         assert_eq!(hardware.humidity_percent.len(), 1);
-        assert_eq!(hardware.humidity_percent.get("ambient_humidity"), Some(&45.0));
+        assert_eq!(
+            hardware.humidity_percent.get("ambient_humidity"),
+            Some(&45.0)
+        );
         assert_eq!(hardware.cpu_fan_speed_rpm, Some(1200.0));
         assert!(hardware.gpu_fan_speed_rpm.is_none());
         assert!(hardware.chassis_fan_speed_rpm.is_none());
@@ -6544,17 +6835,20 @@ mod hardware_sensor_tests {
         hardware.power_w.insert("gpu_power".to_string(), 120.0);
         hardware.energy_j.insert("cpu_energy".to_string(), 1.0);
         hardware.energy_j.insert("gpu_energy".to_string(), 2.0);
-        hardware.humidity_percent.insert("ambient_humidity".to_string(), 45.0);
+        hardware
+            .humidity_percent
+            .insert("ambient_humidity".to_string(), 45.0);
         hardware.cpu_fan_speed_rpm = Some(1200.0);
         hardware.gpu_fan_speed_rpm = Some(1800.0);
         hardware.chassis_fan_speed_rpm = Some(1000.0);
-        
+
         // Сериализуем в JSON
         let json = serde_json::to_string(&hardware).expect("Failed to serialize");
-        
+
         // Десериализуем обратно
-        let deserialized: HardwareMetrics = serde_json::from_str(&json).expect("Failed to deserialize");
-        
+        let deserialized: HardwareMetrics =
+            serde_json::from_str(&json).expect("Failed to deserialize");
+
         // Проверяем, что данные совпадают
         assert_eq!(deserialized.fan_speeds_rpm.len(), 2);
         assert_eq!(deserialized.fan_speeds_rpm[0], 1200.0);
@@ -6572,7 +6866,10 @@ mod hardware_sensor_tests {
         assert_eq!(deserialized.energy_j.get("cpu_energy"), Some(&1.0));
         assert_eq!(deserialized.energy_j.get("gpu_energy"), Some(&2.0));
         assert_eq!(deserialized.humidity_percent.len(), 1);
-        assert_eq!(deserialized.humidity_percent.get("ambient_humidity"), Some(&45.0));
+        assert_eq!(
+            deserialized.humidity_percent.get("ambient_humidity"),
+            Some(&45.0)
+        );
         assert_eq!(deserialized.cpu_fan_speed_rpm, Some(1200.0));
         assert_eq!(deserialized.gpu_fan_speed_rpm, Some(1800.0));
         assert_eq!(deserialized.chassis_fan_speed_rpm, Some(1000.0));
@@ -6582,15 +6879,15 @@ mod hardware_sensor_tests {
     fn test_hardware_metrics_integration_with_system_metrics() {
         // Тестируем, что HardwareMetrics правильно интегрируется в SystemMetrics
         let mut system_metrics = SystemMetrics::default();
-        
+
         // Устанавливаем некоторые аппаратные метрики
         let mut hardware = HardwareMetrics::default();
         hardware.fan_speeds_rpm.push(1200.0);
         hardware.voltages_v.insert("vcore".to_string(), 1.2);
         hardware.cpu_fan_speed_rpm = Some(1200.0);
-        
+
         system_metrics.hardware = hardware;
-        
+
         // Проверяем, что метрики доступны
         assert_eq!(system_metrics.hardware.fan_speeds_rpm.len(), 1);
         assert_eq!(system_metrics.hardware.fan_speeds_rpm[0], 1200.0);
@@ -6603,10 +6900,10 @@ mod hardware_sensor_tests {
         // Тестируем обработку ошибок в функции collect_hardware_metrics
         // Функция должна корректно обрабатывать отсутствие hwmon интерфейса
         // и возвращать пустые метрики вместо паники
-        
+
         // В тестовой среде hwmon обычно недоступен
         let hardware = collect_hardware_metrics();
-        
+
         // Функция должна вернуть пустые метрики, а не падать
         assert!(hardware.fan_speeds_rpm.is_empty());
         assert!(hardware.voltages_v.is_empty());
@@ -6658,7 +6955,8 @@ mod hardware_sensor_tests {
         };
 
         let serialized = serde_json::to_string(&thermal_zone).expect("Serialization failed");
-        let deserialized: CpuThermalZone = serde_json::from_str(&serialized).expect("Deserialization failed");
+        let deserialized: CpuThermalZone =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
 
         assert_eq!(deserialized.zone_name, "thermal_zone1");
         assert_eq!(deserialized.zone_type, "acpitz");
@@ -6686,12 +6984,12 @@ mod hardware_sensor_tests {
     fn test_cpu_thermal_zone_error_handling() {
         // Test that thermal zone collection handles errors gracefully
         let result = collect_detailed_cpu_temperature();
-        
+
         // Should not panic and should return Ok
         assert!(result.is_ok());
-        
+
         let thermal_zones = result.unwrap();
-        
+
         // Should return a vector (may be empty)
         assert!(thermal_zones.is_empty() || !thermal_zones.is_empty());
     }
@@ -6700,12 +6998,12 @@ mod hardware_sensor_tests {
     fn test_cpu_thermal_zone_collection_integration() {
         // Test integration of thermal zone collection with system metrics
         let result = collect_detailed_cpu_temperature();
-        
+
         // Should not panic
         assert!(result.is_ok());
-        
+
         let thermal_zones = result.unwrap();
-        
+
         // If thermal zones are available, they should have valid structure
         for zone in &thermal_zones {
             assert!(!zone.zone_name.is_empty());
@@ -6719,7 +7017,7 @@ mod hardware_sensor_tests {
     fn test_system_metric_priority_enum() {
         // Test the SystemMetricPriority enum
         use SystemMetricPriority::*;
-        
+
         assert_eq!(Critical as u8, 0);
         assert_eq!(High as u8, 1);
         assert_eq!(Medium as u8, 2);
@@ -6742,7 +7040,7 @@ mod hardware_sensor_tests {
         // Test without cache
         let result = collect_system_metrics_optimized(&proc_paths, None, None);
         assert!(result.is_ok());
-        
+
         let metrics = result.unwrap();
         // Basic validation
         assert!(metrics.cpu_times.user >= 0);
@@ -6763,22 +7061,24 @@ mod hardware_sensor_tests {
 
         // Create a cache with 1 second duration
         let cache = SharedSystemMetricsCache::new(std::time::Duration::from_secs(1));
-        
+
         // First call should populate the cache
         let result1 = collect_system_metrics_optimized(&proc_paths, Some(&cache), None);
         assert!(result1.is_ok());
-        
+
         // Second call should use the cache
         let result2 = collect_system_metrics_optimized(&proc_paths, Some(&cache), None);
         assert!(result2.is_ok());
-        
+
         // Both results should be similar
         let metrics1 = result1.unwrap();
         let metrics2 = result2.unwrap();
-        
+
         // CPU times should be similar (allowing for small changes)
-        assert!(metrics1.cpu_times.user >= metrics2.cpu_times.user || 
-                metrics2.cpu_times.user - metrics1.cpu_times.user < 100);
+        assert!(
+            metrics1.cpu_times.user >= metrics2.cpu_times.user
+                || metrics2.cpu_times.user - metrics1.cpu_times.user < 100
+        );
     }
 
     #[test]
@@ -6813,26 +7113,31 @@ mod hardware_sensor_tests {
         // Collect metrics using both methods
         let parallel_result = collect_system_metrics_parallel(&proc_paths);
         let optimized_result = collect_system_metrics_optimized(&proc_paths, None, None);
-        
+
         // Both should succeed
         assert!(parallel_result.is_ok());
         assert!(optimized_result.is_ok());
-        
+
         let parallel_metrics = parallel_result.unwrap();
         let optimized_metrics = optimized_result.unwrap();
-        
+
         // Results should be similar (allowing for small timing differences)
-        assert!(parallel_metrics.cpu_times.user >= optimized_metrics.cpu_times.user ||
-                optimized_metrics.cpu_times.user - parallel_metrics.cpu_times.user < 100);
-        assert!(parallel_metrics.memory.mem_total_kb >= optimized_metrics.memory.mem_total_kb ||
-                optimized_metrics.memory.mem_total_kb - parallel_metrics.memory.mem_total_kb < 1000);
+        assert!(
+            parallel_metrics.cpu_times.user >= optimized_metrics.cpu_times.user
+                || optimized_metrics.cpu_times.user - parallel_metrics.cpu_times.user < 100
+        );
+        assert!(
+            parallel_metrics.memory.mem_total_kb >= optimized_metrics.memory.mem_total_kb
+                || optimized_metrics.memory.mem_total_kb - parallel_metrics.memory.mem_total_kb
+                    < 1000
+        );
     }
 
     #[test]
     fn test_system_call_metrics_default() {
         // Тестируем, что структура SystemCallMetrics правильно инициализируется по умолчанию
         let metrics = SystemCallMetrics::default();
-        
+
         assert_eq!(metrics.total_calls, 0);
         assert_eq!(metrics.error_count, 0);
         assert!(metrics.calls_per_second.is_none());
@@ -6844,14 +7149,14 @@ mod hardware_sensor_tests {
     fn test_system_call_metrics_partial() {
         // Тестируем частичную инициализацию структуры
         let mut metrics = SystemCallMetrics::default();
-        
+
         // Устанавливаем некоторые значения
         metrics.total_calls = 1000;
         metrics.error_count = 50;
         metrics.calls_per_second = Some(100.5);
         metrics.error_percentage = Some(5.0);
         metrics.total_time_ms = Some(1000);
-        
+
         // Проверяем значения
         assert_eq!(metrics.total_calls, 1000);
         assert_eq!(metrics.error_count, 50);
@@ -6864,7 +7169,7 @@ mod hardware_sensor_tests {
     fn test_inode_metrics_default() {
         // Тестируем, что структура InodeMetrics правильно инициализируется по умолчанию
         let metrics = InodeMetrics::default();
-        
+
         assert_eq!(metrics.total_inodes, 0);
         assert_eq!(metrics.free_inodes, 0);
         assert_eq!(metrics.used_inodes, 0);
@@ -6876,14 +7181,14 @@ mod hardware_sensor_tests {
     fn test_inode_metrics_partial() {
         // Тестируем частичную инициализацию структуры
         let mut metrics = InodeMetrics::default();
-        
+
         // Устанавливаем некоторые значения
         metrics.total_inodes = 1_000_000;
         metrics.free_inodes = 750_000;
         metrics.used_inodes = 250_000;
         metrics.usage_percentage = Some(25.0);
         metrics.reserved_inodes = Some(50_000);
-        
+
         // Проверяем значения
         assert_eq!(metrics.total_inodes, 1_000_000);
         assert_eq!(metrics.free_inodes, 750_000);
@@ -6896,7 +7201,7 @@ mod hardware_sensor_tests {
     fn test_swap_metrics_default() {
         // Тестируем, что структура SwapMetrics правильно инициализируется по умолчанию
         let metrics = SwapMetrics::default();
-        
+
         assert_eq!(metrics.total_kb, 0);
         assert_eq!(metrics.free_kb, 0);
         assert_eq!(metrics.used_kb, 0);
@@ -6910,16 +7215,16 @@ mod hardware_sensor_tests {
     fn test_swap_metrics_partial() {
         // Тестируем частичную инициализацию структуры
         let mut metrics = SwapMetrics::default();
-        
+
         // Устанавливаем некоторые значения
-        metrics.total_kb = 8_192_000;  // 8 GB
-        metrics.free_kb = 4_096_000;  // 4 GB
-        metrics.used_kb = 4_096_000;  // 4 GB
+        metrics.total_kb = 8_192_000; // 8 GB
+        metrics.free_kb = 4_096_000; // 4 GB
+        metrics.used_kb = 4_096_000; // 4 GB
         metrics.usage_percentage = Some(50.0);
         metrics.pages_in = Some(1000);
         metrics.pages_out = Some(500);
         metrics.activity = Some(1500.0);
-        
+
         // Проверяем значения
         assert_eq!(metrics.total_kb, 8_192_000);
         assert_eq!(metrics.free_kb, 4_096_000);
@@ -6934,28 +7239,28 @@ mod hardware_sensor_tests {
     fn test_system_metrics_with_new_fields() {
         // Тестируем, что SystemMetrics правильно включает новые поля
         let mut metrics = SystemMetrics::default();
-        
+
         // Устанавливаем значения для новых полей
         metrics.system_calls.total_calls = 1000;
         metrics.system_calls.error_count = 50;
-        
+
         metrics.inode.total_inodes = 1_000_000;
         metrics.inode.free_inodes = 750_000;
         metrics.inode.used_inodes = 250_000;
         metrics.inode.usage_percentage = Some(25.0);
-        
+
         metrics.swap.total_kb = 8_192_000;
         metrics.swap.free_kb = 4_096_000;
         metrics.swap.used_kb = 4_096_000;
         metrics.swap.usage_percentage = Some(50.0);
-        
+
         // Проверяем, что значения установлены правильно
         assert_eq!(metrics.system_calls.total_calls, 1000);
         assert_eq!(metrics.system_calls.error_count, 50);
-        
+
         assert_eq!(metrics.inode.total_inodes, 1_000_000);
         assert_eq!(metrics.inode.usage_percentage, Some(25.0));
-        
+
         assert_eq!(metrics.swap.total_kb, 8_192_000);
         assert_eq!(metrics.swap.usage_percentage, Some(50.0));
     }
@@ -6964,15 +7269,15 @@ mod hardware_sensor_tests {
     fn test_optimize_memory_usage_with_new_fields() {
         // Тестируем, что optimize_memory_usage правильно обрабатывает новые поля
         let mut metrics = SystemMetrics::default();
-        
+
         // Устанавливаем некоторые значения
         metrics.system_calls.total_calls = 1000;
         metrics.inode.total_inodes = 1_000_000;
         metrics.swap.total_kb = 8_192_000;
-        
+
         // Оптимизируем
         let optimized = metrics.optimize_memory_usage();
-        
+
         // Проверяем, что значения сохранены
         assert_eq!(optimized.system_calls.total_calls, 1000);
         assert_eq!(optimized.inode.total_inodes, 1_000_000);
@@ -6983,12 +7288,12 @@ mod hardware_sensor_tests {
     fn test_optimize_memory_usage_clears_empty_new_fields() {
         // Тестируем, что optimize_memory_usage очищает пустые новые поля
         let mut metrics = SystemMetrics::default();
-        
+
         // Не устанавливаем значения для новых полей (они остаются по умолчанию)
-        
+
         // Оптимизируем
         let optimized = metrics.optimize_memory_usage();
-        
+
         // Проверяем, что пустые поля очищены
         assert_eq!(optimized.system_calls.total_calls, 0);
         assert_eq!(optimized.inode.total_inodes, 0);
@@ -6999,7 +7304,7 @@ mod hardware_sensor_tests {
     fn test_pci_device_metrics_struct() {
         // Тестируем структуру PciDeviceMetrics
         let mut pci_device = PciDeviceMetrics::default();
-        
+
         // Устанавливаем значения
         pci_device.device_id = "0000:01:00.0".to_string();
         pci_device.vendor_id = "0x10de".to_string();
@@ -7008,7 +7313,7 @@ mod hardware_sensor_tests {
         pci_device.bandwidth_usage_percent = Some(45.5);
         pci_device.temperature_c = Some(65.0);
         pci_device.power_w = Some(75.0);
-        
+
         // Проверяем значения
         assert_eq!(pci_device.device_id, "0000:01:00.0");
         assert_eq!(pci_device.vendor_id, "0x10de");
@@ -7023,7 +7328,7 @@ mod hardware_sensor_tests {
     fn test_usb_device_metrics_struct() {
         // Тестируем структуру UsbDeviceMetrics
         let mut usb_device = UsbDeviceMetrics::default();
-        
+
         // Устанавливаем значения
         usb_device.device_id = "1-2.3".to_string();
         usb_device.vendor_id = "1234".to_string();
@@ -7032,7 +7337,7 @@ mod hardware_sensor_tests {
         usb_device.status = "connected".to_string();
         usb_device.power_mw = Some(500);
         usb_device.temperature_c = Some(35.0);
-        
+
         // Проверяем значения
         assert_eq!(usb_device.device_id, "1-2.3");
         assert_eq!(usb_device.vendor_id, "1234");
@@ -7047,7 +7352,7 @@ mod hardware_sensor_tests {
     fn test_storage_device_metrics_struct() {
         // Тестируем структуру StorageDeviceMetrics
         let mut storage_device = StorageDeviceMetrics::default();
-        
+
         // Устанавливаем значения
         storage_device.device_id = "sda".to_string();
         storage_device.device_type = "SATA".to_string();
@@ -7059,7 +7364,7 @@ mod hardware_sensor_tests {
         storage_device.used_capacity_bytes = Some(500_000_000_000);
         storage_device.read_speed_bps = Some(500_000_000);
         storage_device.write_speed_bps = Some(400_000_000);
-        
+
         // Проверяем значения
         assert_eq!(storage_device.device_id, "sda");
         assert_eq!(storage_device.device_type, "SATA");
@@ -7077,56 +7382,50 @@ mod hardware_sensor_tests {
     fn test_hardware_metrics_with_new_device_fields() {
         // Тестируем, что HardwareMetrics правильно включает новые поля для устройств
         let mut hardware = HardwareMetrics::default();
-        
+
         // Устанавливаем значения для новых полей
-        hardware.pci_devices = vec![
-            PciDeviceMetrics {
-                device_id: "0000:01:00.0".to_string(),
-                vendor_id: "0x10de".to_string(),
-                device_class: "0x0300".to_string(),
-                status: "active".to_string(),
-                bandwidth_usage_percent: Some(45.5),
-                temperature_c: Some(65.0),
-                power_w: Some(75.0),
-            }
-        ];
-        
-        hardware.usb_devices = vec![
-            UsbDeviceMetrics {
-                device_id: "1-2.3".to_string(),
-                vendor_id: "1234".to_string(),
-                product_id: "5678".to_string(),
-                speed: "USB 3.0 (SuperSpeed)".to_string(),
-                status: "connected".to_string(),
-                power_mw: Some(500),
-                temperature_c: Some(35.0),
-            }
-        ];
-        
-        hardware.storage_devices = vec![
-            StorageDeviceMetrics {
-                device_id: "sda".to_string(),
-                device_type: "SATA".to_string(),
-                model: "Samsung SSD 860 EVO".to_string(),
-                serial_number: "S3Z7NB0K123456".to_string(),
-                temperature_c: Some(40.0),
-                health_status: Some("Good".to_string()),
-                total_capacity_bytes: Some(1_000_000_000_000),
-                used_capacity_bytes: Some(500_000_000_000),
-                read_speed_bps: Some(500_000_000),
-                write_speed_bps: Some(400_000_000),
-            }
-        ];
-        
+        hardware.pci_devices = vec![PciDeviceMetrics {
+            device_id: "0000:01:00.0".to_string(),
+            vendor_id: "0x10de".to_string(),
+            device_class: "0x0300".to_string(),
+            status: "active".to_string(),
+            bandwidth_usage_percent: Some(45.5),
+            temperature_c: Some(65.0),
+            power_w: Some(75.0),
+        }];
+
+        hardware.usb_devices = vec![UsbDeviceMetrics {
+            device_id: "1-2.3".to_string(),
+            vendor_id: "1234".to_string(),
+            product_id: "5678".to_string(),
+            speed: "USB 3.0 (SuperSpeed)".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(500),
+            temperature_c: Some(35.0),
+        }];
+
+        hardware.storage_devices = vec![StorageDeviceMetrics {
+            device_id: "sda".to_string(),
+            device_type: "SATA".to_string(),
+            model: "Samsung SSD 860 EVO".to_string(),
+            serial_number: "S3Z7NB0K123456".to_string(),
+            temperature_c: Some(40.0),
+            health_status: Some("Good".to_string()),
+            total_capacity_bytes: Some(1_000_000_000_000),
+            used_capacity_bytes: Some(500_000_000_000),
+            read_speed_bps: Some(500_000_000),
+            write_speed_bps: Some(400_000_000),
+        }];
+
         // Проверяем, что значения установлены правильно
         assert_eq!(hardware.pci_devices.len(), 1);
         assert_eq!(hardware.pci_devices[0].device_id, "0000:01:00.0");
         assert_eq!(hardware.pci_devices[0].temperature_c, Some(65.0));
-        
+
         assert_eq!(hardware.usb_devices.len(), 1);
         assert_eq!(hardware.usb_devices[0].device_id, "1-2.3");
         assert_eq!(hardware.usb_devices[0].speed, "USB 3.0 (SuperSpeed)");
-        
+
         assert_eq!(hardware.storage_devices.len(), 1);
         assert_eq!(hardware.storage_devices[0].device_id, "sda");
         assert_eq!(hardware.storage_devices[0].model, "Samsung SSD 860 EVO");
@@ -7136,23 +7435,21 @@ mod hardware_sensor_tests {
     fn test_hardware_metrics_optimization_with_devices() {
         // Тестируем, что optimize_memory_usage правильно обрабатывает новые поля устройств
         let mut hardware = HardwareMetrics::default();
-        
+
         // Устанавливаем некоторые значения
-        hardware.pci_devices = vec![
-            PciDeviceMetrics {
-                device_id: "0000:01:00.0".to_string(),
-                vendor_id: "0x10de".to_string(),
-                device_class: "0x0300".to_string(),
-                status: "active".to_string(),
-                bandwidth_usage_percent: Some(45.5),
-                temperature_c: Some(65.0),
-                power_w: Some(75.0),
-            }
-        ];
-        
+        hardware.pci_devices = vec![PciDeviceMetrics {
+            device_id: "0000:01:00.0".to_string(),
+            vendor_id: "0x10de".to_string(),
+            device_class: "0x0300".to_string(),
+            status: "active".to_string(),
+            bandwidth_usage_percent: Some(45.5),
+            temperature_c: Some(65.0),
+            power_w: Some(75.0),
+        }];
+
         // Оптимизируем
         let optimized = hardware.clone().optimize_memory_usage();
-        
+
         // Проверяем, что значения сохранены
         assert_eq!(optimized.pci_devices.len(), 1);
         assert_eq!(optimized.pci_devices[0].device_id, "0000:01:00.0");

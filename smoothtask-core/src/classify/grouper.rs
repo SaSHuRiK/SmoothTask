@@ -166,13 +166,16 @@ impl ProcessGrouper {
             };
 
             // Агрегируем расширенные метрики ввода-вывода
-            let total_io_read_operations = Self::aggregate_io_operations(processes, |p| p.io_read_operations);
-            let total_io_write_operations = Self::aggregate_io_operations(processes, |p| p.io_write_operations);
-            let total_io_operations = Self::aggregate_io_operations(processes, |p| p.io_total_operations);
-            
+            let total_io_read_operations =
+                Self::aggregate_io_operations(processes, |p| p.io_read_operations);
+            let total_io_write_operations =
+                Self::aggregate_io_operations(processes, |p| p.io_write_operations);
+            let total_io_operations =
+                Self::aggregate_io_operations(processes, |p| p.io_total_operations);
+
             // Определяем источник данных ввода-вывода
             let io_data_source = Self::determine_io_data_source(processes);
-            
+
             app_groups.push(AppGroupRecord {
                 app_group_id: group_id,
                 root_pid,
@@ -215,21 +218,21 @@ impl ProcessGrouper {
     {
         let mut total = 0u64;
         let mut has_data = false;
-        
+
         for process in processes {
             if let Some(value) = get_metric(process) {
                 total += value;
                 has_data = true;
             }
         }
-        
+
         if has_data {
             Some(total)
         } else {
             None
         }
     }
-    
+
     /// Определяет источник данных ввода-вывода для группы.
     ///
     /// Возвращает "ebpf", если хотя бы один процесс имеет eBPF данные,
@@ -237,7 +240,7 @@ impl ProcessGrouper {
     fn determine_io_data_source(processes: &[ProcessRecord]) -> Option<String> {
         let mut has_ebpf = false;
         let mut has_proc = false;
-        
+
         for process in processes {
             if let Some(source) = &process.io_data_source {
                 if source == "ebpf" {
@@ -247,7 +250,7 @@ impl ProcessGrouper {
                 }
             }
         }
-        
+
         if has_ebpf {
             Some("ebpf".to_string())
         } else if has_proc {

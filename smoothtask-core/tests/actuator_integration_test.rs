@@ -110,7 +110,7 @@ fn create_test_process(pid: i32, name: &str, app_group_id: &str) -> ProcessRecor
         teacher_priority_class: None,
         teacher_score: None,
         energy_uj: Some(500000), // 500000 микроджоулей = 0.5 джоуля
-        power_w: Some(0.25), // 0.25 ватта
+        power_w: Some(0.25),     // 0.25 ватта
         energy_timestamp: Some(1234567890),
         network_rx_bytes: None,
         network_tx_bytes: None,
@@ -148,7 +148,7 @@ fn create_test_app_group(app_group_id: &str, root_pid: i32) -> AppGroupRecord {
         tags: vec![],
         priority_class: None,
         total_energy_uj: Some(1000000), // 1000000 микроджоулей = 1 джоуль
-        total_power_w: Some(0.5), // 0.5 ватта
+        total_power_w: Some(0.5),       // 0.5 ватта
         total_network_rx_bytes: None,
         total_network_tx_bytes: None,
         total_network_rx_packets: None,
@@ -478,7 +478,6 @@ fn test_apply_priority_adjustments_priority_classes() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными AppGroup.
@@ -626,7 +625,6 @@ fn test_apply_priority_adjustments_parameter_combinations() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными состояниями окон.
@@ -701,7 +699,6 @@ fn test_apply_priority_adjustments_hysteresis_scenarios() {
         reason: "Idle task".to_string(),
     }];
     let _result3 = apply_priority_adjustments(&adjustments3, &mut tracker);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными типами.
@@ -743,7 +740,6 @@ fn test_apply_priority_adjustments_priority_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками аудио.
@@ -784,7 +780,6 @@ fn test_apply_priority_adjustments_cgroup_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками ввода.
@@ -825,7 +820,6 @@ fn test_apply_priority_adjustments_ionice_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками планировщика.
@@ -866,7 +860,6 @@ fn test_apply_priority_adjustments_latency_nice_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками памяти.
@@ -906,7 +899,6 @@ fn test_apply_priority_adjustments_nice_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками IO.
@@ -946,7 +938,6 @@ fn test_apply_priority_adjustments_process_state_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками CPU.
@@ -1002,7 +993,6 @@ fn test_apply_priority_adjustments_appgroup_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками ответственности.
@@ -1062,7 +1052,6 @@ fn test_apply_priority_adjustments_reason_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками системы.
@@ -1134,7 +1123,6 @@ fn test_apply_priority_adjustments_comprehensive_scenarios() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками и состояниями.
@@ -1187,7 +1175,6 @@ fn test_apply_priority_adjustments_comprehensive_application() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками и состояниями в различных сценариях.
@@ -1259,7 +1246,6 @@ fn test_apply_priority_adjustments_comprehensive_parameters() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками, состояниями и параметрами в различных сценариях.
@@ -1349,7 +1335,6 @@ fn test_apply_priority_adjustments_comprehensive_integration() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с различными метриками, состояниями, параметрами, сценариями и интеграцией.
@@ -1468,7 +1453,6 @@ fn test_apply_priority_adjustments_comprehensive_full_integration() {
 
     let mut hysteresis = HysteresisTracker::new();
     let _result = apply_priority_adjustments(&adjustments, &mut hysteresis);
-
 }
 
 /// Тест проверяет, что функция plan_priority_changes корректно обрабатывает процессы с некорректными метриками.

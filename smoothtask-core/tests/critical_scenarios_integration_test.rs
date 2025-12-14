@@ -165,22 +165,24 @@ async fn test_api_concurrent_requests() {
                 .send()
                 .await
                 .expect("Запрос должен быть выполнен");
-            
+
             // Проверяем статус код
             assert_eq!(response.status(), reqwest::StatusCode::OK);
-            
+
             // Проверяем ответ
             let body = response.text().await.expect("Ответ должен быть текстом");
             let json: serde_json::Value =
                 serde_json::from_str(&body).expect("Ответ должен быть валидным JSON");
-            
+
             assert_eq!(json["status"].as_str(), Some("ok"));
         }));
     }
 
     // Ждем завершения всех запросов
     for handle in handles {
-        handle.await.expect("Все запросы должны завершиться успешно");
+        handle
+            .await
+            .expect("Все запросы должны завершиться успешно");
     }
 
     // Останавливаем сервер
@@ -201,7 +203,7 @@ async fn test_api_component_interaction() {
     let client = reqwest::Client::new();
 
     // Проверяем, что разные компоненты возвращают согласованные данные
-    
+
     // 1. Проверяем системные метрики
     let system_url = format!("http://127.0.0.1:{}/api/system", port);
     let system_response = client
@@ -209,7 +211,7 @@ async fn test_api_component_interaction() {
         .send()
         .await
         .expect("Запрос должен быть выполнен");
-    
+
     // 2. Проверяем статистику
     let stats_url = format!("http://127.0.0.1:{}/api/stats", port);
     let stats_response = client
@@ -217,7 +219,7 @@ async fn test_api_component_interaction() {
         .send()
         .await
         .expect("Запрос должен быть выполнен");
-    
+
     // 3. Проверяем health
     let health_url = format!("http://127.0.0.1:{}/api/health", port);
     let health_response = client
@@ -225,12 +227,12 @@ async fn test_api_component_interaction() {
         .send()
         .await
         .expect("Запрос должен быть выполнен");
-    
+
     // Все запросы должны быть успешными
     assert_eq!(system_response.status(), reqwest::StatusCode::OK);
     assert_eq!(stats_response.status(), reqwest::StatusCode::OK);
     assert_eq!(health_response.status(), reqwest::StatusCode::OK);
-    
+
     // Останавливаем сервер
     handle
         .shutdown()
@@ -269,7 +271,7 @@ async fn test_api_comprehensive_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 
@@ -291,16 +293,18 @@ async fn test_api_edge_case_empty_parameters() {
     let client = reqwest::Client::new();
 
     // Проверяем endpoint с пустым параметром
-    let url = format!("http://127.0.0.1:{}/api/appgroups/" , port);
+    let url = format!("http://127.0.0.1:{}/api/appgroups/", port);
     let response = client
         .get(&url)
         .send()
         .await
         .expect("Запрос должен быть выполнен");
-    
+
     // Должен быть 404 или 400
-    assert!(response.status() == reqwest::StatusCode::NOT_FOUND ||
-            response.status() == reqwest::StatusCode::BAD_REQUEST);
+    assert!(
+        response.status() == reqwest::StatusCode::NOT_FOUND
+            || response.status() == reqwest::StatusCode::BAD_REQUEST
+    );
 
     // Останавливаем сервер
     handle
@@ -327,11 +331,13 @@ async fn test_api_edge_case_large_payloads() {
         .header("X-Large-Header", large_header_value)
         .send()
         .await;
-    
+
     // Запрос может быть успешным или отклонен (зависит от конфигурации сервера)
     if let Ok(resp) = response {
-        assert!(resp.status() == reqwest::StatusCode::OK ||
-                resp.status() == reqwest::StatusCode::PAYLOAD_TOO_LARGE);
+        assert!(
+            resp.status() == reqwest::StatusCode::OK
+                || resp.status() == reqwest::StatusCode::PAYLOAD_TOO_LARGE
+        );
     }
 
     // Останавливаем сервер
@@ -527,7 +533,7 @@ async fn test_api_system_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 
@@ -565,7 +571,7 @@ async fn test_api_process_management_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 
@@ -587,11 +593,7 @@ async fn test_api_app_group_integration() {
     let client = reqwest::Client::new();
 
     // Проверяем endpoints групп приложений
-    let endpoints = [
-        "/api/appgroups",
-        "/api/classes",
-        "/api/patterns",
-    ];
+    let endpoints = ["/api/appgroups", "/api/classes", "/api/patterns"];
 
     for endpoint in endpoints {
         let url = format!("http://127.0.0.1:{}{}", port, endpoint);
@@ -600,7 +602,7 @@ async fn test_api_app_group_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 
@@ -636,9 +638,11 @@ async fn test_api_network_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
-        assert!(response.status() == reqwest::StatusCode::OK ||
-                response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE);
+
+        assert!(
+            response.status() == reqwest::StatusCode::OK
+                || response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     // Останавливаем сервер
@@ -673,10 +677,12 @@ async fn test_api_configuration_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
-        assert!(response.status() == reqwest::StatusCode::OK ||
-                response.status() == reqwest::StatusCode::BAD_REQUEST ||
-                response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE);
+
+        assert!(
+            response.status() == reqwest::StatusCode::OK
+                || response.status() == reqwest::StatusCode::BAD_REQUEST
+                || response.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE
+        );
     }
 
     // Останавливаем сервер
@@ -711,7 +717,7 @@ async fn test_api_logging_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 
@@ -733,10 +739,7 @@ async fn test_api_performance_integration() {
     let client = reqwest::Client::new();
 
     // Проверяем endpoints производительности
-    let endpoints = [
-        "/api/performance",
-        "/api/app/performance",
-    ];
+    let endpoints = ["/api/performance", "/api/app/performance"];
 
     for endpoint in endpoints {
         let url = format!("http://127.0.0.1:{}{}", port, endpoint);
@@ -745,7 +748,7 @@ async fn test_api_performance_integration() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 
@@ -787,7 +790,7 @@ async fn test_api_comprehensive_integration_final() {
             .send()
             .await
             .expect("Запрос должен быть выполнен");
-        
+
         assert_eq!(response.status(), reqwest::StatusCode::OK);
     }
 

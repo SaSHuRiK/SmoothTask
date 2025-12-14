@@ -63,16 +63,14 @@ fn create_test_audio_metrics() -> AudioMetrics {
 
 /// Создаёт тестовые AudioClientInfo для использования в тестах.
 fn create_test_audio_clients() -> Vec<AudioClientInfo> {
-    vec![
-        AudioClientInfo {
-            pid: 1234,
-            buffer_size_samples: Some(1024),
-            sample_rate_hz: Some(44100),
-            volume_level: Some(0.8),
-            latency_ms: Some(10),
-            client_name: Some("test_client".to_string()),
-        },
-    ]
+    vec![AudioClientInfo {
+        pid: 1234,
+        buffer_size_samples: Some(1024),
+        sample_rate_hz: Some(44100),
+        volume_level: Some(0.8),
+        latency_ms: Some(10),
+        client_name: Some("test_client".to_string()),
+    }]
 }
 
 /// Создаёт Thresholds с разумными значениями по умолчанию для тестов.
@@ -480,12 +478,12 @@ async fn test_collect_snapshot_with_x11_introspector_when_available() {
 
     // Пробуем создать X11 интроспектор
     let x11_introspector_result = smoothtask_core::metrics::windows_x11::X11Introspector::new();
-    
+
     match x11_introspector_result {
         Ok(x11_introspector) => {
             // X11 интроспектор успешно создан, тестируем его интеграцию
             let window_introspector: Arc<dyn WindowIntrospector> = Arc::new(x11_introspector);
-            
+
             // Создаём тестовые данные для других компонентов
             let proc_paths = create_test_proc_paths();
             let audio_metrics = create_test_audio_metrics();
@@ -493,9 +491,9 @@ async fn test_collect_snapshot_with_x11_introspector_when_available() {
             let audio_introspector: Arc<Mutex<Box<dyn AudioIntrospector>>> = Arc::new(Mutex::new(
                 Box::new(StaticAudioIntrospector::new(audio_metrics, audio_clients)),
             ));
-            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(InputTracker::Simple(
-                InputActivityTracker::new(Duration::from_secs(60)),
-            )));
+            let input_tracker: Arc<Mutex<InputTracker>> = Arc::new(Mutex::new(
+                InputTracker::Simple(InputActivityTracker::new(Duration::from_secs(60))),
+            ));
             let mut prev_cpu_times: Option<SystemMetrics> = None;
             let thresholds = create_test_thresholds();
             let latency_collector = Arc::new(LatencyCollector::new(1000));
@@ -511,14 +509,21 @@ async fn test_collect_snapshot_with_x11_introspector_when_available() {
             )
             .await;
 
-            assert!(result.is_ok(), "collect_snapshot should succeed with X11 introspector");
+            assert!(
+                result.is_ok(),
+                "collect_snapshot should succeed with X11 introspector"
+            );
             let snapshot = result.unwrap();
 
             // Проверяем, что процессы имеют валидную структуру
             // (даже если у них нет окон, структура должна быть корректной)
             for process in &snapshot.processes {
                 // Проверяем, что поля, связанные с окнами, имеют валидные значения
-                assert!(!process.has_gui_window || process.is_focused_window || process.window_state.is_some());
+                assert!(
+                    !process.has_gui_window
+                        || process.is_focused_window
+                        || process.window_state.is_some()
+                );
                 // Если процесс имеет GUI окно, то он должен иметь валидное состояние окна
                 if process.has_gui_window {
                     assert!(process.window_state.is_some());
@@ -528,13 +533,15 @@ async fn test_collect_snapshot_with_x11_introspector_when_available() {
             // Проверяем, что X11 интроспектор не вызвал паники и вернул валидные данные
             // Это подтверждает, что интеграция X11 с основной системой работает корректно
             assert!(snapshot.processes.len() >= 0);
-            
         }
         Err(e) => {
             // Если X11 интроспектор не может быть создан (например, EWMH не поддерживается),
             // это нормально - тест не должен падать
             // Логируем ошибку для отладки
-            tracing::warn!("Failed to create X11 introspector for integration test: {}", e);
+            tracing::warn!(
+                "Failed to create X11 introspector for integration test: {}",
+                e
+            );
             // Тест считается успешным, так как мы проверили, что система корректно обрабатывает
             // ситуацию, когда X11 доступен, но интроспектор не может быть создан
         }
@@ -561,7 +568,7 @@ async fn test_x11_introspector_error_handling_in_integration() {
 
     // Создаём X11 интроспектор, который всегда возвращает ошибку
     struct FailingX11Introspector;
-    
+
     impl WindowIntrospector for FailingX11Introspector {
         fn windows(&self) -> Result<Vec<WindowInfo>> {
             anyhow::bail!("X11 introspector failed during integration test")
@@ -586,7 +593,10 @@ async fn test_x11_introspector_error_handling_in_integration() {
     .await;
 
     // Функция должна успешно завершиться, даже если X11 интроспектор возвращает ошибку
-    assert!(result.is_ok(), "collect_snapshot should succeed even if X11 introspector fails");
+    assert!(
+        result.is_ok(),
+        "collect_snapshot should succeed even if X11 introspector fails"
+    );
     let snapshot = result.unwrap();
 
     // Процессы не должны иметь информацию об окнах (has_gui_window = false)

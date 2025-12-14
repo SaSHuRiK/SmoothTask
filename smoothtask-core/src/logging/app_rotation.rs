@@ -133,7 +133,10 @@ impl AppLogRotator {
 
         // Проверяем, что это файл, а не директория
         if !metadata.is_file() {
-            tracing::warn!("Путь {} не является файлом, пропускаем ротацию", self.log_path.display());
+            tracing::warn!(
+                "Путь {} не является файлом, пропускаем ротацию",
+                self.log_path.display()
+            );
             return Ok(()); // Не файл, пропускаем ротацию
         }
 
@@ -186,7 +189,8 @@ impl AppLogRotator {
     fn generate_rotated_path(&self, timestamp: &str) -> PathBuf {
         let mut rotated_path = self.log_path.clone();
         let file_stem = self.log_path.file_stem().unwrap_or_else(|| "log".as_ref());
-        let extension = self.log_path
+        let extension = self
+            .log_path
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("log");
@@ -271,7 +275,8 @@ impl AppLogRotator {
 
         let log_dir = self.log_path.parent().unwrap_or_else(|| Path::new("."));
         let file_stem = self.log_path.file_stem().unwrap_or_else(|| "log".as_ref());
-        let _extension = self.log_path
+        let _extension = self
+            .log_path
             .extension()
             .and_then(|ext| ext.to_str())
             .unwrap_or("log");
@@ -416,7 +421,7 @@ impl AppLogRotator {
 
         // Удаляем старые файлы, если превышен лимит по общему размеру
         let mut total_size: u64 = rotated_files.iter().map(|(_, _, size)| size).sum();
-        
+
         while total_size > self.max_total_size_bytes && !rotated_files.is_empty() {
             let (file_path, _, file_size) = rotated_files.remove(0); // Удаляем самый старый файл
             fs::remove_file(&file_path).with_context(|| {
@@ -440,20 +445,18 @@ impl AppLogRotator {
     pub fn cleanup_logs(&mut self) -> Result<()> {
         // Выполняем очистку по возрасту
         self.cleanup_by_age()?;
-        
+
         // Выполняем очистку по общему размеру
         self.cleanup_by_total_size()?;
-        
+
         // Выполняем очистку по количеству файлов
         self.cleanup_old_logs()?;
-        
+
         // Обновляем время последней очистки
         self.last_cleanup_time = Some(SystemTime::now());
-        
+
         Ok(())
     }
-
-
 
     /// Возвращает текущую конфигурацию ротации.
     ///
@@ -566,7 +569,7 @@ mod tests {
     fn test_app_log_rotator_creation() {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("app.log");
-        
+
         let rotator = AppLogRotator::new(&log_path, 10_485_760, 5, true, 3600, 0, 0);
         assert_eq!(rotator.max_size_bytes, 10_485_760);
         assert_eq!(rotator.max_rotated_files, 5);
@@ -639,7 +642,9 @@ mod tests {
         let mut rotator = AppLogRotator::new(&log_path, 100, 3, true, 0, 0, 0);
 
         // Выполняем ротацию
-        rotator.rotate_log().expect("rotation with compression should succeed");
+        rotator
+            .rotate_log()
+            .expect("rotation with compression should succeed");
 
         // Проверяем, что оригинальный файл удалён
         assert!(!log_path.exists(), "Original log file should be removed");
@@ -651,7 +656,11 @@ mod tests {
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
             .collect();
 
-        assert_eq!(compressed_files.len(), 1, "Should have one compressed log file");
+        assert_eq!(
+            compressed_files.len(),
+            1,
+            "Should have one compressed log file"
+        );
     }
 
     #[test]
@@ -682,21 +691,25 @@ mod tests {
             .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "log"))
             .collect();
 
-        assert!(rotated_files.len() <= 2, "Should have at most 2 rotated log files");
+        assert!(
+            rotated_files.len() <= 2,
+            "Should have at most 2 rotated log files"
+        );
     }
 
     #[test]
     fn test_app_log_rotator_config_update() {
         let temp_dir = TempDir::new().expect("temp dir");
         let log_path = temp_dir.path().join("app.log");
-        
+
         let mut rotator = AppLogRotator::new(&log_path, 1000, 3, false, 0, 0, 0);
 
         // Обновляем конфигурацию
         rotator.update_config(5000, 10, true, 3600, 86400, 1_073_741_824);
 
         // Проверяем, что конфигурация обновлена
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
         assert_eq!(max_size, 5000);
         assert_eq!(max_files, 10);
         assert!(compression);
@@ -721,7 +734,10 @@ mod tests {
         let non_existent_path = temp_dir.path().join("non_existent.log");
         let mut rotator2 = AppLogRotator::new(&non_existent_path, 100, 3, false, 0, 0, 0);
         let result = rotator2.rotate_log();
-        assert!(result.is_ok(), "Rotation of non-existent file should succeed");
+        assert!(
+            result.is_ok(),
+            "Rotation of non-existent file should succeed"
+        );
 
         // Тестируем ротацию с директорией (должно завершиться успешно, без ошибок)
         let result = rotator.rotate_log();
@@ -774,7 +790,9 @@ mod tests {
         std::thread::sleep(std::time::Duration::from_secs(2));
 
         // Выполняем очистку по возрасту
-        rotator.cleanup_by_age().expect("cleanup by age should succeed");
+        rotator
+            .cleanup_by_age()
+            .expect("cleanup by age should succeed");
 
         // Проверяем, что старые файлы удалены
         let rotated_files: Vec<_> = fs::read_dir(temp_dir.path())
@@ -784,7 +802,10 @@ mod tests {
             .collect();
 
         // Должно остаться не более 1 файла (текущий файл лога)
-        assert!(rotated_files.len() <= 1, "Should have at most 1 log file after age cleanup");
+        assert!(
+            rotated_files.len() <= 1,
+            "Should have at most 1 log file after age cleanup"
+        );
     }
 
     #[test]
@@ -809,7 +830,9 @@ mod tests {
         }
 
         // Выполняем очистку по общему размеру
-        rotator.cleanup_by_total_size().expect("cleanup by total size should succeed");
+        rotator
+            .cleanup_by_total_size()
+            .expect("cleanup by total size should succeed");
 
         // Проверяем, что общий размер не превышен
         let rotated_files: Vec<_> = fs::read_dir(temp_dir.path())
@@ -819,7 +842,10 @@ mod tests {
             .collect();
 
         // Должно остаться небольшое количество файлов
-        assert!(rotated_files.len() <= 3, "Should have limited number of log files after size cleanup");
+        assert!(
+            rotated_files.len() <= 3,
+            "Should have limited number of log files after size cleanup"
+        );
     }
 
     #[test]
@@ -857,7 +883,13 @@ mod tests {
             .collect();
 
         // Должно остаться ограниченное количество файлов
-        assert!(rotated_files.len() <= 2, "Should have limited number of log files after full cleanup");
-        assert!(rotator.last_cleanup_time.is_some(), "Last cleanup time should be set");
+        assert!(
+            rotated_files.len() <= 2,
+            "Should have limited number of log files after full cleanup"
+        );
+        assert!(
+            rotator.last_cleanup_time.is_some(),
+            "Last cleanup time should be set"
+        );
     }
 }

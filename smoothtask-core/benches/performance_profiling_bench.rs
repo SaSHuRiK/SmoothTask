@@ -7,9 +7,9 @@
 //! 4. Обеспечения регрессионного тестирования производительности
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use smoothtask_core::config::config_struct::Config;
 use smoothtask_core::metrics::process::collect_process_metrics;
 use smoothtask_core::metrics::system::{collect_system_metrics, ProcPaths};
-use smoothtask_core::config::config_struct::Config;
 use std::path::PathBuf;
 
 /// Бенчмарк для измерения полного цикла сбора метрик
@@ -33,10 +33,10 @@ fn benchmark_full_metrics_collection(c: &mut Criterion) {
         b.iter(|| {
             // 1. Сбор системных метрик
             let system_metrics = collect_system_metrics(black_box(&proc_paths)).ok();
-            
+
             // 2. Сбор метрик процессов
             let processes = collect_process_metrics(None).unwrap_or_default();
-            
+
             black_box((system_metrics, processes))
         })
     });
@@ -108,7 +108,7 @@ fn benchmark_process_data_processing(c: &mut Criterion) {
 /// что является критическим путем при запуске SmoothTask.
 fn benchmark_config_loading(c: &mut Criterion) {
     let config_path = "configs/smoothtask.example.yml";
-    
+
     c.bench_function("config_loading", |b| {
         b.iter(|| {
             let config_result = Config::load(config_path);
@@ -124,18 +124,19 @@ fn benchmark_config_loading(c: &mut Criterion) {
 fn benchmark_serialization(c: &mut Criterion) {
     // Создаем тестовые данные процессов
     let processes = collect_process_metrics(None).unwrap_or_default();
-    
+
     c.bench_function("json_serialization", |b| {
         b.iter(|| {
             let serialized = serde_json::to_string(black_box(&processes)).unwrap();
             black_box(serialized)
         })
     });
-    
+
     c.bench_function("json_deserialization", |b| {
         let serialized = serde_json::to_string(&processes).unwrap();
         b.iter(|| {
-            let deserialized: Vec<smoothtask_core::logging::snapshots::ProcessRecord> = serde_json::from_str(black_box(&serialized)).unwrap();
+            let deserialized: Vec<smoothtask_core::logging::snapshots::ProcessRecord> =
+                serde_json::from_str(black_box(&serialized)).unwrap();
             black_box(deserialized)
         })
     });
@@ -147,9 +148,9 @@ fn benchmark_serialization(c: &mut Criterion) {
 /// которые используются для мониторинга конфигурационных файлов.
 fn benchmark_filesystem_operations(c: &mut Criterion) {
     use std::fs;
-    
+
     let test_dir = PathBuf::from("configs/patterns");
-    
+
     c.bench_function("filesystem_listing", |b| {
         b.iter(|| {
             let entries = fs::read_dir(black_box(&test_dir)).unwrap();
@@ -165,9 +166,9 @@ fn benchmark_filesystem_operations(c: &mut Criterion) {
 /// что важно для масштабируемости SmoothTask.
 fn benchmark_parallel_processing(c: &mut Criterion) {
     use rayon::prelude::*;
-    
+
     let processes = collect_process_metrics(None).unwrap_or_default();
-    
+
     c.bench_function("parallel_process_processing", |b| {
         b.iter(|| {
             let result: Vec<_> = processes
@@ -190,9 +191,9 @@ fn benchmark_parallel_processing(c: &mut Criterion) {
 /// что является важным для оптимизации производительности.
 fn benchmark_process_cache_operations(c: &mut Criterion) {
     use smoothtask_core::metrics::process::{collect_process_metrics, ProcessCacheConfig};
-    
+
     let config = ProcessCacheConfig::default();
-    
+
     c.bench_function("process_cache_operations", |b| {
         b.iter(|| {
             let cached_processes = collect_process_metrics(Some(config.clone()));
@@ -248,8 +249,6 @@ fn benchmark_cpu_temperature_collection(c: &mut Criterion) {
         })
     });
 }
-
-
 
 criterion_group! {
     name = performance_profiling_benchmarks;

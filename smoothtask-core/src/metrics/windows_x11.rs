@@ -561,9 +561,12 @@ mod tests {
     fn test_x11_error_messages_context() {
         // Test that X11 error messages provide useful context
         // This test verifies that error messages contain helpful troubleshooting information
-        
+
         // Test atom registration error message
-        let result = X11Introspector::intern_atom(&RustConnection::connect(None).unwrap().0, b"_NET_WM_NAME");
+        let result = X11Introspector::intern_atom(
+            &RustConnection::connect(None).unwrap().0,
+            b"_NET_WM_NAME",
+        );
         match result {
             Ok(_) => {
                 // Atom registration succeeded, which is expected in most cases
@@ -576,7 +579,7 @@ mod tests {
                 assert!(error_msg.contains("диагностика"));
             }
         }
-        
+
         // Test that error messages contain troubleshooting steps
         // We can't easily test the actual error cases without mocking X11
         // But we can verify that the error handling code paths exist

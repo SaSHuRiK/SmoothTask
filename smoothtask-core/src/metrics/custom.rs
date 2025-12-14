@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
+use tokio::sync::RwLock;
 
 /// Тип пользовательской метрики.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -186,7 +186,7 @@ impl CustomMetricsManager {
 
         let config_id = config.id.clone();
         configs.insert(config.id.clone(), config);
-        
+
         // Инициализируем значение метрики
         let mut values = self.metrics_values.write().await;
 
@@ -217,7 +217,7 @@ impl CustomMetricsManager {
         }
 
         configs.remove(metric_id);
-        
+
         let mut values = self.metrics_values.write().await;
 
         values.remove(metric_id);
@@ -233,7 +233,10 @@ impl CustomMetricsManager {
     }
 
     /// Возвращает текущее значение метрики.
-    pub async fn get_metric_value(&self, metric_id: &str) -> Result<Option<CustomMetricValueWithTimestamp>> {
+    pub async fn get_metric_value(
+        &self,
+        metric_id: &str,
+    ) -> Result<Option<CustomMetricValueWithTimestamp>> {
         let values = self.metrics_values.read().await;
 
         Ok(values.get(metric_id).cloned())
@@ -247,7 +250,9 @@ impl CustomMetricsManager {
     }
 
     /// Возвращает все текущие значения метрик.
-    pub async fn get_all_metrics_values(&self) -> Result<HashMap<String, CustomMetricValueWithTimestamp>> {
+    pub async fn get_all_metrics_values(
+        &self,
+    ) -> Result<HashMap<String, CustomMetricValueWithTimestamp>> {
         let values = self.metrics_values.read().await;
 
         Ok(values.clone())
@@ -259,10 +264,12 @@ impl CustomMetricsManager {
 
         let config = match configs.get(metric_id) {
             Some(cfg) => cfg,
-            None => return Err(anyhow::anyhow!(
-                "Метрика с идентификатором '{}' не найдена",
-                metric_id
-            )),
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Метрика с идентификатором '{}' не найдена",
+                    metric_id
+                ))
+            }
         };
 
         if !config.enabled {
@@ -276,18 +283,23 @@ impl CustomMetricsManager {
         }
 
         let value_result = match &config.source {
-            CustomMetricSource::File { path, format } => {
-                self.read_file_metric(path, format).await
+            CustomMetricSource::File { path, format } => self.read_file_metric(path, format).await,
+            CustomMetricSource::Command {
+                command,
+                args,
+                format,
+            } => self.execute_command_metric(command, args, format).await,
+            CustomMetricSource::Http {
+                url,
+                method,
+                headers,
+                body,
+                json_path,
+            } => {
+                self.fetch_http_metric(url, method, headers, body, json_path)
+                    .await
             }
-            CustomMetricSource::Command { command, args, format } => {
-                self.execute_command_metric(command, args, format).await
-            }
-            CustomMetricSource::Http { url, method, headers, body, json_path } => {
-                self.fetch_http_metric(url, method, headers, body, json_path).await
-            }
-            CustomMetricSource::Static { value } => {
-                Ok(value.clone())
-            }
+            CustomMetricSource::Static { value } => Ok(value.clone()),
         };
 
         let mut values = self.metrics_values.write().await;
@@ -338,14 +350,12 @@ impl CustomMetricsManager {
         path: &PathBuf,
         format: &FileMetricFormat,
     ) -> Result<CustomMetricValue> {
-        let content = fs::read_to_string(path)
-            .await
-            .with_context(|| {
-                format!(
-                    "Не удалось прочитать файл {}: проверьте путь и права доступа",
-                    path.display()
-                )
-            })?;
+        let content = fs::read_to_string(path).await.with_context(|| {
+            format!(
+                "Не удалось прочитать файл {}: проверьте путь и права доступа",
+                path.display()
+            )
+        })?;
 
         match format {
             FileMetricFormat::PlainNumber => {
@@ -363,8 +373,8 @@ impl CustomMetricsManager {
                 }
             }
             FileMetricFormat::Json { path: json_path } => {
-                let parsed: serde_json::Value = serde_json::from_str(&content)
-                    .with_context(|| {
+                let parsed: serde_json::Value =
+                    serde_json::from_str(&content).with_context(|| {
                         format!(
                             "Не удалось разобрать JSON из файла {}: проверьте формат JSON",
                             path.display()
@@ -375,10 +385,12 @@ impl CustomMetricsManager {
                 Ok(value)
             }
             FileMetricFormat::Regex { pattern } => {
-                let re = regex::Regex::new(pattern)
-                    .with_context(|| {
-                        format!("Не удалось скомпилировать регулярное выражение: {}", pattern)
-                    })?;
+                let re = regex::Regex::new(pattern).with_context(|| {
+                    format!(
+                        "Не удалось скомпилировать регулярное выражение: {}",
+                        pattern
+                    )
+                })?;
 
                 if let Some(captures) = re.captures(&content) {
                     if let Some(match_str) = captures.get(1) {
@@ -435,13 +447,12 @@ impl CustomMetricsManager {
             ));
         }
 
-        let stdout = String::from_utf8(output.stdout)
-            .with_context(|| {
-                format!(
-                    "Не удалось преобразовать вывод команды '{}' в UTF-8",
-                    command
-                )
-            })?;
+        let stdout = String::from_utf8(output.stdout).with_context(|| {
+            format!(
+                "Не удалось преобразовать вывод команды '{}' в UTF-8",
+                command
+            )
+        })?;
 
         match format {
             CommandMetricFormat::PlainNumber => {
@@ -471,10 +482,12 @@ impl CustomMetricsManager {
                 Ok(value)
             }
             CommandMetricFormat::Regex { pattern } => {
-                let re = regex::Regex::new(pattern)
-                    .with_context(|| {
-                        format!("Не удалось скомпилировать регулярное выражение: {}", pattern)
-                    })?;
+                let re = regex::Regex::new(pattern).with_context(|| {
+                    format!(
+                        "Не удалось скомпилировать регулярное выражение: {}",
+                        pattern
+                    )
+                })?;
 
                 if let Some(captures) = re.captures(&stdout) {
                     if let Some(match_str) = captures.get(1) {
@@ -534,12 +547,12 @@ impl CustomMetricsManager {
             request = request.body(body_content.clone());
         }
 
-        let response = request
-            .send()
-            .await
-            .with_context(|| {
-                format!("Не удалось выполнить HTTP запрос к {}: проверьте URL и сеть", url)
-            })?;
+        let response = request.send().await.with_context(|| {
+            format!(
+                "Не удалось выполнить HTTP запрос к {}: проверьте URL и сеть",
+                url
+            )
+        })?;
 
         if !response.status().is_success() {
             return Err(anyhow::anyhow!(
@@ -552,17 +565,14 @@ impl CustomMetricsManager {
         let content = response
             .text()
             .await
-            .with_context(|| {
-                format!("Не удалось прочитать ответ от {}: ошибка чтения", url)
-            })?;
+            .with_context(|| format!("Не удалось прочитать ответ от {}: ошибка чтения", url))?;
 
-        let parsed: serde_json::Value = serde_json::from_str(&content)
-            .with_context(|| {
-                format!(
-                    "Не удалось разобрать JSON ответ от {}: проверьте формат JSON",
-                    url
-                )
-            })?;
+        let parsed: serde_json::Value = serde_json::from_str(&content).with_context(|| {
+            format!(
+                "Не удалось разобрать JSON ответ от {}: проверьте формат JSON",
+                url
+            )
+        })?;
 
         let value = self.extract_json_value(&parsed, json_path)?;
         Ok(value)
@@ -711,7 +721,7 @@ mod tests {
     #[tokio::test]
     async fn test_custom_metric_creation() {
         let manager = CustomMetricsManager::new();
-        
+
         let config = CustomMetricConfig {
             id: "test_metric".to_string(),
             name: "Test Metric".to_string(),
@@ -731,7 +741,7 @@ mod tests {
     #[tokio::test]
     async fn test_duplicate_metric() {
         let manager = CustomMetricsManager::new();
-        
+
         let config = CustomMetricConfig {
             id: "test_metric".to_string(),
             name: "Test Metric".to_string(),
@@ -745,13 +755,16 @@ mod tests {
         };
 
         assert!(manager.add_metric(config.clone()).await.is_ok());
-        assert!(manager.add_metric(config).await.is_err(), "Should not allow duplicate metric");
+        assert!(
+            manager.add_metric(config).await.is_err(),
+            "Should not allow duplicate metric"
+        );
     }
 
     #[tokio::test]
     async fn test_get_metric_config() {
         let manager = CustomMetricsManager::new();
-        
+
         let config = CustomMetricConfig {
             id: "test_metric".to_string(),
             name: "Test Metric".to_string(),
@@ -773,7 +786,7 @@ mod tests {
     #[tokio::test]
     async fn test_remove_metric() {
         let manager = CustomMetricsManager::new();
-        
+
         let config = CustomMetricConfig {
             id: "test_metric".to_string(),
             name: "Test Metric".to_string(),
@@ -789,7 +802,14 @@ mod tests {
         manager.add_metric(config).await.unwrap();
         let result = manager.remove_metric("test_metric").await;
         assert!(result.is_ok(), "Should be able to remove metric");
-        assert!(manager.get_metric_config("test_metric").await.unwrap().is_none(), "Metric should be removed");
+        assert!(
+            manager
+                .get_metric_config("test_metric")
+                .await
+                .unwrap()
+                .is_none(),
+            "Metric should be removed"
+        );
     }
 
     #[tokio::test]
@@ -797,7 +817,7 @@ mod tests {
         let manager = CustomMetricsManager::new();
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test_metric.txt");
-        
+
         // Создаём тестовый файл
         let mut file = fs::File::create(&file_path).await.unwrap();
         use tokio::io::AsyncWriteExt;
@@ -819,20 +839,28 @@ mod tests {
 
         manager.add_metric(config).await.unwrap();
         manager.update_metric_value("file_metric").await.unwrap();
-        
+
         let value = manager.get_metric_value("file_metric").await.unwrap();
         assert!(value.is_some(), "Should have metric value");
-        
-        if let Some(CustomMetricValueWithTimestamp { value: metric_value, status, .. }) = value {
+
+        if let Some(CustomMetricValueWithTimestamp {
+            value: metric_value,
+            status,
+            ..
+        }) = value
+        {
             assert!(matches!(status, MetricStatus::Ok), "Status should be OK");
-            assert!(matches!(metric_value, CustomMetricValue::Integer(12345)), "Should parse integer value");
+            assert!(
+                matches!(metric_value, CustomMetricValue::Integer(12345)),
+                "Should parse integer value"
+            );
         }
     }
 
     #[tokio::test]
     async fn test_static_metric() {
         let manager = CustomMetricsManager::new();
-        
+
         let config = CustomMetricConfig {
             id: "static_metric".to_string(),
             name: "Static Metric".to_string(),
@@ -847,13 +875,21 @@ mod tests {
 
         manager.add_metric(config).await.unwrap();
         manager.update_metric_value("static_metric").await.unwrap();
-        
+
         let value = manager.get_metric_value("static_metric").await.unwrap();
         assert!(value.is_some(), "Should have metric value");
-        
-        if let Some(CustomMetricValueWithTimestamp { value: metric_value, status, .. }) = value {
+
+        if let Some(CustomMetricValueWithTimestamp {
+            value: metric_value,
+            status,
+            ..
+        }) = value
+        {
             assert!(matches!(status, MetricStatus::Ok), "Status should be OK");
-            assert!(matches!(metric_value, CustomMetricValue::String(ref s) if s == "Hello World"), "Should have static string value");
+            assert!(
+                matches!(metric_value, CustomMetricValue::String(ref s) if s == "Hello World"),
+                "Should have static string value"
+            );
         }
     }
 
@@ -861,7 +897,7 @@ mod tests {
     async fn test_manager_clone() {
         let manager1 = CustomMetricsManager::new();
         let manager2 = manager1.clone();
-        
+
         let config = CustomMetricConfig {
             id: "test_metric".to_string(),
             name: "Test Metric".to_string(),
@@ -877,16 +913,20 @@ mod tests {
         manager1.add_metric(config).await.unwrap();
         let value1 = manager1.get_metric_config("test_metric").await.unwrap();
         let value2 = manager2.get_metric_config("test_metric").await.unwrap();
-        
+
         assert!(value1.is_some(), "Manager1 should have metric");
         assert!(value2.is_some(), "Manager2 should have metric");
-        assert_eq!(value1.unwrap().id, value2.unwrap().id, "Both managers should have same metric");
+        assert_eq!(
+            value1.unwrap().id,
+            value2.unwrap().id,
+            "Both managers should have same metric"
+        );
     }
 
     #[tokio::test]
     async fn test_disabled_metric() {
         let manager = CustomMetricsManager::new();
-        
+
         let config = CustomMetricConfig {
             id: "disabled_metric".to_string(),
             name: "Disabled Metric".to_string(),
@@ -901,13 +941,19 @@ mod tests {
 
         manager.add_metric(config).await.unwrap();
         let result = manager.update_metric_value("disabled_metric").await;
-        assert!(result.is_ok(), "Should handle disabled metric without error");
-        
+        assert!(
+            result.is_ok(),
+            "Should handle disabled metric without error"
+        );
+
         let value = manager.get_metric_value("disabled_metric").await.unwrap();
         assert!(value.is_some(), "Should have metric value");
-        
+
         if let Some(CustomMetricValueWithTimestamp { status, .. }) = value {
-            assert!(matches!(status, MetricStatus::Disabled), "Status should be Disabled");
+            assert!(
+                matches!(status, MetricStatus::Disabled),
+                "Status should be Disabled"
+            );
         }
     }
 }

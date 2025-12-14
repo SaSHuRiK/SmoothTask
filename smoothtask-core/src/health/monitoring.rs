@@ -26,16 +26,16 @@ pub struct HealthMonitoringState {
 pub trait HealthMonitoringService: Send + Sync {
     /// Запустить службу мониторинга здоровья.
     async fn start_monitoring(&self) -> Result<()>;
-    
+
     /// Остановить службу мониторинга здоровья.
     async fn stop_monitoring(&self) -> Result<()>;
-    
+
     /// Получить текущее состояние мониторинга.
     async fn get_monitoring_state(&self) -> Result<HealthMonitoringState>;
-    
+
     /// Обновить конфигурацию мониторинга.
     async fn update_monitoring_config(&self, config: HealthMonitorConfig) -> Result<()>;
-    
+
     /// Добавить обработчик событий здоровья.
     async fn add_health_event_handler(&self, handler: Box<dyn HealthEventHandler>) -> Result<()>;
 }
@@ -89,38 +89,38 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
         if *is_running {
             return Ok(()); // Уже запущено
         }
-        
+
         *is_running = true;
         drop(is_running);
-        
+
         // Запускаем цикл мониторинга в фоне
         let health_monitor = self.health_monitor.clone();
         let monitoring_state = self.monitoring_state.clone();
         let event_handlers = self.event_handlers.clone();
         let is_running = self.is_running.clone();
-        
+
         tokio::spawn(async move {
             let config = health_monitor.health_state.read().await.config.clone();
-            
+
             while *is_running.read().await {
                 // Выполняем проверку здоровья
                 match health_monitor.check_health().await {
                     Ok(health_status) => {
                         // Обновляем состояние мониторинга
                         let mut state = monitoring_state.write().await;
-                        
+
                         // Сохраняем текущее состояние для сравнения
                         let old_status = state.current_health.overall_status;
-                        
+
                         // Обновляем текущее состояние
                         state.current_health = health_status.clone();
-                        
+
                         // Добавляем в историю
                         state.health_history.push(health_status.clone());
                         if state.health_history.len() > state.max_history_size {
                             state.health_history.remove(0);
                         }
-                        
+
                         // Обрабатываем события
                         if old_status != state.current_health.overall_status {
                             let event = HealthEvent::HealthStatusChanged {
@@ -128,26 +128,41 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                                 new_status: state.current_health.overall_status,
                                 timestamp: Utc::now(),
                             };
-                            
+
                             // Логируем изменение состояния
                             match state.current_health.overall_status {
                                 HealthStatus::Critical => {
-                                    error!("Health status changed to CRITICAL: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                    error!(
+                                        "Health status changed to CRITICAL: {:?} -> {:?}",
+                                        old_status, state.current_health.overall_status
+                                    );
                                 }
                                 HealthStatus::Degraded => {
-                                    warn!("Health status changed to DEGRADED: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                    warn!(
+                                        "Health status changed to DEGRADED: {:?} -> {:?}",
+                                        old_status, state.current_health.overall_status
+                                    );
                                 }
                                 HealthStatus::Warning => {
-                                    warn!("Health status changed to WARNING: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                    warn!(
+                                        "Health status changed to WARNING: {:?} -> {:?}",
+                                        old_status, state.current_health.overall_status
+                                    );
                                 }
                                 HealthStatus::Healthy => {
-                                    info!("Health status changed to HEALTHY: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                    info!(
+                                        "Health status changed to HEALTHY: {:?} -> {:?}",
+                                        old_status, state.current_health.overall_status
+                                    );
                                 }
                                 HealthStatus::Unknown => {
-                                    warn!("Health status changed to UNKNOWN: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                    warn!(
+                                        "Health status changed to UNKNOWN: {:?} -> {:?}",
+                                        old_status, state.current_health.overall_status
+                                    );
                                 }
                             }
-                            
+
                             // Уведомляем обработчики
                             for handler in event_handlers.read().await.iter() {
                                 if let Err(e) = handler.handle_health_event(event.clone()).await {
@@ -155,7 +170,7 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                                 }
                             }
                         }
-                        
+
                         // Проверяем на критическое состояние
                         if state.current_health.overall_status == HealthStatus::Critical {
                             let issue = HealthIssue {
@@ -169,22 +184,22 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                                 status: HealthIssueStatus::Open,
                                 resolved_time: None,
                             };
-                            
+
                             let event = HealthEvent::CriticalHealthDetected {
                                 issue: issue.clone(),
                                 timestamp: Utc::now(),
                             };
-                            
+
                             // Логируем критическое состояние
                             error!("CRITICAL HEALTH ISSUE DETECTED: {}", issue.description);
-                            
+
                             // Уведомляем обработчики
                             for handler in event_handlers.read().await.iter() {
                                 if let Err(e) = handler.handle_health_event(event.clone()).await {
                                     error!("Failed to handle critical health event: {}", e);
                                 }
                             }
-                            
+
                             // Добавляем проблему в историю
                             health_monitor.add_health_issue(issue).await.ok();
                         }
@@ -193,31 +208,31 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                         error!("Failed to check health: {}", e);
                     }
                 }
-                
+
                 // Ждем перед следующей проверкой
                 tokio::time::sleep(config.check_interval).await;
             }
         });
-        
+
         Ok(())
     }
-    
+
     async fn stop_monitoring(&self) -> Result<()> {
         let mut is_running = self.is_running.write().await;
         *is_running = false;
         Ok(())
     }
-    
+
     async fn get_monitoring_state(&self) -> Result<HealthMonitoringState> {
         Ok(self.monitoring_state.read().await.clone())
     }
-    
+
     async fn update_monitoring_config(&self, config: HealthMonitorConfig) -> Result<()> {
         let mut health_state = self.health_monitor.health_state.write().await;
         health_state.config = config;
         Ok(())
     }
-    
+
     async fn add_health_event_handler(&self, handler: Box<dyn HealthEventHandler>) -> Result<()> {
         let mut handlers = self.event_handlers.write().await;
         handlers.push(handler);
@@ -240,7 +255,7 @@ impl HealthMonitoringServiceImpl {
             is_running: Arc::new(RwLock::new(false)),
         }
     }
-    
+
     /// Создать новый HealthMonitoringServiceImpl с HealthMonitor по умолчанию.
     pub fn new_default() -> Self {
         Self::new(create_default_health_monitor())
@@ -248,7 +263,9 @@ impl HealthMonitoringServiceImpl {
 }
 
 /// Вспомогательная функция для создания HealthMonitoringService.
-pub fn create_health_monitoring_service(health_monitor: HealthMonitorImpl) -> HealthMonitoringServiceImpl {
+pub fn create_health_monitoring_service(
+    health_monitor: HealthMonitorImpl,
+) -> HealthMonitoringServiceImpl {
     HealthMonitoringServiceImpl::new(health_monitor)
 }
 

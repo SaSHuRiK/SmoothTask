@@ -106,7 +106,7 @@ impl ProcessGpuCache {
                 return Ok(());
             }
         };
-        
+
         // Проверяем, нужно ли очистить старые записи
         if cache.len() >= self.max_cached_processes {
             if let Err(e) = self.cleanup_old_entries().await {
@@ -126,11 +126,12 @@ impl ProcessGpuCache {
 
     /// Очищает старые записи из кэша
     pub async fn cleanup_old_entries(&self) -> Result<()> {
-        let mut cache = self.cache.write().map_err(|e| {
-            anyhow::anyhow!("Failed to get write lock: {}", e)
-        })?;
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| anyhow::anyhow!("Failed to get write lock: {}", e))?;
         let now = SystemTime::now();
-        
+
         if self.cache_ttl_seconds == 0 {
             return Ok(()); // Кэш не имеет ограничения по времени
         }
@@ -139,18 +140,17 @@ impl ProcessGpuCache {
             .checked_sub(Duration::from_secs(self.cache_ttl_seconds))
             .unwrap_or(now);
 
-        cache.retain(|_, info| {
-            info.last_update >= cutoff_time
-        });
+        cache.retain(|_, info| info.last_update >= cutoff_time);
 
         Ok(())
     }
 
     /// Очищает весь кэш
     pub async fn clear_cache(&self) -> Result<()> {
-        let mut cache = self.cache.write().map_err(|e| {
-            anyhow::anyhow!("Failed to get write lock: {}", e)
-        })?;
+        let mut cache = self
+            .cache
+            .write()
+            .map_err(|e| anyhow::anyhow!("Failed to get write lock: {}", e))?;
         cache.clear();
         Ok(())
     }
@@ -232,60 +232,60 @@ impl ProcessGpuMonitor {
     /// Собирает метрики использования GPU для всех процессов
     pub async fn collect_process_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
         let mut process_gpu_metrics = HashMap::new();
-        
+
         // Пробуем собрать метрики через DRM
         if self.config.enable_drm_monitoring {
             if let Ok(drm_metrics) = self.collect_drm_gpu_metrics().await {
                 process_gpu_metrics.extend(drm_metrics);
             }
         }
-        
+
         // Пробуем собрать метрики через NVIDIA NVML
         if self.config.enable_nvidia_monitoring {
             if let Ok(nvidia_metrics) = self.collect_nvidia_gpu_metrics().await {
                 process_gpu_metrics.extend(nvidia_metrics);
             }
         }
-        
+
         // Пробуем собрать метрики через AMD
         if self.config.enable_amd_monitoring {
             if let Ok(amd_metrics) = self.collect_amd_gpu_metrics().await {
                 process_gpu_metrics.extend(amd_metrics);
             }
         }
-        
+
         // Пробуем собрать метрики через eBPF
         if self.config.enable_ebpf_monitoring {
             if let Ok(ebpf_metrics) = self.collect_ebpf_gpu_metrics().await {
                 process_gpu_metrics.extend(ebpf_metrics);
             }
         }
-        
+
         Ok(process_gpu_metrics)
     }
 
     /// Собирает метрики использования GPU через DRM
     async fn collect_drm_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
         let metrics = HashMap::new();
-        
+
         // Пробуем найти DRM устройства
         let drm_dir = Path::new("/sys/class/drm");
         if !drm_dir.exists() {
             debug!("DRM directory not found, skipping DRM GPU monitoring");
             return Ok(metrics);
         }
-        
+
         // Пробуем прочитать информацию о процессах, использующих DRM
         // Это упрощённая реализация - в реальной системе нужно использовать
         // более сложные методы для получения информации о процессах
-        
+
         info!("Collecting GPU metrics via DRM (simplified implementation)");
-        
+
         // В реальной реализации здесь будет:
         // 1. Чтение из /proc/<pid>/fd/ для поиска DRM файлов
         // 2. Анализ открытых файлов DRM устройств
         // 3. Получение метрик использования из sysfs
-        
+
         // Пока возвращаем пустые метрики
         Ok(metrics)
     }
@@ -293,21 +293,21 @@ impl ProcessGpuMonitor {
     /// Собирает метрики использования GPU через NVIDIA NVML
     async fn collect_nvidia_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
         let metrics = HashMap::new();
-        
+
         // Пробуем найти NVIDIA устройства
         let nvidia_dir = Path::new("/proc/driver/nvidia");
         if !nvidia_dir.exists() {
             debug!("NVIDIA driver directory not found, skipping NVIDIA GPU monitoring");
             return Ok(metrics);
         }
-        
+
         info!("Collecting GPU metrics via NVIDIA NVML (simplified implementation)");
-        
+
         // В реальной реализации здесь будет:
         // 1. Использование NVIDIA NVML библиотеки
         // 2. Получение информации о процессах, использующих GPU
         // 3. Сбор метрик использования GPU
-        
+
         // Пока возвращаем пустые метрики
         Ok(metrics)
     }
@@ -315,21 +315,21 @@ impl ProcessGpuMonitor {
     /// Собирает метрики использования GPU через AMD
     async fn collect_amd_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
         let metrics = HashMap::new();
-        
+
         // Пробуем найти AMD GPU устройства
         let amdgpu_dir = Path::new("/sys/class/drm");
         if !amdgpu_dir.exists() {
             debug!("AMD GPU directory not found, skipping AMD GPU monitoring");
             return Ok(metrics);
         }
-        
+
         info!("Collecting GPU metrics via AMD (simplified implementation)");
-        
+
         // В реальной реализации здесь будет:
         // 1. Чтение из sysfs для AMD GPU
         // 2. Анализ использования GPU процессами
         // 3. Сбор метрик температуры и мощности
-        
+
         // Пока возвращаем пустые метрики
         Ok(metrics)
     }
@@ -337,14 +337,14 @@ impl ProcessGpuMonitor {
     /// Собирает метрики использования GPU через eBPF
     async fn collect_ebpf_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
         let metrics = HashMap::new();
-        
+
         info!("Collecting GPU metrics via eBPF (simplified implementation)");
-        
+
         // В реальной реализации здесь будет:
         // 1. Использование eBPF программ для мониторинга вызовов GPU API
         // 2. Сбор метрик использования GPU на уровне процессов
         // 3. Анализ времени выполнения на GPU
-        
+
         // Пока возвращаем пустые метрики
         Ok(metrics)
     }
@@ -367,7 +367,7 @@ impl ProcessGpuMonitor {
             );
             process_record.gpu_data_source = Some(gpu_info.data_source);
         }
-        
+
         Ok(())
     }
 
@@ -377,7 +377,7 @@ impl ProcessGpuMonitor {
         if let Some(cached_info) = self.gpu_cache.get_process_gpu_info(pid).await {
             return Ok(Some(cached_info));
         }
-        
+
         // Если нет в кэше, собираем новые метрики
         let metrics = self.collect_process_gpu_metrics().await?;
         if let Some(info) = metrics.get(&pid) {
@@ -401,13 +401,13 @@ impl ProcessGpuMonitor {
 
 lazy_static! {
     /// Глобальный кэш метрик GPU для процессов
-    pub static ref GLOBAL_PROCESS_GPU_CACHE: Arc<ProcessGpuCache> = 
+    pub static ref GLOBAL_PROCESS_GPU_CACHE: Arc<ProcessGpuCache> =
         Arc::new(ProcessGpuCache::new_default());
 }
 
 lazy_static! {
     /// Глобальный монитор использования GPU процессами
-    pub static ref GLOBAL_PROCESS_GPU_MONITOR: Arc<ProcessGpuMonitor> = 
+    pub static ref GLOBAL_PROCESS_GPU_MONITOR: Arc<ProcessGpuMonitor> =
         Arc::new(ProcessGpuMonitor::new_default());
 }
 
@@ -508,24 +508,32 @@ async fn collect_nvidia_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
     // Пробуем найти NVIDIA GPU устройства
     // В реальной реализации здесь будет использование NVML (NVIDIA Management Library)
     // Для упрощения возвращаем заглушки
-    
+
     // Проверяем наличие NVIDIA GPU через sysfs
     let nvidia_gpu_paths: glob::Paths = glob::glob("/sys/class/drm/card*/device/vendor")?;
-    
+
     for path_result in nvidia_gpu_paths {
         if let Ok(path) = path_result {
             if let Ok(vendor_content) = fs::read_to_string(&path) {
-                if vendor_content.trim() == "0x10de" { // NVIDIA vendor ID
-                    let card_id = path.parent().and_then(|p: &std::path::Path| p.parent())
+                if vendor_content.trim() == "0x10de" {
+                    // NVIDIA vendor ID
+                    let card_id = path
+                        .parent()
+                        .and_then(|p: &std::path::Path| p.parent())
                         .and_then(|p: &std::path::Path| p.file_name())
                         .and_then(|n: &std::ffi::OsStr| n.to_str())
-                        .unwrap_or("unknown").to_string();
-                    
+                        .unwrap_or("unknown")
+                        .to_string();
+
                     // Собираем метрики температуры и энергопотребления
                     // В реальной реализации здесь будет использование NVML
-                    let temp_path = format!("/sys/class/drm/{}/device/hwmon/hwmon*/temp1_input", card_id);
-                    let power_path = format!("/sys/class/drm/{}/device/hwmon/hwmon*/power1_input", card_id);
-                    
+                    let temp_path =
+                        format!("/sys/class/drm/{}/device/hwmon/hwmon*/temp1_input", card_id);
+                    let power_path = format!(
+                        "/sys/class/drm/{}/device/hwmon/hwmon*/power1_input",
+                        card_id
+                    );
+
                     let temperature = if let Ok(mut temp_files) = glob::glob(&temp_path) {
                         if let Some(temp_file_result) = temp_files.next() {
                             if let Ok(temp_file) = temp_file_result {
@@ -547,12 +555,14 @@ async fn collect_nvidia_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
                     } else {
                         0.0
                     };
-                    
+
                     let power = if let Ok(mut power_files) = glob::glob(&power_path) {
                         if let Some(power_file_result) = power_files.next() {
                             if let Ok(power_file) = power_file_result {
                                 if let Ok(power_content) = fs::read_to_string(&power_file) {
-                                    if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
+                                    if let Ok(power_microwatts) =
+                                        power_content.trim().parse::<u64>()
+                                    {
                                         power_microwatts as f32 / 1_000_000.0
                                     } else {
                                         0.0
@@ -569,14 +579,14 @@ async fn collect_nvidia_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
                     } else {
                         0.0
                     };
-                    
+
                     metrics.push(GpuTemperaturePowerInfo {
                         gpu_id: card_id,
                         gpu_type: "nvidia".to_string(),
                         temperature_c: temperature,
                         power_watts: power,
                         max_temperature_c: 95.0, // Типичное максимальное значение для NVIDIA GPU
-                        max_power_watts: 300.0, // Типичное максимальное значение для NVIDIA GPU
+                        max_power_watts: 300.0,  // Типичное максимальное значение для NVIDIA GPU
                         timestamp: SystemTime::now(),
                     });
                 }
@@ -593,20 +603,28 @@ async fn collect_amd_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
 
     // Пробуем найти AMD GPU устройства
     let amd_gpu_paths = glob::glob("/sys/class/drm/card*/device/vendor")?;
-    
+
     for path in amd_gpu_paths {
         if let Ok(path) = path {
             if let Ok(vendor_content) = fs::read_to_string(&path) {
-                if vendor_content.trim() == "0x1002" { // AMD vendor ID
-                    let card_id = path.parent().and_then(|p| p.parent())
+                if vendor_content.trim() == "0x1002" {
+                    // AMD vendor ID
+                    let card_id = path
+                        .parent()
+                        .and_then(|p| p.parent())
                         .and_then(|p| p.file_name())
                         .and_then(|n| n.to_str())
-                        .unwrap_or("unknown").to_string();
-                    
+                        .unwrap_or("unknown")
+                        .to_string();
+
                     // Собираем метрики температуры и энергопотребления
-                    let temp_path = format!("/sys/class/drm/{}/device/hwmon/hwmon*/temp1_input", card_id);
-                    let power_path = format!("/sys/class/drm/{}/device/hwmon/hwmon*/power1_average", card_id);
-                    
+                    let temp_path =
+                        format!("/sys/class/drm/{}/device/hwmon/hwmon*/temp1_input", card_id);
+                    let power_path = format!(
+                        "/sys/class/drm/{}/device/hwmon/hwmon*/power1_average",
+                        card_id
+                    );
+
                     let temperature = if let Ok(mut temp_files) = glob::glob(&temp_path) {
                         if let Some(temp_file) = temp_files.next() {
                             if let Ok(temp_file) = temp_file {
@@ -628,12 +646,14 @@ async fn collect_amd_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
                     } else {
                         0.0
                     };
-                    
+
                     let power = if let Ok(mut power_files) = glob::glob(&power_path) {
                         if let Some(power_file) = power_files.next() {
                             if let Ok(power_file) = power_file {
                                 if let Ok(power_content) = fs::read_to_string(&power_file) {
-                                    if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
+                                    if let Ok(power_microwatts) =
+                                        power_content.trim().parse::<u64>()
+                                    {
                                         power_microwatts as f32 / 1_000_000.0
                                     } else {
                                         0.0
@@ -650,14 +670,14 @@ async fn collect_amd_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
                     } else {
                         0.0
                     };
-                    
+
                     metrics.push(GpuTemperaturePowerInfo {
                         gpu_id: card_id,
                         gpu_type: "amd".to_string(),
                         temperature_c: temperature,
                         power_watts: power,
                         max_temperature_c: 110.0, // Типичное максимальное значение для AMD GPU
-                        max_power_watts: 350.0, // Типичное максимальное значение для AMD GPU
+                        max_power_watts: 350.0,   // Типичное максимальное значение для AMD GPU
                         timestamp: SystemTime::now(),
                     });
                 }
@@ -674,19 +694,24 @@ async fn collect_intel_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
 
     // Пробуем найти Intel GPU устройства
     let intel_gpu_paths = glob::glob("/sys/class/drm/card*/device/vendor")?;
-    
+
     for path in intel_gpu_paths {
         if let Ok(path) = path {
             if let Ok(vendor_content) = fs::read_to_string(&path) {
-                if vendor_content.trim() == "0x8086" { // Intel vendor ID
-                    let card_id = path.parent().and_then(|p| p.parent())
+                if vendor_content.trim() == "0x8086" {
+                    // Intel vendor ID
+                    let card_id = path
+                        .parent()
+                        .and_then(|p| p.parent())
                         .and_then(|p| p.file_name())
                         .and_then(|n| n.to_str())
-                        .unwrap_or("unknown").to_string();
-                    
+                        .unwrap_or("unknown")
+                        .to_string();
+
                     // Собираем метрики температуры
-                    let temp_path = format!("/sys/class/drm/{}/device/hwmon/hwmon*/temp1_input", card_id);
-                    
+                    let temp_path =
+                        format!("/sys/class/drm/{}/device/hwmon/hwmon*/temp1_input", card_id);
+
                     let temperature = if let Ok(mut temp_files) = glob::glob(&temp_path) {
                         if let Some(temp_file) = temp_files.next() {
                             if let Ok(temp_file) = temp_file {
@@ -708,18 +733,18 @@ async fn collect_intel_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
                     } else {
                         0.0
                     };
-                    
+
                     // Для Intel GPU энергопотребление может быть недоступно через sysfs
                     // В реальной реализации можно использовать другие источники
                     let power = 0.0;
-                    
+
                     metrics.push(GpuTemperaturePowerInfo {
                         gpu_id: card_id,
                         gpu_type: "intel".to_string(),
                         temperature_c: temperature,
                         power_watts: power,
                         max_temperature_c: 100.0, // Типичное максимальное значение для Intel GPU
-                        max_power_watts: 100.0, // Типичное максимальное значение для Intel GPU
+                        max_power_watts: 100.0,   // Типичное максимальное значение для Intel GPU
                         timestamp: SystemTime::now(),
                     });
                 }
@@ -736,7 +761,7 @@ async fn collect_intel_gpu_metrics() -> Result<Vec<GpuTemperaturePowerInfo>> {
 /// в существующих метриках процессов.
 pub async fn update_process_gpu_temperature_and_power() -> Result<()> {
     let gpu_metrics = collect_gpu_temperature_and_power().await?;
-    
+
     // Обновляем кэш процессов с новой информацией о температуре и энергопотреблении
     let process_gpu_cache = GLOBAL_PROCESS_GPU_CACHE.clone();
     let cache_read = match process_gpu_cache.cache.read() {
@@ -747,7 +772,7 @@ pub async fn update_process_gpu_temperature_and_power() -> Result<()> {
         }
     };
     let mut updates = Vec::new();
-    
+
     for (pid, process_gpu_info) in cache_read.iter() {
         // Находим соответствующие метрики GPU
         for gpu_metric in &gpu_metrics {
@@ -760,7 +785,7 @@ pub async fn update_process_gpu_temperature_and_power() -> Result<()> {
             }
         }
     }
-    
+
     // Применяем обновления
     if !updates.is_empty() {
         let mut cache_write = match process_gpu_cache.cache.write() {
@@ -774,7 +799,7 @@ pub async fn update_process_gpu_temperature_and_power() -> Result<()> {
             cache_write.insert(pid, updated_info);
         }
     }
-    
+
     Ok(())
 }
 

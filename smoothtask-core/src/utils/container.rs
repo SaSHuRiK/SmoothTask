@@ -3,9 +3,9 @@
 //! This module provides functionality for detecting containerized environments
 //! (Docker, Podman, etc.) and adapting SmoothTask behavior accordingly.
 
+use std::env;
 use std::fs;
 use std::path::Path;
-use std::env;
 use tracing::{debug, info};
 
 use super::cgroups::is_cgroup_v2_available;
@@ -35,7 +35,11 @@ pub struct ContainerInfo {
 
 impl ContainerInfo {
     /// Create a new ContainerInfo instance
-    pub fn new(runtime: ContainerRuntime, container_id: Option<String>, cgroup_path: Option<String>) -> Self {
+    pub fn new(
+        runtime: ContainerRuntime,
+        container_id: Option<String>,
+        cgroup_path: Option<String>,
+    ) -> Self {
         Self {
             runtime: runtime.clone(),
             is_containerized: runtime != ContainerRuntime::None,
@@ -134,14 +138,14 @@ pub fn detect_container_runtime() -> ContainerRuntime {
 /// Get detailed container information including ID and cgroup path
 pub fn get_container_info() -> ContainerInfo {
     let runtime = detect_container_runtime();
-    
+
     if runtime == ContainerRuntime::None {
         return ContainerInfo::new(runtime, None, None);
     }
 
     // Try to extract container ID from environment variables
-    let container_id = 
-        env::var("HOSTNAME").ok()
+    let container_id = env::var("HOSTNAME")
+        .ok()
         .or_else(|| env::var("CONTAINER_ID").ok())
         .or_else(|| env::var("NAME").ok());
 
@@ -149,7 +153,8 @@ pub fn get_container_info() -> ContainerInfo {
     let cgroup_path = fs::read_to_string("/proc/self/cgroup")
         .ok()
         .and_then(|content| {
-            content.lines()
+            content
+                .lines()
                 .find(|line| line.contains("0::"))
                 .map(|line| line.split("0::").nth(1).unwrap_or("").to_string())
         });
@@ -236,17 +241,23 @@ pub fn collect_container_metrics() -> ContainerMetrics {
             // cgroup v2 paths
             let memory_limit_path = format!("/sys/fs/cgroup{}/memory.max", cgroup_path);
             let memory_usage_path = format!("/sys/fs/cgroup{}/memory.current", cgroup_path);
-            
+
             // Improved error handling with logging
             match fs::read_to_string(&memory_limit_path) {
                 Ok(limit_content) => {
                     if let Ok(limit) = limit_content.trim().parse::<u64>() {
                         metrics.memory_limit_bytes = Some(limit);
                     } else {
-                        debug!("Failed to parse memory limit from: {}", limit_content.trim());
+                        debug!(
+                            "Failed to parse memory limit from: {}",
+                            limit_content.trim()
+                        );
                     }
                 }
-                Err(e) => debug!("Failed to read memory limit at {}: {}", memory_limit_path, e),
+                Err(e) => debug!(
+                    "Failed to read memory limit at {}: {}",
+                    memory_limit_path, e
+                ),
             }
 
             match fs::read_to_string(&memory_usage_path) {
@@ -254,25 +265,39 @@ pub fn collect_container_metrics() -> ContainerMetrics {
                     if let Ok(usage) = usage_content.trim().parse::<u64>() {
                         metrics.memory_usage_bytes = Some(usage);
                     } else {
-                        debug!("Failed to parse memory usage from: {}", usage_content.trim());
+                        debug!(
+                            "Failed to parse memory usage from: {}",
+                            usage_content.trim()
+                        );
                     }
                 }
-                Err(e) => debug!("Failed to read memory usage at {}: {}", memory_usage_path, e),
+                Err(e) => debug!(
+                    "Failed to read memory usage at {}: {}",
+                    memory_usage_path, e
+                ),
             }
         } else {
             // cgroup v1 paths (fallback)
-            let memory_limit_path = format!("/sys/fs/cgroup/memory{}/memory.limit_in_bytes", cgroup_path);
-            let memory_usage_path = format!("/sys/fs/cgroup/memory{}/memory.usage_in_bytes", cgroup_path);
-            
+            let memory_limit_path =
+                format!("/sys/fs/cgroup/memory{}/memory.limit_in_bytes", cgroup_path);
+            let memory_usage_path =
+                format!("/sys/fs/cgroup/memory{}/memory.usage_in_bytes", cgroup_path);
+
             match fs::read_to_string(&memory_limit_path) {
                 Ok(limit_content) => {
                     if let Ok(limit) = limit_content.trim().parse::<u64>() {
                         metrics.memory_limit_bytes = Some(limit);
                     } else {
-                        debug!("Failed to parse memory limit from: {}", limit_content.trim());
+                        debug!(
+                            "Failed to parse memory limit from: {}",
+                            limit_content.trim()
+                        );
                     }
                 }
-                Err(e) => debug!("Failed to read memory limit at {}: {}", memory_limit_path, e),
+                Err(e) => debug!(
+                    "Failed to read memory limit at {}: {}",
+                    memory_limit_path, e
+                ),
             }
 
             match fs::read_to_string(&memory_usage_path) {
@@ -280,10 +305,16 @@ pub fn collect_container_metrics() -> ContainerMetrics {
                     if let Ok(usage) = usage_content.trim().parse::<u64>() {
                         metrics.memory_usage_bytes = Some(usage);
                     } else {
-                        debug!("Failed to parse memory usage from: {}", usage_content.trim());
+                        debug!(
+                            "Failed to parse memory usage from: {}",
+                            usage_content.trim()
+                        );
                     }
                 }
-                Err(e) => debug!("Failed to read memory usage at {}: {}", memory_usage_path, e),
+                Err(e) => debug!(
+                    "Failed to read memory usage at {}: {}",
+                    memory_usage_path, e
+                ),
             }
         }
     }
@@ -294,7 +325,7 @@ pub fn collect_container_metrics() -> ContainerMetrics {
             // cgroup v2 paths
             let cpu_weight_path = format!("/sys/fs/cgroup{}/cpu.weight", cgroup_path);
             let cpu_max_path = format!("/sys/fs/cgroup{}/cpu.max", cgroup_path);
-            
+
             // Try to read CPU weight (replaces cpu.shares in v2)
             match fs::read_to_string(&cpu_weight_path) {
                 Ok(weight_content) => {
@@ -334,7 +365,7 @@ pub fn collect_container_metrics() -> ContainerMetrics {
             let cpu_shares_path = format!("/sys/fs/cgroup/cpu{}/cpu.shares", cgroup_path);
             let cpu_quota_path = format!("/sys/fs/cgroup/cpu{}/cpu.cfs_quota_us", cgroup_path);
             let cpu_period_path = format!("/sys/fs/cgroup/cpu{}/cpu.cfs_period_us", cgroup_path);
-            
+
             match fs::read_to_string(&cpu_shares_path) {
                 Ok(shares_content) => {
                     if let Ok(shares) = shares_content.trim().parse::<u64>() {
@@ -376,10 +407,15 @@ pub fn collect_container_metrics() -> ContainerMetrics {
             for interface in interfaces.filter_map(Result::ok) {
                 let interface_name = interface.file_name();
                 let interface_name_str = interface_name.to_string_lossy();
-                
+
                 // Skip loopback and host interfaces
-                if interface_name_str != "lo" && !interface_name_str.starts_with("eth") && !interface_name_str.starts_with("en") {
-                    metrics.network_interfaces.push(interface_name_str.into_owned());
+                if interface_name_str != "lo"
+                    && !interface_name_str.starts_with("eth")
+                    && !interface_name_str.starts_with("en")
+                {
+                    metrics
+                        .network_interfaces
+                        .push(interface_name_str.into_owned());
                 }
             }
         }
@@ -389,10 +425,10 @@ pub fn collect_container_metrics() -> ContainerMetrics {
     // Collect network metrics for container interfaces
     let network_interfaces = metrics.network_interfaces.clone();
     collect_container_network_metrics(&network_interfaces, &mut metrics);
-    
+
     // Collect disk metrics for container
     collect_container_disk_metrics(&mut metrics);
-    
+
     // Collect additional CPU metrics for container
     collect_container_cpu_metrics(&container_info, &mut metrics);
 
@@ -405,42 +441,42 @@ fn collect_container_network_metrics(interfaces: &[String], metrics: &mut Contai
     let mut total_tx_bytes = 0u64;
     let mut total_rx_packets = 0u64;
     let mut total_tx_packets = 0u64;
-    
+
     for interface in interfaces {
         let stats_path = format!("/sys/class/net/{}/statistics", interface);
-        
+
         // Read network statistics
         let rx_bytes_path = format!("{}/rx_bytes", stats_path);
         let tx_bytes_path = format!("{}/tx_bytes", stats_path);
         let rx_packets_path = format!("{}/rx_packets", stats_path);
         let tx_packets_path = format!("{}/tx_packets", stats_path);
-        
+
         // Accumulate network metrics
         if let Ok(rx_bytes_content) = fs::read_to_string(&rx_bytes_path) {
             if let Ok(rx_bytes) = rx_bytes_content.trim().parse::<u64>() {
                 total_rx_bytes = total_rx_bytes.saturating_add(rx_bytes);
             }
         }
-        
+
         if let Ok(tx_bytes_content) = fs::read_to_string(&tx_bytes_path) {
             if let Ok(tx_bytes) = tx_bytes_content.trim().parse::<u64>() {
                 total_tx_bytes = total_tx_bytes.saturating_add(tx_bytes);
             }
         }
-        
+
         if let Ok(rx_packets_content) = fs::read_to_string(&rx_packets_path) {
             if let Ok(rx_packets) = rx_packets_content.trim().parse::<u64>() {
                 total_rx_packets = total_rx_packets.saturating_add(rx_packets);
             }
         }
-        
+
         if let Ok(tx_packets_content) = fs::read_to_string(&tx_packets_path) {
             if let Ok(tx_packets) = tx_packets_content.trim().parse::<u64>() {
                 total_tx_packets = total_tx_packets.saturating_add(tx_packets);
             }
         }
     }
-    
+
     metrics.network_rx_bytes = Some(total_rx_bytes);
     metrics.network_tx_bytes = Some(total_tx_bytes);
     metrics.network_rx_packets = Some(total_rx_packets);
@@ -455,13 +491,16 @@ fn collect_container_disk_metrics(metrics: &mut ContainerMetrics) {
         let mut total_write_bytes = 0u64;
         let mut total_read_ops = 0u64;
         let mut total_write_ops = 0u64;
-        
+
         for line in diskstats.lines() {
             // Parse diskstats line: major minor device read_ops read_sectors write_ops write_sectors ...
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 10 {
                 // Skip loop devices and other virtual devices
-                if !parts[2].starts_with("loop") && !parts[2].starts_with("ram") && !parts[2].starts_with("sr") {
+                if !parts[2].starts_with("loop")
+                    && !parts[2].starts_with("ram")
+                    && !parts[2].starts_with("sr")
+                {
                     if let Ok(read_sectors) = parts[5].parse::<u64>() {
                         total_read_bytes = total_read_bytes.saturating_add(read_sectors * 512);
                     }
@@ -477,7 +516,7 @@ fn collect_container_disk_metrics(metrics: &mut ContainerMetrics) {
                 }
             }
         }
-        
+
         metrics.disk_read_bytes = Some(total_read_bytes);
         metrics.disk_write_bytes = Some(total_write_bytes);
         metrics.disk_read_ops = Some(total_read_ops);
@@ -489,11 +528,11 @@ fn collect_container_disk_metrics(metrics: &mut ContainerMetrics) {
 fn collect_container_cpu_metrics(container_info: &ContainerInfo, metrics: &mut ContainerMetrics) {
     if let Some(cgroup_path) = &container_info.cgroup_path {
         let cgroup_v2_available = is_cgroup_v2_available();
-        
+
         if cgroup_v2_available {
             // cgroup v2 CPU metrics
             let cpu_stat_path = format!("/sys/fs/cgroup{}/cpu.stat", cgroup_path);
-            
+
             if let Ok(cpu_stat) = fs::read_to_string(&cpu_stat_path) {
                 for line in cpu_stat.lines() {
                     let parts: Vec<&str> = line.split_whitespace().collect();
@@ -501,7 +540,8 @@ fn collect_container_cpu_metrics(container_info: &ContainerInfo, metrics: &mut C
                         match parts[0] {
                             "usage_usec" => {
                                 if let Ok(usage_usec) = parts[1].parse::<u64>() {
-                                    metrics.cpu_usage_ns = Some(usage_usec * 1000); // Convert to nanoseconds
+                                    metrics.cpu_usage_ns = Some(usage_usec * 1000);
+                                    // Convert to nanoseconds
                                 }
                             }
                             "throttled_usec" => {
@@ -523,7 +563,7 @@ fn collect_container_cpu_metrics(container_info: &ContainerInfo, metrics: &mut C
             // cgroup v1 CPU metrics
             let cpuacct_stat_path = format!("/sys/fs/cgroup/cpuacct{}/cpuacct.stat", cgroup_path);
             let cpu_stat_path = format!("/sys/fs/cgroup/cpu{}/cpu.stat", cgroup_path);
-            
+
             // Read CPU usage from cpuacct.stat
             if let Ok(cpuacct_stat) = fs::read_to_string(&cpuacct_stat_path) {
                 for line in cpuacct_stat.lines() {
@@ -537,7 +577,7 @@ fn collect_container_cpu_metrics(container_info: &ContainerInfo, metrics: &mut C
                     }
                 }
             }
-            
+
             // Read CPU throttling from cpu.stat
             if let Ok(cpu_stat) = fs::read_to_string(&cpu_stat_path) {
                 for line in cpu_stat.lines() {
@@ -567,11 +607,11 @@ fn collect_container_cpu_metrics(container_info: &ContainerInfo, metrics: &mut C
 /// Get container-specific environment variables for debugging and monitoring
 pub fn get_container_environment_info() -> Vec<(String, String)> {
     let mut env_info = Vec::new();
-    
+
     // Common container environment variables
     let env_vars = [
         "CONTAINER_TYPE",
-        "DOCKER_CONTAINER", 
+        "DOCKER_CONTAINER",
         "PODMAN_CONTAINER",
         "KUBERNETES_SERVICE_HOST",
         "KUBERNETES_SERVICE_PORT",
@@ -581,13 +621,13 @@ pub fn get_container_environment_info() -> Vec<(String, String)> {
         "CONTAINER_ID",
         "NAME",
     ];
-    
+
     for var in env_vars.iter() {
         if let Ok(value) = env::var(var) {
             env_info.push((var.to_string(), value));
         }
     }
-    
+
     env_info
 }
 
@@ -599,12 +639,15 @@ pub fn adapt_for_container() -> bool {
     }
 
     let container_info = get_container_info();
-    info!("Detected container environment: {:?}", container_info.runtime);
-    
+    info!(
+        "Detected container environment: {:?}",
+        container_info.runtime
+    );
+
     if let Some(container_id) = &container_info.container_id {
         info!("Container ID: {}", container_id);
     }
-    
+
     if let Some(cgroup_path) = &container_info.cgroup_path {
         info!("Container cgroup path: {}", cgroup_path);
     }
@@ -612,10 +655,16 @@ pub fn adapt_for_container() -> bool {
     // Collect and log container metrics
     let metrics = collect_container_metrics();
     if metrics.memory_limit_bytes.is_some() {
-        info!("Container memory limit: {} bytes", metrics.memory_limit_bytes.unwrap());
+        info!(
+            "Container memory limit: {} bytes",
+            metrics.memory_limit_bytes.unwrap()
+        );
     }
     if metrics.memory_usage_bytes.is_some() {
-        info!("Container memory usage: {} bytes", metrics.memory_usage_bytes.unwrap());
+        info!(
+            "Container memory usage: {} bytes",
+            metrics.memory_usage_bytes.unwrap()
+        );
     }
     if metrics.cpu_shares.is_some() {
         info!("Container CPU shares: {}", metrics.cpu_shares.unwrap());
@@ -627,42 +676,75 @@ pub fn adapt_for_container() -> bool {
         info!("Container CPU period: {}", metrics.cpu_period.unwrap());
     }
     if !metrics.network_interfaces.is_empty() {
-        info!("Container network interfaces: {:?}", metrics.network_interfaces);
+        info!(
+            "Container network interfaces: {:?}",
+            metrics.network_interfaces
+        );
     }
-    
+
     // Log additional container metrics
     if metrics.network_rx_bytes.is_some() {
-        info!("Container network RX bytes: {}", metrics.network_rx_bytes.unwrap());
+        info!(
+            "Container network RX bytes: {}",
+            metrics.network_rx_bytes.unwrap()
+        );
     }
     if metrics.network_tx_bytes.is_some() {
-        info!("Container network TX bytes: {}", metrics.network_tx_bytes.unwrap());
+        info!(
+            "Container network TX bytes: {}",
+            metrics.network_tx_bytes.unwrap()
+        );
     }
     if metrics.network_rx_packets.is_some() {
-        info!("Container network RX packets: {}", metrics.network_rx_packets.unwrap());
+        info!(
+            "Container network RX packets: {}",
+            metrics.network_rx_packets.unwrap()
+        );
     }
     if metrics.network_tx_packets.is_some() {
-        info!("Container network TX packets: {}", metrics.network_tx_packets.unwrap());
+        info!(
+            "Container network TX packets: {}",
+            metrics.network_tx_packets.unwrap()
+        );
     }
     if metrics.disk_read_bytes.is_some() {
-        info!("Container disk read bytes: {}", metrics.disk_read_bytes.unwrap());
+        info!(
+            "Container disk read bytes: {}",
+            metrics.disk_read_bytes.unwrap()
+        );
     }
     if metrics.disk_write_bytes.is_some() {
-        info!("Container disk write bytes: {}", metrics.disk_write_bytes.unwrap());
+        info!(
+            "Container disk write bytes: {}",
+            metrics.disk_write_bytes.unwrap()
+        );
     }
     if metrics.disk_read_ops.is_some() {
-        info!("Container disk read operations: {}", metrics.disk_read_ops.unwrap());
+        info!(
+            "Container disk read operations: {}",
+            metrics.disk_read_ops.unwrap()
+        );
     }
     if metrics.disk_write_ops.is_some() {
-        info!("Container disk write operations: {}", metrics.disk_write_ops.unwrap());
+        info!(
+            "Container disk write operations: {}",
+            metrics.disk_write_ops.unwrap()
+        );
     }
     if metrics.cpu_usage_ns.is_some() {
         info!("Container CPU usage: {} ns", metrics.cpu_usage_ns.unwrap());
     }
     if metrics.cpu_throttled_time_ns.is_some() {
-        info!("Container CPU throttled time: {} ns", metrics.cpu_throttled_time_ns.unwrap());
+        info!(
+            "Container CPU throttled time: {} ns",
+            metrics.cpu_throttled_time_ns.unwrap()
+        );
     }
     if metrics.cpu_throttled_periods.is_some() {
-        info!("Container CPU throttled periods: {}", metrics.cpu_throttled_periods.unwrap());
+        info!(
+            "Container CPU throttled periods: {}",
+            metrics.cpu_throttled_periods.unwrap()
+        );
     }
 
     // Log container environment variables for debugging
@@ -682,7 +764,7 @@ pub fn adapt_for_container() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_container_detection_no_container() {
         // In a normal environment, should detect no container
@@ -711,7 +793,11 @@ mod tests {
 
     #[test]
     fn test_container_info_creation() {
-        let info = ContainerInfo::new(ContainerRuntime::Docker, Some("test123".to_string()), Some("/docker/test".to_string()));
+        let info = ContainerInfo::new(
+            ContainerRuntime::Docker,
+            Some("test123".to_string()),
+            Some("/docker/test".to_string()),
+        );
         assert_eq!(info.runtime, ContainerRuntime::Docker);
         assert!(info.is_containerized);
         assert_eq!(info.container_id, Some("test123".to_string()));
@@ -796,7 +882,7 @@ mod tests {
         let info = ContainerInfo::new(
             ContainerRuntime::Podman,
             Some("podman-container-123".to_string()),
-            Some("/podman/container-123".to_string())
+            Some("/podman/container-123".to_string()),
         );
 
         assert_eq!(info.runtime, ContainerRuntime::Podman);
@@ -820,10 +906,10 @@ mod tests {
     fn test_container_environment_info() {
         // Test container environment info function
         let env_info = get_container_environment_info();
-        
+
         // Should return a vector of tuples
         assert!(env_info.is_empty() || !env_info.is_empty()); // Always true, just testing it doesn't panic
-        
+
         // Each item should be a tuple of strings
         for (key, value) in env_info {
             assert!(!key.is_empty());
@@ -836,18 +922,18 @@ mod tests {
         // Test that container detection handles edge cases gracefully
         let runtime = detect_container_runtime();
         let _ = runtime; // Just ensure it doesn't panic
-        
+
         // Test that all runtime variants can be matched
         match runtime {
-            ContainerRuntime::Docker => {},
-            ContainerRuntime::Podman => {},
-            ContainerRuntime::Containerd => {},
-            ContainerRuntime::Lxc => {},
-            ContainerRuntime::Kubernetes => {},
-            ContainerRuntime::Crio => {},
-            ContainerRuntime::Rkt => {},
-            ContainerRuntime::Unknown(_) => {},
-            ContainerRuntime::None => {},
+            ContainerRuntime::Docker => {}
+            ContainerRuntime::Podman => {}
+            ContainerRuntime::Containerd => {}
+            ContainerRuntime::Lxc => {}
+            ContainerRuntime::Kubernetes => {}
+            ContainerRuntime::Crio => {}
+            ContainerRuntime::Rkt => {}
+            ContainerRuntime::Unknown(_) => {}
+            ContainerRuntime::None => {}
         }
     }
 
@@ -862,7 +948,11 @@ mod tests {
             cpu_shares: Some(2048),
             cpu_quota: Some(200000),
             cpu_period: Some(100000),
-            network_interfaces: vec!["eth0".to_string(), "veth1".to_string(), "flannel.1".to_string()],
+            network_interfaces: vec![
+                "eth0".to_string(),
+                "veth1".to_string(),
+                "flannel.1".to_string(),
+            ],
             network_rx_bytes: None,
             network_tx_bytes: None,
             network_rx_packets: None,
@@ -892,7 +982,7 @@ mod tests {
         let info = ContainerInfo::new(
             ContainerRuntime::Kubernetes,
             Some("k8s-pod-abc123".to_string()),
-            Some("/kubepods/podabc123".to_string())
+            Some("/kubepods/podabc123".to_string()),
         );
 
         assert_eq!(info.runtime, ContainerRuntime::Kubernetes);
@@ -907,7 +997,7 @@ mod tests {
         let info = ContainerInfo::new(
             ContainerRuntime::Crio,
             Some("crio-container-456".to_string()),
-            Some("/crio/container-456".to_string())
+            Some("/crio/container-456".to_string()),
         );
 
         assert_eq!(info.runtime, ContainerRuntime::Crio);
@@ -930,9 +1020,10 @@ mod tests {
             ContainerRuntime::Rkt,
             ContainerRuntime::Unknown("custom".to_string()),
         ];
-        
+
         for runtime in test_runtimes {
-            let info = ContainerInfo::new(runtime, Some("test".to_string()), Some("/test".to_string()));
+            let info =
+                ContainerInfo::new(runtime, Some("test".to_string()), Some("/test".to_string()));
             assert!(info.is_containerized);
         }
     }
@@ -942,7 +1033,7 @@ mod tests {
         // Test that container metrics collection handles errors gracefully
         // This test verifies that the function doesn't panic when files are missing
         let metrics = collect_container_metrics();
-        
+
         // Should return a valid ContainerMetrics struct even if not in container
         assert!(metrics.memory_limit_bytes.is_none() || metrics.memory_limit_bytes.is_some());
         assert!(metrics.memory_usage_bytes.is_none() || metrics.memory_usage_bytes.is_some());
@@ -956,7 +1047,7 @@ mod tests {
     fn test_container_metrics_with_additional_fields() {
         // Test that new container metrics fields are properly initialized
         let metrics = ContainerMetrics::default();
-        
+
         // All new fields should be None by default
         assert!(metrics.network_rx_bytes.is_none());
         assert!(metrics.network_tx_bytes.is_none());
@@ -996,7 +1087,7 @@ mod tests {
             cpu_throttled_time_ns: Some(1000000),
             cpu_throttled_periods: Some(10),
         };
-        
+
         // Verify all fields have correct values
         assert_eq!(metrics.network_rx_bytes, Some(1000000));
         assert_eq!(metrics.network_tx_bytes, Some(2000000));
@@ -1016,10 +1107,10 @@ mod tests {
         // Test that network metrics function works without panicking
         let mut metrics = ContainerMetrics::default();
         let interfaces: Vec<String> = vec![];
-        
+
         // This should not panic even with empty interfaces
         collect_container_network_metrics(&interfaces, &mut metrics);
-        
+
         // Metrics should still be None (no interfaces to read from)
         assert!(metrics.network_rx_bytes.is_none());
         assert!(metrics.network_tx_bytes.is_none());
@@ -1031,10 +1122,10 @@ mod tests {
     fn test_container_disk_metrics_function() {
         // Test that disk metrics function works without panicking
         let mut metrics = ContainerMetrics::default();
-        
+
         // This should not panic even if /proc/diskstats doesn't exist or can't be read
         collect_container_disk_metrics(&mut metrics);
-        
+
         // Metrics may be None or Some depending on system
         assert!(metrics.disk_read_bytes.is_none() || metrics.disk_read_bytes.is_some());
         assert!(metrics.disk_write_bytes.is_none() || metrics.disk_write_bytes.is_some());
@@ -1047,10 +1138,10 @@ mod tests {
         // Test that CPU metrics function works without panicking
         let container_info = ContainerInfo::new(ContainerRuntime::None, None, None);
         let mut metrics = ContainerMetrics::default();
-        
+
         // This should not panic even if not in container
         collect_container_cpu_metrics(&container_info, &mut metrics);
-        
+
         // Metrics should be None (not in container)
         assert!(metrics.cpu_usage_ns.is_none());
         assert!(metrics.cpu_throttled_time_ns.is_none());
@@ -1081,7 +1172,7 @@ mod tests {
             cpu_throttled_time_ns: Some(10000000),
             cpu_throttled_periods: Some(50),
         };
-        
+
         // Verify all fields are correctly set
         assert_eq!(metrics.runtime, ContainerRuntime::Kubernetes);
         assert_eq!(metrics.container_id, Some("k8s-pod-123".to_string()));

@@ -102,7 +102,8 @@ impl ONNXRanker {
             return Err(anyhow::anyhow!(
                 "Файл модели не найден: {}",
                 model_path.display()
-            )).context("Проверьте путь к файлу модели в конфигурации");
+            ))
+            .context("Проверьте путь к файлу модели в конфигурации");
         }
 
         // Проверяем права на чтение
@@ -111,13 +112,19 @@ impl ONNXRanker {
                 "Не удалось получить метаданные файла модели {}: {}",
                 model_path.display(),
                 e
-            )).context("Проверьте права доступа к файлу модели");
+            ))
+            .context("Проверьте права доступа к файлу модели");
         }
 
         // Загружаем модель с использованием простого API
         let session = Session::builder()?
             .commit_from_file(model_path)
-            .with_context(|| format!("Не удалось загрузить ONNX модель из файла: {}", model_path.display()))?;
+            .with_context(|| {
+                format!(
+                    "Не удалось загрузить ONNX модель из файла: {}",
+                    model_path.display()
+                )
+            })?;
 
         // Получаем информацию о модели
         let input_info = session
@@ -286,14 +293,14 @@ impl VersionedONNXRanker {
     /// Новый экземпляр VersionedONNXRanker
     pub fn new(models_directory: impl AsRef<Path>) -> Self {
         let models_directory = models_directory.as_ref().to_path_buf();
-        
+
         Self {
             version_manager: ModelVersionManager::new(),
             current_ranker: None,
             models_directory,
         }
     }
-    
+
     /// Загрузить все доступные версии моделей из директории.
     ///
     /// # Возвращает
@@ -303,22 +310,23 @@ impl VersionedONNXRanker {
         // Загружаем версии из директории
         let versions = ModelVersionManager::utils::load_versions_from_directory(
             &self.models_directory,
-            "model_"
-        ).context("Не удалось загрузить версии моделей из директории")?;
-        
+            "model_",
+        )
+        .context("Не удалось загрузить версии моделей из директории")?;
+
         // Добавляем версии в менеджер
         for version in versions {
             self.version_manager.add_version(version);
         }
-        
+
         // Если есть версии, загружаем текущую
         if let Some(current_version) = self.version_manager.get_current_version() {
             self.load_version(current_version.version_id.clone())?;
         }
-        
+
         Ok(())
     }
-    
+
     /// Загрузить конкретную версию модели.
     ///
     /// # Аргументы
@@ -330,32 +338,39 @@ impl VersionedONNXRanker {
     /// Результат операции загрузки
     pub fn load_version(&mut self, version_id: impl Into<String>) -> Result<()> {
         let version_id = version_id.into();
-        
+
         // Проверяем, что версия существует
-        let version = self.version_manager.get_version(&version_id)
+        let version = self
+            .version_manager
+            .get_version(&version_id)
             .context("Версия модели не найдена")?;
-        
+
         // Проверяем целостность модели
         if !version.validate() {
             return Err(anyhow::anyhow!(
                 "Модель для версии {} невалидна или не существует",
                 version_id
-            )).context("Проверьте файл модели");
+            ))
+            .context("Проверьте файл модели");
         }
-        
+
         // Загружаем модель
         let ranker = ONNXRanker::load(&version.model_path)
             .with_context(|| format!("Не удалось загрузить модель для версии {}", version_id))?;
-        
+
         // Устанавливаем как текущую версию
         self.version_manager.set_current_version(&version_id);
         self.current_ranker = Some(ranker);
-        
-        tracing::info!("Загружена модель версии {}: {}", version_id, version.model_path.display());
-        
+
+        tracing::info!(
+            "Загружена модель версии {}: {}",
+            version_id,
+            version.model_path.display()
+        );
+
         Ok(())
     }
-    
+
     /// Переключиться на предыдущую версию модели.
     ///
     /// # Возвращает
@@ -365,25 +380,30 @@ impl VersionedONNXRanker {
         if !self.version_manager.rollback() {
             return Err(anyhow::anyhow!("Нет предыдущих версий для отката"));
         }
-        
+
         if let Some(current_version) = self.version_manager.get_current_version() {
             self.load_version(current_version.version_id.clone())?;
-            tracing::info!("Откат к версии {}: {}", current_version.version_id, current_version.model_path.display());
+            tracing::info!(
+                "Откат к версии {}: {}",
+                current_version.version_id,
+                current_version.model_path.display()
+            );
         }
-        
+
         Ok(())
     }
-    
+
     /// Получить информацию о текущей версии.
     ///
     /// # Возвращает
     ///
     /// Информация о текущей версии или None, если версия не загружена
     pub fn get_current_version_info(&self) -> Option<String> {
-        self.version_manager.get_current_version()
+        self.version_manager
+            .get_current_version()
             .map(|v| v.info_string())
     }
-    
+
     /// Получить информацию о всех доступных версиях.
     ///
     /// # Возвращает
@@ -392,7 +412,7 @@ impl VersionedONNXRanker {
     pub fn get_all_versions_info(&self) -> String {
         self.version_manager.versions_info()
     }
-    
+
     /// Добавить новую версию модели.
     ///
     /// # Аргументы
@@ -413,7 +433,7 @@ impl VersionedONNXRanker {
         metadata: HashMap<String, String>,
     ) -> Result<()> {
         let model_path = model_path.as_ref().to_path_buf();
-        
+
         // Проверяем, что файл существует
         if !model_path.exists() {
             return Err(anyhow::anyhow!(
@@ -421,24 +441,31 @@ impl VersionedONNXRanker {
                 model_path.display()
             ));
         }
-        
+
         // Создаём новую версию
         let mut version = ModelVersion::with_metadata(version_id, model_path, format, metadata);
-        
+
         // Вычисляем хэш
-        version.compute_hash()
-            .with_context(|| format!("Не удалось вычислить хэш для модели {}", version.model_path.display()))?;
-        
+        version.compute_hash().with_context(|| {
+            format!(
+                "Не удалось вычислить хэш для модели {}",
+                version.model_path.display()
+            )
+        })?;
+
         // Добавляем версию
         if !self.version_manager.add_version(version) {
-            return Err(anyhow::anyhow!("Версия с идентификатором {} уже существует", version.version_id));
+            return Err(anyhow::anyhow!(
+                "Версия с идентификатором {} уже существует",
+                version.version_id
+            ));
         }
-        
+
         tracing::info!("Добавлена новая версия модели: {}", version.version_id);
-        
+
         Ok(())
     }
-    
+
     /// Удалить версию модели.
     ///
     /// # Аргументы
@@ -450,7 +477,7 @@ impl VersionedONNXRanker {
     /// Результат операции удаления
     pub fn remove_version(&mut self, version_id: impl AsRef<str>) -> Result<()> {
         let version_id = version_id.as_ref();
-        
+
         // Нельзя удалить текущую версию
         if let Some(current) = self.version_manager.get_current_version() {
             if current.version_id == version_id {
@@ -460,16 +487,16 @@ impl VersionedONNXRanker {
                 ));
             }
         }
-        
+
         if !self.version_manager.remove_version(version_id) {
             return Err(anyhow::anyhow!("Версия {} не найдена", version_id));
         }
-        
+
         tracing::info!("Удалена версия модели: {}", version_id);
-        
+
         Ok(())
     }
-    
+
     /// Сохранить информацию о версиях в файл.
     ///
     /// # Аргументы
@@ -482,10 +509,10 @@ impl VersionedONNXRanker {
     pub fn save_versions_to_file(&self, output_path: impl AsRef<Path>) -> Result<()> {
         ModelVersionManager::utils::save_versions_to_file(
             self.version_manager.get_all_versions(),
-            output_path
+            output_path,
         )
     }
-    
+
     /// Загрузить информацию о версиях из файла.
     ///
     /// # Аргументы
@@ -498,13 +525,16 @@ impl VersionedONNXRanker {
     pub fn load_versions_from_file(&mut self, input_path: impl AsRef<Path>) -> Result<()> {
         let versions = ModelVersionManager::utils::load_versions_from_file(input_path)
             .context("Не удалось загрузить версии из файла")?;
-        
+
         for version in versions {
             self.version_manager.add_version(version);
         }
-        
-        tracing::info!("Загружено {} версий из файла", self.version_manager.version_count());
-        
+
+        tracing::info!(
+            "Загружено {} версий из файла",
+            self.version_manager.version_count()
+        );
+
         Ok(())
     }
 }
@@ -531,108 +561,114 @@ impl Ranker for VersionedONNXRanker {
 #[cfg(all(test, feature = "onnx"))]
 mod versioned_tests {
     use super::*;
-    use tempfile::tempdir;
     use std::io::Write;
-    
+    use tempfile::tempdir;
+
     #[test]
     fn test_versioned_ranker_creation() {
         let temp_dir = tempdir().unwrap();
         let ranker = VersionedONNXRanker::new(temp_dir.path());
-        
+
         assert_eq!(ranker.version_manager.version_count(), 0);
         assert!(ranker.current_ranker.is_none());
     }
-    
+
     #[test]
     fn test_versioned_ranker_add_version() {
         let temp_dir = tempdir().unwrap();
         let mut ranker = VersionedONNXRanker::new(temp_dir.path());
-        
+
         // Создаём тестовый файл модели
         let model_file = temp_dir.path().join("test_model.onnx");
         fs::write(&model_file, "dummy onnx content").unwrap();
-        
+
         let mut metadata = HashMap::new();
         metadata.insert("accuracy".to_string(), "0.95".to_string());
-        
+
         let result = ranker.add_version("v1.0.0", &model_file, "onnx", metadata);
         assert!(result.is_ok());
         assert_eq!(ranker.version_manager.version_count(), 1);
     }
-    
+
     #[test]
     fn test_versioned_ranker_load_versions() {
         let temp_dir = tempdir().unwrap();
         let mut ranker = VersionedONNXRanker::new(temp_dir.path());
-        
+
         // Создаём тестовые файлы моделей
         let model_file1 = temp_dir.path().join("model_v1.0.0.onnx");
         let model_file2 = temp_dir.path().join("model_v2.0.0.onnx");
-        
+
         fs::write(&model_file1, "dummy content 1").unwrap();
         fs::write(&model_file2, "dummy content 2").unwrap();
-        
+
         let result = ranker.load_versions();
         // Ожидаем ошибку, так как это не валидные ONNX модели
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_versioned_ranker_rollback() {
         let temp_dir = tempdir().unwrap();
         let mut ranker = VersionedONNXRanker::new(temp_dir.path());
-        
+
         // Создаём тестовые файлы моделей
         let model_file1 = temp_dir.path().join("model_v1.0.0.onnx");
         let model_file2 = temp_dir.path().join("model_v2.0.0.onnx");
-        
+
         fs::write(&model_file1, "dummy content 1").unwrap();
         fs::write(&model_file2, "dummy content 2").unwrap();
-        
+
         // Добавляем версии
         let mut metadata1 = HashMap::new();
         metadata1.insert("accuracy".to_string(), "0.90".to_string());
-        
+
         let mut metadata2 = HashMap::new();
         metadata2.insert("accuracy".to_string(), "0.95".to_string());
-        
-        ranker.add_version("v1.0.0", &model_file1, "onnx", metadata1).unwrap();
-        ranker.add_version("v2.0.0", &model_file2, "onnx", metadata2).unwrap();
-        
+
+        ranker
+            .add_version("v1.0.0", &model_file1, "onnx", metadata1)
+            .unwrap();
+        ranker
+            .add_version("v2.0.0", &model_file2, "onnx", metadata2)
+            .unwrap();
+
         // Устанавливаем текущую версию
         ranker.version_manager.set_current_version("v2.0.0");
-        
+
         // Пробуем откат
         let result = ranker.rollback_version();
         // Ожидаем ошибку, так как модели невалидные
         assert!(result.is_err());
     }
-    
+
     #[test]
     fn test_versioned_ranker_get_info() {
         let temp_dir = tempdir().unwrap();
         let mut ranker = VersionedONNXRanker::new(temp_dir.path());
-        
+
         // Создаём тестовый файл модели
         let model_file = temp_dir.path().join("test_model.onnx");
         fs::write(&model_file, "dummy onnx content").unwrap();
-        
+
         let mut metadata = HashMap::new();
         metadata.insert("accuracy".to_string(), "0.95".to_string());
-        
-        ranker.add_version("v1.0.0", &model_file, "onnx", metadata).unwrap();
-        
+
+        ranker
+            .add_version("v1.0.0", &model_file, "onnx", metadata)
+            .unwrap();
+
         // Проверяем информацию о версии
         let info = ranker.get_all_versions_info();
         assert!(info.contains("v1.0.0"));
         assert!(info.contains("accuracy: 0.95"));
     }
-    
+
     #[test]
     fn test_versioned_ranker_fallback_to_stub() {
         let temp_dir = tempdir().unwrap();
         let ranker = VersionedONNXRanker::new(temp_dir.path());
-        
+
         // Создаём тестовые данные
         let snapshot = create_test_snapshot();
         let app_groups = vec![AppGroupRecord {
@@ -649,10 +685,10 @@ mod versioned_tests {
             tags: vec![],
             priority_class: None,
         }];
-        
+
         // Выполняем ранжирование без загруженной модели
         let results = ranker.rank(&app_groups, &snapshot);
-        
+
         // Должен быть результат с дефолтным score
         assert_eq!(results.len(), 1);
         let result = results.get("test").unwrap();
@@ -763,11 +799,14 @@ impl ONNXRanker {
         };
 
         // Выполняем инференс с использованием Mutex
-        let mut session_guard = self.session.lock().map_err(|e| {
-            anyhow::anyhow!("Mutex poisoned: {}", e)
-        }).with_context(|| "Ошибка блокировки ONNX сессии для инференса")?;
-        
-        let outputs = session_guard.run(inputs)
+        let mut session_guard = self
+            .session
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Mutex poisoned: {}", e))
+            .with_context(|| "Ошибка блокировки ONNX сессии для инференса")?;
+
+        let outputs = session_guard
+            .run(inputs)
             .with_context(|| "Ошибка выполнения ONNX инференса")?;
 
         // Извлекаем выходной тензор
@@ -1161,22 +1200,20 @@ mod tests {
         }
 
         let snapshot = create_test_snapshot();
-        let app_groups = vec![
-            AppGroupRecord {
-                app_group_id: "test-group".to_string(),
-                root_pid: 1000,
-                process_ids: vec![1000],
-                app_name: Some("test".to_string()),
-                total_cpu_share: Some(0.1),
-                total_io_read_bytes: None,
-                total_io_write_bytes: None,
-                total_rss_mb: Some(100),
-                has_gui_window: false,
-                is_focused_group: false,
-                tags: vec![],
-                priority_class: None,
-            },
-        ];
+        let app_groups = vec![AppGroupRecord {
+            app_group_id: "test-group".to_string(),
+            root_pid: 1000,
+            process_ids: vec![1000],
+            app_name: Some("test".to_string()),
+            total_cpu_share: Some(0.1),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_rss_mb: Some(100),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+        }];
 
         let ranker = ErrorMockRanker::new();
         let results = ranker.rank(&app_groups, &snapshot);

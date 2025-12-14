@@ -4,7 +4,10 @@
 //! включая ротацию логов, сжатие и управление файлами.
 
 use criterion::{criterion_group, criterion_main, Criterion};
-use smoothtask_core::logging::{rotation::LogRotator, get_log_stats, log_log_stats, optimize_log_rotation, adjust_log_for_memory_pressure};
+use smoothtask_core::logging::{
+    adjust_log_for_memory_pressure, get_log_stats, log_log_stats, optimize_log_rotation,
+    rotation::LogRotator,
+};
 use std::io::Write;
 use tempfile::{NamedTempFile, TempDir};
 
@@ -37,7 +40,9 @@ fn benchmark_log_rotation(c: &mut Criterion) {
             drop(file);
 
             let mut rotator = LogRotator::new(100, 3, false, 0, 0, 0);
-            rotator.rotate_log(&log_path).expect("rotation should succeed");
+            rotator
+                .rotate_log(&log_path)
+                .expect("rotation should succeed");
         })
     });
 
@@ -54,7 +59,9 @@ fn benchmark_log_rotation(c: &mut Criterion) {
             drop(file);
 
             let mut rotator = LogRotator::new(1000, 3, false, 0, 0, 0);
-            rotator.rotate_log(&log_path).expect("rotation should succeed");
+            rotator
+                .rotate_log(&log_path)
+                .expect("rotation should succeed");
         })
     });
 
@@ -71,7 +78,9 @@ fn benchmark_log_rotation(c: &mut Criterion) {
             drop(file);
 
             let mut rotator = LogRotator::new(1000, 3, true, 0, 0, 0);
-            rotator.rotate_log(&log_path).expect("rotation with compression should succeed");
+            rotator
+                .rotate_log(&log_path)
+                .expect("rotation with compression should succeed");
         })
     });
 }
@@ -119,14 +128,18 @@ fn benchmark_log_cleanup(c: &mut Criterion) {
 
             // Create multiple rotated files
             for i in 0..5 {
-                rotator.rotate_log(&log_path).expect("rotation should succeed");
+                rotator
+                    .rotate_log(&log_path)
+                    .expect("rotation should succeed");
                 let mut file = std::fs::File::create(&log_path).expect("recreate log file");
                 writeln!(file, "Test log entry {}", i).expect("write to log");
                 drop(file);
             }
 
             // Cleanup should remove old files
-            rotator.cleanup_logs(&log_path).expect("cleanup should succeed");
+            rotator
+                .cleanup_logs(&log_path)
+                .expect("cleanup should succeed");
         })
     });
 
@@ -143,7 +156,9 @@ fn benchmark_log_cleanup(c: &mut Criterion) {
 
             // Create some rotated files
             for i in 0..3 {
-                rotator.rotate_log(&log_path).expect("rotation should succeed");
+                rotator
+                    .rotate_log(&log_path)
+                    .expect("rotation should succeed");
                 let mut file = std::fs::File::create(&log_path).expect("recreate log file");
                 writeln!(file, "Test log entry {}", i).expect("write to log");
                 drop(file);
@@ -153,7 +168,9 @@ fn benchmark_log_cleanup(c: &mut Criterion) {
             std::thread::sleep(std::time::Duration::from_secs(2));
 
             // Cleanup by age
-            rotator.cleanup_by_age(&log_path).expect("cleanup by age should succeed");
+            rotator
+                .cleanup_by_age(&log_path)
+                .expect("cleanup by age should succeed");
         })
     });
 }
@@ -161,7 +178,7 @@ fn benchmark_log_cleanup(c: &mut Criterion) {
 criterion_group!(
     name = logging_benches;
     config = Criterion::default().sample_size(10);
-    targets = 
+    targets =
         benchmark_log_stats,
         benchmark_log_rotation,
         benchmark_log_optimization,

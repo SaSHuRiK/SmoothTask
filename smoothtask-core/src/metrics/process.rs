@@ -131,15 +131,16 @@ impl CachePerformanceStats {
         } else {
             self.cache_misses += 1;
         }
-        
+
         if let Some(time) = processing_time_micros {
             // Обновляем среднее время обработки
             if self.total_requests > 0 {
-                self.avg_processing_time_micros = 
-                    ((self.avg_processing_time_micros * (self.total_requests - 1)) + time) / self.total_requests;
+                self.avg_processing_time_micros =
+                    ((self.avg_processing_time_micros * (self.total_requests - 1)) + time)
+                        / self.total_requests;
             }
         }
-        
+
         self.last_updated = Some(SystemTime::now());
     }
 
@@ -174,21 +175,21 @@ impl ProcessCache {
             lru_cache: None,
             config: config.clone(),
         };
-        
+
         // Инициализируем LRU кэш, если он включен
         if config.use_lru_cache && config.max_cached_processes > 0 {
             cache.initialize_lru_cache();
         }
-        
+
         cache
     }
 
     /// Инициализировать LRU кэш
     fn initialize_lru_cache(&mut self) {
         if self.config.max_cached_processes > 0 {
-            self.lru_cache = Some(Arc::new(RwLock::new(
-                LruCache::new(NonZeroUsize::new(self.config.max_cached_processes).unwrap())
-            )));
+            self.lru_cache = Some(Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(self.config.max_cached_processes).unwrap(),
+            ))));
         }
     }
 
@@ -201,67 +202,74 @@ impl ProcessCache {
                 return true;
             }
         }
-        
+
         // Процессы с высоким использованием памяти (RSS > 100MB)
         if let Some(rss_mb) = record.rss_mb {
             if rss_mb > 100 {
                 return true;
             }
         }
-        
+
         // Процессы с высоким использованием GPU
         if let Some(gpu_util) = record.gpu_utilization {
-            if gpu_util > 0.1 { // 10% использования GPU
+            if gpu_util > 0.1 {
+                // 10% использования GPU
                 return true;
             }
         }
-        
+
         // Процессы с высоким использованием сети
         if let Some(rx_bytes) = record.network_rx_bytes {
-            if rx_bytes > 1024 * 1024 { // 1MB+ сетевой активности
+            if rx_bytes > 1024 * 1024 {
+                // 1MB+ сетевой активности
                 return true;
             }
         }
         if let Some(tx_bytes) = record.network_tx_bytes {
-            if tx_bytes > 1024 * 1024 { // 1MB+ сетевой активности
+            if tx_bytes > 1024 * 1024 {
+                // 1MB+ сетевой активности
                 return true;
             }
         }
-        
+
         // Процессы с высоким использованием диска
         if let Some(read_bytes) = record.io_read_bytes {
-            if read_bytes > 1024 * 1024 { // 1MB+ дисковой активности
+            if read_bytes > 1024 * 1024 {
+                // 1MB+ дисковой активности
                 return true;
             }
         }
         if let Some(write_bytes) = record.io_write_bytes {
-            if write_bytes > 1024 * 1024 { // 1MB+ дисковой активности
+            if write_bytes > 1024 * 1024 {
+                // 1MB+ дисковой активности
                 return true;
             }
         }
-        
+
         // Процессы с высоким приоритетом (nice значение)
-        if record.nice < 0 { // Отрицательные значения nice означают более высокий приоритет
+        if record.nice < 0 {
+            // Отрицательные значения nice означают более высокий приоритет
             return true;
         }
-        
+
         // Процессы с высоким приоритетом ввода-вывода
         if let Some(ionice_class) = record.ionice_class {
-            if ionice_class == 1 || ionice_class == 2 { // RT или Best-effort с высоким приоритетом
+            if ionice_class == 1 || ionice_class == 2 {
+                // RT или Best-effort с высоким приоритетом
                 return true;
             }
         }
-        
+
         // Процессы с активными GUI окнами
         if record.has_gui_window || record.is_focused_window {
             return true;
         }
-        
+
         // Процессы с активными аудио потоками
         if record.is_audio_client || record.has_active_stream {
             return true;
         }
-        
+
         false
     }
 
@@ -271,19 +279,23 @@ impl ProcessCache {
         if !self.config.enable_adaptive_caching {
             return self.config.cache_ttl_seconds;
         }
-        
+
         // Базовый TTL
         let base_ttl = self.config.cache_ttl_seconds;
-        
+
         // Для приоритетного кэширования используем разное TTL для важных процессов
-        let effective_ttl = if self.config.enable_priority_caching && Self::is_high_priority_process(record) {
-            (base_ttl as f64 * self.config.priority_cache_multiplier).round() as u64
-        } else {
-            base_ttl
-        };
-        
+        let effective_ttl =
+            if self.config.enable_priority_caching && Self::is_high_priority_process(record) {
+                (base_ttl as f64 * self.config.priority_cache_multiplier).round() as u64
+            } else {
+                base_ttl
+            };
+
         // Ограничиваем TTL диапазоном min-max
-        effective_ttl.clamp(self.config.min_cache_ttl_seconds, self.config.max_cache_ttl_seconds)
+        effective_ttl.clamp(
+            self.config.min_cache_ttl_seconds,
+            self.config.max_cache_ttl_seconds,
+        )
     }
 
     /// Очистить устаревшие записи из кэша.
@@ -301,14 +313,19 @@ impl ProcessCache {
             let mut lru_write = lru_cache.write().unwrap();
             // LRU кэш автоматически удаляет старые записи при превышении лимита
             // Но нам нужно вручную удалить устаревшие записи по TTL
-            let keys_to_remove: Vec<_> = lru_write.iter().filter_map(|(key, cached)| {
-                if now.duration_since(cached.cached_at) >= Duration::from_secs(cached.effective_ttl_seconds) {
-                    Some(*key)
-                } else {
-                    None
-                }
-            }).collect();
-            
+            let keys_to_remove: Vec<_> = lru_write
+                .iter()
+                .filter_map(|(key, cached)| {
+                    if now.duration_since(cached.cached_at)
+                        >= Duration::from_secs(cached.effective_ttl_seconds)
+                    {
+                        Some(*key)
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
             for key in keys_to_remove {
                 lru_write.pop(&key);
             }
@@ -334,20 +351,23 @@ impl ProcessCache {
     /// Получить запись из кэша, если она актуальна.
     fn get_cached(&self, pid: i32) -> Option<ProcessRecord> {
         let now = Instant::now();
-        
+
         // Пробуем получить из LRU кэша, если он включен
         if let Some(lru_cache) = &self.lru_cache {
             let lru_read = lru_cache.read().unwrap();
             if let Some(cached) = lru_read.peek(&pid) {
-                if now.duration_since(cached.cached_at) < Duration::from_secs(cached.effective_ttl_seconds) {
+                if now.duration_since(cached.cached_at)
+                    < Duration::from_secs(cached.effective_ttl_seconds)
+                {
                     return Some(cached.record.clone());
                 }
             }
         }
-        
+
         // Пробуем получить из HashMap кэша
         self.records.get(&pid).and_then(|cached| {
-            if now.duration_since(cached.cached_at) < Duration::from_secs(cached.effective_ttl_seconds)
+            if now.duration_since(cached.cached_at)
+                < Duration::from_secs(cached.effective_ttl_seconds)
             {
                 Some(cached.record.clone())
             } else {
@@ -661,10 +681,10 @@ pub struct ProcessCacheStats {
 #[cfg(feature = "ebpf")]
 pub fn collect_process_metrics_with_enhanced_io(
     config: Option<ProcessCacheConfig>,
-    disk_stats_map: Option<&std::collections::HashMap<u32, crate::metrics::ebpf::ProcessDiskStat>>
+    disk_stats_map: Option<&std::collections::HashMap<u32, crate::metrics::ebpf::ProcessDiskStat>>,
 ) -> Result<Vec<ProcessRecord>> {
     let mut records = collect_process_metrics(config)?;
-    
+
     // Улучшаем записи данными eBPF, если они доступны
     if let Some(stats_map) = disk_stats_map {
         for record in &mut records {
@@ -676,7 +696,7 @@ pub fn collect_process_metrics_with_enhanced_io(
             }
         }
     }
-    
+
     Ok(records)
 }
 
@@ -687,7 +707,7 @@ pub fn collect_process_metrics_with_enhanced_io(
 #[cfg(not(feature = "ebpf"))]
 pub fn collect_process_metrics_with_enhanced_io(
     config: Option<ProcessCacheConfig>,
-    _disk_stats_map: Option<&std::collections::HashMap<u32, crate::metrics::ebpf::ProcessDiskStat>>
+    _disk_stats_map: Option<&std::collections::HashMap<u32, crate::metrics::ebpf::ProcessDiskStat>>,
 ) -> Result<Vec<ProcessRecord>> {
     // Без eBPF просто возвращаем базовые метрики
     collect_process_metrics(config)
@@ -725,7 +745,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
     let process_results: Vec<_> = if cache_config.enable_parallel_processing {
         // Используем глобальный пул потоков
         let _batch_size = cache_config.batch_size.unwrap_or(100);
-        
+
         all_procs
             .par_bridge() // Преобразуем итератор в параллельный
             .filter_map(|proc_result| {
@@ -745,14 +765,14 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 
                         if let Some(cached_record) = cached_record {
                             tracing::debug!("Кэш попадание для процесса PID {}", pid);
-                            
+
                             // Обновляем статистику кэша (оптимизация: только если включено)
                             if cache_config.enable_caching {
                                 let mut stats_write = CACHE_STATS.write().unwrap();
                                 stats_write.record_request(true, None);
                                 drop(stats_write);
                             }
-                            
+
                             return Some(cached_record);
                         }
 
@@ -919,7 +939,6 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 /// - RAPL интерфейсы (если доступны)
 ///
 
-
 /// Улучшить запись процесса данными о дисковом вводе-выводе из eBPF.
 ///
 /// Эта функция принимает существующую ProcessRecord и опционально данные eBPF,
@@ -927,7 +946,7 @@ pub fn collect_process_metrics(config: Option<ProcessCacheConfig>) -> Result<Vec
 #[cfg(feature = "ebpf")]
 pub fn enhance_process_with_disk_stats(
     mut record: ProcessRecord,
-    disk_stats: Option<&crate::metrics::ebpf::ProcessDiskStat>
+    disk_stats: Option<&crate::metrics::ebpf::ProcessDiskStat>,
 ) -> ProcessRecord {
     if let Some(stats) = disk_stats {
         // Используем данные eBPF, если они доступны
@@ -952,7 +971,7 @@ pub fn enhance_process_with_disk_stats(
 #[cfg(not(feature = "ebpf"))]
 pub fn enhance_process_with_disk_stats(
     mut record: ProcessRecord,
-    _disk_stats: Option<&crate::metrics::ebpf::ProcessDiskStat>
+    _disk_stats: Option<&crate::metrics::ebpf::ProcessDiskStat>,
 ) -> ProcessRecord {
     // Без eBPF всегда используем данные из /proc
     record.io_data_source = Some("proc".to_string());
@@ -1071,7 +1090,7 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         read_env_vars(proc.pid()).unwrap_or((false, false, None, false));
 
     // Читаем статистику ввода-вывода (опционально, так как это тяжелая операция)
-    let (io_read_bytes, io_write_bytes, io_read_operations, io_write_operations) = 
+    let (io_read_bytes, io_write_bytes, io_read_operations, io_write_operations) =
         read_io_stats_enhanced(proc.pid()).unwrap_or((None, None, None, None));
 
     // Читаем nice из stat (конвертируем i64 в i32)
@@ -1119,18 +1138,20 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         uptime_sec,
         tty_nr: stat.tty_nr,
         has_tty,
-        cpu_share_1s: None,   // будет вычислено при следующем снапшоте
-        cpu_share_10s: None,  // будет вычислено при следующем снапшоте
-        io_read_bytes,        // статистика ввода-вывода из /proc/[pid]/io
-        io_write_bytes,       // статистика ввода-вывода из /proc/[pid]/io
-        io_read_operations,   // операции ввода из /proc/[pid]/io (syscr)
-        io_write_operations,  // операции вывода из /proc/[pid]/io (syscw)
-        io_total_operations: io_read_operations.and_then(|read_ops| 
-            io_write_operations.map(|write_ops| read_ops + write_ops)),
-        io_last_update_ns: Some(std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos() as u64),
+        cpu_share_1s: None,  // будет вычислено при следующем снапшоте
+        cpu_share_10s: None, // будет вычислено при следующем снапшоте
+        io_read_bytes,       // статистика ввода-вывода из /proc/[pid]/io
+        io_write_bytes,      // статистика ввода-вывода из /proc/[pid]/io
+        io_read_operations,  // операции ввода из /proc/[pid]/io (syscr)
+        io_write_operations, // операции вывода из /proc/[pid]/io (syscw)
+        io_total_operations: io_read_operations
+            .and_then(|read_ops| io_write_operations.map(|write_ops| read_ops + write_ops)),
+        io_last_update_ns: Some(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos() as u64,
+        ),
         io_data_source: Some("proc".to_string()),
         rss_mb,
         swap_mb,
@@ -1350,7 +1371,9 @@ fn read_env_vars(pid: i32) -> Result<(bool, bool, Option<String>, bool)> {
 
 /// Улучшенная версия read_io_stats, которая также читает количество операций ввода-вывода.
 /// Читает статистику ввода-вывода процесса из /proc/[pid]/io, включая операции.
-fn read_io_stats_enhanced(pid: i32) -> Result<(Option<u64>, Option<u64>, Option<u64>, Option<u64>)> {
+fn read_io_stats_enhanced(
+    pid: i32,
+) -> Result<(Option<u64>, Option<u64>, Option<u64>, Option<u64>)> {
     let io_path = format!("/proc/{}/io", pid);
     let io_content = match fs::read_to_string(&io_path) {
         Ok(c) => c,
@@ -1393,7 +1416,11 @@ fn read_io_stats_enhanced(pid: i32) -> Result<(Option<u64>, Option<u64>, Option<
         }
 
         // Если нашли все значения, можно прекратить парсинг
-        if read_bytes.is_some() && write_bytes.is_some() && read_operations.is_some() && write_operations.is_some() {
+        if read_bytes.is_some()
+            && write_bytes.is_some()
+            && read_operations.is_some()
+            && write_operations.is_some()
+        {
             break;
         }
     }
@@ -1458,14 +1485,14 @@ mod tests {
     fn test_read_io_stats() {
         // Этот тест проверяет парсинг IO статистики
         // Поскольку мы не можем легко замокать /proc, мы тестируем парсинг напрямую
-        
+
         // Создаем тестовые данные как в реальном /proc/[pid]/io
         let io_content = "rchar: 123456\n\nwchar: 789012\n\nsyscr: 345\n\nsyscw: 678\n\nread_bytes: 1024000\n\nwrite_bytes: 2048000\n\ncancelled_write_bytes: 0\n\n";
-        
+
         // Парсим вручную, как это делает read_io_stats
         let mut read_bytes = None;
         let mut write_bytes = None;
-        
+
         for line in io_content.lines() {
             if line.starts_with("read_bytes:") {
                 if let Some(value) = line.split(':').nth(1) {
@@ -1477,7 +1504,7 @@ mod tests {
                 }
             }
         }
-        
+
         // Проверяем, что парсинг работает корректно
         assert_eq!(read_bytes, Some(1024000));
         assert_eq!(write_bytes, Some(2048000));
@@ -2029,16 +2056,16 @@ Gid:    1000 1000 1000 1000
     fn test_error_handling_with_detailed_messages() {
         // Тест проверяет, что функции возвращают детальные сообщения об ошибках
         // с практическими рекомендациями по устранению неполадок
-        
+
         // Проверяем обработку несуществующего процесса
         let result = read_cgroup_path(999999);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
-        
+
         // Проверяем обработку несуществующего файла status
         let result = read_uid_gid(999999);
         assert!(result.is_err());
-        
+
         // Проверяем, что функция возвращает ошибку с контекстом
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Не удалось прочитать /proc/999999/status"));
@@ -2048,12 +2075,12 @@ Gid:    1000 1000 1000 1000
     #[test]
     fn test_graceful_degradation_scenarios() {
         // Тест проверяет graceful degradation в различных сценариях ошибок
-        
+
         // Сценарий 1: Несуществующий процесс - должен вернуть Ok(None)
         let result = read_cgroup_path(999999);
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), None);
-        
+
         // Сценарий 2: Несуществующий файл environ - должен вернуть Ok с значениями по умолчанию
         let result = read_env_vars(999999);
         assert!(result.is_ok());
@@ -2062,7 +2089,7 @@ Gid:    1000 1000 1000 1000
         assert!(!has_wayland);
         assert_eq!(term, None);
         assert!(!ssh);
-        
+
         // Сценарий 3: Проверяем, что кэш обрабатывает ошибки корректно
         let config = ProcessCacheConfig {
             cache_ttl_seconds: 1,
@@ -2070,7 +2097,7 @@ Gid:    1000 1000 1000 1000
             ..Default::default()
         };
         let mut cache = ProcessCache::with_config(config);
-        
+
         // Добавляем запись и проверяем, что она истекает
         let mut test_record = ProcessRecord::default();
         test_record.pid = 123;
@@ -2090,10 +2117,10 @@ Gid:    1000 1000 1000 1000
         test_record.cpu_share_10s = Some(15.0);
         test_record.io_read_bytes = Some(1024);
         test_record.io_write_bytes = Some(2048);
-        
+
         cache.cache_record(test_record);
         assert!(cache.get_cached(123).is_some());
-        
+
         // Ждем истечения TTL (TTL=1с, ждем 1.5с для надежности)
         std::thread::sleep(std::time::Duration::from_millis(1500));
         assert!(cache.get_cached(123).is_none());
@@ -2102,12 +2129,12 @@ Gid:    1000 1000 1000 1000
     #[test]
     fn test_error_messages_contain_troubleshooting_advice() {
         // Тест проверяет, что сообщения об ошибках содержат практические рекомендации
-        
+
         // Проверяем, что ошибка чтения status содержит рекомендации
         let result = read_uid_gid(999999);
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
-        
+
         // Проверяем, что сообщение содержит практические рекомендации
         assert!(error_msg.contains("проверьте, что процесс существует и доступен для чтения"));
         assert!(error_msg.contains("Проверьте права доступа"));
@@ -2521,7 +2548,7 @@ mod cache_tests {
 
         let cache = ProcessCache::with_config(config);
         assert!(cache.lru_cache.is_some());
-        
+
         if let Some(lru_cache) = cache.lru_cache {
             let lru_read = lru_cache.read().unwrap();
             assert_eq!(lru_read.len(), 0);
@@ -2537,7 +2564,7 @@ mod cache_tests {
         };
 
         assert_eq!(config.batch_size, Some(50));
-        
+
         let config2 = ProcessCacheConfig::default();
         assert_eq!(config2.batch_size, Some(100));
     }
@@ -2545,37 +2572,39 @@ mod cache_tests {
     #[test]
     fn test_high_priority_process_detection() {
         // Тестируем определение высокоприоритетных процессов
-        
+
         // Высокоприоритетный процесс (высокое использование CPU)
         let mut high_cpu_record = ProcessRecord::default();
         high_cpu_record.cpu_share_1s = Some(20.0);
         assert!(ProcessCache::is_high_priority_process(&high_cpu_record));
-        
+
         // Высокоприоритетный процесс (высокое использование памяти)
         let mut high_mem_record = ProcessRecord::default();
         high_mem_record.rss_mb = Some(200);
         assert!(ProcessCache::is_high_priority_process(&high_mem_record));
-        
+
         // Высокоприоритетный процесс (высокий приоритет nice)
         let mut high_nice_record = ProcessRecord::default();
         high_nice_record.nice = -10;
         assert!(ProcessCache::is_high_priority_process(&high_nice_record));
-        
+
         // Высокоприоритетный процесс (GUI окно)
         let mut gui_record = ProcessRecord::default();
         gui_record.has_gui_window = true;
         assert!(ProcessCache::is_high_priority_process(&gui_record));
-        
+
         // Низкоприоритетный процесс
         let low_priority_record = ProcessRecord::default();
-        assert!(!ProcessCache::is_high_priority_process(&low_priority_record));
+        assert!(!ProcessCache::is_high_priority_process(
+            &low_priority_record
+        ));
     }
 
     #[test]
     fn test_adaptive_ttl_calculation() {
         // Тестируем расчет адаптивного TTL
         let mut cache = ProcessCache::new();
-        
+
         // Настраиваем конфигурацию для теста
         let mut config = ProcessCacheConfig::default();
         config.enable_adaptive_caching = true;
@@ -2585,24 +2614,30 @@ mod cache_tests {
         config.min_cache_ttl_seconds = 2;
         config.max_cache_ttl_seconds = 15;
         cache.config = config;
-        
+
         // Высокоприоритетный процесс должен иметь более длинный TTL
         let mut high_priority_record = ProcessRecord::default();
         high_priority_record.cpu_share_1s = Some(20.0);
         let high_priority_ttl = cache.calculate_adaptive_ttl(&high_priority_record);
-        assert!(high_priority_ttl > 5, "High priority process should have longer TTL");
-        
+        assert!(
+            high_priority_ttl > 5,
+            "High priority process should have longer TTL"
+        );
+
         // Низкоприоритетный процесс должен иметь базовый TTL
         let low_priority_record = ProcessRecord::default();
         let low_priority_ttl = cache.calculate_adaptive_ttl(&low_priority_record);
-        assert_eq!(low_priority_ttl, 5, "Low priority process should have base TTL");
+        assert_eq!(
+            low_priority_ttl, 5,
+            "Low priority process should have base TTL"
+        );
     }
 
     #[test]
     fn test_cache_with_adaptive_ttl() {
         // Тестируем кэширование с адаптивным TTL
         let mut cache = ProcessCache::new();
-        
+
         // Настраиваем конфигурацию для теста
         let mut config = ProcessCacheConfig::default();
         config.enable_adaptive_caching = true;
@@ -2612,32 +2647,35 @@ mod cache_tests {
         config.min_cache_ttl_seconds = 1;
         config.max_cache_ttl_seconds = 5;
         cache.config = config;
-        
+
         // Создаем высокоприоритетный процесс
         let mut high_priority_record = ProcessRecord::default();
         high_priority_record.pid = 123;
         high_priority_record.cpu_share_1s = Some(20.0);
-        
+
         // Кэшируем процесс
         cache.cache_record(high_priority_record.clone());
-        
+
         // Проверяем, что процесс кэширован
         let cached = cache.get_cached(123);
         assert!(cached.is_some(), "Process should be cached");
-        
+
         // Ждем немного (меньше, чем базовый TTL, но больше, чем базовый TTL)
         std::thread::sleep(Duration::from_millis(1500));
-        
+
         // Процесс все еще должен быть в кэше (из-за более длинного TTL)
         let cached_after_wait = cache.get_cached(123);
-        assert!(cached_after_wait.is_some(), "High priority process should still be cached");
+        assert!(
+            cached_after_wait.is_some(),
+            "High priority process should still be cached"
+        );
     }
 
     #[test]
     fn test_cache_cleanup_with_adaptive_ttl() {
         // Тестируем очистку кэша с адаптивным TTL
         let mut cache = ProcessCache::new();
-        
+
         // Настраиваем конфигурацию для теста
         let mut config = ProcessCacheConfig::default();
         config.enable_adaptive_caching = true;
@@ -2647,33 +2685,39 @@ mod cache_tests {
         config.min_cache_ttl_seconds = 1;
         config.max_cache_ttl_seconds = 5;
         cache.config = config;
-        
+
         // Создаем высокоприоритетный процесс
         let mut high_priority_record = ProcessRecord::default();
         high_priority_record.pid = 123;
         high_priority_record.cpu_share_1s = Some(20.0);
-        
+
         // Создаем низкоприоритетный процесс
         let mut low_priority_record = ProcessRecord::default();
         low_priority_record.pid = 456;
-        
+
         // Кэшируем оба процесса
         cache.cache_record(high_priority_record.clone());
         cache.cache_record(low_priority_record.clone());
-        
+
         // Ждем немного (больше, чем базовый TTL, но меньше, чем приоритетный TTL)
         std::thread::sleep(Duration::from_millis(1500));
-        
+
         // Очищаем устаревшие записи
         cache.cleanup_stale_entries();
-        
+
         // Высокоприоритетный процесс должен остаться
         let high_priority_cached = cache.get_cached(123);
-        assert!(high_priority_cached.is_some(), "High priority process should remain in cache");
-        
+        assert!(
+            high_priority_cached.is_some(),
+            "High priority process should remain in cache"
+        );
+
         // Низкоприоритетный процесс должен быть удален
         let low_priority_cached = cache.get_cached(456);
-        assert!(low_priority_cached.is_none(), "Low priority process should be removed from cache");
+        assert!(
+            low_priority_cached.is_none(),
+            "Low priority process should be removed from cache"
+        );
     }
 }
 
@@ -2692,11 +2736,11 @@ mod cache_tests {
 pub fn clear_process_cache() {
     let mut cache_write = PROCESS_CACHE.write().unwrap();
     cache_write.clear();
-    
+
     // Также очищаем статистику производительности
     let mut stats_write = CACHE_STATS.write().unwrap();
     stats_write.reset();
-    
+
     tracing::info!("Кэш метрик процессов очищен");
 }
 
@@ -2828,7 +2872,7 @@ mod energy_tests {
     fn test_collect_process_energy_metrics_not_available() {
         // Тестируем случай, когда энергопотребление недоступно
         let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics_new(999999);
-        
+
         // Для несуществующего процесса или недоступного интерфейса
         // должны получить None значения
         assert!(energy_uj.is_none());
@@ -2841,11 +2885,11 @@ mod energy_tests {
         // Создаем временный файл с некорректными данными
         let mut temp_file = NamedTempFile::new().unwrap();
         write!(temp_file, "invalid_data").unwrap();
-        
+
         // Мокаем чтение файла (в реальном тесте это сложнее)
         // Для простоты просто проверяем, что функция не паникует
         let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics_new(1);
-        
+
         // Должны получить None значения для некорректных данных
         assert!(energy_uj.is_none());
         assert!(power_w.is_none());
@@ -2899,7 +2943,11 @@ fn collect_process_energy_metrics_new(pid: i32) -> (Option<u64>, Option<f32>, Op
                 stats.power_w,
                 stats.source
             );
-            (Some(stats.energy_uj), Some(stats.power_w), Some(stats.timestamp))
+            (
+                Some(stats.energy_uj),
+                Some(stats.power_w),
+                Some(stats.timestamp),
+            )
         }
         Ok(None) => {
             tracing::debug!(
@@ -2911,7 +2959,8 @@ fn collect_process_energy_metrics_new(pid: i32) -> (Option<u64>, Option<f32>, Op
         Err(e) => {
             tracing::warn!(
                 "Ошибка при сборе метрик энергопотребления для процесса PID {}: {}",
-                pid, e
+                pid,
+                e
             );
             (None, None, None)
         }

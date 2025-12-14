@@ -200,9 +200,12 @@ pub async fn get_service_status(service_name: &str) -> Result<ServiceStatus> {
 ///
 /// Возвращает `Ok(ServiceStatus)` при успешном получении статуса или `Err` при ошибке.
 #[allow(dead_code)]
-async fn get_service_status_with_retry(service_name: &str, retry_count: u32) -> Result<ServiceStatus> {
+async fn get_service_status_with_retry(
+    service_name: &str,
+    retry_count: u32,
+) -> Result<ServiceStatus> {
     let mut last_error = None;
-    
+
     for attempt in 1..=retry_count {
         match get_service_status_inner(service_name).await {
             Ok(status) => return Ok(status),
@@ -210,63 +213,75 @@ async fn get_service_status_with_retry(service_name: &str, retry_count: u32) -> 
                 if attempt < retry_count {
                     tracing::warn!(
                         "Failed to get service status (attempt {}/{}), retrying...: {}",
-                        attempt, retry_count, &e
+                        attempt,
+                        retry_count,
+                        &e
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64))
+                        .await;
                 }
                 last_error = Some(e);
             }
         }
     }
-    
+
     Err(last_error.unwrap_or_else(|| {
-        anyhow::anyhow!("Failed to get service status after {} attempts", retry_count)
+        anyhow::anyhow!(
+            "Failed to get service status after {} attempts",
+            retry_count
+        )
     }))
 }
 
 /// Внутренняя реализация получения статуса сервиса без повторных попыток.
 #[allow(dead_code)]
 async fn get_service_status_inner(service_name: &str) -> Result<ServiceStatus> {
-    let connection = Connection::system().await
+    let connection = Connection::system()
+        .await
         .context("Failed to connect to system D-Bus")?;
-    
+
     let manager_proxy = Proxy::new(
         &connection,
         "org.freedesktop.systemd1",
         "/org/freedesktop/systemd1",
         "org.freedesktop.systemd1.Manager",
-    ).await
+    )
+    .await
     .context("Failed to create systemd manager proxy")?;
-    
+
     let unit_path_msg = manager_proxy
         .call_method("GetUnit", &(service_name,))
         .await
         .context("Failed to get unit from systemd")?;
-    
+
     let unit_path: zbus::zvariant::OwnedObjectPath = unit_path_msg.body()?;
-    
+
     let properties_proxy = Proxy::new(
         &connection,
         "org.freedesktop.systemd1",
         unit_path.as_str(),
         "org.freedesktop.DBus.Properties",
-    ).await
+    )
+    .await
     .context("Failed to create properties proxy")?;
-    
+
     let properties_msg = properties_proxy
         .call_method("GetAll", &("org.freedesktop.systemd1.Unit",))
         .await
         .context("Failed to get unit properties")?;
-    
-    let properties: std::collections::HashMap<String, zbus::zvariant::Value> = properties_msg.body()?;
-    
-    let active_state = properties.get("ActiveState")
+
+    let properties: std::collections::HashMap<String, zbus::zvariant::Value> =
+        properties_msg.body()?;
+
+    let active_state = properties
+        .get("ActiveState")
         .and_then(|v| v.downcast_ref::<str>())
         .context("Failed to get ActiveState property")?;
-    
+
     match active_state {
         "active" => {
-            let sub_state = properties.get("SubState")
+            let sub_state = properties
+                .get("SubState")
                 .and_then(|v| v.downcast_ref::<str>())
                 .unwrap_or("running");
             if sub_state == "running" {
@@ -309,7 +324,7 @@ pub async fn start_service(service_name: &str) -> Result<()> {
 #[allow(dead_code)]
 async fn start_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
     let mut last_error = None;
-    
+
     for attempt in 1..=retry_count {
         match start_service_inner(service_name).await {
             Ok(_) => {
@@ -320,15 +335,18 @@ async fn start_service_with_retry(service_name: &str, retry_count: u32) -> Resul
                 if attempt < retry_count {
                     tracing::warn!(
                         "Failed to start service (attempt {}/{}), retrying...: {}",
-                        attempt, retry_count, &e
+                        attempt,
+                        retry_count,
+                        &e
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64))
+                        .await;
                 }
                 last_error = Some(e);
             }
         }
     }
-    
+
     Err(last_error.unwrap_or_else(|| {
         anyhow::anyhow!("Failed to start service after {} attempts", retry_count)
     }))
@@ -337,22 +355,24 @@ async fn start_service_with_retry(service_name: &str, retry_count: u32) -> Resul
 /// Внутренняя реализация запуска сервиса без повторных попыток.
 #[allow(dead_code)]
 async fn start_service_inner(service_name: &str) -> Result<()> {
-    let connection = Connection::system().await
+    let connection = Connection::system()
+        .await
         .context("Failed to connect to system D-Bus")?;
-    
+
     let manager_proxy = Proxy::new(
         &connection,
         "org.freedesktop.systemd1",
         "/org/freedesktop/systemd1",
         "org.freedesktop.systemd1.Manager",
-    ).await
+    )
+    .await
     .context("Failed to create systemd manager proxy")?;
-    
+
     let _job_path_msg = manager_proxy
         .call_method("StartUnit", &(service_name, "replace"))
         .await
         .context("Failed to start service")?;
-    
+
     Ok(())
 }
 
@@ -382,7 +402,7 @@ pub async fn stop_service(service_name: &str) -> Result<()> {
 #[allow(dead_code)]
 async fn stop_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
     let mut last_error = None;
-    
+
     for attempt in 1..=retry_count {
         match stop_service_inner(service_name).await {
             Ok(_) => {
@@ -393,15 +413,18 @@ async fn stop_service_with_retry(service_name: &str, retry_count: u32) -> Result
                 if attempt < retry_count {
                     tracing::warn!(
                         "Failed to stop service (attempt {}/{}), retrying...: {}",
-                        attempt, retry_count, &e
+                        attempt,
+                        retry_count,
+                        &e
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64))
+                        .await;
                 }
                 last_error = Some(e);
             }
         }
     }
-    
+
     Err(last_error.unwrap_or_else(|| {
         anyhow::anyhow!("Failed to stop service after {} attempts", retry_count)
     }))
@@ -410,22 +433,24 @@ async fn stop_service_with_retry(service_name: &str, retry_count: u32) -> Result
 /// Внутренняя реализация остановки сервиса без повторных попыток.
 #[allow(dead_code)]
 async fn stop_service_inner(service_name: &str) -> Result<()> {
-    let connection = Connection::system().await
+    let connection = Connection::system()
+        .await
         .context("Failed to connect to system D-Bus")?;
-    
+
     let manager_proxy = Proxy::new(
         &connection,
         "org.freedesktop.systemd1",
         "/org/freedesktop/systemd1",
         "org.freedesktop.systemd1.Manager",
-    ).await
+    )
+    .await
     .context("Failed to create systemd manager proxy")?;
-    
+
     let _job_path_msg = manager_proxy
         .call_method("StopUnit", &(service_name, "replace"))
         .await
         .context("Failed to stop service")?;
-    
+
     Ok(())
 }
 
@@ -455,7 +480,7 @@ pub async fn restart_service(service_name: &str) -> Result<()> {
 #[allow(dead_code)]
 async fn restart_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
     let mut last_error = None;
-    
+
     for attempt in 1..=retry_count {
         match restart_service_inner(service_name).await {
             Ok(_) => {
@@ -466,15 +491,18 @@ async fn restart_service_with_retry(service_name: &str, retry_count: u32) -> Res
                 if attempt < retry_count {
                     tracing::warn!(
                         "Failed to restart service (attempt {}/{}), retrying...: {}",
-                        attempt, retry_count, &e
+                        attempt,
+                        retry_count,
+                        &e
                     );
-                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64))
+                        .await;
                 }
                 last_error = Some(e);
             }
         }
     }
-    
+
     Err(last_error.unwrap_or_else(|| {
         anyhow::anyhow!("Failed to restart service after {} attempts", retry_count)
     }))
@@ -483,22 +511,24 @@ async fn restart_service_with_retry(service_name: &str, retry_count: u32) -> Res
 /// Внутренняя реализация перезапуска сервиса без повторных попыток.
 #[allow(dead_code)]
 async fn restart_service_inner(service_name: &str) -> Result<()> {
-    let connection = Connection::system().await
+    let connection = Connection::system()
+        .await
         .context("Failed to connect to system D-Bus")?;
-    
+
     let manager_proxy = Proxy::new(
         &connection,
         "org.freedesktop.systemd1",
         "/org/freedesktop/systemd1",
         "org.freedesktop.systemd1.Manager",
-    ).await
+    )
+    .await
     .context("Failed to create systemd manager proxy")?;
-    
+
     let _job_path_msg = manager_proxy
         .call_method("RestartUnit", &(service_name, "replace"))
         .await
         .context("Failed to restart service")?;
-    
+
     Ok(())
 }
 
@@ -526,7 +556,10 @@ async fn restart_service_inner(service_name: &str) -> Result<()> {
 #[allow(dead_code)]
 pub async fn is_service_active(service_name: &str) -> Result<bool> {
     let status = get_service_status(service_name).await?;
-    Ok(matches!(status, ServiceStatus::ActiveRunning | ServiceStatus::ActiveWaiting))
+    Ok(matches!(
+        status,
+        ServiceStatus::ActiveRunning | ServiceStatus::ActiveWaiting
+    ))
 }
 
 /// Проверяет, запущен ли текущий процесс под управлением systemd.
@@ -607,17 +640,13 @@ pub fn notify_stopping() -> Result<()> {
 /// ```
 pub fn notify_error(error_code: i32, error_message: Option<&str>) {
     let mut states = vec![NotifyState::Errno(error_code as u8)];
-    
+
     if let Some(msg) = error_message {
         // Ограничиваем длину сообщения
-        let msg_truncated = if msg.len() > 200 {
-            &msg[..200]
-        } else {
-            msg
-        };
+        let msg_truncated = if msg.len() > 200 { &msg[..200] } else { msg };
         states.push(NotifyState::Status(format!("ERROR: {}", msg_truncated)));
     }
-    
+
     let _ = libsystemd::daemon::notify(false, &states);
     // Игнорируем ошибки - если не под systemd, это нормально
 }
@@ -666,8 +695,14 @@ mod tests {
     /// Тест проверяет форматирование ServiceStatus.
     #[test]
     fn test_service_status_display() {
-        assert_eq!(format!("{}", ServiceStatus::ActiveRunning), "active (running)");
-        assert_eq!(format!("{}", ServiceStatus::ActiveWaiting), "active (waiting)");
+        assert_eq!(
+            format!("{}", ServiceStatus::ActiveRunning),
+            "active (running)"
+        );
+        assert_eq!(
+            format!("{}", ServiceStatus::ActiveWaiting),
+            "active (waiting)"
+        );
         assert_eq!(format!("{}", ServiceStatus::Inactive), "inactive");
         assert_eq!(format!("{}", ServiceStatus::Activating), "activating");
         assert_eq!(format!("{}", ServiceStatus::Deactivating), "deactivating");

@@ -199,10 +199,7 @@ impl Notification {
 
     /// Создаёт уведомление о сетевом событии.
     /// Используется для уведомлений о сетевой активности.
-    pub fn network_event(
-        event_type: impl Into<String>,
-        details: impl Into<String>,
-    ) -> Self {
+    pub fn network_event(event_type: impl Into<String>, details: impl Into<String>) -> Self {
         Self {
             notification_type: NotificationType::Info,
             title: format!("Network Event: {}", event_type.into()),
@@ -420,12 +417,11 @@ impl DBusNotifier {
                 "/org/freedesktop/Notifications",
                 "org.freedesktop.Notifications",
             );
-            
+
             // Пробуем вызвать метод GetServerInformation для проверки доступности
-            let result: zbus::Result<(String, String, String, String)> = proxy
-                .call_method("GetServerInformation", &())
-                .await;
-            
+            let result: zbus::Result<(String, String, String, String)> =
+                proxy.call_method("GetServerInformation", &()).await;
+
             result.is_ok()
         } else {
             false
@@ -441,7 +437,7 @@ impl DBusNotifier {
                 "/org/freedesktop/Notifications",
                 "org.freedesktop.Notifications",
             );
-            
+
             proxy.call_method("GetServerInformation", &()).await
         } else {
             Err(anyhow::anyhow!("D-Bus connection not established"))
@@ -546,7 +542,10 @@ impl Notifier for DBusNotifier {
             // Устанавливаем уровень срочности
             hints_map.insert("urgency", zbus::zvariant::Value::new(urgency));
             // Добавляем временную метку
-            hints_map.insert("timestamp", zbus::zvariant::Value::new(notification.timestamp.timestamp()));
+            hints_map.insert(
+                "timestamp",
+                zbus::zvariant::Value::new(notification.timestamp.timestamp()),
+            );
             // Добавляем категорию уведомления
             let category = match notification.notification_type {
                 NotificationType::Critical => "device.error",
@@ -561,8 +560,8 @@ impl Notifier for DBusNotifier {
         };
         let expire_timeout: i32 = match notification.notification_type {
             NotificationType::Critical => 10000, // 10 секунд для критических уведомлений
-            NotificationType::Warning => 7000,  // 7 секунд для предупреждений
-            _ => 5000, // 5 секунд для остальных
+            NotificationType::Warning => 7000,   // 7 секунд для предупреждений
+            _ => 5000,                           // 5 секунд для остальных
         };
 
         // Отправляем уведомление через D-Bus
@@ -1291,8 +1290,6 @@ mod tests {
         assert_eq!(info_entries.len(), 4, "Expected 4 info entries");
     }
 
-
-
     #[tokio::test]
     async fn test_notification_manager_new_types() {
         use crate::logging::log_storage::SharedLogStorage;
@@ -1311,12 +1308,21 @@ mod tests {
         // Отправляем все уведомления
         for notification in &notifications {
             let result = manager.send(notification).await;
-            assert!(result.is_ok(), "Failed to send notification: {:?}", notification);
+            assert!(
+                result.is_ok(),
+                "Failed to send notification: {:?}",
+                notification
+            );
         }
 
         // Проверяем, что все уведомления были залоггированы
         let all_entries = log_storage.get_all_entries().await;
-        assert_eq!(all_entries.len(), 3, "Expected 3 log entries, got {}", all_entries.len());
+        assert_eq!(
+            all_entries.len(),
+            3,
+            "Expected 3 log entries, got {}",
+            all_entries.len()
+        );
 
         // Проверяем уровни логирования
         let warn_entries: Vec<_> = all_entries
@@ -1337,13 +1343,13 @@ mod tests {
     #[tokio::test]
     async fn test_dbus_notifier_enhanced_features() {
         let mut notifier = DBusNotifier::new("TestApp");
-        
+
         // Проверяем, что соединение не установлено изначально
         assert!(!notifier.is_connected());
-        
+
         // Проверяем, что сервис уведомлений недоступен без соединения
         assert!(!notifier.check_notification_service_available().await);
-        
+
         // Проверяем, что получение информации о сервере возвращает ошибку без соединения
         let result = notifier.get_server_information().await;
         assert!(result.is_err());
@@ -1357,7 +1363,9 @@ mod tests {
 
         assert_eq!(deserialized.notification_type, NotificationType::Warning);
         assert_eq!(deserialized.title, "High GPU Usage");
-        assert!(deserialized.message.contains("GPU usage is at 90% (threshold: 85%)"));
+        assert!(deserialized
+            .message
+            .contains("GPU usage is at 90% (threshold: 85%)"));
 
         let temperature_notification = Notification::temperature_event("CPU", "85", "80");
         let serialized = serde_json::to_string(&temperature_notification).unwrap();
@@ -1365,6 +1373,8 @@ mod tests {
 
         assert_eq!(deserialized.notification_type, NotificationType::Warning);
         assert_eq!(deserialized.title, "High CPU Temperature");
-        assert!(deserialized.message.contains("CPU temperature is at 85°C (threshold: 80°C)"));
+        assert!(deserialized
+            .message
+            .contains("CPU temperature is at 85°C (threshold: 80°C)"));
     }
 }
