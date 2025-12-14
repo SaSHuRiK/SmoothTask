@@ -4714,6 +4714,7 @@ impl EbpfMetricsCollector {
     }
 
     /// Enhanced error handling with detailed error classification and recovery strategies
+    #[allow(dead_code)]
     fn log_ebpf_error(&self, error: &anyhow::Error) {
         let error_string = error.to_string();
         
@@ -4817,6 +4818,7 @@ impl EbpfMetricsCollector {
     }
     
     /// Apply recovery strategies based on error category
+    #[allow(dead_code)]
     fn apply_error_recovery(&self, category: EbpfErrorCategory) {
         match category {
             EbpfErrorCategory::Critical => {

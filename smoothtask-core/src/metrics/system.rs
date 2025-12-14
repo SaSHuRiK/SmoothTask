@@ -1122,6 +1122,7 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
 /// Приоритет источников температуры (от высшего к низшему)
 /// Это позволяет нам выбирать наиболее точные и специфичные источники
 #[derive(Debug, PartialEq)]
+#[allow(dead_code)]
 enum TemperatureSourcePriority {
     IntelCoreTemp,      // Наиболее точный для Intel CPU
     AmdK10Temp,         // Наиболее точный для AMD CPU

@@ -11,6 +11,20 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-833: Clean up remaining compilation warnings
+  - Тип: Rust / core / cleanup
+  - Примечания: Remove remaining unused functions and variants causing warnings
+  - Приоритет: Высокий
+  - Оценка времени: ~45 минут
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - [x] Remove unused function apply_enhanced_detection_static from rules.rs
+    - [x] Add #[allow(dead_code)] attributes to eBPF methods (log_ebpf_error, apply_error_recovery) that are used when ebpf feature is enabled
+    - [x] Add #[allow(dead_code)] attribute to TemperatureSourcePriority enum to suppress false positive warning
+    - [x] Verify compilation succeeds with no warnings
+  - Ожидаемые результаты: Clean codebase with zero warnings
+  - Результаты: Successfully eliminated all compilation warnings. The codebase now compiles cleanly with no warnings.
+
 - [x] ST-831: Fix compilation warnings and clean up unused imports
   - Тип: Rust / core / cleanup
   - Примечания: Remove unused imports and fix warnings in the codebase
@@ -196,6 +210,11 @@
   - Тип: Rust / core / logging
   - Примечания: Улучшенная система логирования с автоматическим управлением
   - Результаты: Автоматическая ротация и сжатие логов с поддержкой конфигурации
+
+- [x] ST-833: Clean up remaining compilation warnings
+  - Тип: Rust / core / cleanup
+  - Примечания: Remove remaining unused functions and variants causing warnings
+  - Результаты: Successfully eliminated all compilation warnings. The codebase now compiles cleanly with no warnings.
 
 - [x] ST-832: Add comprehensive documentation for new features
   - Тип: Documentation

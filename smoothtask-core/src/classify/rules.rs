@@ -899,61 +899,7 @@ impl PatternDatabase {
         Vec::new()
     }
 
-    /// Применяет улучшенные эвристики для обнаружения приложений (статическая версия).
-    ///
-    /// Этот метод не требует mutable self и работает напрямую с паттернами.
-    ///
-    /// # Аргументы
-    ///
-    /// * `process` - процесс для анализа
-    /// * `all_patterns` - список всех паттернов
-    ///
-    /// # Возвращает
-    ///
-    /// Список совпадающих паттернов с их категориями.
-    fn apply_enhanced_detection_static<'a>(
-        process: &ProcessRecord,
-        all_patterns: &'a [(PatternCategory, AppPattern)],
-    ) -> Vec<(&'a PatternCategory, &'a AppPattern)> {
-        // 1. Обнаружение контейнеров и sandbox
-        if let Some(exe) = &process.exe {
-            if Self::is_container_or_sandbox_process(exe) {
-                // Пытаемся обнаружить реальное приложение внутри контейнера
-                if let Some(cmdline) = &process.cmdline {
-                    let container_matches = Self::detect_container_application_static(cmdline, all_patterns);
-                    if !container_matches.is_empty() {
-                        return container_matches;
-                    }
-                }
-            }
-        }
 
-        // 2. Анализ пути исполняемого файла
-        if let Some(exe) = &process.exe {
-            let path_matches = Self::detect_by_executable_path_static(exe, all_patterns);
-            if !path_matches.is_empty() {
-                return path_matches;
-            }
-        }
-
-        // 3. Обнаружение по системным сервисам
-        if let Some(systemd_unit) = &process.systemd_unit {
-            let service_matches = Self::detect_by_systemd_service_static(systemd_unit, all_patterns);
-            if !service_matches.is_empty() {
-                return service_matches;
-            }
-        }
-
-        // 4. Обнаружение по аргументам командной строки
-        if let Some(cmdline) = &process.cmdline {
-            let cmdline_matches = Self::detect_by_command_line_arguments_static(cmdline, all_patterns);
-            if !cmdline_matches.is_empty() {
-                return cmdline_matches;
-            }
-        }
-
-        Vec::new()
-    }
 
     /// Обнаружение по аргументам командной строки (статическая версия).
     ///
