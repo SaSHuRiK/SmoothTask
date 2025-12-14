@@ -8285,12 +8285,6 @@ use crate::metrics::ebpf::EbpfMetrics;
     }
 
     #[tokio::test]
-    async fn test_gpu_update_temp_power_handler() {
-        // Тест проверяет обработчик gpu_update_temp_power_handler
-        let result = gpu_update_temp_power_handler().await;
-    }
-
-    #[tokio::test]
     async fn test_gpu_memory_handler() {
         // Тест проверяет обработчик gpu_memory_handler
         let result = gpu_memory_handler().await;
