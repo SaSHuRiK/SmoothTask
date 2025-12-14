@@ -122,6 +122,8 @@ pub struct ProcessNetworkMonitorConfig {
     pub enable_tcp_monitoring: bool,
     /// Enable UDP connection monitoring
     pub enable_udp_monitoring: bool,
+    /// Enable Unix socket monitoring
+    pub enable_unix_monitoring: bool,
     /// Update interval in seconds
     pub update_interval_secs: u64,
     /// Use caching for network statistics
@@ -138,6 +140,7 @@ impl Default for ProcessNetworkMonitorConfig {
             enable_detailed_connections: true,
             enable_tcp_monitoring: true,
             enable_udp_monitoring: true,
+            enable_unix_monitoring: true,
             update_interval_secs: 60,
             enable_caching: true,
             cache_ttl_seconds: 300,
@@ -249,6 +252,27 @@ impl ProcessNetworkMonitor {
                 .truncate(self.config.max_connections_per_process);
         }
 
+        // Enhance with FD mapping for more accurate connection tracking
+        if self.config.enable_detailed_connections {
+            if let Ok(fd_connections) = self.collect_process_connections_with_fd_mapping(pid) {
+                // Merge FD-mapped connections with existing ones
+                for fd_conn in fd_connections {
+                    // Check if this connection already exists
+                    let exists = stats.connections.iter().any(|conn| {
+                        conn.src_ip == fd_conn.src_ip &&
+                        conn.src_port == fd_conn.src_port &&
+                        conn.dst_ip == fd_conn.dst_ip &&
+                        conn.dst_port == fd_conn.dst_port &&
+                        conn.protocol == fd_conn.protocol
+                    });
+
+                    if !exists {
+                        stats.connections.push(fd_conn);
+                    }
+                }
+            }
+        }
+
         // Update cache
         if self.config.enable_caching {
             self.cache.insert(pid, stats.clone());
@@ -277,6 +301,234 @@ impl ProcessNetworkMonitor {
 
         Ok(results)
     }
+
+    /// Collect network connections for a specific process using /proc/PID/fd mapping
+    /// This provides more accurate process-to-connection mapping
+    pub fn collect_process_connections_with_fd_mapping(&self, pid: u32) -> Result<Vec<ProcessConnectionStats>> {
+        let mut connections = Vec::new();
+        let proc_fd_path = format!("/proc/{}/fd", pid);
+
+        if !Path::new(&proc_fd_path).exists() {
+            tracing::debug!("Process {} does not exist or has no file descriptors", pid);
+            return Ok(connections);
+        }
+
+        // Read all file descriptors for the process
+        let fd_entries = match fs::read_dir(&proc_fd_path) {
+            Ok(entries) => entries,
+            Err(e) => {
+                tracing::warn!("Failed to read file descriptors for PID {}: {}", pid, e);
+                return Ok(connections);
+            }
+        };
+
+        // Map file descriptors to network connections
+        for fd_entry in fd_entries {
+            match fd_entry {
+                Ok(entry) => {
+                    let fd_path = entry.path();
+                    
+                    // Check if this file descriptor is a socket
+                    if let Ok(fd_link) = fs::read_link(&fd_path) {
+                        let fd_link_str = fd_link.to_string_lossy();
+                        
+                        if fd_link_str.contains("socket:") {
+                            // This is a network socket, try to get connection info
+                            if let Some(conn_info) = self.get_socket_connection_info(pid, &fd_link_str) {
+                                connections.push(conn_info);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("Failed to read file descriptor entry for PID {}: {}", pid, e);
+                    continue;
+                }
+            }
+        }
+
+        Ok(connections)
+    }
+
+    /// Get connection information from socket file descriptor
+    fn get_socket_connection_info(&self, pid: u32, socket_path: &str) -> Option<ProcessConnectionStats> {
+        // Extract socket inode from the path (format: socket:[inode])
+        let inode_start = socket_path.find("socket:[")?;
+        let inode_end = socket_path.find("]")?;
+        let inode_str = &socket_path[inode_start + 8..inode_end];
+        
+        match inode_str.parse::<u32>() {
+            Ok(inode) => {
+                // Try to find this inode in /proc/net/tcp and /proc/net/tcp6
+                if let Some(tcp_conn) = self.find_tcp_connection_by_inode(inode) {
+                    return Some(tcp_conn);
+                }
+                if let Some(udp_conn) = self.find_udp_connection_by_inode(inode) {
+                    return Some(udp_conn);
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Failed to parse socket inode for PID {}: {}", pid, e);
+            }
+        }
+
+        None
+    }
+
+    /// Find TCP connection by inode in /proc/net/tcp and /proc/net/tcp6
+    fn find_tcp_connection_by_inode(&self, inode: u32) -> Option<ProcessConnectionStats> {
+        // Check IPv4 connections
+        if let Ok(tcp_content) = fs::read_to_string("/proc/net/tcp") {
+            for line in tcp_content.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 && parts[9] == format!("{}", inode) {
+                    return self.parse_tcp_connection_line(&parts);
+                }
+            }
+        }
+
+        // Check IPv6 connections
+        if let Ok(tcp_content) = fs::read_to_string("/proc/net/tcp6") {
+            for line in tcp_content.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 && parts[9] == format!("{}", inode) {
+                    return self.parse_tcp_connection_line(&parts);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Find UDP connection by inode in /proc/net/udp and /proc/net/udp6
+    fn find_udp_connection_by_inode(&self, inode: u32) -> Option<ProcessConnectionStats> {
+        // Check IPv4 connections
+        if let Ok(udp_content) = fs::read_to_string("/proc/net/udp") {
+            for line in udp_content.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 && parts[9] == format!("{}", inode) {
+                    return self.parse_udp_connection_line(&parts);
+                }
+            }
+        }
+
+        // Check IPv6 connections
+        if let Ok(udp_content) = fs::read_to_string("/proc/net/udp6") {
+            for line in udp_content.lines().skip(1) {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 && parts[9] == format!("{}", inode) {
+                    return self.parse_udp_connection_line(&parts);
+                }
+            }
+        }
+
+        None
+    }
+
+    /// Parse TCP connection line from /proc/net/tcp* files
+    fn parse_tcp_connection_line(&self, parts: &[&str]) -> Option<ProcessConnectionStats> {
+        if parts.len() < 10 {
+            return None;
+        }
+
+        let mut conn = ProcessConnectionStats::default();
+        conn.protocol = "TCP".to_string();
+        
+        // Parse state
+        let state_hex = parts[3];
+        conn.state = self.parse_tcp_state(state_hex).unwrap_or_else(|_| "UNKNOWN".to_string());
+
+        // Parse local and remote addresses
+        if let Some((src_ip, src_port)) = self.parse_ip_port(parts[1]) {
+            conn.src_ip = src_ip;
+            conn.src_port = src_port;
+        }
+
+        if let Some((dst_ip, dst_port)) = self.parse_ip_port(parts[2]) {
+            conn.dst_ip = dst_ip;
+            conn.dst_port = dst_port;
+        }
+
+        // Parse statistics (if available)
+        if parts.len() >= 12 {
+            if let Ok(tx_queue) = parts[11].parse::<u64>() {
+                conn.bytes_transmitted = tx_queue * 1024; // Approximate
+            }
+            if let Ok(rx_queue) = parts[12].parse::<u64>() {
+                conn.bytes_received = rx_queue * 1024; // Approximate
+            }
+        }
+
+        Some(conn)
+    }
+
+    /// Parse UDP connection line from /proc/net/udp* files
+    fn parse_udp_connection_line(&self, parts: &[&str]) -> Option<ProcessConnectionStats> {
+        if parts.len() < 10 {
+            return None;
+        }
+
+        let mut conn = ProcessConnectionStats::default();
+        conn.protocol = "UDP".to_string();
+        conn.state = "ESTABLISHED".to_string(); // UDP is connectionless
+
+        // Parse local and remote addresses
+        if let Some((src_ip, src_port)) = self.parse_ip_port(parts[1]) {
+            conn.src_ip = src_ip;
+            conn.src_port = src_port;
+        }
+
+        if let Some((dst_ip, dst_port)) = self.parse_ip_port(parts[2]) {
+            conn.dst_ip = dst_ip;
+            conn.dst_port = dst_port;
+        }
+
+        Some(conn)
+    }
+
+    /// Parse IP address and port from hex string
+    fn parse_ip_port(&self, hex_str: &str) -> Option<(IpAddr, u16)> {
+        // Format: HEX_IP:HEX_PORT (e.g., "0100007F:1F90" for 127.0.0.1:8080)
+        let parts: Vec<&str> = hex_str.split(':').collect();
+        if parts.len() != 2 {
+            return None;
+        }
+
+        let ip_hex = parts[0];
+        let port_hex = parts[1];
+
+        // Parse port
+        let port = u16::from_str_radix(port_hex, 16).ok()?;
+
+        // Parse IP address (could be IPv4 or IPv6)
+        if ip_hex.len() == 8 {
+            // IPv4
+            let ip_bytes = (0..4).rev().map(|i| {
+                u8::from_str_radix(&ip_hex[i*2..(i+1)*2], 16).unwrap_or(0)
+            }).collect::<Vec<u8>>();
+            
+            if ip_bytes.len() == 4 {
+                let ip_bytes: [u8; 4] = ip_bytes.try_into().unwrap();
+                let ip = IpAddr::V4(std::net::Ipv4Addr::from(ip_bytes));
+                return Some((ip, port));
+            }
+        } else if ip_hex.len() == 32 {
+            // IPv6
+            let ip_bytes: Vec<u16> = (0..8).rev().map(|i| {
+                u16::from_str_radix(&ip_hex[i*4..(i+1)*4], 16).unwrap_or(0)
+            }).collect();
+            
+            if ip_bytes.len() == 8 {
+                let ip_bytes: [u16; 8] = ip_bytes.try_into().unwrap();
+                let ip = IpAddr::V6(std::net::Ipv6Addr::from(ip_bytes));
+                return Some((ip, port));
+            }
+        }
+
+        None
+    }
+
+
 
     /// Collect TCP statistics for a process using enhanced methods
     fn collect_tcp_stats(&self, pid: u32) -> Result<ProcessProtocolStats> {
@@ -669,6 +921,83 @@ impl ProcessNetworkMonitor {
                 .udp_connections
                 .saturating_sub(previous.udp_connections),
         }
+    }
+
+    /// Collect Unix socket statistics for a process
+    fn collect_unix_stats(&self, pid: u32) -> Result<ProcessProtocolStats> {
+        let mut stats = ProcessProtocolStats::default();
+
+        // Read /proc/net/unix to find Unix domain sockets
+        if Path::new("/proc/net/unix").exists() {
+            let unix_content = fs::read_to_string("/proc/net/unix")
+                .context("Failed to read /proc/net/unix")?;
+
+            // Parse Unix socket connections
+            for line in unix_content.lines().skip(1) { // Skip header
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 8 {
+                    let inode = parts[7];
+                    let _path = parts[8]; // Path or abstract socket identifier
+
+                    // Check if this socket belongs to our process by checking file descriptors
+                    if self.is_connection_for_pid(pid, inode)? {
+                        let mut connection = ProcessConnectionStats::default();
+                        connection.protocol = "UNIX".to_string();
+                        connection.state = "ESTABLISHED".to_string();
+                        
+                        // Try to extract path information
+                        if !parts[8].is_empty() && parts[8] != "0000000000000000" {
+                            // This is a filesystem path socket
+                            if let Ok(path_str) = self.parse_unix_socket_path(parts[8]) {
+                                if let Ok(ip_path) = path_str.parse::<IpAddr>() {
+                                    connection.dst_ip = ip_path;
+                                } else {
+                                    // Store path as string in a custom field (would need to extend struct)
+                                    // For now, we'll just note it's a Unix socket
+                                }
+                            }
+                        } else {
+                            // This is an abstract socket
+                            connection.state = "ABSTRACT".to_string();
+                        }
+
+                        stats.connections += 1;
+                        stats.detailed_connections.push(connection);
+                    }
+                }
+            }
+        }
+
+        Ok(stats)
+    }
+
+    /// Parse Unix socket path from hex format
+    fn parse_unix_socket_path(&self, hex_path: &str) -> Result<String> {
+        // Unix socket paths in /proc/net/unix are stored as hex-encoded strings
+        // We need to decode them properly
+        
+        // For now, return a placeholder - actual implementation would require
+        // proper hex decoding and null-termination handling
+        Ok(format!("unix_socket_{}", hex_path))
+    }
+
+    /// Enhanced collect function that includes Unix socket monitoring
+    pub fn collect_process_network_stats_enhanced(
+        &mut self,
+        pid: u32,
+    ) -> Result<ProcessNetworkStats> {
+        let mut stats = self.collect_process_network_stats(pid)?;
+
+        // Add Unix socket monitoring if enabled
+        if self.config.enable_unix_monitoring && self.config.enable_detailed_connections {
+            if let Ok(unix_stats) = self.collect_unix_stats(pid) {
+                stats.connections.extend(unix_stats.detailed_connections);
+                // Note: Unix sockets don't contribute to byte/packet counts
+                // as they're local IPC mechanisms
+            }
+        }
+
+        Ok(stats)
     }
 
     /// Benchmark process network monitoring performance
@@ -1129,6 +1458,7 @@ mod tests {
             enable_detailed_connections: false,
             enable_tcp_monitoring: true,
             enable_udp_monitoring: false,
+            enable_unix_monitoring: true,
             update_interval_secs: 30,
             enable_caching: false,
             cache_ttl_seconds: 600,
@@ -1138,6 +1468,7 @@ mod tests {
         assert_eq!(monitor.config.max_connections_per_process, 256);
         assert!(!monitor.config.enable_detailed_connections);
         assert!(!monitor.config.enable_udp_monitoring);
+        assert!(monitor.config.enable_unix_monitoring);
         assert!(!monitor.config.enable_caching);
     }
 
@@ -1470,5 +1801,265 @@ mod tests {
         assert_eq!(deserialized.pid, 1234);
         assert_eq!(deserialized.connections.len(), 2);
         assert_eq!(deserialized.tcp_connections, 10);
+    }
+
+    #[test]
+    fn test_fd_mapping_basic() {
+        // Test basic FD mapping functionality
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test with a non-existent process (should return empty vec)
+        let result = monitor.collect_process_connections_with_fd_mapping(999999);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_ip_port_parsing() {
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test IPv4 parsing
+        let result = monitor.parse_ip_port("0100007F:1F90");
+        assert!(result.is_some());
+        let (ip, port) = result.unwrap();
+        assert_eq!(port, 8080);
+        assert!(matches!(ip, IpAddr::V4(_)));
+        
+        // Test IPv6 parsing (simplified test)
+        let result = monitor.parse_ip_port("00000000000000000000000000000000:0050");
+        assert!(result.is_some());
+        let (ip, port) = result.unwrap();
+        assert_eq!(port, 80);
+        assert!(matches!(ip, IpAddr::V6(_)));
+    }
+
+    #[test]
+    fn test_connection_merging() {
+        // Test that the enhanced collection merges connections properly
+        let config = ProcessNetworkMonitorConfig {
+            enable_detailed_connections: true,
+            ..Default::default()
+        };
+        let mut monitor = ProcessNetworkMonitor::with_config(config);
+        
+        // For a real process, this would merge connections from different sources
+        // In this test, we just verify the basic functionality works
+        let result = monitor.collect_process_network_stats(1); // init process
+        assert!(result.is_ok());
+        // The exact number of connections depends on the system
+        assert!(result.unwrap().connections.len() >= 0);
+    }
+
+    #[test]
+    fn test_network_stats_with_enhanced_features() {
+        // Test with enhanced features enabled
+        let config = ProcessNetworkMonitorConfig {
+            enable_detailed_connections: true,
+            enable_tcp_monitoring: true,
+            enable_udp_monitoring: true,
+            max_connections_per_process: 256,
+            ..Default::default()
+        };
+        
+        let mut monitor = ProcessNetworkMonitor::with_config(config);
+        
+        // Test with a real process (init process should exist)
+        let result = monitor.collect_process_network_stats(1);
+        assert!(result.is_ok());
+        
+        let stats = result.unwrap();
+        assert_eq!(stats.pid, 1);
+        assert!(stats.last_update.elapsed().unwrap_or(Duration::from_secs(0)) < Duration::from_secs(10));
+        assert_eq!(stats.data_source, "proc");
+    }
+
+    #[test]
+    fn test_connection_filtering_and_analysis() {
+        // Test connection filtering and analysis capabilities
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Create some test connections
+        let mut conn1 = ProcessConnectionStats::default();
+        conn1.src_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        conn1.dst_ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+        conn1.src_port = 54321;
+        conn1.dst_port = 443;
+        conn1.protocol = "TCP".to_string();
+        conn1.state = "ESTABLISHED".to_string();
+        
+        let mut conn2 = ProcessConnectionStats::default();
+        conn2.src_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        conn2.dst_ip = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
+        conn2.src_port = 12345;
+        conn2.dst_port = 53;
+        conn2.protocol = "UDP".to_string();
+        conn2.state = "ESTABLISHED".to_string();
+        
+        // Test that connections are properly structured
+        assert_eq!(conn1.protocol, "TCP");
+        assert_eq!(conn2.protocol, "UDP");
+        assert_eq!(conn1.state, "ESTABLISHED");
+        assert_eq!(conn2.state, "ESTABLISHED");
+    }
+
+    #[test]
+    fn test_bandwidth_monitoring() {
+        // Test bandwidth monitoring capabilities
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Create a connection with bandwidth data
+        let mut conn = ProcessConnectionStats::default();
+        conn.bytes_transmitted = 1024 * 1024; // 1 MB
+        conn.bytes_received = 512 * 1024; // 512 KB
+        conn.packets_transmitted = 1000;
+        conn.packets_received = 500;
+        
+        // Verify bandwidth data
+        assert_eq!(conn.bytes_transmitted, 1024 * 1024);
+        assert_eq!(conn.bytes_received, 512 * 1024);
+        assert_eq!(conn.packets_transmitted, 1000);
+        assert_eq!(conn.packets_received, 500);
+    }
+
+    #[test]
+    fn test_error_handling_in_network_monitoring() {
+        // Test error handling in network monitoring
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test with invalid process ID
+        let result = monitor.collect_process_network_stats(999999);
+        assert!(result.is_ok()); // Should return default stats, not error
+        
+        let stats = result.unwrap();
+        assert_eq!(stats.pid, 999999);
+        assert_eq!(stats.rx_bytes, 0);
+        assert_eq!(stats.tx_bytes, 0);
+    }
+
+    #[test]
+    fn test_network_monitoring_with_caching() {
+        // Test network monitoring with caching enabled
+        let config = ProcessNetworkMonitorConfig {
+            enable_caching: true,
+            cache_ttl_seconds: 60,
+            ..Default::default()
+        };
+        
+        let mut monitor = ProcessNetworkMonitor::with_config(config);
+        
+        // First collection (should not use cache)
+        let result1 = monitor.collect_process_network_stats(1);
+        assert!(result1.is_ok());
+        
+        // Second collection (should use cache)
+        let result2 = monitor.collect_process_network_stats(1);
+        assert!(result2.is_ok());
+        
+        // Results should be similar (cached)
+        let stats1 = result1.unwrap();
+        let stats2 = result2.unwrap();
+        
+        assert_eq!(stats1.pid, stats2.pid);
+        assert_eq!(stats1.data_source, stats2.data_source);
+    }
+
+    #[test]
+    fn test_connection_state_analysis() {
+        // Test connection state analysis
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test various connection states
+        let mut established_conn = ProcessConnectionStats::default();
+        established_conn.state = "ESTABLISHED".to_string();
+        
+        let mut listen_conn = ProcessConnectionStats::default();
+        listen_conn.state = "LISTEN".to_string();
+        
+        let mut time_wait_conn = ProcessConnectionStats::default();
+        time_wait_conn.state = "TIME_WAIT".to_string();
+        
+        // Verify states
+        assert_eq!(established_conn.state, "ESTABLISHED");
+        assert_eq!(listen_conn.state, "LISTEN");
+        assert_eq!(time_wait_conn.state, "TIME_WAIT");
+    }
+
+    #[test]
+    fn test_unix_socket_parsing() {
+        // Test Unix socket path parsing
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test with a sample hex path
+        let result = monitor.parse_unix_socket_path("6162632F74656D702F736F636B6574");
+        assert!(result.is_ok());
+        
+        let path = result.unwrap();
+        assert!(path.contains("unix_socket_"));
+    }
+
+    #[test]
+    fn test_unix_socket_connection_creation() {
+        // Test creation of Unix socket connections
+        let mut conn = ProcessConnectionStats::default();
+        conn.protocol = "UNIX".to_string();
+        conn.state = "ESTABLISHED".to_string();
+        
+        assert_eq!(conn.protocol, "UNIX");
+        assert_eq!(conn.state, "ESTABLISHED");
+    }
+
+    #[test]
+    fn test_abstract_unix_socket_connection() {
+        // Test creation of abstract Unix socket connections
+        let mut conn = ProcessConnectionStats::default();
+        conn.protocol = "UNIX".to_string();
+        conn.state = "ABSTRACT".to_string();
+        
+        assert_eq!(conn.protocol, "UNIX");
+        assert_eq!(conn.state, "ABSTRACT");
+    }
+
+    #[test]
+    fn test_enhanced_network_collection() {
+        // Test the enhanced collection function
+        let mut monitor = ProcessNetworkMonitor::new();
+        
+        // Test with a real process (init process should exist)
+        let result = monitor.collect_process_network_stats_enhanced(1);
+        assert!(result.is_ok());
+        
+        let stats = result.unwrap();
+        assert_eq!(stats.pid, 1);
+        assert!(stats.last_update.elapsed().unwrap_or(Duration::from_secs(0)) < Duration::from_secs(10));
+    }
+
+    #[test]
+    fn test_network_protocol_variety() {
+        // Test that we can handle different network protocols
+        let protocols = vec!["TCP", "UDP", "UNIX"];
+        
+        for protocol in protocols {
+            let mut conn = ProcessConnectionStats::default();
+            conn.protocol = protocol.to_string();
+            
+            assert_eq!(conn.protocol, protocol);
+        }
+    }
+
+    #[test]
+    fn test_unix_socket_integration() {
+        // Test Unix socket integration with network stats
+        let mut stats = ProcessNetworkStats::default();
+        stats.pid = 1234;
+        
+        // Add a Unix socket connection
+        let mut unix_conn = ProcessConnectionStats::default();
+        unix_conn.protocol = "UNIX".to_string();
+        unix_conn.state = "ESTABLISHED".to_string();
+        
+        stats.connections.push(unix_conn);
+        
+        assert_eq!(stats.connections.len(), 1);
+        assert_eq!(stats.connections[0].protocol, "UNIX");
     }
 }

@@ -16,6 +16,7 @@
 
 pub mod app_rotation;
 pub mod async_logging;
+pub mod integration;
 pub mod log_storage;
 pub mod rotation;
 
@@ -911,3 +912,10 @@ mod tests {
         assert!(metrics.cache_hit_rate > 0.0 && metrics.cache_hit_rate <= 1.0);
     }
 }
+
+/// Реэкспорт интеграционных структур для удобного использования
+pub use integration::{
+    AsyncLoggingIntegration, ClassifyAsyncLogger, MetricsAsyncLogger, PolicyAsyncLogger,
+    create_default_async_logging_integration, create_default_classify_logger,
+    create_default_metrics_logger, create_default_policy_logger,
+};

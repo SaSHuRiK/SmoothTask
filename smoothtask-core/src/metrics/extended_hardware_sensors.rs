@@ -34,6 +34,17 @@ pub struct ExtendedHardwareSensors {
     pub pcie7_devices: Vec<(String, f32)>, // PCIe 7.0 устройства (имя, скорость в Гбит/с)
     pub usb4_v3_devices: Vec<(String, f32)>, // USB4 v3 устройства (имя, скорость в Гбит/с)
     pub nvme_3_0_devices: Vec<(String, f32)>, // NVMe 3.0 устройства (имя, скорость в Гбит/с)
+    // Дополнительные типы сенсоров
+    pub additional_temperatures_c: Vec<(String, f32)>, // Дополнительные температуры
+    pub additional_frequencies_hz: Vec<(String, f32)>, // Дополнительные частоты
+    pub additional_utilizations_percent: Vec<(String, f32)>, // Дополнительные утилизации
+    pub additional_loads_percent: Vec<(String, f32)>, // Дополнительные нагрузки
+    pub additional_efficiencies_percent: Vec<(String, f32)>, // Дополнительные эффективности
+    pub additional_health_percent: Vec<(String, f32)>, // Дополнительные состояния здоровья
+    pub additional_capacities_percent: Vec<(String, f32)>, // Дополнительные емкости
+    pub additional_throughputs_mbps: Vec<(String, f32)>, // Дополнительные пропускные способности
+    pub additional_latencies_ns: Vec<(String, f32)>, // Дополнительные задержки
+    pub additional_errors_count: Vec<(String, f32)>, // Дополнительные ошибки
 }
 
 /// Конфигурация расширенного мониторинга сенсоров
@@ -61,6 +72,17 @@ pub struct ExtendedHardwareSensorsConfig {
     pub enable_pcie7_monitoring: bool,
     pub enable_usb4_v3_monitoring: bool,
     pub enable_nvme_3_0_monitoring: bool,
+    // Дополнительные типы сенсоров
+    pub enable_additional_temperature_sensors: bool,
+    pub enable_additional_frequency_sensors: bool,
+    pub enable_additional_utilization_sensors: bool,
+    pub enable_additional_load_sensors: bool,
+    pub enable_additional_efficiency_sensors: bool,
+    pub enable_additional_health_sensors: bool,
+    pub enable_additional_capacity_sensors: bool,
+    pub enable_additional_throughput_sensors: bool,
+    pub enable_additional_latency_sensors: bool,
+    pub enable_additional_error_sensors: bool,
 }
 
 impl Default for ExtendedHardwareSensorsConfig {
@@ -88,6 +110,17 @@ impl Default for ExtendedHardwareSensorsConfig {
             enable_pcie7_monitoring: true,
             enable_usb4_v3_monitoring: true,
             enable_nvme_3_0_monitoring: true,
+            // Дополнительные типы сенсоров
+            enable_additional_temperature_sensors: true,
+            enable_additional_frequency_sensors: true,
+            enable_additional_utilization_sensors: true,
+            enable_additional_load_sensors: true,
+            enable_additional_efficiency_sensors: true,
+            enable_additional_health_sensors: true,
+            enable_additional_capacity_sensors: true,
+            enable_additional_throughput_sensors: true,
+            enable_additional_latency_sensors: true,
+            enable_additional_error_sensors: true,
         }
     }
 }
@@ -157,7 +190,7 @@ impl ExtendedHardwareSensorsMonitor {
         }
 
         info!(
-            "Extended hardware sensors collection completed: {} temperatures, {} additional fans, {} additional voltages, {} additional currents, {} additional power, {} additional energy, {} additional humidity, {} pressure, {} illumination, {} custom sensors",
+            "Extended hardware sensors collection completed: {} temperatures, {} additional fans, {} additional voltages, {} additional currents, {} additional power, {} additional energy, {} additional humidity, {} pressure, {} illumination, {} custom sensors, {} additional temperatures, {} additional frequencies, {} additional utilizations, {} additional loads, {} additional efficiencies, {} additional health, {} additional capacities, {} additional throughputs, {} additional latencies, {} additional errors",
             sensors.temperatures_c.len(),
             sensors.additional_fan_speeds_rpm.len(),
             sensors.additional_voltages_v.len(),
@@ -167,7 +200,17 @@ impl ExtendedHardwareSensorsMonitor {
             sensors.additional_humidity_percent.len(),
             sensors.pressure_pa.len(),
             sensors.illumination_lux.len(),
-            sensors.custom_sensors.len()
+            sensors.custom_sensors.len(),
+            sensors.additional_temperatures_c.len(),
+            sensors.additional_frequencies_hz.len(),
+            sensors.additional_utilizations_percent.len(),
+            sensors.additional_loads_percent.len(),
+            sensors.additional_efficiencies_percent.len(),
+            sensors.additional_health_percent.len(),
+            sensors.additional_capacities_percent.len(),
+            sensors.additional_throughputs_mbps.len(),
+            sensors.additional_latencies_ns.len(),
+            sensors.additional_errors_count.len()
         );
 
         // Собираем метрики с новых типов устройств
@@ -330,6 +373,76 @@ impl ExtendedHardwareSensorsMonitor {
                                 && file_name.ends_with("_input")
                             {
                                 self.process_custom_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные температуры
+                            else if self.config.enable_additional_temperature_sensors
+                                && file_name.starts_with("temp")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_temperature_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные частоты
+                            else if self.config.enable_additional_frequency_sensors
+                                && file_name.starts_with("freq")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_frequency_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные утилизации
+                            else if self.config.enable_additional_utilization_sensors
+                                && file_name.starts_with("util")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_utilization_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные нагрузки
+                            else if self.config.enable_additional_load_sensors
+                                && file_name.starts_with("load")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_load_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные эффективности
+                            else if self.config.enable_additional_efficiency_sensors
+                                && file_name.starts_with("eff")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_efficiency_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные состояния здоровья
+                            else if self.config.enable_additional_health_sensors
+                                && file_name.starts_with("health")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_health_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные емкости
+                            else if self.config.enable_additional_capacity_sensors
+                                && file_name.starts_with("cap")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_capacity_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные пропускные способности
+                            else if self.config.enable_additional_throughput_sensors
+                                && file_name.starts_with("throughput")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_throughput_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные задержки
+                            else if self.config.enable_additional_latency_sensors
+                                && file_name.starts_with("latency")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_latency_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем дополнительные ошибки
+                            else if self.config.enable_additional_error_sensors
+                                && file_name.starts_with("error")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_additional_error_sensor(&file_path, file_name, sensors)?;
                             }
                         }
                         Err(e) => {
@@ -1756,6 +1869,436 @@ impl ExtendedHardwareSensorsMonitor {
 
         Ok(())
     }
+
+    /// Обрабатывает дополнительный температурный сенсор
+    fn process_additional_temperature_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_temperature_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional temperature sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "temp")?;
+                        sensors.additional_temperatures_c.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional temperature sensor: {}°C from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional temperature sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional temperature sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный частотный сенсор
+    fn process_additional_frequency_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_frequency_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional frequency sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "freq")?;
+                        sensors.additional_frequencies_hz.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional frequency sensor: {}Hz from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional frequency sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional frequency sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор утилизации
+    fn process_additional_utilization_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_utilization_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional utilization sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "util")?;
+                        sensors.additional_utilizations_percent.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional utilization sensor: {}% from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional utilization sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional utilization sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор нагрузки
+    fn process_additional_load_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_load_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional load sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "load")?;
+                        sensors.additional_loads_percent.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional load sensor: {}% from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional load sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional load sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор эффективности
+    fn process_additional_efficiency_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_efficiency_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional efficiency sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "eff")?;
+                        sensors.additional_efficiencies_percent.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional efficiency sensor: {}% from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional efficiency sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional efficiency sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор состояния здоровья
+    fn process_additional_health_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_health_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional health sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "health")?;
+                        sensors.additional_health_percent.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional health sensor: {}% from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional health sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional health sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор емкости
+    fn process_additional_capacity_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_capacity_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional capacity sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "cap")?;
+                        sensors.additional_capacities_percent.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional capacity sensor: {}% from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional capacity sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional capacity sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор пропускной способности
+    fn process_additional_throughput_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_throughput_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional throughput sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "throughput")?;
+                        sensors.additional_throughputs_mbps.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional throughput sensor: {}MB/s from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional throughput sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional throughput sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор задержки
+    fn process_additional_latency_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_latency_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional latency sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "latency")?;
+                        sensors.additional_latencies_ns.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional latency sensor: {}ns from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional latency sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional latency sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает дополнительный сенсор ошибок
+    fn process_additional_error_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_additional_error_sensors {
+            return Ok(());
+        }
+
+        debug!("Found additional error sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "error")?;
+                        sensors.additional_errors_count.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read additional error sensor: {} errors from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse additional error sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read additional error sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Тесты для расширенного мониторинга аппаратных сенсоров
@@ -2104,5 +2647,146 @@ mod tests {
         let result = monitor.collect_nvme_3_0_metrics(&mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.nvme_3_0_devices.len(), 0);
+    }
+
+    #[test]
+    fn test_additional_sensor_processing() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+
+        // Тестируем обработку дополнительных температур
+        let temp_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(temp_file.path(), "45000").expect("write temp");
+        let result = monitor.process_additional_temperature_sensor(temp_file.path(), "temp1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_temperatures_c.len(), 1);
+        assert_eq!(sensors.additional_temperatures_c[0].1, 45.0);
+
+        // Тестируем обработку дополнительных частот
+        let freq_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(freq_file.path(), "3500000000").expect("write freq");
+        let result = monitor.process_additional_frequency_sensor(freq_file.path(), "freq1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_frequencies_hz.len(), 1);
+        assert_eq!(sensors.additional_frequencies_hz[0].1, 3500000000.0);
+
+        // Тестируем обработку дополнительных утилизаций
+        let util_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(util_file.path(), "75.5").expect("write util");
+        let result = monitor.process_additional_utilization_sensor(util_file.path(), "util1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_utilizations_percent.len(), 1);
+        assert_eq!(sensors.additional_utilizations_percent[0].1, 75.5);
+
+        // Тестируем обработку дополнительных нагрузок
+        let load_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(load_file.path(), "60.0").expect("write load");
+        let result = monitor.process_additional_load_sensor(load_file.path(), "load1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_loads_percent.len(), 1);
+        assert_eq!(sensors.additional_loads_percent[0].1, 60.0);
+
+        // Тестируем обработку дополнительных эффективностей
+        let eff_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(eff_file.path(), "85.2").expect("write eff");
+        let result = monitor.process_additional_efficiency_sensor(eff_file.path(), "eff1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_efficiencies_percent.len(), 1);
+        assert_eq!(sensors.additional_efficiencies_percent[0].1, 85.2);
+
+        // Тестируем обработку дополнительных состояний здоровья
+        let health_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(health_file.path(), "95.0").expect("write health");
+        let result = monitor.process_additional_health_sensor(health_file.path(), "health1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_health_percent.len(), 1);
+        assert_eq!(sensors.additional_health_percent[0].1, 95.0);
+
+        // Тестируем обработку дополнительных емкостей
+        let cap_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(cap_file.path(), "80.0").expect("write cap");
+        let result = monitor.process_additional_capacity_sensor(cap_file.path(), "cap1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_capacities_percent.len(), 1);
+        assert_eq!(sensors.additional_capacities_percent[0].1, 80.0);
+
+        // Тестируем обработку дополнительных пропускных способностей
+        let throughput_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(throughput_file.path(), "1500.0").expect("write throughput");
+        let result = monitor.process_additional_throughput_sensor(throughput_file.path(), "throughput1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_throughputs_mbps.len(), 1);
+        assert_eq!(sensors.additional_throughputs_mbps[0].1, 1500.0);
+
+        // Тестируем обработку дополнительных задержек
+        let latency_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(latency_file.path(), "5000.0").expect("write latency");
+        let result = monitor.process_additional_latency_sensor(latency_file.path(), "latency1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_latencies_ns.len(), 1);
+        assert_eq!(sensors.additional_latencies_ns[0].1, 5000.0);
+
+        // Тестируем обработку дополнительных ошибок
+        let error_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(error_file.path(), "10.0").expect("write error");
+        let result = monitor.process_additional_error_sensor(error_file.path(), "error1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_errors_count.len(), 1);
+        assert_eq!(sensors.additional_errors_count[0].1, 10.0);
+    }
+
+    #[test]
+    fn test_additional_sensors_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_additional_temperature_sensors = false;
+        config.enable_additional_frequency_sensors = false;
+        config.enable_additional_utilization_sensors = false;
+        config.enable_additional_load_sensors = false;
+        config.enable_additional_efficiency_sensors = false;
+        config.enable_additional_health_sensors = false;
+        config.enable_additional_capacity_sensors = false;
+        config.enable_additional_throughput_sensors = false;
+        config.enable_additional_latency_sensors = false;
+        config.enable_additional_error_sensors = false;
+
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+        let mut sensors = ExtendedHardwareSensors::default();
+
+        // Пробуем обработать сенсоры с отключенными опциями
+        let temp_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(temp_file.path(), "45000").expect("write temp");
+        let result = monitor.process_additional_temperature_sensor(temp_file.path(), "temp1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_temperatures_c.len(), 0);
+
+        let freq_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(freq_file.path(), "3500000000").expect("write freq");
+        let result = monitor.process_additional_frequency_sensor(freq_file.path(), "freq1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.additional_frequencies_hz.len(), 0);
+    }
+
+    #[test]
+    fn test_extended_sensors_with_all_additional_sensors() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let result = monitor.collect_extended_sensors();
+        assert!(result.is_ok());
+        let sensors = result.unwrap();
+        
+        // Проверяем, что все новые типы сенсоров инициализированы
+        assert!(sensors.additional_temperatures_c.len() >= 0);
+        assert!(sensors.additional_frequencies_hz.len() >= 0);
+        assert!(sensors.additional_utilizations_percent.len() >= 0);
+        assert!(sensors.additional_loads_percent.len() >= 0);
+        assert!(sensors.additional_efficiencies_percent.len() >= 0);
+        assert!(sensors.additional_health_percent.len() >= 0);
+        assert!(sensors.additional_capacities_percent.len() >= 0);
+        assert!(sensors.additional_throughputs_mbps.len() >= 0);
+        assert!(sensors.additional_latencies_ns.len() >= 0);
+        assert!(sensors.additional_errors_count.len() >= 0);
     }
 }

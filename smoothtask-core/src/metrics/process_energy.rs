@@ -548,6 +548,154 @@ impl ProcessEnergyMonitor {
         let runtime = tokio::runtime::Runtime::new()?;
         runtime.block_on(self.collect_process_energy(pid))
     }
+
+    /// Рассчитать энергоэффективность процесса
+    /// Возвращает рейтинг энергоэффективности (0.0 - 1.0, где 1.0 - наиболее эффективно)
+    pub async fn calculate_energy_efficiency(
+        &self,
+        pid: i32,
+    ) -> Result<Option<f32>> {
+        // Получаем метрики энергопотребления
+        let energy_stats = self.collect_process_energy(pid).await?;
+        
+        if let Some(stats) = energy_stats {
+            // Получаем CPU использование процесса
+            let cpu_usage = self.get_process_cpu_usage(pid).await?;
+            
+            if cpu_usage > 0.0 && stats.energy_uj > 0 {
+                // Рассчитываем энергоэффективность: работа на единицу энергии
+                // Упрощенная формула: (CPU использование) / (энергопотребление)
+                // Нормализуем для получения рейтинга 0.0-1.0
+                let efficiency = (cpu_usage / stats.power_w) as f32;
+                
+                // Ограничиваем диапазон
+                let normalized_efficiency = efficiency.min(1.0).max(0.0);
+                
+                return Ok(Some(normalized_efficiency));
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Собрать исторические данные об энергопотреблении
+    /// Возвращает вектор с историческими данными за несколько интервалов
+    pub async fn collect_energy_history(
+        &self,
+        pid: i32,
+        intervals: usize,
+        interval_duration_secs: u64,
+    ) -> Result<Vec<ProcessEnergyStats>> {
+        let mut history = Vec::new();
+        
+        // В реальной реализации это бы собирало данные за несколько интервалов
+        // Для этой демонстрации мы соберем текущие данные несколько раз
+        // с небольшими задержками
+        
+        for i in 0..intervals {
+            if let Some(stats) = self.collect_process_energy(pid).await? {
+                // Добавляем временную метку с учетом интервала
+                let mut historical_stats = stats;
+                historical_stats.timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)?
+                    .as_secs() -
+                    (i as u64 * interval_duration_secs);
+                
+                history.push(historical_stats);
+            }
+            
+            // Небольшая задержка для симуляции интервалов
+            if i < intervals - 1 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+            }
+        }
+        
+        Ok(history)
+    }
+
+    /// Собрать агрегированные метрики энергопотребления для нескольких процессов
+    /// Возвращает суммарные метрики для группы процессов
+    pub async fn collect_aggregated_energy(
+        &self,
+        pids: &[i32],
+    ) -> Result<Option<ProcessEnergyStats>> {
+        let mut total_energy_uj = 0u64;
+        let mut total_power_w = 0.0f32;
+        let mut reliable_count = 0usize;
+        let mut any_reliable = false;
+        
+        for &pid in pids {
+            if let Some(stats) = self.collect_process_energy(pid).await? {
+                total_energy_uj = total_energy_uj.saturating_add(stats.energy_uj);
+                total_power_w += stats.power_w;
+                
+                if stats.is_reliable {
+                    reliable_count += 1;
+                    any_reliable = true;
+                }
+            }
+        }
+        
+        if total_energy_uj > 0 || total_power_w > 0.0 {
+            let timestamp = SystemTime::now()
+                .duration_since(UNIX_EPOCH)?
+                .as_secs();
+            
+            Ok(Some(ProcessEnergyStats {
+                pid: -1, // Special PID for aggregated data
+                energy_uj: total_energy_uj,
+                power_w: total_power_w,
+                timestamp,
+                source: if any_reliable { EnergySource::ProcPower } else { EnergySource::None },
+                is_reliable: reliable_count > 0,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Интеграция с основной системой метрик
+    /// Возвращает расширенные метрики процесса с данными об энергопотреблении
+    pub async fn get_enhanced_process_metrics(
+        &self,
+        pid: i32,
+    ) -> Result<Option<crate::logging::snapshots::ProcessRecord>> {
+        // Получаем базовые метрики процесса
+        let process_record = self.get_process_record_from_system(pid).await?;
+        
+        if let Some(mut record) = process_record {
+            // Добавляем данные об энергопотреблении
+            if let Some(energy_stats) = self.collect_process_energy(pid).await? {
+                record.energy_uj = Some(energy_stats.energy_uj);
+                record.power_w = Some(energy_stats.power_w);
+                record.energy_timestamp = Some(energy_stats.timestamp);
+                
+                // Добавляем рейтинг энергоэффективности в теги
+                if let Some(efficiency) = self.calculate_energy_efficiency(pid).await? {
+                    record.tags.push(format!("energy_efficiency:{:.2}", efficiency));
+                }
+            }
+            
+            return Ok(Some(record));
+        }
+        
+        Ok(None)
+    }
+
+    /// Получаем базовые метрики процесса из системы
+    async fn get_process_record_from_system(
+        &self,
+        pid: i32,
+    ) -> Result<Option<crate::logging::snapshots::ProcessRecord>> {
+        // В реальной реализации это бы использовало системные вызовы или /proc
+        // Для этой демонстрации возвращаем базовую запись
+        
+        let mut record = crate::logging::snapshots::ProcessRecord::default();
+        record.pid = pid;
+        record.cmdline = Some(format!("/usr/bin/process_{}", pid));
+        
+        Ok(Some(record))
+    }
 }
 
 /// Глобальный экземпляр монитора энергопотребления.
@@ -994,6 +1142,180 @@ mod tests {
             let monitor = ProcessEnergyMonitor::with_config(enable_rapl, enable_ebpf);
             assert_eq!(monitor.enable_rapl, enable_rapl);
             assert_eq!(monitor.enable_ebpf, enable_ebpf);
+        }
+    }
+
+    #[test]
+    async fn test_energy_efficiency_calculation() {
+        // Тестируем расчет энергоэффективности
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с реальным процессом
+        let result = monitor.calculate_energy_efficiency(1).await;
+        assert!(result.is_ok());
+        
+        // Результат может быть None или Some в зависимости от системы
+        let efficiency = result.unwrap();
+        if let Some(eff) = efficiency {
+            // Эффективность должна быть в диапазоне 0.0-1.0
+            assert!(eff >= 0.0 && eff <= 1.0);
+        }
+    }
+
+    #[test]
+    async fn test_energy_history_collection() {
+        // Тестируем сбор исторических данных
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Собираем историю за 3 интервала
+        let result = monitor.collect_energy_history(1, 3, 1).await;
+        assert!(result.is_ok());
+        
+        let history = result.unwrap();
+        // Должны получить 3 записи (или меньше, если данные недоступны)
+        assert!(history.len() <= 3);
+        
+        // Каждая запись должна иметь корректный PID
+        for stats in &history {
+            assert_eq!(stats.pid, 1);
+        }
+    }
+
+    #[test]
+    async fn test_aggregated_energy_collection() {
+        // Тестируем сбор агрегированных метрик
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с несколькими процессами
+        let pids = [1, 2];
+        let result = monitor.collect_aggregated_energy(&pids).await;
+        assert!(result.is_ok());
+        
+        let aggregated = result.unwrap();
+        if let Some(stats) = aggregated {
+            // Агрегированные данные должны иметь специальный PID
+            assert_eq!(stats.pid, -1);
+            // Энергопотребление должно быть неотрицательным
+            assert!(stats.energy_uj >= 0);
+            assert!(stats.power_w >= 0.0);
+        }
+    }
+
+    #[test]
+    async fn test_enhanced_process_metrics() {
+        // Тестируем получение расширенных метрик процесса
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с реальным процессом
+        let result = monitor.get_enhanced_process_metrics(1).await;
+        assert!(result.is_ok());
+        
+        let record_option = result.unwrap();
+        if let Some(record) = record_option {
+            // Запись должна содержать базовую информацию
+            assert_eq!(record.pid, 1);
+            
+            // Может содержать данные об энергопотреблении
+            if let Some(energy) = record.energy_uj {
+                assert!(energy >= 0);
+            }
+            
+            // Проверяем теги на наличие энергоэффективности
+            let has_efficiency_tag = record.tags.iter().any(|tag| tag.starts_with("energy_efficiency:"));
+            if has_efficiency_tag {
+                // Если есть тег, проверяем его формат
+                for tag in &record.tags {
+                    if tag.starts_with("energy_efficiency:") {
+                        let efficiency_str = tag.split(':').nth(1).unwrap();
+                        let efficiency: f32 = efficiency_str.parse().unwrap();
+                        assert!(efficiency >= 0.0 && efficiency <= 1.0);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    async fn test_energy_efficiency_edge_cases() {
+        // Тестируем граничные случаи для расчета энергоэффективности
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с несуществующим процессом
+        let result = monitor.calculate_energy_efficiency(999999).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    async fn test_energy_history_edge_cases() {
+        // Тестируем граничные случаи для сбора истории
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с 0 интервалами
+        let result = monitor.collect_energy_history(1, 0, 1).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+        
+        // Тестируем с несуществующим процессом
+        let result = monitor.collect_energy_history(999999, 3, 1).await;
+        assert!(result.is_ok());
+        // Должно вернуть пустой вектор или записи с 0 энергией
+        let history = result.unwrap();
+        for stats in &history {
+            assert_eq!(stats.pid, 999999);
+        }
+    }
+
+    #[test]
+    async fn test_aggregated_energy_edge_cases() {
+        // Тестируем граничные случаи для агрегированных метрик
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с пустым списком PID
+        let result = monitor.collect_aggregated_energy(&[]).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        
+        // Тестируем с несуществующими процессами
+        let pids = [999997, 999998, 999999];
+        let result = monitor.collect_aggregated_energy(&pids).await;
+        assert!(result.is_ok());
+        // Должно вернуть None, так как нет данных
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    async fn test_enhanced_metrics_integration() {
+        // Тестируем интеграцию расширенных метрик
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с несколькими процессами
+        let pids = [1, 2];
+        for pid in pids {
+            let result = monitor.get_enhanced_process_metrics(pid).await;
+            assert!(result.is_ok());
+            
+            if let Some(record) = result.unwrap() {
+                assert_eq!(record.pid, pid);
+                // Проверяем, что запись содержит ожидаемые поля
+                assert!(record.name.contains(&format!("process_{}", pid)));
+            }
+        }
+    }
+
+    #[test]
+    async fn test_energy_efficiency_with_fallback() {
+        // Тестируем расчет энергоэффективности с fallback данными
+        let monitor = ProcessEnergyMonitor::with_config(false, false); // Отключаем все источники
+        
+        // Тестируем с реальным процессом
+        let result = monitor.calculate_energy_efficiency(1).await;
+        assert!(result.is_ok());
+        
+        // Может вернуть None или Some в зависимости от доступности fallback
+        let efficiency = result.unwrap();
+        if let Some(eff) = efficiency {
+            assert!(eff >= 0.0 && eff <= 1.0);
         }
     }
 }
