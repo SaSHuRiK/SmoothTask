@@ -97,28 +97,64 @@
     - Integrated with existing API router and endpoints documentation
     - Code compiles successfully with no warnings
 
-- [ ] ST-838: Add Prometheus metrics endpoint (Part 2: Process metrics)
+- [x] ST-838: Add Prometheus metrics endpoint (Part 2: Process metrics)
   - Тип: Rust / core / monitoring
   - Примечания: Add process and application metrics to Prometheus endpoint
   - Приоритет: Средний
   - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
   - Критерии готовности:
-    - [ ] Add process metrics in Prometheus format
-    - [ ] Add application classification metrics
-    - [ ] Add health and performance metrics
-    - [ ] Add integration tests for process metrics
+    - [x] Add process metrics in Prometheus format
+    - [x] Add application classification metrics
+    - [x] Add health and performance metrics
+    - [x] Add integration tests for process metrics
   - Ожидаемые результаты: Complete process metrics in Prometheus format
+  - Результаты:
+    - Added comprehensive process metrics including CPU, memory, I/O, network, GPU, and energy
+    - Added application group metrics with resource aggregation
+    - Added process classification metrics (audio, GUI, terminal, SSH)
+    - Added health monitoring metrics (score, issues, component status)
+    - Added comprehensive integration tests with test data
+    - All metrics follow Prometheus format with proper HELP and TYPE comments
 
-- [ ] ST-839: Add Prometheus metrics endpoint (Part 3: Grafana integration)
+- [x] ST-839: Add Prometheus metrics endpoint (Part 3: Grafana integration)
   - Тип: Rust / core / monitoring
   - Примечания: Add Grafana dashboard templates and documentation
   - Приоритет: Средний
   - Оценка времени: ~30 минут
+  - Время выполнения: ~45 минут
   - Критерии готовности:
-    - [ ] Create basic Grafana dashboard templates
-    - [ ] Add monitoring setup guide documentation
-    - [ ] Add example queries and visualizations
+    - [x] Create basic Grafana dashboard templates
+    - [x] Add monitoring setup guide documentation
+    - [x] Add example queries and visualizations
   - Ожидаемые результаты: Complete Prometheus/Grafana integration
+  - Результаты:
+    - Created comprehensive Grafana dashboard with 26 panels covering all major metrics
+    - Added detailed monitoring setup guide (PROMETHEUS_GRAFANA_SETUP.md)
+    - Included example queries, alerting rules, and troubleshooting guide
+    - Created monitoring/README.md with quick start and resource overview
+    - All documentation includes best practices for production deployment
+
+- [x] ST-840: Fix compilation errors and warnings in test suite
+  - Тип: Rust / core / cleanup
+  - Примечания: Address compilation errors and warnings after recent feature additions
+  - Приоритет: Высокий
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - [x] Fix missing priority_hysteresis_stable_sec field in test configurations
+    - [x] Add missing GPU-related fields to test ProcessRecord structures
+    - [x] Fix mutability issues in process_network.rs tests
+    - [x] Address unused variable warnings in health tests and gpu metrics
+    - [x] Remove useless comparison warnings in GPU metrics tests
+    - [x] Add #[allow(dead_code)] attributes for unused helper functions
+  - Ожидаемые результаты: Clean compilation with no errors or warnings
+  - Результаты:
+    - Fixed all compilation errors in test files (run_daemon_test.rs, performance_test.rs, caching_test.rs, collect_snapshot_test.rs, actuator_integration_test.rs)
+    - Addressed all compilation warnings in main codebase
+    - Updated test structures to include all required fields
+    - All code now compiles cleanly with no warnings or errors
+    - Maintained backward compatibility with existing functionality
 
 ## 2. Бэклог
 
@@ -170,6 +206,30 @@
     - High test coverage across all major components and integration points
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-840: Fix compilation errors and warnings in test suite
+  - Тип: Rust / core / cleanup
+  - Примечания: Address compilation errors and warnings after recent feature additions
+  - Приоритет: Высокий
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~60 минут
+  - Результаты: Clean compilation with no errors or warnings across entire codebase
+
+- [x] ST-839: Add Prometheus metrics endpoint (Part 3: Grafana integration)
+  - Тип: Rust / core / monitoring
+  - Примечания: Add Grafana dashboard templates and documentation
+  - Приоритет: Средний
+  - Оценка времени: ~30 минут
+  - Время выполнения: ~45 минут
+  - Результаты: Complete Prometheus/Grafana integration with comprehensive monitoring
+
+- [x] ST-838: Add Prometheus metrics endpoint (Part 2: Process metrics)
+  - Тип: Rust / core / monitoring
+  - Примечания: Add process and application metrics to Prometheus endpoint
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
+  - Результаты: Comprehensive process metrics including CPU, memory, I/O, network, GPU, and energy
 
 - [x] ST-837: Add Prometheus metrics endpoint (Part 1: Basic endpoint)
   - Тип: Rust / core / monitoring

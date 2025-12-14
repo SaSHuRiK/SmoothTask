@@ -1616,7 +1616,6 @@ mod tests {
         let collection = metrics_result.unwrap();
         
         // Verify that the collection is valid even if no devices are found
-        assert!(collection.gpu_count >= 0);
         assert_eq!(collection.devices.len(), collection.gpu_count);
         
         // Test that serialization works even with empty or partial collections
@@ -1637,7 +1636,7 @@ mod tests {
         };
         
         // This should handle errors gracefully and return a valid metrics structure
-        let error_metrics_result = collect_gpu_device_metrics(&error_device);
+        let _error_metrics_result = collect_gpu_device_metrics(&error_device);
         
         // Even if individual device metrics fail, the overall system should continue
         // This is tested by the fact that we can still collect metrics after this

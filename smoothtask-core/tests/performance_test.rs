@@ -114,6 +114,7 @@ fn test_config_creation_performance() {
                 background_percentile: 0.3,
                 sched_latency_p99_threshold_ms: 20.0,
                 ui_loop_p95_threshold_ms: 16.67,
+                priority_hysteresis_stable_sec: Some(30),
             },
             logging: LoggingConfig {
                 log_max_size_bytes: 10_485_760,

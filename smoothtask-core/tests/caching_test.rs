@@ -73,6 +73,7 @@ fn test_config_includes_cache_intervals() {
             background_percentile: 50.0,
             sched_latency_p99_threshold_ms: 10.0,
             ui_loop_p95_threshold_ms: 16.67,
+            priority_hysteresis_stable_sec: Some(30),
         },
         logging: LoggingConfig {
             log_max_size_bytes: 10_485_760,
@@ -432,6 +433,7 @@ fn test_cache_configuration_integration() {
             background_percentile: 50.0,
             sched_latency_p99_threshold_ms: 10.0,
             ui_loop_p95_threshold_ms: 16.67,
+            priority_hysteresis_stable_sec: Some(30),
         },
         logging: LoggingConfig {
             log_max_size_bytes: 10_485_760,

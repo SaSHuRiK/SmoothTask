@@ -350,6 +350,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn client_with_volume(pid: u32, volume: f32) -> AudioClientInfo {
         AudioClientInfo {
             pid,
@@ -361,6 +362,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn client_with_latency(pid: u32, latency: u32) -> AudioClientInfo {
         AudioClientInfo {
             pid,
@@ -372,6 +374,7 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn client_with_name(pid: u32, name: &str) -> AudioClientInfo {
         AudioClientInfo {
             pid,

@@ -782,7 +782,6 @@ mod tests {
         let collection = metrics_result.unwrap();
         
         // Verify that the collection is valid even if no devices are found
-        assert!(collection.gpu_count >= 0);
         assert_eq!(collection.devices.len(), collection.gpu_count);
         
         // Test that serialization/deserialization works even with empty collections

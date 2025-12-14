@@ -58,6 +58,7 @@ fn create_test_thresholds() -> Thresholds {
         background_percentile: 0.1,
         sched_latency_p99_threshold_ms: 10.0,
         ui_loop_p95_threshold_ms: 16.67,
+        priority_hysteresis_stable_sec: Some(30),
     }
 }
 

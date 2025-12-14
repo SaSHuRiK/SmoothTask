@@ -976,7 +976,7 @@ mod tests {
     #[test]
     fn test_process_network_error_handling() {
         // Test that network functions handle errors gracefully
-        let mut monitor = ProcessNetworkMonitor::new();
+        let monitor = ProcessNetworkMonitor::new();
 
         // Test that we can create a monitor and work with empty data
         let empty_stats = ProcessNetworkStats::default();
@@ -1237,7 +1237,7 @@ mod tests {
     #[test]
     fn test_network_stats_aggregation() {
         // Test aggregation of network statistics
-        let mut monitor = ProcessNetworkMonitor::new();
+        let monitor = ProcessNetworkMonitor::new();
         
         // Create some test stats
         let mut stats1 = ProcessNetworkStats::default();

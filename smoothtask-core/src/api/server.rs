@@ -1363,6 +1363,428 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
         ));
     }
     
+    // Добавляем расширенные метрики процессов
+    if let Some(processes_arc) = &state.processes {
+        let processes = processes_arc.read().await;
+        
+        // Агрегированные метрики по всем процессам
+        let mut total_cpu_1s = 0.0;
+        let mut total_cpu_10s = 0.0;
+        let mut total_memory_mb = 0;
+        let mut total_io_read = 0;
+        let mut total_io_write = 0;
+        let mut total_network_rx = 0;
+        let mut total_network_tx = 0;
+        let mut total_gpu_utilization = 0.0;
+        let mut total_energy_uj = 0;
+        let mut audio_processes = 0;
+        let mut gui_processes = 0;
+        let mut terminal_processes = 0;
+        let mut ssh_processes = 0;
+        
+        for process in processes.iter() {
+            // CPU метрики
+            if let Some(cpu_1s) = process.cpu_share_1s {
+                total_cpu_1s += cpu_1s;
+            }
+            if let Some(cpu_10s) = process.cpu_share_10s {
+                total_cpu_10s += cpu_10s;
+            }
+            
+            // Память
+            if let Some(rss) = process.rss_mb {
+                total_memory_mb += rss;
+            }
+            
+            // I/O
+            if let Some(io_read) = process.io_read_bytes {
+                total_io_read += io_read;
+            }
+            if let Some(io_write) = process.io_write_bytes {
+                total_io_write += io_write;
+            }
+            
+            // Сеть
+            if let Some(network_rx) = process.network_rx_bytes {
+                total_network_rx += network_rx;
+            }
+            if let Some(network_tx) = process.network_tx_bytes {
+                total_network_tx += network_tx;
+            }
+            
+            // GPU
+            if let Some(gpu_util) = process.gpu_utilization {
+                total_gpu_utilization += gpu_util as f64;
+            }
+            
+            // Энергия
+            if let Some(energy) = process.energy_uj {
+                total_energy_uj += energy;
+            }
+            
+            // Типы процессов
+            if process.is_audio_client {
+                audio_processes += 1;
+            }
+            if process.has_gui_window {
+                gui_processes += 1;
+            }
+            if process.env_term.is_some() {
+                terminal_processes += 1;
+            }
+            if process.env_ssh {
+                ssh_processes += 1;
+            }
+        }
+        
+        // Агрегированные метрики процессов
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_cpu_share_1s Total CPU share (1s) for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_cpu_share_1s gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_cpu_share_1s {}\n",
+            total_cpu_1s
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_cpu_share_10s Total CPU share (10s) for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_cpu_share_10s gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_cpu_share_10s {}\n",
+            total_cpu_10s
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_memory_mb Total memory usage (RSS) for all processes in MB\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_memory_mb gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_memory_mb {}\n",
+            total_memory_mb
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_io_read_bytes Total read bytes for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_io_read_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_io_read_bytes {}\n",
+            total_io_read
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_io_write_bytes Total write bytes for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_io_write_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_io_write_bytes {}\n",
+            total_io_write
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_network_rx_bytes Total received bytes for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_network_rx_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_network_rx_bytes {}\n",
+            total_network_rx
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_network_tx_bytes Total transmitted bytes for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_network_tx_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_network_tx_bytes {}\n",
+            total_network_tx
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_gpu_utilization Total GPU utilization for all processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_gpu_utilization gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_gpu_utilization {}\n",
+            total_gpu_utilization
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total_energy_uj Total energy consumption for all processes in microjoules\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total_energy_uj counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total_energy_uj {}\n",
+            total_energy_uj
+        ));
+        
+        // Метрики по типам процессов
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_audio_client Audio client processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_audio_client gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_audio_client {}\n",
+            audio_processes
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_gui_window Processes with GUI windows\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_gui_window gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_gui_window {}\n",
+            gui_processes
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_terminal Processes with terminal sessions\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_terminal gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_terminal {}\n",
+            terminal_processes
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_ssh SSH processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_ssh gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_ssh {}\n",
+            ssh_processes
+        ));
+    }
+    
+    // Добавляем метрики групп приложений если доступны
+    if let Some(app_groups_arc) = &state.app_groups {
+        let app_groups = app_groups_arc.read().await;
+        
+        // Агрегированные метрики по группам приложений
+        let mut total_app_cpu = 0.0;
+        let mut total_app_memory = 0;
+        let mut total_app_io_read = 0;
+        let mut total_app_io_write = 0;
+        let mut total_app_network_rx = 0;
+        let mut total_app_network_tx = 0;
+        let mut total_app_energy = 0;
+        
+        for app_group in app_groups.iter() {
+            if let Some(cpu) = app_group.total_cpu_share {
+                total_app_cpu += cpu;
+            }
+            if let Some(mem) = app_group.total_rss_mb {
+                total_app_memory += mem;
+            }
+            if let Some(io_read) = app_group.total_io_read_bytes {
+                total_app_io_read += io_read;
+            }
+            if let Some(io_write) = app_group.total_io_write_bytes {
+                total_app_io_write += io_write;
+            }
+            if let Some(net_rx) = app_group.total_network_rx_bytes {
+                total_app_network_rx += net_rx;
+            }
+            if let Some(net_tx) = app_group.total_network_tx_bytes {
+                total_app_network_tx += net_tx;
+            }
+            if let Some(energy) = app_group.total_energy_uj {
+                total_app_energy += energy;
+            }
+        }
+        
+        // Метрики групп приложений
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_cpu_share Total CPU share for all application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_cpu_share gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_cpu_share {}\n",
+            total_app_cpu
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_memory_mb Total memory usage for all application groups in MB\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_memory_mb gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_memory_mb {}\n",
+            total_app_memory
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_io_read_bytes Total read bytes for all application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_io_read_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_io_read_bytes {}\n",
+            total_app_io_read
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_io_write_bytes Total write bytes for all application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_io_write_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_io_write_bytes {}\n",
+            total_app_io_write
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_network_rx_bytes Total received bytes for all application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_network_rx_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_network_rx_bytes {}\n",
+            total_app_network_rx
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_network_tx_bytes Total transmitted bytes for all application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_network_tx_bytes counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_network_tx_bytes {}\n",
+            total_app_network_tx
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total_energy_uj Total energy consumption for all application groups in microjoules\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total_energy_uj counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total_energy_uj {}\n",
+            total_app_energy
+        ));
+        
+        // Количество групп приложений с разными характеристиками
+        let focused_groups = app_groups.iter().filter(|g| g.is_focused_group).count();
+        let gui_groups = app_groups.iter().filter(|g| g.has_gui_window).count();
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_focused Focused application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_focused gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_focused {}\n",
+            focused_groups
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_with_gui Application groups with GUI windows\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_with_gui gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_with_gui {}\n",
+            gui_groups
+        ));
+    }
+    
+    // Добавляем метрики здоровья если доступны
+    if let Some(health_monitor) = &state.health_monitor {
+        let health_status = health_monitor.get_health_status().await.ok();
+        
+        if let Some(status) = health_status {
+            metrics.push_str(&format!(
+                "# HELP smoothtask_health_score System health score (0-100)\n"
+            ));
+            metrics.push_str(&format!(
+                "# TYPE smoothtask_health_score gauge\n"
+            ));
+            metrics.push_str(&format!(
+                "smoothtask_health_score {}\n",
+                status.health_score
+            ));
+            
+            // Количество проблем по уровню серьезности
+            let critical_issues = status.issue_history.iter()
+                .filter(|issue| matches!(issue.severity, crate::health::HealthIssueSeverity::Critical))
+                .count();
+            
+            let warning_issues = status.issue_history.iter()
+                .filter(|issue| matches!(issue.severity, crate::health::HealthIssueSeverity::Warning))
+                .count();
+            
+            metrics.push_str(&format!(
+                "# HELP smoothtask_health_critical_issues Number of critical health issues\n"
+            ));
+            metrics.push_str(&format!(
+                "# TYPE smoothtask_health_critical_issues gauge\n"
+            ));
+            metrics.push_str(&format!(
+                "smoothtask_health_critical_issues {}\n",
+                critical_issues
+            ));
+            
+            metrics.push_str(&format!(
+                "# HELP smoothtask_health_warning_issues Number of warning health issues\n"
+            ));
+            metrics.push_str(&format!(
+                "# TYPE smoothtask_health_warning_issues gauge\n"
+            ));
+            metrics.push_str(&format!(
+                "smoothtask_health_warning_issues {}\n",
+                warning_issues
+            ));
+            
+            metrics.push_str(&format!(
+                "# HELP smoothtask_health_total_issues Total number of health issues\n"
+            ));
+            metrics.push_str(&format!(
+                "# TYPE smoothtask_health_total_issues gauge\n"
+            ));
+            metrics.push_str(&format!(
+                "smoothtask_health_total_issues {}\n",
+                status.issue_history.len()
+            ));
+        }
+    }
+    
     Ok(metrics)
 }
 
@@ -8585,7 +9007,6 @@ use crate::metrics::ebpf::EbpfMetrics;
     async fn test_prometheus_metrics_handler() {
         // Тест проверяет обработчик prometheus_metrics_handler
         use crate::DaemonStats;
-        use std::time::Duration;
         
         // Создаём тестовое состояние API
         let state = ApiStateBuilder::new()
@@ -8618,6 +9039,132 @@ use crate::metrics::ebpf::EbpfMetrics;
         
         // Проверяем, что метрики содержат числовые значения
         assert!(metrics.lines().any(|line| line.contains(" 1") || line.contains(" 0")), "Should contain numeric values");
+    }
+    
+    #[tokio::test]
+    async fn test_prometheus_process_metrics() {
+        use crate::logging::snapshots::{ProcessRecord, AppGroupRecord};
+        use crate::DaemonStats;
+        
+        // Создаём тестовые процессы с различными метриками
+        let mut test_processes = Vec::new();
+        
+        // Процесс с CPU, памятью и I/O
+        let mut process1 = ProcessRecord::default();
+        process1.pid = 100;
+        process1.cpu_share_1s = Some(15.5);
+        process1.cpu_share_10s = Some(12.3);
+        process1.rss_mb = Some(256);
+        process1.io_read_bytes = Some(1024 * 1024); // 1 MB
+        process1.io_write_bytes = Some(512 * 1024); // 0.5 MB
+        process1.network_rx_bytes = Some(100 * 1024); // 100 KB
+        process1.network_tx_bytes = Some(50 * 1024); // 50 KB
+        process1.gpu_utilization = Some(0.25); // 25%
+        process1.energy_uj = Some(1000000); // 1000 mJ
+        process1.is_audio_client = true;
+        process1.has_gui_window = true;
+        process1.env_term = Some("xterm".to_string());
+        process1.env_ssh = false;
+        test_processes.push(process1);
+        
+        // Процесс с другими метриками
+        let mut process2 = ProcessRecord::default();
+        process2.pid = 200;
+        process2.cpu_share_1s = Some(5.2);
+        process2.cpu_share_10s = Some(6.8);
+        process2.rss_mb = Some(128);
+        process2.io_read_bytes = Some(2048 * 1024); // 2 MB
+        process2.io_write_bytes = Some(1024 * 1024); // 1 MB
+        process2.network_rx_bytes = Some(200 * 1024); // 200 KB
+        process2.network_tx_bytes = Some(100 * 1024); // 100 KB
+        process2.gpu_utilization = Some(0.10); // 10%
+        process2.energy_uj = Some(500000); // 500 mJ
+        process2.is_audio_client = false;
+        process2.has_gui_window = false;
+        process2.env_term = None;
+        process2.env_ssh = true;
+        test_processes.push(process2);
+        
+        // Создаём тестовые группы приложений
+        let mut test_app_groups = Vec::new();
+        
+        let app_group1 = AppGroupRecord {
+            app_group_id: "test-group-1".to_string(),
+            root_pid: 100,
+            process_ids: vec![100, 200],
+            app_name: Some("TestApp".to_string()),
+            total_cpu_share: Some(20.7),
+            total_io_read_bytes: Some(3072 * 1024), // 3 MB
+            total_io_write_bytes: Some(1536 * 1024), // 1.5 MB
+            total_io_read_operations: None,
+            total_io_write_operations: None,
+            total_io_operations: None,
+            io_data_source: None,
+            total_rss_mb: Some(384),
+            has_gui_window: true,
+            is_focused_group: true,
+            tags: Vec::new(),
+            priority_class: None,
+            total_energy_uj: Some(1500000), // 1500 mJ
+            total_power_w: None,
+            total_network_rx_bytes: Some(300 * 1024), // 300 KB
+            total_network_tx_bytes: Some(150 * 1024), // 150 KB
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
+        };
+        test_app_groups.push(app_group1);
+        
+        // Создаём состояние API с тестовыми данными
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
+            .with_system_metrics(Some(Arc::new(RwLock::new(SystemMetrics::default()))))
+            .with_processes(Some(Arc::new(RwLock::new(test_processes))))
+            .with_app_groups(Some(Arc::new(RwLock::new(test_app_groups))))
+            .build();
+        
+        let result = prometheus_metrics_handler(State(state)).await;
+        assert!(result.is_ok(), "Prometheus metrics handler should succeed with process data");
+        
+        let metrics = result.unwrap();
+        
+        // Проверяем агрегированные метрики процессов
+        assert!(metrics.contains("smoothtask_processes_total_cpu_share_1s"), "Should contain total CPU share 1s metric");
+        assert!(metrics.contains("smoothtask_processes_total_cpu_share_10s"), "Should contain total CPU share 10s metric");
+        assert!(metrics.contains("smoothtask_processes_total_memory_mb"), "Should contain total memory metric");
+        assert!(metrics.contains("smoothtask_processes_total_io_read_bytes"), "Should contain total I/O read metric");
+        assert!(metrics.contains("smoothtask_processes_total_io_write_bytes"), "Should contain total I/O write metric");
+        assert!(metrics.contains("smoothtask_processes_total_network_rx_bytes"), "Should contain total network RX metric");
+        assert!(metrics.contains("smoothtask_processes_total_network_tx_bytes"), "Should contain total network TX metric");
+        assert!(metrics.contains("smoothtask_processes_total_gpu_utilization"), "Should contain total GPU utilization metric");
+        assert!(metrics.contains("smoothtask_processes_total_energy_uj"), "Should contain total energy metric");
+        
+        // Проверяем метрики по типам процессов
+        assert!(metrics.contains("smoothtask_processes_audio_client"), "Should contain audio client processes metric");
+        assert!(metrics.contains("smoothtask_processes_gui_window"), "Should contain GUI window processes metric");
+        assert!(metrics.contains("smoothtask_processes_terminal"), "Should contain terminal processes metric");
+        assert!(metrics.contains("smoothtask_processes_ssh"), "Should contain SSH processes metric");
+        
+        // Проверяем метрики групп приложений
+        assert!(metrics.contains("smoothtask_app_groups_total_cpu_share"), "Should contain app groups total CPU share metric");
+        assert!(metrics.contains("smoothtask_app_groups_total_memory_mb"), "Should contain app groups total memory metric");
+        assert!(metrics.contains("smoothtask_app_groups_total_io_read_bytes"), "Should contain app groups total I/O read metric");
+        assert!(metrics.contains("smoothtask_app_groups_total_io_write_bytes"), "Should contain app groups total I/O write metric");
+        assert!(metrics.contains("smoothtask_app_groups_total_network_rx_bytes"), "Should contain app groups total network RX metric");
+        assert!(metrics.contains("smoothtask_app_groups_total_network_tx_bytes"), "Should contain app groups total network TX metric");
+        assert!(metrics.contains("smoothtask_app_groups_total_energy_uj"), "Should contain app groups total energy metric");
+        assert!(metrics.contains("smoothtask_app_groups_focused"), "Should contain focused app groups metric");
+        assert!(metrics.contains("smoothtask_app_groups_with_gui"), "Should contain GUI app groups metric");
+        
+        // Проверяем, что метрики содержат ожидаемые значения
+        assert!(metrics.contains("20.7"), "Should contain expected CPU value");
+        assert!(metrics.contains("384"), "Should contain expected memory value");
+        
+        // Проверяем формат метрик
+        assert!(metrics.contains("# HELP smoothtask_processes_total_cpu_share_1s"), "Should have HELP for CPU metric");
+        assert!(metrics.contains("# TYPE smoothtask_processes_total_cpu_share_1s gauge"), "Should have TYPE for CPU metric");
     }
 
 
