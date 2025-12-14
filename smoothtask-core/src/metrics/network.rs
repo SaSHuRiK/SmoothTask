@@ -422,7 +422,11 @@ impl NetworkMonitor {
 
         // Read from /proc/net/dev with better error handling
         let proc_net_dev = fs::read_to_string("/proc/net/dev")
-            .context("Failed to read /proc/net/dev")?;
+            .with_context(|| {
+                format!(
+                    "Failed to read /proc/net/dev. This file is essential for network monitoring.\n            Possible causes:\n            1) Missing read permissions (try: ls -la /proc/net/dev)\n            2) /proc filesystem not mounted (check: mount | grep proc)\n            3) System under heavy load causing file access issues\n            Troubleshooting steps:\n            - Check file existence: ls -la /proc/net/dev\n            - Check permissions: id && groups\n            - Check proc filesystem: mount | grep proc\n            - Try running with elevated privileges: sudo smoothtaskd\n            - Check system logs: sudo dmesg | grep -i proc"
+                )
+            })?;
 
         // Pre-allocate capacity based on typical number of interfaces
         interfaces.reserve(8); // Most systems have 2-8 interfaces
@@ -506,7 +510,12 @@ impl NetworkMonitor {
     /// Fast u64 parsing with error handling
     fn parse_u64_fast(&self, s: &str, interface_name: &str, field_name: &str, line_num: usize) -> Result<u64> {
         s.parse::<u64>()
-            .with_context(|| format!("Failed to parse {} for interface {} at line {}", field_name, interface_name, line_num))
+            .with_context(|| {
+                format!(
+                    "Failed to parse {} for interface {} at line {}.\n            Expected a valid unsigned 64-bit integer, but got: '{}'\n            This may indicate corrupted /proc/net/dev data or unexpected format.\n            Troubleshooting:\n            - Check /proc/net/dev format: cat /proc/net/dev\n            - Verify system stability: sudo dmesg | grep -i error\n            - Check for filesystem corruption: sudo fsck /",
+                    field_name, interface_name, line_num, s
+                )
+            })
     }
 
     /// Optimized interface up check with reduced filesystem operations
@@ -612,10 +621,20 @@ impl NetworkMonitor {
     /// Optimized interface flags retrieval
     fn get_interface_flags_optimized(&self, name: &str) -> Result<u32> {
         let flags_path = format!("/sys/class/net/{}/flags", name);
-        let flags_str = fs::read_to_string(flags_path)
-            .with_context(|| format!("Failed to read flags for interface {}", name))?;
+        let flags_str = fs::read_to_string(&flags_path)
+            .with_context(|| {
+                format!(
+                    "Failed to read flags for interface {}.\n            This file should contain interface flags in hexadecimal format.\n            Possible causes:\n            1) Interface was removed during monitoring\n            2) Missing read permissions on /sys/class/net/{}/flags\n            3) Filesystem corruption in sysfs\n            Troubleshooting:\n            - Check interface existence: ip link show {}\n            - Check file permissions: ls -la {}\n            - Verify sysfs health: sudo dmesg | grep -i sysfs",
+                    name, name, name, name
+                )
+            })?;
         let flags = flags_str.trim().parse::<u32>()
-            .with_context(|| format!("Failed to parse flags for interface {}", name))?;
+            .with_context(|| {
+                format!(
+                    "Failed to parse flags for interface {}.\n            Expected hexadecimal flags value, but got: '{}'\n            This may indicate corrupted sysfs data or unexpected format.\n            Troubleshooting:\n            - Check flags file content: cat {}\n            - Verify interface status: ip link show {}\n            - Check for system stability issues: sudo dmesg | grep -i error",
+                    name, flags_str.trim(), flags_path, name
+                )
+            })?;
         Ok(flags)
     }
 
@@ -646,7 +665,11 @@ impl NetworkMonitor {
 
         // Read TCP statistics with error handling
         let tcp_stats = fs::read_to_string("/proc/net/snmp")
-            .context("Failed to read /proc/net/snmp")?;
+            .with_context(|| {
+                format!(
+                    "Failed to read /proc/net/snmp. This file contains protocol statistics.\n            Possible causes:\n            1) Missing read permissions (try: ls -la /proc/net/snmp)\n            2) /proc filesystem not mounted (check: mount | grep proc)\n            3) System under heavy load causing file access issues\n            Troubleshooting steps:\n            - Check file existence: ls -la /proc/net/snmp\n            - Check permissions: id && groups\n            - Check proc filesystem: mount | grep proc\n            - Try running with elevated privileges: sudo smoothtaskd\n            - Check system logs: sudo dmesg | grep -i proc"
+                )
+            })?;
 
         for (line_num, line) in tcp_stats.lines().enumerate() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -656,9 +679,19 @@ impl NetworkMonitor {
                     "Tcp" => {
                         if parts.len() >= 16 {
                             stats.tcp_connections = parts[15].parse::<u64>()
-                                .with_context(|| format!("Failed to parse TCP connections at line {}", line_num))?;
+                                .with_context(|| {
+                                    format!(
+                                        "Failed to parse TCP connections at line {}.\n            Expected a valid unsigned 64-bit integer, but got: '{}'\n            This may indicate corrupted /proc/net/snmp data or unexpected format.\n            Troubleshooting:\n            - Check /proc/net/snmp format: cat /proc/net/snmp\n            - Verify system stability: sudo dmesg | grep -i error\n            - Check for filesystem corruption: sudo fsck /",
+                                        line_num, parts[15]
+                                    )
+                                })?;
                             stats.tcp_retransmissions = parts[12].parse::<u64>()
-                                .with_context(|| format!("Failed to parse TCP retransmissions at line {}", line_num))?;
+                                .with_context(|| {
+                                    format!(
+                                        "Failed to parse TCP retransmissions at line {}.\n            Expected a valid unsigned 64-bit integer, but got: '{}'\n            This may indicate corrupted /proc/net/snmp data or unexpected format.\n            Troubleshooting:\n            - Check /proc/net/snmp format: cat /proc/net/snmp\n            - Verify system stability: sudo dmesg | grep -i error\n            - Check for filesystem corruption: sudo fsck /",
+                                        line_num, parts[12]
+                                    )
+                                })?;
                         } else {
                             tracing::debug!("Insufficient TCP data at line {}: expected >= 16 fields, got {}", line_num, parts.len());
                         }
@@ -666,7 +699,12 @@ impl NetworkMonitor {
                     "Udp" => {
                         if parts.len() >= 4 {
                             stats.udp_connections = parts[3].parse::<u64>()
-                                .with_context(|| format!("Failed to parse UDP connections at line {}", line_num))?;
+                                .with_context(|| {
+                                    format!(
+                                        "Failed to parse UDP connections at line {}.\n            Expected a valid unsigned 64-bit integer, but got: '{}'\n            This may indicate corrupted /proc/net/snmp data or unexpected format.\n            Troubleshooting:\n            - Check /proc/net/snmp format: cat /proc/net/snmp\n            - Verify system stability: sudo dmesg | grep -i error\n            - Check for filesystem corruption: sudo fsck /",
+                                        line_num, parts[3]
+                                    )
+                                })?;
                         } else {
                             tracing::debug!("Insufficient UDP data at line {}: expected >= 4 fields, got {}", line_num, parts.len());
                         }
@@ -674,7 +712,12 @@ impl NetworkMonitor {
                     "Icmp" => {
                         if parts.len() >= 3 {
                             stats.icmp_packets = parts[2].parse::<u64>()
-                                .with_context(|| format!("Failed to parse ICMP packets at line {}", line_num))?;
+                                .with_context(|| {
+                                    format!(
+                                        "Failed to parse ICMP packets at line {}.\n            Expected a valid unsigned 64-bit integer, but got: '{}'\n            This may indicate corrupted /proc/net/snmp data or unexpected format.\n            Troubleshooting:\n            - Check /proc/net/snmp format: cat /proc/net/snmp\n            - Verify system stability: sudo dmesg | grep -i error\n            - Check for filesystem corruption: sudo fsck /",
+                                        line_num, parts[2]
+                                    )
+                                })?;
                         } else {
                             tracing::debug!("Insufficient ICMP data at line {}: expected >= 3 fields, got {}", line_num, parts.len());
                         }
@@ -1335,6 +1378,34 @@ mod tests {
         
         let monitor = NetworkMonitor::with_config(config);
         assert_eq!(monitor.config.max_connections, usize::MAX);
+    }
+
+    #[test]
+    fn test_network_error_messages_context() {
+        // Test that error messages provide useful context
+        let monitor = NetworkMonitor::new();
+        
+        // Test parsing error with context
+        let result: Result<u64> = monitor.parse_u64_fast("invalid", "eth0", "rx_bytes", 1);
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("eth0"));
+            assert!(error_msg.contains("rx_bytes"));
+            assert!(error_msg.contains("line 1"));
+            assert!(error_msg.contains("invalid"));
+            assert!(error_msg.contains("troubleshooting"));
+        }
+        
+        // Test flags parsing error with context
+        let result = monitor.get_interface_flags_optimized("eth0");
+        assert!(result.is_err());
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(error_msg.contains("eth0"));
+            assert!(error_msg.contains("flags"));
+            assert!(error_msg.contains("troubleshooting"));
+        }
     }
 
     #[test]

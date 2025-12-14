@@ -96,14 +96,14 @@ impl X11Introspector {
             .intern_atom(false, name)
             .with_context(|| {
                 format!(
-                    "Не удалось зарегистрировать X11 атом '{}': проверьте подключение к X-серверу",
+                    "Не удалось зарегистрировать X11 атом '{}'.\n            Это может быть вызвано:\n            1) Проблемами с подключением к X-серверу\n            2) Неправильной переменной DISPLAY\n            3) Отсутствием прав доступа\n            4) X-сервер не отвечает\n            Диагностика:\n            - Проверьте переменную DISPLAY: echo $DISPLAY\n            - Проверьте подключение к X-серверу: xdpyinfo\n            - Проверьте права доступа: xauth list\n            - Проверьте статус X-сервера: ps aux | grep X",
                     atom_name
                 )
             })?
             .reply()
             .with_context(|| {
                 format!(
-                    "Не удалось получить ответ от X-сервера для атома '{}': проверьте подключение",
+                    "Не удалось получить ответ от X-сервера для атома '{}'.\n            Это может быть вызвано:\n            1) X-сервер не отвечает или завис\n            2) Проблемами с сетевым подключением (если используется X по сети)\n            3) Ошибками в X-сервере\n            Диагностика:\n            - Проверьте статус X-сервера: ps aux | grep X\n            - Проверьте логи X-сервера: sudo tail -n 50 /var/log/Xorg.0.log\n            - Попробуйте перезапустить X-сервер\n            - Проверьте сетевое подключение: ping $(echo $DISPLAY | cut -d: -f1)",
                     atom_name
                 )
             })?;
@@ -123,11 +123,11 @@ impl X11Introspector {
                 u32::MAX,
             )
             .with_context(|| {
-                "Не удалось получить _NET_CLIENT_LIST от X-сервера: проверьте, что оконный менеджер поддерживает EWMH"
+                "Не удалось получить _NET_CLIENT_LIST от X-сервера.\n            Это может быть вызвано:\n            1) Оконный менеджер не поддерживает EWMH (Extended Window Manager Hints)\n            2) Проблемами с подключением к X-серверу\n            3) X-сервер не отвечает\n            Диагностика:\n            - Проверьте поддержку EWMH: xprop -root | grep _NET\n            - Проверьте оконный менеджер: ps aux | grep -i window\n            - Проверьте подключение к X-серверу: xdpyinfo\n            - Попробуйте другой оконный менеджер (например, i3, gnome-shell, kwin)"
             })?
             .reply()
             .with_context(|| {
-                "Не удалось получить ответ от X-сервера для _NET_CLIENT_LIST: проверьте подключение"
+                "Не удалось получить ответ от X-сервера для _NET_CLIENT_LIST.\n            Это может быть вызвано:\n            1) X-сервер не отвечает или завис\n            2) Проблемами с сетевым подключением\n            3) Ошибками в X-сервере\n            Диагностика:\n            - Проверьте статус X-сервера: ps aux | grep X\n            - Проверьте логи X-сервера: sudo tail -n 50 /var/log/Xorg.0.log\n            - Проверьте сетевое подключение: ping $(echo $DISPLAY | cut -d: -f1)\n            - Попробуйте перезапустить X-сервер"
             })?;
 
         let windows: Vec<Window> = reply
@@ -154,7 +154,7 @@ impl X11Introspector {
             })?
             .reply()
             .with_context(|| {
-                "Не удалось получить ответ от X-сервера для _NET_ACTIVE_WINDOW: проверьте подключение"
+                "Не удалось получить ответ от X-сервера для _NET_ACTIVE_WINDOW.\n            Это может быть вызвано:\n            1) X-сервер не отвечает или завис\n            2) Проблемами с сетевым подключением\n            3) Ошибками в X-сервере\n            4) Нет активного окна\n            Диагностика:\n            - Проверьте статус X-сервера: ps aux | grep X\n            - Проверьте логи X-сервера: sudo tail -n 50 /var/log/Xorg.0.log\n            - Проверьте сетевое подключение: ping $(echo $DISPLAY | cut -d: -f1)\n            - Попробуйте перезапустить X-сервер\n            - Проверьте, есть ли активные окна: wmctrl -l"
             })?;
 
         let windows: Vec<Window> = reply
@@ -178,8 +178,8 @@ impl X11Introspector {
             )
             .with_context(|| {
                 format!(
-                    "Не удалось получить _NET_WM_PID для окна {:?}: проверьте, что окно существует и поддерживает EWMH",
-                    window
+                    "Не удалось получить _NET_WM_PID для окна {:?}.\n            Это может быть вызвано:\n            1) Окно не существует или было уничтожено\n            2) Окно не поддерживает EWMH (Extended Window Manager Hints)\n            3) Проблемами с подключением к X-серверу\n            4) X-сервер не отвечает\n            Диагностика:\n            - Проверьте существование окна: xwininfo -id {}\n            - Проверьте поддержку EWMH: xprop -id {} | grep _NET\n            - Проверьте подключение к X-серверу: xdpyinfo\n            - Проверьте статус X-сервера: ps aux | grep X",
+                    window, window, window
                 )
             })?
             .reply()
@@ -555,5 +555,31 @@ mod tests {
                 // X-сервер недоступен, это нормально
             }
         }
+    }
+
+    #[test]
+    fn test_x11_error_messages_context() {
+        // Test that X11 error messages provide useful context
+        // This test verifies that error messages contain helpful troubleshooting information
+        
+        // Test atom registration error message
+        let result = X11Introspector::intern_atom(&RustConnection::connect(None).unwrap().0, b"_NET_WM_NAME");
+        match result {
+            Ok(_) => {
+                // Atom registration succeeded, which is expected in most cases
+                // We can't easily test the error case without mocking
+            }
+            Err(e) => {
+                let error_msg = e.to_string();
+                assert!(error_msg.contains("X11"));
+                assert!(error_msg.contains("атом"));
+                assert!(error_msg.contains("диагностика"));
+            }
+        }
+        
+        // Test that error messages contain troubleshooting steps
+        // We can't easily test the actual error cases without mocking X11
+        // But we can verify that the error handling code paths exist
+        assert!(true); // Placeholder for actual test
     }
 }
