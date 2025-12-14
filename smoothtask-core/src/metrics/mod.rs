@@ -28,6 +28,7 @@
 //! - **extended_hardware_sensors**: Расширенный мониторинг аппаратных сенсоров
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
+//! - **hardware_acceleration**: Мониторинг аппаратного ускорения (VA-API, VDPAU, CUDA)
 
 pub mod amdgpu_wrapper;
 pub mod app_performance;
@@ -39,6 +40,7 @@ pub mod ebpf;
 pub mod extended_hardware_sensors;
 pub mod filesystem_monitor;
 pub mod gpu;
+pub mod hardware_acceleration;
 pub mod input;
 pub mod ml_performance;
 pub mod network;
