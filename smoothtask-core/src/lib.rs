@@ -520,7 +520,7 @@ pub async fn run_daemon(
     mut shutdown_rx: watch::Receiver<bool>,
     on_ready: Option<ReadyCallback>,
     on_status_update: Option<StatusCallback>,
-) -> Result<()> {
+) -> Result<Arc<crate::metrics::custom::CustomMetricsManager>> {
     info!("Initializing SmoothTask daemon (dry_run = {})", dry_run);
 
     // Проверка доступности системных утилит и устройств
@@ -555,6 +555,8 @@ pub async fn run_daemon(
             initial_config.logging.log_max_rotated_files,
             initial_config.logging.log_compression_enabled,
             initial_config.logging.log_rotation_interval_sec,
+            initial_config.logging.log_max_age_sec,
+            initial_config.logging.log_max_total_size_bytes,
         );
         app_log_rotator = Some(rotator);
         info!(
@@ -611,6 +613,31 @@ pub async fn run_daemon(
             manager.log_storage.is_some()
         );
         Arc::new(tokio::sync::Mutex::new(manager))
+    };
+
+    // Инициализация менеджера пользовательских метрик
+    let custom_metrics_manager: Arc<crate::metrics::custom::CustomMetricsManager> = {
+        let manager = crate::metrics::custom::CustomMetricsManager::new();
+        
+        // Загружаем пользовательские метрики из конфигурации, если они есть
+        if let Some(custom_metrics_config) = initial_config.custom_metrics.as_ref() {
+            for metric_config in custom_metrics_config {
+                if let Err(e) = manager.add_metric(metric_config.clone()) {
+                    warn!("Failed to add custom metric '{}': {}", metric_config.id, e);
+                } else {
+                    info!("Added custom metric: {} ({})", metric_config.name, metric_config.id);
+                }
+            }
+        }
+        
+        // Запускаем цикл обновления метрик
+        manager.start_update_loop();
+        
+        info!(
+            "Custom metrics manager initialized with {} metrics",
+            manager.get_all_metrics_config().unwrap_or_default().len()
+        );
+        Arc::new(manager)
     };
 
     // Инициализация подсистем
@@ -844,6 +871,7 @@ pub async fn run_daemon(
                     .with_config_path(Some(config_path.clone()))
                     .with_notification_manager(Some(Arc::clone(&notification_manager)))
                     .with_log_storage(Some(Arc::clone(&log_storage)))
+                    .with_custom_metrics_manager(Some(Arc::clone(&custom_metrics_manager)))
                     .build();
                 let api_server = ApiServer::with_state(addr, api_state);
                 match api_server.start().await {
@@ -1294,8 +1322,22 @@ pub async fn run_daemon(
     // Логируем финальную статистику
     stats.log_stats();
 
+    // Уведомляем systemd о завершении работы (если доступно)
+    // Пробуем отправить уведомление через libsystemd напрямую
+    // Это позволяет избежать зависимости от smoothtaskd в core библиотеке
+    let _ = std::env::var("INVOCATION_ID").map(|_invocation_id| {
+        // Если INVOCATION_ID установлен, значит мы запущены под systemd
+        let state = libsystemd::daemon::NotifyState::Stopping;
+        let _ = libsystemd::daemon::notify(false, &[state]);
+        tracing::debug!("Notified systemd: STOPPING=1");
+    });
+
     // Останавливаем probe-thread перед завершением
     latency_probe.stop();
+
+    // Останавливаем менеджер пользовательских метрик
+    custom_metrics_manager.stop_update_loop();
+    info!("Custom metrics manager stopped");
 
     // Останавливаем API сервер перед завершением
     if let Some(handle) = api_server_handle {
@@ -1307,7 +1349,7 @@ pub async fn run_daemon(
         }
     }
 
-    Ok(())
+    Ok(custom_metrics_manager)
 }
 
 /// Собрать полный снапшот системы.

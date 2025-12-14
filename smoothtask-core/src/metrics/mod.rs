@@ -32,6 +32,7 @@ pub mod app_performance;
 pub mod audio;
 pub mod audio_pipewire;
 pub mod cache;
+pub mod custom;
 pub mod ebpf;
 pub mod process_energy;
 pub mod process_gpu;

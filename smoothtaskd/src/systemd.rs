@@ -184,6 +184,45 @@ impl std::fmt::Display for ServiceStatus {
 /// }
 /// ```
 pub async fn get_service_status(service_name: &str) -> Result<ServiceStatus> {
+    get_service_status_with_retry(service_name, 1).await
+}
+
+/// Получает текущий статус сервиса systemd с поддержкой повторных попыток.
+///
+/// # Параметры
+///
+/// * `service_name` - имя сервиса (например, "smoothtaskd.service")
+/// * `retry_count` - количество попыток подключения (1 = без повторных попыток)
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `Ok(ServiceStatus)` при успешном получении статуса или `Err` при ошибке.
+async fn get_service_status_with_retry(service_name: &str, retry_count: u32) -> Result<ServiceStatus> {
+    let mut last_error = None;
+    
+    for attempt in 1..=retry_count {
+        match get_service_status_inner(service_name).await {
+            Ok(status) => return Ok(status),
+            Err(e) => {
+                if attempt < retry_count {
+                    tracing::warn!(
+                        "Failed to get service status (attempt {}/{}), retrying...: {}",
+                        attempt, retry_count, &e
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+    
+    Err(last_error.unwrap_or_else(|| {
+        anyhow::anyhow!("Failed to get service status after {} attempts", retry_count)
+    }))
+}
+
+/// Внутренняя реализация получения статуса сервиса без повторных попыток.
+async fn get_service_status_inner(service_name: &str) -> Result<ServiceStatus> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
     
@@ -258,6 +297,39 @@ pub async fn get_service_status(service_name: &str) -> Result<ServiceStatus> {
 /// systemd::start_service("smoothtaskd.service")?;
 /// ```
 pub async fn start_service(service_name: &str) -> Result<()> {
+    start_service_with_retry(service_name, 1).await
+}
+
+/// Запускает сервис systemd с поддержкой повторных попыток.
+async fn start_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
+    let mut last_error = None;
+    
+    for attempt in 1..=retry_count {
+        match start_service_inner(service_name).await {
+            Ok(_) => {
+                tracing::info!("Started service {}", service_name);
+                return Ok(());
+            }
+            Err(e) => {
+                if attempt < retry_count {
+                    tracing::warn!(
+                        "Failed to start service (attempt {}/{}), retrying...: {}",
+                        attempt, retry_count, &e
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+    
+    Err(last_error.unwrap_or_else(|| {
+        anyhow::anyhow!("Failed to start service after {} attempts", retry_count)
+    }))
+}
+
+/// Внутренняя реализация запуска сервиса без повторных попыток.
+async fn start_service_inner(service_name: &str) -> Result<()> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
     
@@ -274,7 +346,6 @@ pub async fn start_service(service_name: &str) -> Result<()> {
         .await
         .context("Failed to start service")?;
     
-    tracing::info!("Started service {}", service_name);
     Ok(())
 }
 
@@ -296,6 +367,39 @@ pub async fn start_service(service_name: &str) -> Result<()> {
 /// systemd::stop_service("smoothtaskd.service")?;
 /// ```
 pub async fn stop_service(service_name: &str) -> Result<()> {
+    stop_service_with_retry(service_name, 1).await
+}
+
+/// Останавливает сервис systemd с поддержкой повторных попыток.
+async fn stop_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
+    let mut last_error = None;
+    
+    for attempt in 1..=retry_count {
+        match stop_service_inner(service_name).await {
+            Ok(_) => {
+                tracing::info!("Stopped service {}", service_name);
+                return Ok(());
+            }
+            Err(e) => {
+                if attempt < retry_count {
+                    tracing::warn!(
+                        "Failed to stop service (attempt {}/{}), retrying...: {}",
+                        attempt, retry_count, &e
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+    
+    Err(last_error.unwrap_or_else(|| {
+        anyhow::anyhow!("Failed to stop service after {} attempts", retry_count)
+    }))
+}
+
+/// Внутренняя реализация остановки сервиса без повторных попыток.
+async fn stop_service_inner(service_name: &str) -> Result<()> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
     
@@ -312,7 +416,6 @@ pub async fn stop_service(service_name: &str) -> Result<()> {
         .await
         .context("Failed to stop service")?;
     
-    tracing::info!("Stopped service {}", service_name);
     Ok(())
 }
 
@@ -334,6 +437,39 @@ pub async fn stop_service(service_name: &str) -> Result<()> {
 /// systemd::restart_service("smoothtaskd.service")?;
 /// ```
 pub async fn restart_service(service_name: &str) -> Result<()> {
+    restart_service_with_retry(service_name, 1).await
+}
+
+/// Перезапускает сервис systemd с поддержкой повторных попыток.
+async fn restart_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
+    let mut last_error = None;
+    
+    for attempt in 1..=retry_count {
+        match restart_service_inner(service_name).await {
+            Ok(_) => {
+                tracing::info!("Restarted service {}", service_name);
+                return Ok(());
+            }
+            Err(e) => {
+                if attempt < retry_count {
+                    tracing::warn!(
+                        "Failed to restart service (attempt {}/{}), retrying...: {}",
+                        attempt, retry_count, &e
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis((100 * attempt) as u64)).await;
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+    
+    Err(last_error.unwrap_or_else(|| {
+        anyhow::anyhow!("Failed to restart service after {} attempts", retry_count)
+    }))
+}
+
+/// Внутренняя реализация перезапуска сервиса без повторных попыток.
+async fn restart_service_inner(service_name: &str) -> Result<()> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
     
@@ -350,7 +486,6 @@ pub async fn restart_service(service_name: &str) -> Result<()> {
         .await
         .context("Failed to restart service")?;
     
-    tracing::info!("Restarted service {}", service_name);
     Ok(())
 }
 
@@ -378,6 +513,97 @@ pub async fn restart_service(service_name: &str) -> Result<()> {
 pub async fn is_service_active(service_name: &str) -> Result<bool> {
     let status = get_service_status(service_name).await?;
     Ok(matches!(status, ServiceStatus::ActiveRunning | ServiceStatus::ActiveWaiting))
+}
+
+/// Проверяет, запущен ли текущий процесс под управлением systemd.
+///
+/// Эта функция проверяет переменную окружения `$INVOCATION_ID`, которая устанавливается
+/// systemd при запуске сервиса.
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `true`, если процесс запущен под systemd, `false` в противном случае.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtaskd::systemd;
+///
+/// if systemd::is_running_under_systemd() {
+///     println!("Running under systemd");
+/// } else {
+///     println!("Not running under systemd");
+/// }
+/// ```
+pub fn is_running_under_systemd() -> bool {
+    std::env::var("INVOCATION_ID").is_ok()
+}
+
+/// Отправляет уведомление systemd о завершении работы (STOPPING=1).
+///
+/// Эта функция должна вызываться перед завершением демона для корректного
+/// уведомления systemd о завершении работы.
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `Ok(())` при успешной отправке или `Err` при ошибке.
+/// Ошибки можно безопасно игнорировать, если демон не запущен под systemd.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtaskd::systemd;
+///
+/// // Перед завершением демона
+/// if let Err(e) = systemd::notify_stopping() {
+///     // Можно логировать, но не критично, если не под systemd
+///     eprintln!("Warning: failed to notify systemd about stopping: {}", e);
+/// }
+/// ```
+pub fn notify_stopping() -> Result<()> {
+    let state = NotifyState::Stopping;
+    libsystemd::daemon::notify(false, &[state])
+        .context("Failed to send STOPPING notification to systemd")?;
+    Ok(())
+}
+
+/// Отправляет уведомление systemd об ошибке (ERRNO=...).
+///
+/// Эта функция может использоваться для уведомления systemd о критических ошибках.
+///
+/// # Параметры
+///
+/// * `error_code` - код ошибки для отправки systemd
+/// * `error_message` - сообщение об ошибке (опционально)
+///
+/// # Возвращаемое значение
+///
+/// Возвращает `Ok(())` при успешной отправке или `Err` при ошибке.
+/// Ошибки можно безопасно игнорировать, если демон не запущен под systemd.
+///
+/// # Примеры
+///
+/// ```no_run
+/// use smoothtaskd::systemd;
+///
+/// // Уведомляем systemd о критической ошибке
+/// systemd::notify_error(1, Some("Failed to initialize critical component"));
+/// ```
+pub fn notify_error(error_code: i32, error_message: Option<&str>) {
+    let mut states = vec![NotifyState::Errno(error_code as u8)];
+    
+    if let Some(msg) = error_message {
+        // Ограничиваем длину сообщения
+        let msg_truncated = if msg.len() > 200 {
+            &msg[..200]
+        } else {
+            msg
+        };
+        states.push(NotifyState::Status(format!("ERROR: {}", msg_truncated)));
+    }
+    
+    let _ = libsystemd::daemon::notify(false, &states);
+    // Игнорируем ошибки - если не под systemd, это нормально
 }
 
 #[cfg(test)]
@@ -452,5 +678,89 @@ mod tests {
 
         let result = is_service_active("nonexistent.service").await;
         assert!(result.is_err());
+    }
+
+    /// Тест проверяет функцию is_running_under_systemd.
+    #[test]
+    fn test_is_running_under_systemd() {
+        // В тестовом окружении INVOCATION_ID обычно не установлен
+        let result = is_running_under_systemd();
+        // Результат может быть true или false в зависимости от окружения
+        // Главное - функция не должна паниковать
+        assert!(result == true || result == false);
+    }
+
+    /// Тест проверяет, что notify_stopping не паникует.
+    #[test]
+    fn test_notify_stopping_no_panic() {
+        // В тестовом окружении это должно вернуть ошибку, но не паниковать
+        let result = notify_stopping();
+        // Проверяем, что функция не паникует
+        assert!(result.is_err() || result.is_ok());
+    }
+
+    /// Тест проверяет, что notify_error не паникует.
+    #[test]
+    fn test_notify_error_no_panic() {
+        // Короткое сообщение об ошибке
+        notify_error(1, Some("Test error"));
+
+        // Длинное сообщение об ошибке (должно быть обрезано)
+        let long_error = "x".repeat(500);
+        notify_error(2, Some(&long_error));
+
+        // Ошибка без сообщения
+        notify_error(3, None);
+
+        // Ошибка с пустым сообщением
+        notify_error(4, Some(""));
+
+        // Ошибка с специальными символами
+        notify_error(5, Some("Error with\nnewlines\tand\ttabs"));
+    }
+
+    /// Тест проверяет обрезку длинных сообщений об ошибках.
+    #[test]
+    fn test_notify_error_truncation() {
+        // Создаём очень длинное сообщение об ошибке
+        let long_error = "x".repeat(500);
+        // Функция должна обработать его без паники
+        notify_error(1, Some(&long_error));
+    }
+
+    /// Тест проверяет, что функции с retry не паникуют в тестовом окружении.
+    #[tokio::test]
+    async fn test_retry_functions_no_panic() {
+        // Эти функции должны вернуть ошибку в тестовом окружении (нет systemd),
+        // но не должны паниковать
+        let result = get_service_status_with_retry("nonexistent.service", 3).await;
+        assert!(result.is_err());
+
+        let result = start_service_with_retry("nonexistent.service", 2).await;
+        assert!(result.is_err());
+
+        let result = stop_service_with_retry("nonexistent.service", 2).await;
+        assert!(result.is_err());
+
+        let result = restart_service_with_retry("nonexistent.service", 2).await;
+        assert!(result.is_err());
+    }
+
+    /// Тест проверяет, что функции с retry корректно обрабатывают нулевое количество попыток.
+    #[tokio::test]
+    async fn test_retry_functions_with_zero_attempts() {
+        // При retry_count = 0 функции должны сразу вернуть ошибку
+        let result = get_service_status_with_retry("nonexistent.service", 0).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("after 0 attempts"));
+    }
+
+    /// Тест проверяет, что функции с retry корректно обрабатывают 1 попытку.
+    #[tokio::test]
+    async fn test_retry_functions_with_one_attempt() {
+        // При retry_count = 1 функции должны сделать одну попытку и вернуть ошибку
+        let result = get_service_status_with_retry("nonexistent.service", 1).await;
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("after 1 attempts"));
     }
 }

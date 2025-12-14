@@ -348,6 +348,59 @@ pub struct LoggingConfig {
     ///   которое наступит первым
     #[serde(default = "default_log_rotation_interval_sec")]
     pub log_rotation_interval_sec: u64,
+
+    /// Максимальный возраст ротированных логов в секундах перед удалением.
+    ///
+    /// Определяет, как долго ротированные логи будут храниться перед автоматическим удалением.
+    /// Значение 0 означает отключение очистки по возрасту (логи хранятся бесконечно).
+    ///
+    /// По умолчанию: 0 (отключено).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 0
+    /// - Значение должно быть <= 2_592_000 (30 дней) для предотвращения чрезмерного хранения
+    /// - Рекомендуемые значения: 86400 (1 день), 604800 (7 дней), 1209600 (14 дней)
+    /// - Очистка по возрасту работает независимо от других политик хранения
+    #[serde(default = "default_log_max_age_sec")]
+    pub log_max_age_sec: u64,
+
+    /// Максимальный общий размер всех ротированных логов в байтах.
+    ///
+    /// Определяет максимальный общий объем дискового пространства, который могут занимать
+    /// все ротированные логи вместе. При превышении этого лимита самые старые логи
+    /// будут автоматически удаляться.
+    ///
+    /// Значение 0 означает отключение ограничения по общему размеру.
+    ///
+    /// По умолчанию: 0 (отключено).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 0
+    /// - Значение должно быть <= 10_737_418_240 (10 GiB) для предотвращения чрезмерного использования диска
+    /// - Рекомендуемые значения: 107_374_182 (100 MiB), 536_870_912 (500 MiB), 1_073_741_824 (1 GiB)
+    /// - Очистка по общему размеру работает независимо от других политик хранения
+    #[serde(default = "default_log_max_total_size_bytes")]
+    pub log_max_total_size_bytes: u64,
+
+    /// Интервал проверки и очистки старых логов в секундах.
+    ///
+    /// Определяет, как часто система будет проверять и удалять старые логи согласно политикам
+    /// хранения (по возрасту и общему размеру).
+    ///
+    /// Значение 0 означает отключение автоматической очистки.
+    ///
+    /// По умолчанию: 3600 (1 час).
+    ///
+    /// # Примечания
+    ///
+    /// - Значение должно быть >= 0
+    /// - Значение должно быть <= 86400 (24 часа) для предотвращения слишком редких проверок
+    /// - Рекомендуемые значения: 1800 (30 минут), 3600 (1 час), 7200 (2 часа)
+    /// - Очистка может быть запущена вручную даже если автоматическая отключена
+    #[serde(default = "default_log_cleanup_interval_sec")]
+    pub log_cleanup_interval_sec: u64,
 }
 
 /// Возвращает дефолтное значение для `log_max_size_bytes`.
@@ -402,6 +455,45 @@ pub(crate) fn default_log_rotation_interval_sec() -> u64 {
     0
 }
 
+/// Возвращает дефолтное значение для `log_max_age_sec`.
+///
+/// По умолчанию очистка по возрасту отключена (0 секунд).
+/// Это позволяет хранить логи бесконечно или управлять хранением только через другие политики.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_max_age_sec")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_max_age_sec() -> u64 {
+    0
+}
+
+/// Возвращает дефолтное значение для `log_max_total_size_bytes`.
+///
+/// По умолчанию ограничение по общему размеру отключено (0 байт).
+/// Это позволяет хранить логи без ограничения по общему объему дискового пространства.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_max_total_size_bytes")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_max_total_size_bytes() -> u64 {
+    0
+}
+
+/// Возвращает дефолтное значение для `log_cleanup_interval_sec`.
+///
+/// По умолчанию автоматическая очистка включена с интервалом 3600 секунд (1 час).
+/// Это обеспечивает регулярную проверку и очистку старых логов согласно политикам хранения.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_log_cleanup_interval_sec")]`
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+pub(crate) fn default_log_cleanup_interval_sec() -> u64 {
+    3600
+}
+
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
     pub polling_interval_ms: u64,
@@ -448,6 +540,32 @@ pub struct Config {
     /// По умолчанию: уведомления отключены, используется заглушка для тестирования.
     #[serde(default = "default_notification_config")]
     pub notifications: NotificationConfig,
+
+    /// Конфигурация пользовательских метрик.
+    ///
+    /// Определяет пользовательские метрики, которые могут быть собраны из различных источников
+    /// (файлы, команды, HTTP API) и использованы для мониторинга и принятия решений.
+    ///
+    /// По умолчанию: пустой список (пользовательские метрики отключены).
+    ///
+    /// # Примеры
+    ///
+    /// ```yaml
+    /// custom_metrics:
+    ///   - id: "cpu_temperature"
+    ///     name: "CPU Temperature"
+    ///     description: "Current CPU temperature from thermal zone"
+    ///     metric_type: "float"
+    ///     source:
+    ///       type: "file"
+    ///       path: "/sys/class/thermal/thermal_zone0/temp"
+    ///       format:
+    ///         format: "plain_number"
+    ///     update_interval_sec: 60
+    ///     enabled: true
+    /// ```
+    #[serde(default = "default_custom_metrics")]
+    pub custom_metrics: Option<Vec<crate::metrics::custom::CustomMetricConfig>>,
     /// Конфигурация ML-модели для ранжирования.
     ///
     /// Определяет параметры загрузки и использования ML-модели для ранжирования AppGroup.
@@ -1153,6 +1271,9 @@ pub(crate) fn default_logging_config() -> LoggingConfig {
         log_max_rotated_files: default_log_max_rotated_files(),
         log_compression_enabled: default_log_compression_enabled(),
         log_rotation_interval_sec: default_log_rotation_interval_sec(),
+        log_max_age_sec: default_log_max_age_sec(),
+        log_max_total_size_bytes: default_log_max_total_size_bytes(),
+        log_cleanup_interval_sec: default_log_cleanup_interval_sec(),
     }
 }
 
@@ -1172,6 +1293,10 @@ pub(crate) fn default_notification_config() -> NotificationConfig {
         app_name: default_notification_app_name(),
         min_level: default_notification_min_level(),
     }
+}
+
+pub(crate) fn default_custom_metrics() -> Option<Vec<crate::metrics::custom::CustomMetricConfig>> {
+    None
 }
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -1498,6 +1623,45 @@ impl LoggingConfig {
             );
         }
 
+        // Валидация log_max_age_sec
+        ensure!(
+            self.log_max_age_sec <= 2_592_000,
+            "logging.log_max_age_sec must be <= 2_592_000 (30 days) to prevent excessive log retention (got {})",
+            self.log_max_age_sec
+        );
+
+        // Логическая валидация: если очистка по возрасту включена, возраст должен быть > 0
+        if self.log_max_age_sec > 0 {
+            ensure!(
+                self.log_max_age_sec >= 3600,
+                "logging.log_max_age_sec must be >= 3600 seconds (1 hour) when age-based cleanup is enabled (got {})",
+                self.log_max_age_sec
+            );
+        }
+
+        // Валидация log_max_total_size_bytes
+        ensure!(
+            self.log_max_total_size_bytes <= 10_737_418_240,
+            "logging.log_max_total_size_bytes must be <= 10_737_418_240 (10 GiB) to prevent excessive disk usage (got {})",
+            self.log_max_total_size_bytes
+        );
+
+        // Валидация log_cleanup_interval_sec
+        ensure!(
+            self.log_cleanup_interval_sec <= 86400,
+            "logging.log_cleanup_interval_sec must be <= 86400 (24 hours) to prevent excessive cleanup intervals (got {})",
+            self.log_cleanup_interval_sec
+        );
+
+        // Логическая валидация: если автоматическая очистка включена, интервал должен быть > 0
+        if self.log_cleanup_interval_sec > 0 {
+            ensure!(
+                self.log_cleanup_interval_sec >= 300,
+                "logging.log_cleanup_interval_sec must be >= 300 seconds (5 minutes) when automatic cleanup is enabled (got {})",
+                self.log_cleanup_interval_sec
+            );
+        }
+
         Ok(())
     }
 }
@@ -1795,6 +1959,9 @@ impl Default for LoggingConfig {
             log_max_rotated_files: default_log_max_rotated_files(),
             log_compression_enabled: default_log_compression_enabled(),
             log_rotation_interval_sec: default_log_rotation_interval_sec(),
+            log_max_age_sec: default_log_max_age_sec(),
+            log_max_total_size_bytes: default_log_max_total_size_bytes(),
+            log_cleanup_interval_sec: default_log_cleanup_interval_sec(),
         }
     }
 }

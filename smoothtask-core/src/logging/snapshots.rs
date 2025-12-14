@@ -573,6 +573,8 @@ impl SnapshotLogger {
                 logging_config.log_max_rotated_files,
                 logging_config.log_compression_enabled,
                 logging_config.log_rotation_interval_sec,
+                logging_config.log_max_age_sec,
+                logging_config.log_max_total_size_bytes,
             ))
         } else {
             None

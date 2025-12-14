@@ -54,6 +54,8 @@ pub struct ApiState {
     cache: Option<Arc<RwLock<ApiCache>>>,
     /// Хранилище логов для предоставления через API (опционально)
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
+    /// Менеджер пользовательских метрик для предоставления через API (опционально)
+    custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
     /// Метрики производительности API
     performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,
     /// Коллектор метрик для сбора данных о сетевых соединениях (опционально)
@@ -295,6 +297,7 @@ pub struct ApiStateBuilder {
     health_monitor: Option<Arc<crate::health::HealthMonitorImpl>>,
     cache: Option<Arc<RwLock<ApiCache>>>,
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
+    custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
     performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
     metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
     metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
@@ -657,6 +660,31 @@ impl ApiStateBuilder {
         self
     }
 
+    /// Устанавливает менеджер пользовательских метрик для API.
+    ///
+    /// # Параметры
+    ///
+    /// - `custom_metrics_manager`: Менеджер пользовательских метрик для предоставления через API
+    ///
+    /// # Примеры
+    ///
+    /// ```no_run
+    /// use smoothtask_core::api::ApiStateBuilder;
+    /// use smoothtask_core::metrics::custom::CustomMetricsManager;
+    /// use std::sync::Arc;
+    ///
+    /// let custom_metrics_manager = Arc::new(CustomMetricsManager::new());
+    /// let builder = ApiStateBuilder::new()
+    ///     .with_custom_metrics_manager(Some(custom_metrics_manager));
+    /// ```
+    pub fn with_custom_metrics_manager(
+        mut self,
+        custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
+    ) -> Self {
+        self.custom_metrics_manager = custom_metrics_manager;
+        self
+    }
+
     /// Завершает построение и возвращает ApiState.
     ///
     /// Этот метод потребляет builder и возвращает готовое состояние API,
@@ -686,6 +714,7 @@ impl ApiStateBuilder {
             health_monitor: self.health_monitor,
             cache: self.cache,
             log_storage: self.log_storage,
+            custom_metrics_manager: self.custom_metrics_manager,
             performance_metrics: self
                 .performance_metrics
                 .unwrap_or_else(|| Arc::new(RwLock::new(ApiPerformanceMetrics::default()))),
@@ -1831,6 +1860,41 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Получение последних системных метрик"
             },
             {
+                "path": "/api/custom-metrics",
+                "method": "GET",
+                "description": "Получение всех пользовательских метрик и их текущих значений"
+            },
+            {
+                "path": "/api/custom-metrics/:metric_id",
+                "method": "GET",
+                "description": "Получение конфигурации и текущего значения конкретной пользовательской метрики"
+            },
+            {
+                "path": "/api/custom-metrics/:metric_id/update",
+                "method": "POST",
+                "description": "Принудительное обновление значения пользовательской метрики"
+            },
+            {
+                "path": "/api/custom-metrics/:metric_id/add",
+                "method": "POST",
+                "description": "Добавление новой пользовательской метрики"
+            },
+            {
+                "path": "/api/custom-metrics/:metric_id/remove",
+                "method": "POST",
+                "description": "Удаление пользовательской метрики"
+            },
+            {
+                "path": "/api/custom-metrics/:metric_id/enable",
+                "method": "POST",
+                "description": "Включение пользовательской метрики"
+            },
+            {
+                "path": "/api/custom-metrics/:metric_id/disable",
+                "method": "POST",
+                "description": "Отключение пользовательской метрики"
+            },
+            {
                 "path": "/api/responsiveness",
                 "method": "GET",
                 "description": "Получение последних метрик отзывчивости системы"
@@ -2841,6 +2905,13 @@ fn create_router(state: ApiState) -> Router {
         .route("/metrics", get(prometheus_metrics_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
+        .route("/api/custom-metrics", get(custom_metrics_handler))
+        .route("/api/custom-metrics/:metric_id", get(custom_metric_by_id_handler))
+        .route("/api/custom-metrics/:metric_id/update", post(custom_metric_update_handler))
+        .route("/api/custom-metrics/:metric_id/add", post(custom_metric_add_handler))
+        .route("/api/custom-metrics/:metric_id/remove", post(custom_metric_remove_handler))
+        .route("/api/custom-metrics/:metric_id/enable", post(custom_metric_enable_handler))
+        .route("/api/custom-metrics/:metric_id/disable", post(custom_metric_disable_handler))
         .route("/api/responsiveness", get(responsiveness_handler))
         .route("/api/processes", get(processes_handler))
         .route("/api/processes/:pid", get(process_by_pid_handler))

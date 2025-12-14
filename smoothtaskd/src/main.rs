@@ -39,6 +39,8 @@ async fn main() -> Result<()> {
     tokio::spawn(async move {
         if let Err(e) = signal::ctrl_c().await {
             tracing::error!("Error waiting for Ctrl-C signal: {}", e);
+            // Уведомляем systemd о критической ошибке
+            systemd::notify_error(1, Some(&format!("Signal handling error: {}", e)));
         }
         tracing::info!("Received SIGINT/SIGTERM, initiating graceful shutdown");
         if shutdown_tx_clone.send(true).is_err() {
@@ -69,5 +71,7 @@ async fn main() -> Result<()> {
         Some(on_ready),
         Some(on_status_update),
     )
-    .await
+    .await?;
+
+    Ok(())
 }

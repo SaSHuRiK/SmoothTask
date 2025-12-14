@@ -49,6 +49,9 @@ notify = "6.1"
 # Сжатие логов
 flate2 = { version = "1.0", features = ["zlib"] }
 
+# Регулярные выражения для пользовательских метрик
+regex = "1.10"
+
 # Lazy static для глобальных кэшей
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 
@@ -77,6 +80,9 @@ libbpf-rs = { version = "0.26.0-beta.1", optional = true }
 
 # D-Bus поддержка для уведомлений и интеграции
 zbus = { version = "4.1", optional = true }
+
+# systemd интеграция для уведомлений
+libsystemd = "0.3"
 
 [features]
 default = []
