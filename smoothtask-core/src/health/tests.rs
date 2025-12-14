@@ -262,7 +262,7 @@ mod tests {
         health_monitor.add_health_issue(issue).await.unwrap();
         
         // Выполняем проверку здоровья (это должно запустить автоматическое восстановление)
-        let health_status = health_monitor.check_health().await.unwrap();
+        let _health_status = health_monitor.check_health().await.unwrap();
         
         // Проверяем, что автоматическое восстановление было выполнено
         let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();

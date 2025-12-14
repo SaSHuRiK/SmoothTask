@@ -11,6 +11,10 @@ This guide provides comprehensive instructions for setting up Prometheus and Gra
 - [Dashboard Import](#dashboard-import)
 - [Key Metrics Explained](#key-metrics-explained)
 - [Alerting Rules](#alerting-rules)
+  - [Custom Alert Examples](#custom-alert-examples)
+  - [Comprehensive Alerting Rules](#comprehensive-alerting-rules)
+  - [Alert Configuration Best Practices](#alert-configuration-best-practices)
+  - [Alert Integration Examples](#alert-integration-examples)
 - [Troubleshooting](#troubleshooting)
 
 ## Overview
@@ -461,6 +465,256 @@ The alert rules provided in the Prometheus configuration cover:
   annotations:
     summary: "High I/O activity detected ({{ $value }} bytes/s)"
     description: "System I/O activity exceeds 10MB/s"
+```
+
+### Comprehensive Alerting Rules
+
+For a complete monitoring solution, we recommend the following comprehensive alerting rules:
+
+```yaml
+# ============================================================================
+# SYSTEM HEALTH ALERTS
+# ============================================================================
+
+# Critical system health score
+- alert: CriticalSystemHealth
+  expr: smoothtask_health_score < 30
+  for: 5m
+  labels:
+    severity: critical
+  annotations:
+    summary: "Critical system health score ({{ $value }})"
+    description: "System health score has dropped below 30, indicating critical issues"
+
+# Degraded system health score
+- alert: DegradedSystemHealth
+  expr: smoothtask_health_score < 70
+  for: 15m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Degraded system health score ({{ $value }})"
+    description: "System health score has dropped below 70, indicating potential issues"
+
+# Critical issues detected
+- alert: CriticalIssuesDetected
+  expr: smoothtask_health_critical_issues > 0
+  for: 1m
+  labels:
+    severity: critical
+  annotations:
+    summary: "Critical issues detected ({{ $value }})"
+    description: "SmoothTask has detected {{ $value }} critical issues requiring immediate attention"
+
+# ============================================================================
+# RESOURCE USAGE ALERTS
+# ============================================================================
+
+# High system memory usage
+- alert: HighSystemMemoryUsage
+  expr: (smoothtask_system_memory_total_mb - smoothtask_system_memory_available_mb) / smoothtask_system_memory_total_mb * 100 > 90
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High system memory usage ({{ $value }}%)"
+    description: "System memory usage exceeds 90%"
+
+# High system CPU usage
+- alert: HighSystemCPUUsage
+  expr: 100 - (avg by (instance) (rate(smoothtask_system_cpu_idle_seconds_total[1m])) * 100) > 90
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High system CPU usage ({{ $value }}%)"
+    description: "System CPU usage exceeds 90%"
+
+# High PSI memory pressure
+- alert: HighMemoryPressure
+  expr: smoothtask_system_psi_memory_some_avg10 > 25
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High memory pressure detected ({{ $value }}%)"
+    description: "Memory pressure (some) exceeds 25% over 10-second average"
+
+# ============================================================================
+# PROCESS AND APPLICATION ALERTS
+# ============================================================================
+
+# High CPU usage by individual process
+- alert: HighProcessCPUUsage
+  expr: smoothtask_process_cpu_share > 50
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High CPU usage by process ({{ $value }}%)"
+    description: "Process is using more than 50% CPU"
+
+# High memory usage by individual process
+- alert: HighProcessMemoryUsage
+  expr: smoothtask_process_memory_rss_mb > 1024
+  for: 10m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High memory usage by process ({{ $value }} MB)"
+    description: "Process is using more than 1GB memory"
+
+# High I/O usage by process
+- alert: HighProcessIOUsage
+  expr: rate(smoothtask_process_io_read_bytes[1m]) + rate(smoothtask_process_io_write_bytes[1m]) > 5242880
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High I/O usage by process ({{ $value }} bytes/s)"
+    description: "Process I/O activity exceeds 5MB/s"
+
+# ============================================================================
+# DAEMON AND SERVICE ALERTS
+# ============================================================================
+
+# SmoothTask daemon not responding
+- alert: SmoothTaskDaemonDown
+  expr: up{job="smoothtask"} == 0
+  for: 2m
+  labels:
+    severity: critical
+  annotations:
+    summary: "SmoothTask daemon is down"
+    description: "SmoothTask daemon has not responded for 2 minutes"
+
+# High daemon iteration time
+- alert: HighDaemonIterationTime
+  expr: smoothtask_daemon_iteration_time_seconds > 5
+  for: 3m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High daemon iteration time ({{ $value }}s)"
+    description: "Daemon iteration time exceeds 5 seconds"
+
+# High priority adjustments
+- alert: HighPriorityAdjustments
+  expr: rate(smoothtask_daemon_priority_adjustments_total[5m]) > 10
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High priority adjustments ({{ $value }}/s)"
+    description: "Daemon is making more than 10 priority adjustments per second"
+
+# ============================================================================
+# AUDIO AND MULTIMEDIA ALERTS
+# ============================================================================
+
+# Audio XRUN detection
+- alert: AudioXRUNDetected
+  expr: increase(smoothtask_audio_xruns_total[1m]) > 0
+  for: 1m
+  labels:
+    severity: warning
+  annotations:
+    summary: "Audio XRUN detected ({{ $value }})"
+    description: "Audio underruns detected, indicating potential audio glitches"
+
+# High audio latency
+- alert: HighAudioLatency
+  expr: smoothtask_audio_latency_ms > 50
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High audio latency ({{ $value }}ms)"
+    description: "Audio latency exceeds 50ms"
+
+# ============================================================================
+# NETWORK ALERTS
+# ============================================================================
+
+# High network traffic
+- alert: HighNetworkTraffic
+  expr: rate(smoothtask_network_receive_bytes_total[1m]) + rate(smoothtask_network_transmit_bytes_total[1m]) > 10485760
+  for: 5m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High network traffic ({{ $value }} bytes/s)"
+    description: "Network traffic exceeds 10MB/s"
+
+# High network errors
+- alert: HighNetworkErrors
+  expr: rate(smoothtask_network_receive_errors_total[1m]) + rate(smoothtask_network_transmit_errors_total[1m]) > 10
+  for: 2m
+  labels:
+    severity: warning
+  annotations:
+    summary: "High network errors ({{ $value }} errors/s)"
+    description: "Network errors exceed 10 per second"
+```
+
+### Alert Configuration Best Practices
+
+1. **Alert Thresholds**: Adjust thresholds based on your system's normal operating conditions
+2. **Notification Routing**: Route critical alerts to appropriate teams/channels
+3. **Alert Grouping**: Group related alerts to reduce notification noise
+4. **Silencing**: Implement alert silencing during maintenance windows
+5. **Escalation**: Set up escalation policies for unacknowledged alerts
+
+### Alert Integration Examples
+
+#### Email Notifications
+
+```yaml
+# prometheus.yml alertmanager configuration
+alertmanager:
+  static_configs:
+    - targets: ['alertmanager:9093']
+
+# alertmanager.yml configuration
+route:
+  group_by: ['alertname', 'severity']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 3h
+  receiver: 'email-notifications'
+
+receivers:
+  - name: 'email-notifications'
+    email_configs:
+      - to: 'admin@example.com'
+        from: 'alertmanager@example.com'
+        smarthost: 'smtp.example.com:587'
+        auth_username: 'alertmanager@example.com'
+        auth_password: 'password'
+```
+
+#### Slack Notifications
+
+```yaml
+receivers:
+  - name: 'slack-notifications'
+    slack_configs:
+      - api_url: 'https://hooks.slack.com/services/XXX/YYY/ZZZ'
+        channel: '#alerts'
+        title: '{{ template "slack.title" . }}'
+        text: '{{ template "slack.text" . }}'
+```
+
+#### PagerDuty Integration
+
+```yaml
+receivers:
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - routing_key: 'your-pagerduty-routing-key'
+        severity: 'critical'
+        client: 'SmoothTask'
+        client_url: 'https://your-smoothtask-dashboard'
 ```
 
 ## Troubleshooting
