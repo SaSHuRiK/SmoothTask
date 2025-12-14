@@ -64,6 +64,9 @@ lru = "0.12"
 # Glob для работы с файловой системой
 glob = "0.3"
 
+# Системный мониторинг для управления памятью
+sysinfo = "0.30"
+
 # ML-классификация (опционально)
 catboost = { version = "0.1", optional = true }
 ort = { version = "2.0.0-rc.10", features = ["default"], optional = true }

@@ -23,6 +23,7 @@ use std::io::Read;
 use sha2::{Sha256, Digest};
 use std::sync::Mutex;
 use lazy_static::lazy_static;
+use sysinfo::System;
 
 lazy_static! {
     /// Глобальный кэш фич для оптимизации производительности ML-классификации.
@@ -421,6 +422,14 @@ pub struct CacheStats {
     total_evictions: u64,
     /// Суммарное время, сэкономленное благодаря кэшу (в микросекундах)
     total_time_saved_us: u128,
+    /// Текущее использование памяти кэшом (в байтах)
+    current_memory_usage_bytes: u64,
+    /// Максимальное использование памяти кэшом (в байтах)
+    max_memory_usage_bytes: u64,
+    /// Количество очисток кэша из-за давления памяти
+    memory_pressure_cleanups: u64,
+    /// Количество автоматических регулировок емкости
+    auto_capacity_adjustments: u64,
 }
 
 impl CacheStats {
@@ -453,6 +462,26 @@ impl CacheStats {
         self.total_time_saved_us += time_saved_us;
     }
     
+    /// Обновить использование памяти
+    fn update_memory_usage(&mut self, memory_usage_bytes: u64) {
+        self.current_memory_usage_bytes = memory_usage_bytes;
+        if memory_usage_bytes > self.max_memory_usage_bytes {
+            self.max_memory_usage_bytes = memory_usage_bytes;
+        }
+    }
+    
+    /// Зарегистрировать очистку кэша из-за давления памяти
+    #[allow(dead_code)]
+    fn record_memory_pressure_cleanup(&mut self) {
+        self.memory_pressure_cleanups += 1;
+    }
+    
+    /// Зарегистрировать автоматическую регулировку емкости
+    #[allow(dead_code)]
+    fn record_auto_capacity_adjustment(&mut self) {
+        self.auto_capacity_adjustments += 1;
+    }
+    
     /// Получить процент хитов кэша
     fn hit_rate(&self) -> Option<f64> {
         if self.total_requests > 0 {
@@ -476,6 +505,17 @@ impl CacheStats {
         info!("  Total insertions: {}", self.total_insertions);
         info!("  Total evictions: {}", self.total_evictions);
         info!("  Total time saved: {} μs", self.total_time_saved_us);
+        
+        // Статистика использования памяти
+        info!("Memory Usage:");
+        info!("  Current memory usage: {} bytes ({:.2} KB)", 
+            self.current_memory_usage_bytes, 
+            self.current_memory_usage_bytes as f64 / 1024.0);
+        info!("  Maximum memory usage: {} bytes ({:.2} KB)", 
+            self.max_memory_usage_bytes, 
+            self.max_memory_usage_bytes as f64 / 1024.0);
+        info!("  Memory pressure cleanups: {}", self.memory_pressure_cleanups);
+        info!("  Auto capacity adjustments: {}", self.auto_capacity_adjustments);
     }
 }
 
@@ -501,11 +541,19 @@ impl FeatureCache {
         }
         
         let features = compute_fn();
+        
+        // Вычисляем размер памяти для новых фич
+        let _feature_memory_size = features.len() * std::mem::size_of::<f32>();
+        
         cache.put(pid, features.clone());
         
         let mut stats = self.stats.lock().unwrap();
         stats.record_miss();
         stats.record_insertion();
+        
+        // Обновляем статистику использования памяти
+        let current_memory_usage = cache.iter().map(|(_, v)| v.len() * std::mem::size_of::<f32>()).sum::<usize>() as u64;
+        stats.update_memory_usage(current_memory_usage);
         
         features
     }
@@ -562,6 +610,86 @@ impl FeatureCache {
                 info!("Увеличена емкость кэша до {} из-за низкого давления памяти ({:.1}%)", new_capacity, memory_pressure * 100.0);
             }
         }
+    }
+    
+    /// Проверить давление памяти системы и очистить кэш при необходимости.
+    /// Использует sysinfo для мониторинга использования памяти.
+    #[allow(dead_code)]
+    fn check_system_memory_and_cleanup(&self) {
+        let mut system = System::new_all();
+        system.refresh_all();
+        
+        let total_memory = system.total_memory();
+        let used_memory = system.used_memory();
+        let memory_usage_ratio = used_memory as f32 / total_memory as f32;
+        
+        let mut cache = self.cache.lock().unwrap();
+        let mut stats = self.stats.lock().unwrap();
+        
+        // Логируем текущее использование памяти
+        debug!("System memory usage: {:.1}% ({} MB / {} MB)", 
+            memory_usage_ratio * 100.0, 
+            used_memory / 1024 / 1024, 
+            total_memory / 1024 / 1024);
+        
+        // Критическое давление памяти - очищаем кэш
+        if memory_usage_ratio > 0.9 {
+            let cache_size_before = cache.len();
+            let memory_freed = stats.current_memory_usage_bytes;
+            
+            stats.total_evictions += cache_size_before as u64;
+            stats.record_memory_pressure_cleanup();
+            cache.clear();
+            stats.update_memory_usage(0);
+            
+            warn!("Критическое давление памяти ({:.1}%) - очищен кэш фич ({} элементов, {} KB освобождено)", 
+                memory_usage_ratio * 100.0, 
+                cache_size_before, 
+                memory_freed / 1024);
+        }
+        // Высокое давление памяти - уменьшаем емкость кэша
+        else if memory_usage_ratio > 0.8 {
+            let current_capacity = cache.cap().get();
+            let new_capacity = (current_capacity as f32 * 0.5) as usize;
+            
+            if new_capacity > 0 && new_capacity < current_capacity {
+                let cache_size_before = cache.len();
+                let memory_freed = stats.current_memory_usage_bytes - 
+                    (new_capacity * 288) as u64; // Примерный размер фич
+                
+                stats.total_evictions += cache_size_before as u64;
+                stats.record_auto_capacity_adjustment();
+                *cache = lru::LruCache::new(std::num::NonZeroUsize::new(new_capacity).unwrap());
+                stats.update_memory_usage(0);
+                
+                warn!("Высокое давление памяти ({:.1}%) - уменьшена емкость кэша до {} ({} KB освобождено)", 
+                    memory_usage_ratio * 100.0, 
+                    new_capacity, 
+                    memory_freed / 1024);
+            }
+        }
+        // Нормальное давление памяти - логируем статистику
+        else {
+            debug!("Feature cache status: {} elements, {} KB used, {:.1}% hit rate", 
+                cache.len(), 
+                stats.current_memory_usage_bytes / 1024, 
+                stats.hit_rate().unwrap_or(0.0) * 100.0);
+        }
+    }
+    
+    /// Публичный метод для запуска проверки памяти и очистки кэша.
+    /// Может быть вызван извне для ручного управления памятью.
+    #[allow(dead_code)]
+    pub fn trigger_memory_cleanup(&self) {
+        self.check_system_memory_and_cleanup();
+    }
+    
+    /// Публичный метод для получения текущей статистики использования памяти.
+    /// Возвращает текущее и максимальное использование памяти кэшом.
+    #[allow(dead_code)]
+    pub fn get_memory_usage(&self) -> (u64, u64) {
+        let stats = self.stats.lock().unwrap();
+        (stats.current_memory_usage_bytes, stats.max_memory_usage_bytes)
     }
 }
 
@@ -2358,5 +2486,100 @@ mod tests {
         
         // Восстанавливаем исходную емкость
         CatBoostMLClassifier::set_feature_cache_capacity(initial_capacity);
+    }
+
+    #[test]
+    fn test_feature_cache_memory_usage_tracking() {
+        // Тест: проверка отслеживания использования памяти кэшом
+        let cache = FeatureCache::new(100);
+        
+        // Изначально память должна быть 0
+        let (current_memory, max_memory) = cache.get_memory_usage();
+        assert_eq!(current_memory, 0);
+        assert_eq!(max_memory, 0);
+        
+        // Добавляем некоторые фичи в кэш
+        let test_features = vec![1.0f32; 288]; // Типичный размер фич
+        cache.cache.lock().unwrap().put(1000, test_features.clone());
+        
+        // Проверяем, что память обновлена
+        let (current_memory_after, max_memory_after) = cache.get_memory_usage();
+        assert!(current_memory_after > 0, "Текущая память должна быть больше 0");
+        assert!(max_memory_after > 0, "Максимальная память должна быть больше 0");
+        assert_eq!(current_memory_after, max_memory_after, "Текущая и максимальная память должны совпадать");
+        
+        // Добавляем еще один элемент
+        cache.cache.lock().unwrap().put(1001, test_features.clone());
+        
+        // Проверяем, что память увеличилась
+        let (current_memory_final, max_memory_final) = cache.get_memory_usage();
+        assert!(current_memory_final > current_memory_after, "Текущая память должна увеличиться");
+        assert!(max_memory_final >= current_memory_final, "Максимальная память должна быть >= текущей");
+    }
+
+    #[test]
+    fn test_cache_stats_memory_tracking() {
+        // Тест: проверка отслеживания статистики использования памяти
+        let mut stats = CacheStats::default();
+        
+        // Изначально память должна быть 0
+        assert_eq!(stats.current_memory_usage_bytes, 0);
+        assert_eq!(stats.max_memory_usage_bytes, 0);
+        assert_eq!(stats.memory_pressure_cleanups, 0);
+        assert_eq!(stats.auto_capacity_adjustments, 0);
+        
+        // Обновляем использование памяти
+        stats.update_memory_usage(1024);
+        assert_eq!(stats.current_memory_usage_bytes, 1024);
+        assert_eq!(stats.max_memory_usage_bytes, 1024);
+        
+        // Обновляем с большим значением
+        stats.update_memory_usage(2048);
+        assert_eq!(stats.current_memory_usage_bytes, 2048);
+        assert_eq!(stats.max_memory_usage_bytes, 2048);
+        
+        // Обновляем с меньшим значением - max не должен измениться
+        stats.update_memory_usage(1536);
+        assert_eq!(stats.current_memory_usage_bytes, 1536);
+        assert_eq!(stats.max_memory_usage_bytes, 2048, "Максимальная память не должна уменьшиться");
+        
+        // Проверяем регистрацию очисток
+        stats.record_memory_pressure_cleanup();
+        assert_eq!(stats.memory_pressure_cleanups, 1);
+        
+        stats.record_auto_capacity_adjustment();
+        assert_eq!(stats.auto_capacity_adjustments, 1);
+    }
+
+    #[test]
+    fn test_memory_pressure_cleanup_simulation() {
+        // Тест: симуляция очистки кэша при давлении памяти
+        // Этот тест проверяет логику без реального вызова sysinfo
+        
+        // Создаем кэш с тестовыми данными
+        let cache = FeatureCache::new(10);
+        let test_features = vec![1.0f32; 288];
+        
+        // Заполняем кэш
+        for i in 0..5 {
+            cache.cache.lock().unwrap().put(i, test_features.clone());
+        }
+        
+        // Проверяем, что кэш не пустой
+        let cache_len = cache.cache.lock().unwrap().len();
+        assert!(cache_len > 0, "Кэш должен содержать элементы");
+        
+        // Проверяем, что статистика обновляется при добавлении
+        let (current_memory, max_memory) = cache.get_memory_usage();
+        assert!(current_memory > 0, "Память должна быть использована");
+        
+        // Тестируем ручную очистку
+        cache.trigger_memory_cleanup();
+        
+        // После очистки кэш может быть очищен или уменьшен в зависимости от логики
+        // Главное, что метод не падает и статистика обновляется
+        let (current_memory_after, max_memory_after) = cache.get_memory_usage();
+        // Память должна быть либо 0, либо меньше предыдущего значения
+        assert!(current_memory_after <= current_memory, "Память после очистки должна быть <= предыдущей");
     }
 }

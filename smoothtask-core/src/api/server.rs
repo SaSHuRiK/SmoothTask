@@ -1827,6 +1827,110 @@ async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<Str
         }
     }
     
+    // Добавляем пользовательские метрики если доступны
+    if let Some(custom_metrics_manager) = &state.custom_metrics_manager {
+        let custom_metrics_values = custom_metrics_manager.get_all_metrics_values().await.ok();
+        
+        if let Some(values) = custom_metrics_values {
+            for (metric_id, value) in &values {
+                // Получаем конфигурацию метрики для определения типа
+                let metric_config = custom_metrics_manager.get_metric_config(&metric_id).await.ok().flatten();
+                
+                // Определяем тип метрики на основе конфигурации или значения
+                let metric_type = if let Some(config) = metric_config {
+                    match config.metric_type {
+                        crate::metrics::custom::CustomMetricType::Integer => "integer",
+                        crate::metrics::custom::CustomMetricType::Float => "float",
+                        crate::metrics::custom::CustomMetricType::Boolean => "boolean",
+                        crate::metrics::custom::CustomMetricType::String => "string",
+                    }
+                } else {
+                    // Если конфигурация недоступна, определяем тип по значению
+                    match value.value {
+                        crate::metrics::custom::CustomMetricValue::Integer(_) => "integer",
+                        crate::metrics::custom::CustomMetricValue::Float(_) => "float",
+                        crate::metrics::custom::CustomMetricValue::Boolean(_) => "boolean",
+                        crate::metrics::custom::CustomMetricValue::String(_) => "string",
+                    }
+                };
+                
+                // Добавляем HELP и TYPE комментарии для пользовательской метрики
+                metrics.push_str(&format!(
+                    "# HELP smoothtask_custom_metric{{id=\"{}\"}} Custom metric {}\n",
+                    metric_id, metric_id
+                ));
+                metrics.push_str(&format!(
+                    "# TYPE smoothtask_custom_metric{{id=\"{}\"}} {}\n",
+                    metric_id, metric_type
+                ));
+                
+                // Добавляем значение метрики
+                let metric_value = match &value.value {
+                    crate::metrics::custom::CustomMetricValue::Integer(v) => v.to_string(),
+                    crate::metrics::custom::CustomMetricValue::Float(v) => v.to_string(),
+                    crate::metrics::custom::CustomMetricValue::Boolean(v) => if *v { "1" } else { "0" }.to_string(),
+                    crate::metrics::custom::CustomMetricValue::String(v) => {
+                        // Для строковых метрик используем 1 если строка не пустая, 0 если пустая
+                        if v.is_empty() { "0" } else { "1" }.to_string()
+                    }
+                };
+                
+                metrics.push_str(&format!(
+                    "smoothtask_custom_metric{{id=\"{}\",type=\"{}\"}} {}\n",
+                    metric_id, metric_type, metric_value
+                ));
+                
+                // Добавляем метрику статуса
+                metrics.push_str(&format!(
+                    "# HELP smoothtask_custom_metric_status{{id=\"{}\"}} Status of custom metric {}\n",
+                    metric_id, metric_id
+                ));
+                metrics.push_str(&format!(
+                    "# TYPE smoothtask_custom_metric_status{{id=\"{}\"}} gauge\n",
+                    metric_id
+                ));
+                
+                let status_value = match value.status {
+                    crate::metrics::custom::MetricStatus::Ok => 1,
+                    crate::metrics::custom::MetricStatus::Error { .. } => 3,
+                    crate::metrics::custom::MetricStatus::Disabled => 4,
+                };
+                
+                metrics.push_str(&format!(
+                    "smoothtask_custom_metric_status{{id=\"{}\"}} {}\n",
+                    metric_id, status_value
+                ));
+                
+                // Добавляем метрику времени последнего обновления
+                metrics.push_str(&format!(
+                    "# HELP smoothtask_custom_metric_last_update{{id=\"{}\"}} Last update timestamp of custom metric {}\n",
+                    metric_id, metric_id
+                ));
+                metrics.push_str(&format!(
+                    "# TYPE smoothtask_custom_metric_last_update{{id=\"{}\"}} gauge\n",
+                    metric_id
+                ));
+                
+                metrics.push_str(&format!(
+                    "smoothtask_custom_metric_last_update{{id=\"{}\"}} {}\n",
+                    metric_id, value.timestamp
+                ));
+            }
+            
+            // Добавляем общую метрику количества пользовательских метрик
+            metrics.push_str(&format!(
+                "# HELP smoothtask_custom_metrics_total Total number of custom metrics\n"
+            ));
+            metrics.push_str(&format!(
+                "# TYPE smoothtask_custom_metrics_total gauge\n"
+            ));
+            metrics.push_str(&format!(
+                "smoothtask_custom_metrics_total {}\n",
+                values.len()
+            ));
+        }
+    }
+    
     Ok(metrics)
 }
 

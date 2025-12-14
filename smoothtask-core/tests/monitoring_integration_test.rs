@@ -9,6 +9,7 @@
 use smoothtask_core::{
     api::ApiServer,
     DaemonStats,
+    metrics::custom::{CustomMetricsManager, CustomMetricConfig, CustomMetricType},
 };
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -301,6 +302,108 @@ async fn test_metrics_endpoint_performance() {
     // Запросы должны выполняться быстро (менее 1 секунды на 5 запросов)
     assert!(duration.as_secs() < 1, "Метрики должны возвращаться быстро");
 
+    // Останавливаем сервер
+    let _ = handle.shutdown().await;
+}
+
+#[tokio::test]
+async fn test_prometheus_custom_metrics_integration() {
+    // Тест: проверка интеграции пользовательских метрик в Prometheus
+    use smoothtask_core::api::ApiStateBuilder;
+    
+    // Создаём менеджер пользовательских метрик с тестовыми метриками
+    let custom_metrics_manager = Arc::new(CustomMetricsManager::new());
+    
+    // Добавляем тестовые метрики
+    let test_configs = vec![
+        CustomMetricConfig {
+            id: "test_integer_metric".to_string(),
+            name: "Test Integer Metric".to_string(),
+            metric_type: CustomMetricType::Integer,
+            source: smoothtask_core::metrics::custom::CustomMetricSource::Static { value: "42".to_string() },
+            update_interval_secs: 60,
+            enabled: true,
+        },
+        CustomMetricConfig {
+            id: "test_float_metric".to_string(),
+            name: "Test Float Metric".to_string(),
+            metric_type: CustomMetricType::Float,
+            source: smoothtask_core::metrics::custom::CustomMetricSource::Static { value: "3.14".to_string() },
+            update_interval_secs: 60,
+            enabled: true,
+        },
+        CustomMetricConfig {
+            id: "test_boolean_metric".to_string(),
+            name: "Test Boolean Metric".to_string(),
+            metric_type: CustomMetricType::Boolean,
+            source: smoothtask_core::metrics::custom::CustomMetricSource::Static { value: "true".to_string() },
+            update_interval_secs: 60,
+            enabled: true,
+        },
+        CustomMetricConfig {
+            id: "test_string_metric".to_string(),
+            name: "Test String Metric".to_string(),
+            metric_type: CustomMetricType::String,
+            source: smoothtask_core::metrics::custom::CustomMetricSource::Static { value: "hello".to_string() },
+            update_interval_secs: 60,
+            enabled: true,
+        },
+    ];
+    
+    // Инициализируем метрики
+    for config in test_configs {
+        custom_metrics_manager.add_metric(config).await.ok();
+    }
+    
+    // Создаём состояние API с менеджером пользовательских метрик
+    let state = ApiStateBuilder::new()
+        .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
+        .with_custom_metrics_manager(Some(Arc::clone(&custom_metrics_manager)))
+        .build();
+    
+    // Создаём сервер с кастомным состоянием
+    let server = ApiServer::with_state("127.0.0.1:0".parse().unwrap(), state);
+    
+    // Запускаем сервер
+    let handle_result = server.start().await;
+    assert!(handle_result.is_ok());
+    let handle = handle_result.unwrap();
+    
+    // Получаем порт
+    let port = handle.port();
+    
+    // Делаем HTTP запрос к Prometheus метрикам
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{}/metrics", port);
+    
+    let response = client
+        .get(&url)
+        .send()
+        .await
+        .expect("Запрос должен выполниться успешно");
+    
+    assert!(response.status().is_success());
+    
+    let body = response.text().await.expect("Ответ должен содержать текст");
+    
+    // Проверяем, что пользовательские метрики присутствуют в Prometheus формате
+    assert!(body.contains("smoothtask_custom_metric"), "Должны быть пользовательские метрики");
+    assert!(body.contains("smoothtask_custom_metrics_total"), "Должна быть метрика общего количества");
+    
+    // Проверяем, что каждая тестовая метрика присутствует
+    assert!(body.contains("test_integer_metric"), "Должна быть integer метрика");
+    assert!(body.contains("test_float_metric"), "Должна быть float метрика");
+    assert!(body.contains("test_boolean_metric"), "Должна быть boolean метрика");
+    assert!(body.contains("test_string_metric"), "Должна быть string метрика");
+    
+    // Проверяем формат Prometheus для пользовательских метрик
+    assert!(body.contains("# HELP smoothtask_custom_metric"), "Должны быть HELP комментарии для пользовательских метрик");
+    assert!(body.contains("# TYPE smoothtask_custom_metric"), "Должны быть TYPE комментарии для пользовательских метрик");
+    
+    // Проверяем метрики статуса
+    assert!(body.contains("smoothtask_custom_metric_status"), "Должны быть метрики статуса");
+    assert!(body.contains("smoothtask_custom_metric_last_update"), "Должны быть метрики времени последнего обновления");
+    
     // Останавливаем сервер
     let _ = handle.shutdown().await;
 }
