@@ -273,11 +273,58 @@ impl ProcessNetworkMonitor {
         Ok(results)
     }
 
-    /// Collect TCP statistics for a process
-    fn collect_tcp_stats(&self, _pid: u32) -> Result<ProcessProtocolStats> {
+    /// Collect TCP statistics for a process using enhanced methods
+    fn collect_tcp_stats(&self, pid: u32) -> Result<ProcessProtocolStats> {
         let mut stats = ProcessProtocolStats::default();
 
-        // Read TCP connections from /proc/net/tcp
+        // First, try to use /proc/net/tcp6 which includes inode information
+        // that can be mapped to process file descriptors
+        if Path::new("/proc/net/tcp6").exists() {
+            let tcp_content = fs::read_to_string("/proc/net/tcp6")
+                .context("Failed to read /proc/net/tcp6")?;
+
+            // Parse TCP connections and find those belonging to our process
+            for (_line_num, line) in tcp_content.lines().skip(1).enumerate() { // Skip header
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 {
+                    let local_addr_hex = parts[1];
+                    let remote_addr_hex = parts[2];
+                    let state_hex = parts[3];
+                    let _uid = parts[7];
+                    let inode = parts[9];
+
+                    // Check if this connection belongs to our process by checking file descriptors
+                    if self.is_connection_for_pid(pid, inode)? {
+                        // Parse state
+                        let state = self.parse_tcp_state(state_hex)?;
+
+                        // Parse addresses and ports
+                        if let Ok((src_ip, src_port, dst_ip, dst_port)) = self.parse_tcp_addresses(local_addr_hex, remote_addr_hex) {
+                            let connection = ProcessConnectionStats {
+                                src_ip,
+                                dst_ip,
+                                src_port,
+                                dst_port,
+                                protocol: "TCP".to_string(),
+                                state,
+                                bytes_transmitted: 0, // Would need more detailed parsing
+                                bytes_received: 0,
+                                packets_transmitted: 0,
+                                packets_received: 0,
+                                start_time: SystemTime::now(),
+                                last_activity: SystemTime::now(),
+                                duration: Duration::from_secs(0),
+                            };
+
+                            stats.connections += 1;
+                            stats.detailed_connections.push(connection);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to /proc/net/tcp if tcp6 is not available
         let tcp_content = fs::read_to_string("/proc/net/tcp")
             .context("Failed to read /proc/net/tcp")?;
 
@@ -285,39 +332,38 @@ impl ProcessNetworkMonitor {
         for (_line_num, line) in tcp_content.lines().skip(1).enumerate() { // Skip header
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 10 {
-                // Parse connection info
                 let local_addr_hex = parts[1];
                 let remote_addr_hex = parts[2];
                 let state_hex = parts[3];
                 let _uid = parts[7];
+                let inode = parts[9];
 
-                // Check if this connection belongs to our process
-                // Note: /proc/net/tcp doesn't directly show PID, so we need to use /proc/net/tcp6
-                // or other methods to get PID. For now, we'll use a simplified approach.
-                
-                // Parse state
-                let state = self.parse_tcp_state(state_hex)?;
+                // Check if this connection belongs to our process by checking file descriptors
+                if self.is_connection_for_pid(pid, inode)? {
+                    // Parse state
+                    let state = self.parse_tcp_state(state_hex)?;
 
-                // Parse addresses and ports
-                if let Ok((src_ip, src_port, dst_ip, dst_port)) = self.parse_tcp_addresses(local_addr_hex, remote_addr_hex) {
-                    let connection = ProcessConnectionStats {
-                        src_ip,
-                        dst_ip,
-                        src_port,
-                        dst_port,
-                        protocol: "TCP".to_string(),
-                        state,
-                        bytes_transmitted: 0, // Would need more detailed parsing
-                        bytes_received: 0,
-                        packets_transmitted: 0,
-                        packets_received: 0,
-                        start_time: SystemTime::now(),
-                        last_activity: SystemTime::now(),
-                        duration: Duration::from_secs(0),
-                    };
+                    // Parse addresses and ports
+                    if let Ok((src_ip, src_port, dst_ip, dst_port)) = self.parse_tcp_addresses(local_addr_hex, remote_addr_hex) {
+                        let connection = ProcessConnectionStats {
+                            src_ip,
+                            dst_ip,
+                            src_port,
+                            dst_port,
+                            protocol: "TCP".to_string(),
+                            state,
+                            bytes_transmitted: 0, // Would need more detailed parsing
+                            bytes_received: 0,
+                            packets_transmitted: 0,
+                            packets_received: 0,
+                            start_time: SystemTime::now(),
+                            last_activity: SystemTime::now(),
+                            duration: Duration::from_secs(0),
+                        };
 
-                    stats.connections += 1;
-                    stats.detailed_connections.push(connection);
+                        stats.connections += 1;
+                        stats.detailed_connections.push(connection);
+                    }
                 }
             }
         }
@@ -325,11 +371,53 @@ impl ProcessNetworkMonitor {
         Ok(stats)
     }
 
-    /// Collect UDP statistics for a process
-    fn collect_udp_stats(&self, _pid: u32) -> Result<ProcessProtocolStats> {
+    /// Collect UDP statistics for a process using enhanced methods
+    fn collect_udp_stats(&self, pid: u32) -> Result<ProcessProtocolStats> {
         let mut stats = ProcessProtocolStats::default();
 
-        // Read UDP connections from /proc/net/udp
+        // First, try to use /proc/net/udp6 which includes inode information
+        if Path::new("/proc/net/udp6").exists() {
+            let udp_content = fs::read_to_string("/proc/net/udp6")
+                .context("Failed to read /proc/net/udp6")?;
+
+            // Parse UDP connections and find those belonging to our process
+            for (_line_num, line) in udp_content.lines().skip(1).enumerate() { // Skip header
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 {
+                    let local_addr_hex = parts[1];
+                    let remote_addr_hex = parts[2];
+                    let _uid = parts[7];
+                    let inode = parts[9];
+
+                    // Check if this connection belongs to our process by checking file descriptors
+                    if self.is_connection_for_pid(pid, inode)? {
+                        // Parse addresses and ports
+                        if let Ok((src_ip, src_port, dst_ip, dst_port)) = self.parse_udp_addresses(local_addr_hex, remote_addr_hex) {
+                            let connection = ProcessConnectionStats {
+                                src_ip,
+                                dst_ip,
+                                src_port,
+                                dst_port,
+                                protocol: "UDP".to_string(),
+                                state: "ESTABLISHED".to_string(), // UDP doesn't have states like TCP
+                                bytes_transmitted: 0,
+                                bytes_received: 0,
+                                packets_transmitted: 0,
+                                packets_received: 0,
+                                start_time: SystemTime::now(),
+                                last_activity: SystemTime::now(),
+                                duration: Duration::from_secs(0),
+                            };
+
+                            stats.connections += 1;
+                            stats.detailed_connections.push(connection);
+                        }
+                    }
+                }
+            }
+        }
+
+        // Fallback to /proc/net/udp if udp6 is not available
         let udp_content = fs::read_to_string("/proc/net/udp")
             .context("Failed to read /proc/net/udp")?;
 
@@ -337,31 +425,34 @@ impl ProcessNetworkMonitor {
         for (_line_num, line) in udp_content.lines().skip(1).enumerate() { // Skip header
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 10 {
-                // Parse connection info
                 let local_addr_hex = parts[1];
                 let remote_addr_hex = parts[2];
                 let _uid = parts[7];
+                let inode = parts[9];
 
-                // Parse addresses and ports
-                if let Ok((src_ip, src_port, dst_ip, dst_port)) = self.parse_udp_addresses(local_addr_hex, remote_addr_hex) {
-                    let connection = ProcessConnectionStats {
-                        src_ip,
-                        dst_ip,
-                        src_port,
-                        dst_port,
-                        protocol: "UDP".to_string(),
-                        state: "ESTABLISHED".to_string(), // UDP doesn't have states like TCP
-                        bytes_transmitted: 0,
-                        bytes_received: 0,
-                        packets_transmitted: 0,
-                        packets_received: 0,
-                        start_time: SystemTime::now(),
-                        last_activity: SystemTime::now(),
-                        duration: Duration::from_secs(0),
-                    };
+                // Check if this connection belongs to our process by checking file descriptors
+                if self.is_connection_for_pid(pid, inode)? {
+                    // Parse addresses and ports
+                    if let Ok((src_ip, src_port, dst_ip, dst_port)) = self.parse_udp_addresses(local_addr_hex, remote_addr_hex) {
+                        let connection = ProcessConnectionStats {
+                            src_ip,
+                            dst_ip,
+                            src_port,
+                            dst_port,
+                            protocol: "UDP".to_string(),
+                            state: "ESTABLISHED".to_string(), // UDP doesn't have states like TCP
+                            bytes_transmitted: 0,
+                            bytes_received: 0,
+                            packets_transmitted: 0,
+                            packets_received: 0,
+                            start_time: SystemTime::now(),
+                            last_activity: SystemTime::now(),
+                            duration: Duration::from_secs(0),
+                        };
 
-                    stats.connections += 1;
-                    stats.detailed_connections.push(connection);
+                        stats.connections += 1;
+                        stats.detailed_connections.push(connection);
+                    }
                 }
             }
         }
@@ -425,6 +516,43 @@ impl ProcessNetworkMonitor {
     fn parse_udp_addresses(&self, local_addr_hex: &str, remote_addr_hex: &str) -> Result<(IpAddr, u16, IpAddr, u16)> {
         // UDP parsing is similar to TCP
         self.parse_tcp_addresses(local_addr_hex, remote_addr_hex)
+    }
+
+    /// Check if a connection (identified by inode) belongs to a specific PID
+    fn is_connection_for_pid(&self, pid: u32, inode: &str) -> Result<bool> {
+        let proc_fd_path = format!("/proc/{}/fd", pid);
+        
+        if !Path::new(&proc_fd_path).exists() {
+            return Ok(false);
+        }
+        
+        // Read the symbolic links in the process's fd directory
+        let fd_dir = match fs::read_dir(proc_fd_path) {
+            Ok(dir) => dir,
+            Err(_) => return Ok(false),
+        };
+        
+        for entry in fd_dir {
+            match entry {
+                Ok(entry) => {
+                    // Read the symbolic link target
+                    let link_target = match fs::read_link(entry.path()) {
+                        Ok(target) => target,
+                        Err(_) => continue,
+                    };
+                    
+                    // Check if the link target contains the inode
+                    if let Some(target_str) = link_target.to_str() {
+                        if target_str.contains(&format!("socket:[{}]", inode)) {
+                            return Ok(true);
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        
+        Ok(false)
     }
 
     /// Convert hex IP address to decimal
@@ -1016,5 +1144,281 @@ mod tests {
         assert_eq!(deserialized.src_port, 12345);
         assert_eq!(deserialized.dst_port, 80);
         assert_eq!(deserialized.protocol, "TCP");
+    }
+
+    #[test]
+    fn test_connection_to_pid_mapping() {
+        // Test the connection-to-PID mapping logic
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test with non-existent PID (should return false)
+        let result = monitor.is_connection_for_pid(999999, "12345");
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+        
+        // Test with invalid inode (should return false)
+        let result = monitor.is_connection_for_pid(1, "invalid_inode");
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_tcp_state_parsing() {
+        // Test TCP state parsing
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test known TCP states
+        assert_eq!(monitor.parse_tcp_state("01").unwrap(), "ESTABLISHED");
+        assert_eq!(monitor.parse_tcp_state("02").unwrap(), "SYN_SENT");
+        assert_eq!(monitor.parse_tcp_state("0A").unwrap(), "LISTEN");
+        assert_eq!(monitor.parse_tcp_state("FF").unwrap(), "UNKNOWN");
+        
+        // Test invalid state
+        let result = monitor.parse_tcp_state("ZZ");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_tcp_address_parsing() {
+        // Test TCP address parsing
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Test valid IPv4 addresses
+        let result = monitor.parse_tcp_addresses("6364A8C0:B945", "00000000:0000");
+        assert!(result.is_ok());
+        
+        let (src_ip, src_port, dst_ip, dst_port) = result.unwrap();
+        assert!(matches!(src_ip, IpAddr::V4(_)));
+        assert!(matches!(dst_ip, IpAddr::V4(_)));
+        assert!(src_port > 0);
+        assert_eq!(dst_port, 0);
+        
+        // Test invalid address format
+        let result = monitor.parse_tcp_addresses("invalid", "format");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_network_monitor_error_handling() {
+        // Test error handling in network monitor
+        let mut monitor = ProcessNetworkMonitor::new();
+        
+        // Test with non-existent process
+        let result = monitor.collect_process_network_stats(999999);
+        assert!(result.is_ok()); // Should return empty stats, not error
+        
+        let stats = result.unwrap();
+        assert_eq!(stats.pid, 999999);
+        assert_eq!(stats.rx_bytes, 0);
+        assert_eq!(stats.tx_bytes, 0);
+        assert_eq!(stats.connections.len(), 0);
+    }
+
+    #[test]
+    fn test_network_monitor_config_edge_cases() {
+        // Test edge cases for network monitor configuration
+        let config = ProcessNetworkMonitorConfig {
+            max_connections_per_process: 0,
+            cache_ttl_seconds: 0,
+            enable_process_network_monitoring: false,
+            ..Default::default()
+        };
+        
+        let mut monitor = ProcessNetworkMonitor::with_config(config);
+        assert_eq!(monitor.config.max_connections_per_process, 0);
+        assert_eq!(monitor.cache_ttl, Duration::from_secs(0));
+        assert!(!monitor.config.enable_process_network_monitoring);
+        
+        // Test that we can still create stats even with zero limits
+        let result = monitor.collect_process_network_stats(1);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_network_stats_aggregation() {
+        // Test aggregation of network statistics
+        let mut monitor = ProcessNetworkMonitor::new();
+        
+        // Create some test stats
+        let mut stats1 = ProcessNetworkStats::default();
+        stats1.pid = 1234;
+        stats1.rx_bytes = 1000;
+        stats1.tx_bytes = 2000;
+        stats1.tcp_connections = 5;
+        
+        let mut stats2 = ProcessNetworkStats::default();
+        stats2.pid = 1234;
+        stats2.rx_bytes = 1500;
+        stats2.tx_bytes = 2500;
+        stats2.tcp_connections = 3;
+        
+        // Calculate deltas
+        let deltas = monitor.calculate_network_deltas(&stats2, &stats1);
+        
+        assert_eq!(deltas.rx_bytes_delta, 500);
+        assert_eq!(deltas.tx_bytes_delta, 500);
+        assert_eq!(deltas.tcp_connections_delta, 2);
+    }
+
+    #[test]
+    fn test_network_monitor_cache_behavior() {
+        // Test cache behavior in network monitor
+        let monitor = ProcessNetworkMonitor::new();
+        
+        // Initially cache should be empty
+        assert!(monitor.cache.is_empty());
+        assert!(!monitor.is_cache_valid());
+        
+        // Collect stats (should populate cache if caching is enabled)
+        let config = ProcessNetworkMonitorConfig {
+            enable_caching: true,
+            ..Default::default()
+        };
+        
+        let mut monitor_with_cache = ProcessNetworkMonitor::with_config(config);
+        let result = monitor_with_cache.collect_process_network_stats(1);
+        
+        assert!(result.is_ok());
+        
+        // Cache should now be populated
+        assert!(!monitor_with_cache.cache.is_empty());
+        
+        // Clear cache and verify
+        monitor_with_cache.clear_cache();
+        assert!(monitor_with_cache.cache.is_empty());
+    }
+
+    #[test]
+    fn test_network_monitor_multiple_processes() {
+        // Test collecting stats for multiple processes
+        let mut monitor = ProcessNetworkMonitor::new();
+        
+        let pids = vec![1, 2, 100, 500];
+        let result = monitor.collect_multiple_process_network_stats(&pids);
+        
+        assert!(result.is_ok());
+        let stats_list = result.unwrap();
+        
+        // Should have stats for all requested PIDs
+        assert_eq!(stats_list.len(), pids.len());
+        
+        // Each stat should have the correct PID
+        for (i, stats) in stats_list.iter().enumerate() {
+            assert_eq!(stats.pid, pids[i]);
+        }
+    }
+
+    #[test]
+    fn test_network_monitor_performance_characteristics() {
+        // Test performance characteristics of network monitoring
+        let mut monitor = ProcessNetworkMonitor::new();
+        
+        // Test that monitoring doesn't take too long for non-existent processes
+        let start_time = SystemTime::now();
+        let result = monitor.collect_process_network_stats(999999);
+        let end_time = SystemTime::now();
+        
+        assert!(result.is_ok());
+        
+        // Should complete quickly (less than 100ms for non-existent process)
+        if let Ok(duration) = end_time.duration_since(start_time) {
+            assert!(duration.as_millis() < 100);
+        }
+    }
+
+    #[test]
+    fn test_network_connection_stats_equality() {
+        // Test equality of connection stats
+        let mut conn1 = ProcessConnectionStats::default();
+        conn1.src_port = 12345;
+        conn1.dst_port = 80;
+        conn1.protocol = "TCP".to_string();
+        
+        let mut conn2 = ProcessConnectionStats::default();
+        conn2.src_port = 12345;
+        conn2.dst_port = 80;
+        conn2.protocol = "TCP".to_string();
+        
+        assert_eq!(conn1, conn2);
+        
+        let mut conn3 = ProcessConnectionStats::default();
+        conn3.src_port = 54321;
+        conn3.dst_port = 80;
+        conn3.protocol = "TCP".to_string();
+        
+        assert_ne!(conn1, conn3);
+    }
+
+    #[test]
+    fn test_network_monitor_config_serialization_complex() {
+        // Test serialization of complex network monitor configuration
+        let config = ProcessNetworkMonitorConfig {
+            enable_process_network_monitoring: true,
+            max_connections_per_process: 256,
+            enable_detailed_connections: true,
+            enable_tcp_monitoring: true,
+            enable_udp_monitoring: false,
+            update_interval_secs: 30,
+            enable_caching: true,
+            cache_ttl_seconds: 600,
+        };
+        
+        let json = serde_json::to_string(&config).expect("Serialization should work");
+        let deserialized: ProcessNetworkMonitorConfig = serde_json::from_str(&json).expect("Deserialization should work");
+        
+        assert_eq!(deserialized.max_connections_per_process, 256);
+        assert!(deserialized.enable_detailed_connections);
+        assert!(!deserialized.enable_udp_monitoring);
+        assert_eq!(deserialized.cache_ttl_seconds, 600);
+    }
+
+    #[test]
+    fn test_network_stats_with_realistic_data() {
+        // Test with realistic network statistics data
+        let mut stats = ProcessNetworkStats::default();
+        stats.pid = 1234;
+        stats.rx_bytes = 1024 * 1024; // 1 MB received
+        stats.tx_bytes = 2 * 1024 * 1024; // 2 MB sent
+        stats.rx_packets = 1000;
+        stats.tx_packets = 1500;
+        stats.tcp_connections = 10;
+        stats.udp_connections = 5;
+        stats.last_update = SystemTime::now();
+        stats.data_source = "proc".to_string();
+        
+        // Add some realistic connections
+        let mut conn1 = ProcessConnectionStats::default();
+        conn1.src_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        conn1.dst_ip = IpAddr::V4(Ipv4Addr::new(8, 8, 8, 8));
+        conn1.src_port = 54321;
+        conn1.dst_port = 443;
+        conn1.protocol = "TCP".to_string();
+        conn1.state = "ESTABLISHED".to_string();
+        conn1.bytes_transmitted = 512 * 1024; // 512 KB
+        conn1.bytes_received = 256 * 1024; // 256 KB
+        
+        let mut conn2 = ProcessConnectionStats::default();
+        conn2.src_ip = IpAddr::V4(Ipv4Addr::new(192, 168, 1, 100));
+        conn2.dst_ip = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
+        conn2.src_port = 12345;
+        conn2.dst_port = 53;
+        conn2.protocol = "UDP".to_string();
+        conn2.state = "ESTABLISHED".to_string();
+        
+        stats.connections = vec![conn1, conn2];
+        
+        // Verify the data
+        assert_eq!(stats.pid, 1234);
+        assert_eq!(stats.connections.len(), 2);
+        assert_eq!(stats.tcp_connections, 10);
+        assert_eq!(stats.udp_connections, 5);
+        
+        // Test serialization
+        let json = serde_json::to_string(&stats).expect("Serialization should work");
+        let deserialized: ProcessNetworkStats = serde_json::from_str(&json).expect("Deserialization should work");
+        
+        assert_eq!(deserialized.pid, 1234);
+        assert_eq!(deserialized.connections.len(), 2);
+        assert_eq!(deserialized.tcp_connections, 10);
     }
 }
