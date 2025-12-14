@@ -156,11 +156,11 @@ pub async fn custom_metric_by_id_handler(
     perf_metrics.increment_requests();
     drop(perf_metrics); // Освобождаем блокировку
 
-    // Проверяем валидность metric_id
-    if metric_id.is_empty() || metric_id.len() > 100 {
+    // Используем централизованную валидацию metric_id
+    if let Err(__status_code) = crate::api::validation::validate_custom_metric_id(&metric_id) {
         return Ok(Json(json!({
             "status": "error",
-            "message": "Invalid metric_id: must be 1-100 characters long"
+            "message": "Invalid metric_id: must be 1-50 characters with alphanumeric, _, -"
         })));
     }
 
@@ -295,11 +295,11 @@ pub async fn custom_metric_update_handler(
     perf_metrics.increment_requests();
     drop(perf_metrics); // Освобождаем блокировку
 
-    // Проверяем валидность metric_id
-    if metric_id.is_empty() || metric_id.len() > 100 {
+    // Используем централизованную валидацию metric_id
+    if let Err(_status_code) = crate::api::validation::validate_custom_metric_id(&metric_id) {
         return Ok(Json(json!({
             "status": "error",
-            "message": "Invalid metric_id: must be 1-100 characters long"
+            "message": "Invalid metric_id: must be 1-50 characters with alphanumeric, _, -"
         })));
     }
 
@@ -387,11 +387,19 @@ pub async fn custom_metric_add_handler(
     perf_metrics.increment_requests();
     drop(perf_metrics); // Освобождаем блокировку
 
-    // Проверяем валидность metric_id
-    if metric_id.is_empty() || metric_id.len() > 100 {
+    // Используем централизованную валидацию metric_id
+    if let Err(_status_code) = crate::api::validation::validate_custom_metric_id(&metric_id) {
         return Ok(Json(json!({
             "status": "error",
-            "message": "Invalid metric_id: must be 1-100 characters long"
+            "message": "Invalid metric_id: must be 1-50 characters with alphanumeric, _, -"
+        })));
+    }
+
+    // Валидируем payload
+    if let Err(_status_code) = crate::api::validation::validate_custom_metric_add_payload(&payload) {
+        return Ok(Json(json!({
+            "status": "error",
+            "message": "Invalid payload for adding custom metric"
         })));
     }
 

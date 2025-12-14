@@ -3737,24 +3737,11 @@ async fn process_by_pid_handler(
     Path(pid): Path<i32>,
     State(state): State<ApiState>,
 ) -> Result<Json<Value>, ApiError> {
-    // Проверяем, что PID является допустимым значением
-    if pid <= 0 {
-        error!("Invalid PID value: {}. PID must be a positive integer", pid);
+    // Используем централизованную валидацию PID
+    if let Err(_status_code) = crate::api::validation::validate_process_pid(pid) {
+        error!("Invalid PID value: {}", pid);
         return Err(ApiError::ValidationError(format!(
-            "Invalid PID value: {}. PID must be a positive integer",
-            pid
-        )));
-    }
-
-    // Проверяем, что PID находится в разумном диапазоне
-    // Максимальный PID в Linux обычно ограничен (по умолчанию 32768, но может быть до 4194304)
-    if pid > 4_194_304 {
-        error!(
-            "PID value {} is too large. Maximum reasonable PID value is 4194304",
-            pid
-        );
-        return Err(ApiError::ValidationError(format!(
-            "PID value {} is too large",
+            "Invalid PID value: {}",
             pid
         )));
     }
@@ -3803,55 +3790,18 @@ async fn appgroup_by_id_handler(
     Path(id): Path<String>,
     State(state): State<ApiState>,
 ) -> Result<Json<Value>, StatusCode> {
-    // Проверяем, что ID не является пустым
-    if id.is_empty() {
-        error!("Empty app group ID provided");
+    // Используем централизованную валидацию ID группы приложений
+    if let Err(_status_code) = crate::api::validation::validate_app_group_id(&id) {
+        error!("Invalid app group ID: {}", id);
         return Ok(Json(json!({
             "status": "error",
             "error": "invalid_input",
-            "message": "App group ID cannot be empty",
+            "message": format!("Invalid app group ID: {}", id),
             "timestamp": Utc::now().to_rfc3339(),
             "details": {
                 "type": "validation",
                 "field": "id",
-                "constraint": "must not be empty"
-            }
-        })));
-    }
-
-    // Проверяем, что ID имеет разумную длину
-    if id.len() > 256 {
-        error!(
-            "App group ID is too long: {} characters (max 256)",
-            id.len()
-        );
-        return Ok(Json(json!({
-            "status": "error",
-            "error": "invalid_input",
-            "message": format!("App group ID is too long: {} characters (max 256)", id.len()),
-            "timestamp": Utc::now().to_rfc3339(),
-            "details": {
-                "type": "validation",
-                "field": "id",
-                "constraint": "must be <= 256 characters"
-            }
-        })));
-    }
-
-    // Проверяем, что ID содержит только допустимые символы
-    if !id.chars().all(|c| {
-        c.is_ascii() && (c.is_alphanumeric() || c == '_' || c == '-' || c == '.' || c == ':')
-    }) {
-        error!("App group ID contains invalid characters: {}", id);
-        return Ok(Json(json!({
-            "status": "error",
-            "error": "invalid_input",
-            "message": format!("App group ID contains invalid characters: {}", id),
-            "timestamp": Utc::now().to_rfc3339(),
-            "details": {
-                "type": "validation",
-                "field": "id",
-                "constraint": "only alphanumeric, _, -, ., : allowed"
+                "constraint": "must be 1-100 characters with ASCII alphanumeric, _, -, ., :"
             }
         })));
     }
@@ -7993,6 +7943,14 @@ async fn cache_config_handler() -> Result<Json<Value>, StatusCode> {
 async fn cache_config_update_handler(
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Валидируем payload
+    if let Err(_status_code) = crate::api::validation::validate_cache_config_payload(&payload) {
+        return Ok(Json(json!({
+            "status": "error",
+            "message": "Invalid cache configuration payload"
+        })));
+    }
+
     // Получаем текущую конфигурацию
     let mut config = crate::metrics::process::get_process_cache_config();
 
