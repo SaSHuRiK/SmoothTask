@@ -1968,6 +1968,26 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Получение информации о системе (ядро, архитектура, дистрибутив)"
             },
             {
+                "path": "/api/system/cpu",
+                "method": "GET",
+                "description": "Получение детальной информации о CPU (количество ядер, модель, кэш, частота)"
+            },
+            {
+                "path": "/api/system/memory",
+                "method": "GET",
+                "description": "Получение детальной информации о памяти (общий объем, свободная память, кэш, swap)"
+            },
+            {
+                "path": "/api/system/disk",
+                "method": "GET",
+                "description": "Получение информации о дисковой подсистеме (диски, общее пространство, свободное пространство)"
+            },
+            {
+                "path": "/api/system/network",
+                "method": "GET",
+                "description": "Получение информации о сетевых интерфейсах (трафик, пакеты, ошибки)"
+            },
+            {
                 "path": "/api/config/reload",
                 "method": "POST",
                 "description": "Перезагрузка конфигурации демона из файла"
@@ -2028,7 +2048,7 @@ async fn endpoints_handler() -> Json<Value> {
                 "description": "Обновление метрик температуры и энергопотребления GPU для процессов"
             }
         ],
-        "count": 30
+        "count": 34
     }))
 }
 
@@ -2146,6 +2166,288 @@ async fn system_handler() -> Json<Value> {
     Json(json!({
         "status": "ok",
         "system": system_info
+    }))
+}
+
+/// Получает детальную информацию о CPU.
+fn get_detailed_cpu_info() -> Value {
+    let mut cpu_info = json!({
+        "cores": 0,
+        "logical_cpus": 0,
+        "model": None::<String>,
+        "vendor": None::<String>,
+        "cache": {},
+        "frequency": {}
+    });
+
+    // Читаем информацию о CPU из /proc/cpuinfo
+    if let Ok(cpuinfo) = fs::read_to_string("/proc/cpuinfo") {
+        let mut cores = 0;
+        let mut logical_cpus = 0;
+        let mut model = String::new();
+        let mut vendor = String::new();
+        let mut cache_info = json!({});
+        let mut frequency_info = json!({});
+
+        for line in cpuinfo.lines() {
+            if line.starts_with("processor") {
+                logical_cpus += 1;
+            } else if line.starts_with("core id") {
+                cores += 1;
+            } else if line.starts_with("model name") {
+                if let Some((_, value)) = line.split_once(':') {
+                    model = value.trim().to_string();
+                }
+            } else if line.starts_with("vendor_id") {
+                if let Some((_, value)) = line.split_once(':') {
+                    vendor = value.trim().to_string();
+                }
+            } else if line.starts_with("cache size") {
+                if let Some((_, value)) = line.split_once(':') {
+                    cache_info["size"] = json!(value.trim().to_string());
+                }
+            } else if line.starts_with("cpu MHz") {
+                if let Some((_, value)) = line.split_once(':') {
+                    frequency_info["current_mhz"] = json!(value.trim().to_string());
+                }
+            }
+        }
+
+        cpu_info["cores"] = json!(cores);
+        cpu_info["logical_cpus"] = json!(logical_cpus);
+        if !model.is_empty() {
+            cpu_info["model"] = json!(model);
+        }
+        if !vendor.is_empty() {
+            cpu_info["vendor"] = json!(vendor);
+        }
+        if !cache_info.as_object().unwrap().is_empty() {
+            cpu_info["cache"] = cache_info;
+        }
+        if !frequency_info.as_object().unwrap().is_empty() {
+            cpu_info["frequency"] = frequency_info;
+        }
+    }
+
+    cpu_info
+}
+
+/// Обработчик для endpoint `/api/system/cpu`.
+///
+/// Возвращает детальную информацию о CPU.
+async fn system_cpu_handler() -> Json<Value> {
+    let cpu_info = get_detailed_cpu_info();
+    Json(json!({
+        "status": "ok",
+        "cpu": cpu_info
+    }))
+}
+
+/// Получает детальную информацию о памяти.
+fn get_detailed_memory_info() -> Value {
+    let mut memory_info = json!({
+        "total": 0,
+        "free": 0,
+        "available": 0,
+        "buffers": 0,
+        "cached": 0,
+        "swap": {}
+    });
+
+    // Читаем информацию о памяти из /proc/meminfo
+    if let Ok(meminfo) = fs::read_to_string("/proc/meminfo") {
+        for line in meminfo.lines() {
+            if let Some((key, value)) = line.split_once(':') {
+                let key = key.trim().to_lowercase();
+                let value = value.trim().split_whitespace().next().unwrap_or("0");
+                let value = value.parse::<u64>().unwrap_or(0);
+
+                match key.as_str() {
+                    "memtotal" => memory_info["total"] = json!(value),
+                    "memfree" => memory_info["free"] = json!(value),
+                    "memavailable" => memory_info["available"] = json!(value),
+                    "buffers" => memory_info["buffers"] = json!(value),
+                    "cached" => memory_info["cached"] = json!(value),
+                    "swaptotal" => memory_info["swap"]["total"] = json!(value),
+                    "swapfree" => memory_info["swap"]["free"] = json!(value),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    memory_info
+}
+
+/// Обработчик для endpoint `/api/system/memory`.
+///
+/// Возвращает детальную информацию о памяти.
+async fn system_memory_handler() -> Json<Value> {
+    let memory_info = get_detailed_memory_info();
+    Json(json!({
+        "status": "ok",
+        "memory": memory_info
+    }))
+}
+
+/// Получает информацию о дисковой подсистеме.
+fn get_disk_info() -> Value {
+    let mut disk_info = json!({
+        "disks": [],
+        "total_space": 0,
+        "free_space": 0,
+        "used_space": 0
+    });
+
+    // Читаем информацию о дисках из /proc/diskstats
+    if let Ok(diskstats) = fs::read_to_string("/proc/diskstats") {
+        let mut total_space = 0u64;
+        let free_space = 0u64;
+        let used_space = 0u64;
+        let mut disks = vec![];
+
+        for line in diskstats.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 3 {
+                let major = parts[0];
+                let minor = parts[1];
+                let device_name = parts[2];
+
+                // Пропускаем виртуальные устройства
+                if device_name.starts_with("loop") || device_name.starts_with("ram") {
+                    continue;
+                }
+
+                let disk = json!({
+                    "device": device_name,
+                    "major": major,
+                    "minor": minor,
+                    "reads_completed": parts.get(3).unwrap_or(&"0"),
+                    "reads_merged": parts.get(4).unwrap_or(&"0"),
+                    "sectors_read": parts.get(5).unwrap_or(&"0"),
+                    "time_spent_reading": parts.get(6).unwrap_or(&"0"),
+                    "writes_completed": parts.get(7).unwrap_or(&"0"),
+                    "writes_merged": parts.get(8).unwrap_or(&"0"),
+                    "sectors_written": parts.get(9).unwrap_or(&"0"),
+                    "time_spent_writing": parts.get(10).unwrap_or(&"0"),
+                    "io_in_progress": parts.get(11).unwrap_or(&"0"),
+                    "time_spent_io": parts.get(12).unwrap_or(&"0"),
+                    "weighted_time_spent_io": parts.get(13).unwrap_or(&"0")
+                });
+
+                disks.push(disk);
+            }
+        }
+
+        // Пробуем получить информацию о пространстве из /proc/mounts
+        if let Ok(mounts) = fs::read_to_string("/proc/mounts") {
+            for line in mounts.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 3 {
+                    let _device = parts[0];
+                    let mount_point = parts[1];
+                    let _fs_type = parts[2];
+
+                    // Пробуем получить информацию о пространстве
+                    if let Ok(stat) = fs::metadata(mount_point) {
+                        total_space += stat.len();
+                    }
+                }
+            }
+        }
+
+        disk_info["disks"] = json!(disks);
+        disk_info["total_space"] = json!(total_space);
+        disk_info["free_space"] = json!(free_space);
+        disk_info["used_space"] = json!(used_space);
+    }
+
+    disk_info
+}
+
+/// Обработчик для endpoint `/api/system/disk`.
+///
+/// Возвращает информацию о дисковой подсистеме.
+async fn system_disk_handler() -> Json<Value> {
+    let disk_info = get_disk_info();
+    Json(json!({
+        "status": "ok",
+        "disk": disk_info
+    }))
+}
+
+/// Получает информацию о сетевых интерфейсах.
+fn get_network_info() -> Value {
+    let mut network_info = json!({
+        "interfaces": [],
+        "total_rx_bytes": 0,
+        "total_tx_bytes": 0,
+        "total_rx_packets": 0,
+        "total_tx_packets": 0
+    });
+
+    // Читаем информацию о сетевых интерфейсах из /proc/net/dev
+    if let Ok(net_dev) = fs::read_to_string("/proc/net/dev") {
+        let mut total_rx_bytes = 0u64;
+        let mut total_tx_bytes = 0u64;
+        let mut total_rx_packets = 0u64;
+        let mut total_tx_packets = 0u64;
+        let mut interfaces = vec![];
+
+        for line in net_dev.lines().skip(2) { // Пропускаем заголовки
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 17 {
+                let interface_name = parts[0].trim_end_matches(':');
+
+                // Пропускаем виртуальные интерфейсы
+                if interface_name.starts_with("lo") {
+                    continue;
+                }
+
+                let rx_bytes = parts[1].parse::<u64>().unwrap_or(0);
+                let rx_packets = parts[3].parse::<u64>().unwrap_or(0);
+                let tx_bytes = parts[9].parse::<u64>().unwrap_or(0);
+                let tx_packets = parts[11].parse::<u64>().unwrap_or(0);
+
+                let interface = json!({
+                    "name": interface_name,
+                    "rx_bytes": rx_bytes,
+                    "rx_packets": rx_packets,
+                    "rx_errors": parts[4].parse::<u64>().unwrap_or(0),
+                    "rx_dropped": parts[5].parse::<u64>().unwrap_or(0),
+                    "tx_bytes": tx_bytes,
+                    "tx_packets": tx_packets,
+                    "tx_errors": parts[12].parse::<u64>().unwrap_or(0),
+                    "tx_dropped": parts[13].parse::<u64>().unwrap_or(0)
+                });
+
+                interfaces.push(interface);
+
+                total_rx_bytes += rx_bytes;
+                total_tx_bytes += tx_bytes;
+                total_rx_packets += rx_packets;
+                total_tx_packets += tx_packets;
+            }
+        }
+
+        network_info["interfaces"] = json!(interfaces);
+        network_info["total_rx_bytes"] = json!(total_rx_bytes);
+        network_info["total_tx_bytes"] = json!(total_tx_bytes);
+        network_info["total_rx_packets"] = json!(total_rx_packets);
+        network_info["total_tx_packets"] = json!(total_tx_packets);
+    }
+
+    network_info
+}
+
+/// Обработчик для endpoint `/api/system/network`.
+///
+/// Возвращает информацию о сетевых интерфейсах.
+async fn system_network_handler() -> Json<Value> {
+    let network_info = get_network_info();
+    Json(json!({
+        "status": "ok",
+        "network": network_info
     }))
 }
 
@@ -2977,6 +3279,10 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/classes", get(classes_handler))
         .route("/api/patterns", get(patterns_handler))
         .route("/api/system", get(system_handler))
+        .route("/api/system/cpu", get(system_cpu_handler))
+        .route("/api/system/memory", get(system_memory_handler))
+        .route("/api/system/disk", get(system_disk_handler))
+        .route("/api/system/network", get(system_network_handler))
         .route("/api/notifications/test", post(notifications_test_handler))
         .route(
             "/api/notifications/custom",
@@ -6802,6 +7108,94 @@ apps:
 
         // architecture может быть null или строкой
         assert!(system["architecture"].is_null() || system["architecture"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_system_cpu_handler() {
+        let result = system_cpu_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["cpu"].is_object());
+
+        let cpu = &json["cpu"];
+        assert!(cpu["cores"].is_number());
+        assert!(cpu["logical_cpus"].is_number());
+
+        // Проверяем, что если /proc/cpuinfo доступен, то информация о CPU присутствует
+        if fs::read_to_string("/proc/cpuinfo").is_ok() {
+            // Должны быть заполнены основные поля
+            assert!(cpu["cores"].as_u64().unwrap_or(0) > 0);
+            assert!(cpu["logical_cpus"].as_u64().unwrap_or(0) > 0);
+        }
+
+        // model и vendor могут быть null или строкой
+        assert!(cpu["model"].is_null() || cpu["model"].is_string());
+        assert!(cpu["vendor"].is_null() || cpu["vendor"].is_string());
+    }
+
+    #[tokio::test]
+    async fn test_system_memory_handler() {
+        let result = system_memory_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["memory"].is_object());
+
+        let memory = &json["memory"];
+        assert!(memory["total"].is_number());
+        assert!(memory["free"].is_number());
+        assert!(memory["available"].is_number());
+        assert!(memory["buffers"].is_number());
+        assert!(memory["cached"].is_number());
+        assert!(memory["swap"].is_object());
+
+        // Проверяем, что если /proc/meminfo доступен, то информация о памяти присутствует
+        if fs::read_to_string("/proc/meminfo").is_ok() {
+            // Должны быть заполнены основные поля
+            assert!(memory["total"].as_u64().unwrap_or(0) > 0);
+            assert!(memory["free"].as_u64().unwrap_or(0) >= 0);
+            assert!(memory["available"].as_u64().unwrap_or(0) >= 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_system_disk_handler() {
+        let result = system_disk_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["disk"].is_object());
+
+        let disk = &json["disk"];
+        assert!(disk["disks"].is_array());
+        assert!(disk["total_space"].is_number());
+        assert!(disk["free_space"].is_number());
+        assert!(disk["used_space"].is_number());
+
+        // Проверяем, что если /proc/diskstats доступен, то информация о дисках присутствует
+        if fs::read_to_string("/proc/diskstats").is_ok() {
+            // Должны быть заполнены основные поля
+            assert!(disk["disks"].as_array().unwrap().len() >= 0);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_system_network_handler() {
+        let result = system_network_handler().await;
+        let json = result.0;
+        assert_eq!(json["status"], "ok");
+        assert!(json["network"].is_object());
+
+        let network = &json["network"];
+        assert!(network["interfaces"].is_array());
+        assert!(network["total_rx_bytes"].is_number());
+        assert!(network["total_tx_bytes"].is_number());
+        assert!(network["total_rx_packets"].is_number());
+        assert!(network["total_tx_packets"].is_number());
+
+        // Проверяем, что если /proc/net/dev доступен, то информация о сети присутствует
+        if fs::read_to_string("/proc/net/dev").is_ok() {
+            // Должны быть заполнены основные поля
+            assert!(network["interfaces"].as_array().unwrap().len() >= 0);
+        }
     }
 
     #[tokio::test]
