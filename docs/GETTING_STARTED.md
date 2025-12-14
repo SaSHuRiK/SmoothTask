@@ -195,6 +195,154 @@ paths:
 # См. monitoring/grafana/dashboards/
 ```
 
+## 🔗 Интеграция с популярными системами
+
+SmoothTask легко интегрируется с различными системами мониторинга и управления.
+
+### Интеграция с Prometheus и Grafana
+
+```yaml
+# Настройка Prometheus (prometheus.yml)
+scrape_configs:
+  - job_name: 'smoothtask'
+    static_configs:
+      - targets: ['localhost:8080']
+
+# Запуск SmoothTask с поддержкой Prometheus
+./target/release/smoothtaskd --api-listen-addr 0.0.0.0:8080
+
+# Импорт дашборда Grafana
+# См. monitoring/grafana/dashboards/smoothtask-dashboard.json
+```
+
+### Интеграция с systemd
+
+```ini
+# /etc/systemd/system/smoothtaskd.service
+[Unit]
+Description=SmoothTask Daemon
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/smoothtaskd --config /etc/smoothtask/smoothtask.yml
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+
+# Управление сервисом
+systemctl daemon-reload
+systemctl enable smoothtaskd
+systemctl start smoothtaskd
+```
+
+### Интеграция с Docker
+
+```dockerfile
+# Dockerfile для SmoothTask
+FROM rust:latest as builder
+WORKDIR /app
+COPY . .
+RUN cargo build --release
+
+FROM alpine:latest
+COPY --from=builder /app/target/release/smoothtaskd /usr/local/bin/
+COPY configs/smoothtask-docker.yml /etc/smoothtask/smoothtask.yml
+
+CMD ["smoothtaskd", "--config", "/etc/smoothtask/smoothtask.yml"]
+
+# Запуск контейнера
+docker build -t smoothtask .
+docker run -d --name smoothtask \
+  --cap-add=SYS_NICE \
+  --cap-add=SYS_RESOURCE \
+  --cap-add=SYS_ADMIN \
+  -v /proc:/host/proc:ro \
+  -v /sys:/host/sys:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  smoothtask
+```
+
+### Интеграция с Kubernetes
+
+```yaml
+# smoothtask-deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: smoothtask
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: smoothtask
+  template:
+    metadata:
+      labels:
+        app: smoothtask
+    spec:
+      containers:
+      - name: smoothtask
+        image: your-registry/smoothtask:latest
+        securityContext:
+          capabilities:
+            add: ["SYS_NICE", "SYS_RESOURCE", "SYS_ADMIN"]
+        volumeMounts:
+        - name: proc
+          mountPath: /host/proc
+          readOnly: true
+        - name: sys
+          mountPath: /host/sys
+          readOnly: true
+      volumes:
+      - name: proc
+        hostPath:
+          path: /proc
+      - name: sys
+        hostPath:
+          path: /sys
+
+# Применение
+kubectl apply -f smoothtask-deployment.yaml
+```
+
+### Интеграция с Ansible
+
+```yaml
+# ansible-playbook.yml
+- name: Install and configure SmoothTask
+  hosts: all
+  become: true
+  tasks:
+    - name: Install dependencies
+      apt:
+        name: ["rustc", "cargo", "python3", "sqlite3"]
+        state: present
+    
+    - name: Clone SmoothTask
+      git:
+        repo: https://github.com/your-repo/SmoothTask.git
+        dest: /opt/smoothtask
+        version: main
+    
+    - name: Build SmoothTask
+      command: cargo build --release
+      args:
+        chdir: /opt/smoothtask
+    
+    - name: Install systemd service
+      copy:
+        src: systemd/smoothtaskd.service
+        dest: /etc/systemd/system/smoothtaskd.service
+    
+    - name: Enable and start service
+      systemd:
+        name: smoothtaskd
+        enabled: yes
+        state: started
+```
+
 ## 🖥️ Использование API
 
 SmoothTask предоставляет REST API для динамического управления конфигурацией и мониторинга состояния системы.

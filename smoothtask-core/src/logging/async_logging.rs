@@ -488,35 +488,11 @@ impl AsyncLogRotator {
 
     /// Обновляет конфигурацию ротации.
     ///
-    /// # Аргументы
+    /// # Примечание
     ///
-    /// * `max_size_bytes` - новый максимальный размер файла лога
-    /// * `max_rotated_files` - новое максимальное количество ротированных файлов
-    /// * `compression_enabled` - новый флаг сжатия
-    /// * `rotation_interval_sec` - новый интервал ротации по времени
-    /// * `max_age_sec` - новый максимальный возраст ротированных логов
-    /// * `max_total_size_bytes` - новый максимальный общий размер ротированных логов
-    pub fn update_config(
-        &self,
-        max_size_bytes: u64,
-        max_rotated_files: u32,
-        compression_enabled: bool,
-        rotation_interval_sec: u64,
-        max_age_sec: u64,
-        max_total_size_bytes: u64,
-    ) -> Result<()> {
-        // Note: This is a simplified version since we're using Mutex for thread safety
-        // In a more complex implementation, we might want to use Arc<Mutex<Self>>
-        // But for now, we'll keep it simple and document the limitation
-        
-        // Actually, since we're using Mutex for internal state, we can't easily
-        // update the config without breaking the API. Let's implement this properly.
-        
-        // For async compatibility, we'll need to use Arc<Mutex<Self>> for full mutability
-        // But that would be a breaking change. Let's document this limitation.
-        
-        // For now, we'll return an error to indicate this operation isn't supported
-        // in the async version for simplicity
+    /// Эта операция не поддерживается в AsyncLogRotator из-за ограничений
+    /// потокобезопасности. Используйте синхронную версию или создайте новый экземпляр.
+    pub fn update_config(&self) -> Result<()> {
         Err(anyhow::anyhow!(
             "update_config не поддерживается в AsyncLogRotator. Используйте синхронную версию или создайте новый экземпляр."
         ))
@@ -759,7 +735,7 @@ mod tests {
             let rotator = AsyncLogRotator::new(1000, 3, false, 0, 0, 0);
 
             // Проверяем, что update_config возвращает ошибку
-            let result = rotator.update_config(5000, 10, true, 3600, 86400, 1_073_741_824);
+            let result = rotator.update_config();
             assert!(result.is_err(), "update_config should return an error in async version");
         });
     }
