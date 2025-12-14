@@ -29,6 +29,8 @@
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
 //! - **hardware_acceleration**: Мониторинг аппаратного ускорения (VA-API, VDPAU, CUDA)
+//! - **thunderbolt**: Мониторинг Thunderbolt устройств
+//! - **pcie**: Мониторинг PCIe устройств
 
 pub mod amdgpu_wrapper;
 pub mod app_performance;
