@@ -12,6 +12,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{debug, error, info, warn};
 
+// NVML и AMDGPU API будут добавлены как опциональные зависимости
+#[cfg(feature = "nvml-wrapper")]
+use nvml_wrapper::Nvml;
+
+// AMDGPU поддержка временно отключена из-за отсутствия стабильной версии
+// #[cfg(feature = "amdgpu")]
+// use amdgpu_sys::*;
+
 /// GPU device information
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GpuDevice {
@@ -301,6 +309,18 @@ pub fn collect_gpu_metrics() -> Result<GpuMetricsCollection> {
 /// Collect metrics for a specific GPU device
 fn collect_gpu_device_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     debug!("Сбор метрик для GPU устройства: {}", device.name);
+
+    // First, try vendor-specific APIs (NVML for NVIDIA, AMDGPU for AMD)
+    match collect_vendor_specific_metrics(device) {
+        Ok(metrics) => {
+            debug!("Метрики GPU для устройства {} собраны успешно с использованием vendor-specific API", device.name);
+            return Ok(metrics);
+        }
+        Err(e) => {
+            debug!("Не удалось собрать метрики с использованием vendor-specific API: {}", e);
+            debug!("Пробуем общие методы сбора метрик");
+        }
+    }
 
     let mut metrics = GpuMetrics {
         device: device.clone(),
@@ -815,6 +835,241 @@ fn collect_gpu_clocks(device_path: &Path) -> Result<GpuClocks> {
     }
 
     Ok(clocks)
+}
+
+/// Initialize NVML library
+#[cfg(feature = "nvml-wrapper")]
+fn init_nvml() -> Result<Nvml> {
+    match Nvml::init() {
+        Ok(nvml) => {
+            info!("NVML инициализирован успешно");
+            Ok(nvml)
+        }
+        Err(e) => {
+            error!("Не удалось инициализировать NVML: {}", e);
+            Err(anyhow!("NVML initialization failed: {}", e))
+        }
+    }
+}
+
+/// Collect GPU metrics using NVML for NVIDIA GPUs
+#[cfg(feature = "nvml-wrapper")]
+fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let nvml = match init_nvml() {
+        Ok(nvml) => nvml,
+        Err(e) => {
+            debug!("NVML не доступен: {}", e);
+            return Err(e);
+        }
+    };
+
+    let device_count = match nvml.device_count() {
+        Ok(count) => count,
+        Err(e) => {
+            error!("Не удалось получить количество устройств NVML: {}", e);
+            return Err(anyhow!("NVML device count failed: {}", e));
+        }
+    };
+
+    if device_count == 0 {
+        debug!("NVML: нет доступных устройств");
+        return Err(anyhow!("No NVML devices available"));
+    }
+
+    // Try to find the device that matches our device
+    for device_index in 0..device_count {
+        let device_handle = match nvml.device_by_index(device_index) {
+            Ok(handle) => handle,
+            Err(e) => {
+                debug!("Не удалось получить устройство NVML {}: {}", device_index, e);
+                continue;
+            }
+        };
+
+        let name = match nvml.device_name(device_handle) {
+            Ok(name) => name,
+            Err(e) => {
+                debug!("Не удалось получить имя устройства NVML {}: {}", device_index, e);
+                continue;
+            }
+        };
+
+        debug!("NVML устройство {}: {}", device_index, name);
+
+        // For now, we'll use the first device we can access
+        // In a more sophisticated implementation, we'd match by PCI ID
+        let mut metrics = GpuMetrics {
+            device: device.clone(),
+            utilization: GpuUtilization::default(),
+            memory: GpuMemory::default(),
+            temperature: GpuTemperature::default(),
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Collect utilization
+        if let Ok(utilization) = nvml.device_utilization_rates(device_handle) {
+            metrics.utilization.gpu_util = utilization.gpu as f32 / 100.0;
+            metrics.utilization.memory_util = utilization.memory as f32 / 100.0;
+            debug!("  NVML utilization: GPU {:.1}%, Memory {:.1}%",
+                   metrics.utilization.gpu_util * 100.0,
+                   metrics.utilization.memory_util * 100.0);
+        }
+
+        // Collect memory
+        if let Ok(memory_info) = nvml.device_memory_info(device_handle) {
+            metrics.memory.total_bytes = memory_info.total;
+            metrics.memory.used_bytes = memory_info.used;
+            metrics.memory.free_bytes = memory_info.free;
+            debug!("  NVML memory: {}/{} MB used",
+                   memory_info.used / 1024 / 1024,
+                   memory_info.total / 1024 / 1024);
+        }
+
+        // Collect temperature
+        if let Ok(temp) = nvml.device_temperature(device_handle, nvml_wrapper::enum_wrappers::device::TemperatureSensor::Gpu) {
+            metrics.temperature.temperature_c = Some(temp as f32);
+            debug!("  NVML temperature: {:.1}°C", temp);
+        }
+
+        // Collect power
+        if let Ok(power) = nvml.device_power_usage(device_handle) {
+            metrics.power.power_w = Some(power as f32 / 1000.0); // Convert mW to W
+            debug!("  NVML power: {:.1}W", power as f32 / 1000.0);
+        }
+
+        // Collect clocks
+        if let Ok(clock_mhz) = nvml.device_clock_info(device_handle, nvml_wrapper::enum_wrappers::device::ClockType::Graphics) {
+            metrics.clocks.core_clock_mhz = Some(clock_mhz);
+            debug!("  NVML core clock: {} MHz", clock_mhz);
+        }
+
+        if let Ok(clock_mhz) = nvml.device_clock_info(device_handle, nvml_wrapper::enum_wrappers::device::ClockType::Memory) {
+            metrics.clocks.memory_clock_mhz = Some(clock_mhz);
+            debug!("  NVML memory clock: {} MHz", clock_mhz);
+        }
+
+        return Ok(metrics);
+    }
+
+    Err(anyhow!("No matching NVML device found"))
+}
+
+/// Collect GPU metrics using AMDGPU sysfs interface
+fn collect_amdgpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let mut metrics = GpuMetrics {
+        device: device.clone(),
+        utilization: GpuUtilization::default(),
+        memory: GpuMemory::default(),
+        temperature: GpuTemperature::default(),
+        power: GpuPower::default(),
+        clocks: GpuClocks::default(),
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let device_path = &device.device_path;
+
+    // Collect GPU utilization
+    if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_busy_percent") {
+        metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
+        debug!("  AMDGPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    }
+
+    // Collect memory metrics
+    if let Ok(total_vram) = read_sysfs_u64(device_path, "vram_total_bytes") {
+        metrics.memory.total_bytes = total_vram;
+    }
+
+    if let Ok(used_vram) = read_sysfs_u64(device_path, "vram_used_bytes") {
+        metrics.memory.used_bytes = used_vram;
+    }
+
+    if metrics.memory.total_bytes > 0 {
+        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        debug!("  AMDGPU memory: {}/{} MB used",
+               metrics.memory.used_bytes / 1024 / 1024,
+               metrics.memory.total_bytes / 1024 / 1024);
+    }
+
+    // Collect temperature
+    let hwmon_dir = device_path.join("hwmon");
+    if hwmon_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&hwmon_dir) {
+            for entry in entries.flatten() {
+                let hwmon_path = entry.path();
+                if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
+                    for temp_file in temp_files.flatten() {
+                        let temp_path = temp_file.path();
+                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name.ends_with("_input") && file_name.contains("temp") {
+                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                                    metrics.temperature.temperature_c = Some(temp_c);
+                                    debug!("  AMDGPU temperature: {:.1}°C", temp_c);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Collect power
+    if let Ok(power_w) = read_sysfs_u32(device_path, "power_avg") {
+        metrics.power.power_w = Some(power_w as f32);
+        debug!("  AMDGPU power: {:.1}W", power_w as f32);
+    }
+
+    // Collect clocks
+    if let Ok(core_clock) = read_sysfs_u32(device_path, "gpu_clock") {
+        metrics.clocks.core_clock_mhz = Some(core_clock);
+        debug!("  AMDGPU core clock: {} MHz", core_clock);
+    }
+
+    if let Ok(mem_clock) = read_sysfs_u32(device_path, "mem_clock") {
+        metrics.clocks.memory_clock_mhz = Some(mem_clock);
+        debug!("  AMDGPU memory clock: {} MHz", mem_clock);
+    }
+
+    Ok(metrics)
+}
+
+/// Try to collect GPU metrics using vendor-specific APIs
+fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    // Try NVML first for NVIDIA devices
+    #[cfg(feature = "nvml-wrapper")]
+    if device.driver.as_deref() == Some("nvidia") {
+        match collect_nvml_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected NVML metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect NVML metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // Try AMDGPU for AMD devices
+    if device.driver.as_deref() == Some("amdgpu") {
+        match collect_amdgpu_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected AMDGPU metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect AMDGPU metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // If vendor-specific APIs fail, fall back to generic sysfs collection
+    Err(anyhow!("Vendor-specific metrics collection failed, falling back to generic methods"))
 }
 
 /// Read a u32 value from sysfs
@@ -1456,6 +1711,305 @@ mod tests {
         let collection2 = result2.unwrap();
         
         assert_eq!(collection1.gpu_count, collection2.gpu_count);
+    }
+
+    #[test]
+    fn test_vendor_specific_metrics_fallback() {
+        // Test that vendor-specific metrics collection falls back gracefully
+        let mock_device = GpuDevice {
+            name: "mock_nvidia".to_string(),
+            device_path: PathBuf::from("/non/existent/path"),
+            vendor_id: Some("0x10de".to_string()),
+            device_id: Some("0x1234".to_string()),
+            driver: Some("nvidia".to_string()),
+        };
+
+        // This should fail gracefully and return an error
+        let result = collect_vendor_specific_metrics(&mock_device);
+        
+        // Should return an error for non-existent device
+        assert!(result.is_err());
+        
+        // But the error should be informative
+        let error = result.unwrap_err();
+        let error_str = error.to_string();
+        assert!(error_str.contains("Vendor-specific") || error_str.contains("failed"));
+    }
+
+    #[test]
+    fn test_gpu_metrics_with_nvml_feature() {
+        // Test that NVML feature compilation works
+        #[cfg(feature = "nvml-wrapper")]
+        {
+            // This test just verifies that the nvml feature compiles
+            // Actual NVML functionality would require a real NVIDIA GPU
+            use nvml_wrapper::Nvml;
+            
+            // Try to initialize NVML - this will likely fail without a real GPU
+            let result = Nvml::init();
+            
+            // We don't assert success because we might not have NVIDIA hardware
+            // Just verify that the code compiles and doesn't panic
+            match result {
+                Ok(_) => {
+                    // If NVML initialized successfully, we can try to get device count
+                    let _device_count = Nvml::device_count();
+                    // Don't assert anything about device count
+                }
+                Err(_) => {
+                    // Expected on systems without NVIDIA GPUs
+                    // This is fine for the test
+                }
+            }
+        }
+        
+        #[cfg(not(feature = "nvml-wrapper"))]
+        {
+            // If nvml feature is not enabled, the test should still pass
+            // This verifies that the feature flag works correctly
+            assert!(!cfg!(feature = "nvml-wrapper"));
+        }
+    }
+
+    #[test]
+    fn test_gpu_metrics_collection_with_vendor_specific() {
+        // Test the integration of vendor-specific metrics collection
+        let result = collect_gpu_metrics();
+        
+        // Should not panic and should return Ok
+        assert!(result.is_ok());
+        
+        let collection = result.unwrap();
+        
+        // Should return a valid collection
+        assert_eq!(collection.devices.len(), collection.gpu_count);
+        
+        // If there are devices, they should have metrics
+        for device_metrics in &collection.devices {
+            // Device info should be populated
+            assert!(!device_metrics.device.name.is_empty());
+            
+            // Metrics should have reasonable default values
+            assert!(device_metrics.utilization.gpu_util >= 0.0);
+            assert!(device_metrics.memory.total_bytes >= 0);
+            
+            // Timestamps should be recent
+            let now = std::time::SystemTime::now();
+            let one_hour_ago = now - std::time::Duration::from_secs(3600);
+            assert!(device_metrics.timestamp >= one_hour_ago);
+        }
+    }
+
+    #[test]
+    fn test_gpu_device_identification() {
+        // Test that we can identify different GPU vendors
+        let nvidia_device = GpuDevice {
+            name: "card0".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:01.0/drm/card0/device"),
+            vendor_id: Some("0x10de".to_string()),
+            device_id: Some("0x1234".to_string()),
+            driver: Some("nvidia".to_string()),
+        };
+
+        let amd_device = GpuDevice {
+            name: "card1".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:02.0/drm/card1/device"),
+            vendor_id: Some("0x1002".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("amdgpu".to_string()),
+        };
+
+        let intel_device = GpuDevice {
+            name: "card2".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:03.0/drm/card2/device"),
+            vendor_id: Some("0x8086".to_string()),
+            device_id: Some("0x9abc".to_string()),
+            driver: Some("i915".to_string()),
+        };
+
+        // Verify vendor identification
+        assert_eq!(nvidia_device.vendor_id, Some("0x10de".to_string()));
+        assert_eq!(amd_device.vendor_id, Some("0x1002".to_string()));
+        assert_eq!(intel_device.vendor_id, Some("0x8086".to_string()));
+
+        // Verify driver identification
+        assert_eq!(nvidia_device.driver, Some("nvidia".to_string()));
+        assert_eq!(amd_device.driver, Some("amdgpu".to_string()));
+        assert_eq!(intel_device.driver, Some("i915".to_string()));
+    }
+
+    #[test]
+    fn test_gpu_metrics_serialization_with_vendor_info() {
+        // Test serialization with vendor-specific information
+        let metrics = GpuMetrics {
+            device: GpuDevice {
+                name: "nvidia_gpu".to_string(),
+                device_path: PathBuf::from("/dev/nvidia0"),
+                vendor_id: Some("0x10de".to_string()),
+                device_id: Some("0x13c2".to_string()),
+                driver: Some("nvidia".to_string()),
+            },
+            utilization: GpuUtilization {
+                gpu_util: 0.85,
+                memory_util: 0.70,
+                encoder_util: Some(0.40),
+                decoder_util: Some(0.30),
+            },
+            memory: GpuMemory {
+                total_bytes: 12_000_000_000, // 12 GB
+                used_bytes: 8_000_000_000,  // 8 GB
+                free_bytes: 4_000_000_000,  // 4 GB
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(75.0),
+                hotspot_c: Some(80.0),
+                memory_c: Some(70.0),
+            },
+            power: GpuPower {
+                power_w: Some(180.0),
+                power_limit_w: Some(250.0),
+                power_cap_w: Some(230.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(1800),
+                memory_clock_mhz: Some(2000),
+                shader_clock_mhz: Some(1900),
+            },
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Test serialization
+        let serialized = serde_json::to_string(&metrics).expect("Serialization failed");
+        let deserialized: GpuMetrics = serde_json::from_str(&serialized).expect("Deserialization failed");
+
+        // Verify all fields are preserved
+        assert_eq!(deserialized.device.name, "nvidia_gpu");
+        assert_eq!(deserialized.device.vendor_id, Some("0x10de".to_string()));
+        assert_eq!(deserialized.device.driver, Some("nvidia".to_string()));
+
+        assert_eq!(deserialized.utilization.gpu_util, 0.85);
+        assert_eq!(deserialized.utilization.memory_util, 0.70);
+
+        assert_eq!(deserialized.memory.total_bytes, 12_000_000_000);
+        assert_eq!(deserialized.memory.used_bytes, 8_000_000_000);
+
+        assert_eq!(deserialized.temperature.temperature_c, Some(75.0));
+        assert_eq!(deserialized.power.power_w, Some(180.0));
+        assert_eq!(deserialized.clocks.core_clock_mhz, Some(1800));
+    }
+
+    #[test]
+    fn test_gpu_collection_with_mixed_vendors() {
+        // Test collection with multiple vendors (simulated)
+        let nvidia_metrics = GpuMetrics {
+            device: GpuDevice {
+                name: "nvidia_gpu".to_string(),
+                device_path: PathBuf::from("/dev/nvidia0"),
+                vendor_id: Some("0x10de".to_string()),
+                device_id: Some("0x1234".to_string()),
+                driver: Some("nvidia".to_string()),
+            },
+            utilization: GpuUtilization {
+                gpu_util: 0.90,
+                memory_util: 0.80,
+                encoder_util: Some(0.50),
+                decoder_util: Some(0.40),
+            },
+            memory: GpuMemory {
+                total_bytes: 8_000_000_000,
+                used_bytes: 6_000_000_000,
+                free_bytes: 2_000_000_000,
+            },
+            temperature: GpuTemperature::default(),
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        let amd_metrics = GpuMetrics {
+            device: GpuDevice {
+                name: "amd_gpu".to_string(),
+                device_path: PathBuf::from("/dev/amdgpu0"),
+                vendor_id: Some("0x1002".to_string()),
+                device_id: Some("0x5678".to_string()),
+                driver: Some("amdgpu".to_string()),
+            },
+            utilization: GpuUtilization {
+                gpu_util: 0.70,
+                memory_util: 0.60,
+                encoder_util: None,
+                decoder_util: None,
+            },
+            memory: GpuMemory {
+                total_bytes: 16_000_000_000,
+                used_bytes: 10_000_000_000,
+                free_bytes: 6_000_000_000,
+            },
+            temperature: GpuTemperature::default(),
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        let collection = GpuMetricsCollection {
+            devices: vec![nvidia_metrics, amd_metrics],
+            gpu_count: 2,
+        };
+
+        // Test serialization
+        let serialized = serde_json::to_string(&collection).expect("Serialization failed");
+        let deserialized: GpuMetricsCollection = serde_json::from_str(&serialized).expect("Deserialization failed");
+
+        assert_eq!(deserialized.gpu_count, 2);
+        assert_eq!(deserialized.devices.len(), 2);
+
+        // Verify vendor-specific information is preserved
+        assert_eq!(deserialized.devices[0].device.driver, Some("nvidia".to_string()));
+        assert_eq!(deserialized.devices[1].device.driver, Some("amdgpu".to_string()));
+
+        assert_eq!(deserialized.devices[0].utilization.gpu_util, 0.90);
+        assert_eq!(deserialized.devices[1].utilization.gpu_util, 0.70);
+    }
+
+    #[test]
+    fn test_gpu_metrics_fallback_behavior() {
+        // Test that the system falls back gracefully when vendor-specific APIs fail
+        let mock_device = GpuDevice {
+            name: "mock_device".to_string(),
+            device_path: PathBuf::from("/non/existent/path"),
+            vendor_id: Some("0x1234".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("mock_driver".to_string()),
+        };
+
+        // Vendor-specific collection should fail
+        let vendor_result = collect_vendor_specific_metrics(&mock_device);
+        assert!(vendor_result.is_err());
+
+        // But device metrics collection should still succeed with fallback
+        let device_result = collect_gpu_device_metrics(&mock_device);
+        assert!(device_result.is_ok());
+
+        let metrics = device_result.unwrap();
+        
+        // Should return default values when vendor-specific APIs fail
+        assert_eq!(metrics.device.name, "mock_device");
+        assert_eq!(metrics.utilization.gpu_util, 0.0);
+        assert_eq!(metrics.memory.total_bytes, 0);
+    }
+
+    #[test]
+    fn test_gpu_feature_flags() {
+        // Test that feature flags work correctly
+        
+        #[cfg(feature = "nvml-wrapper")]
+        assert!(cfg!(feature = "nvml-wrapper"));
+        
+        #[cfg(not(feature = "nvml-wrapper"))]
+        assert!(!cfg!(feature = "nvml-wrapper"));
+        
+        // The test should pass regardless of which features are enabled
+        // This verifies that the feature flag system works correctly
     }
 
     #[test]

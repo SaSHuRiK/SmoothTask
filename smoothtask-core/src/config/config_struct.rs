@@ -5676,6 +5676,7 @@ thresholds:
             cache_intervals: CacheIntervals::default(),
             enable_snapshot_logging: false,
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         assert!(valid_config.validate().is_ok());
 

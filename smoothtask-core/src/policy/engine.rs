@@ -658,6 +658,7 @@ mod tests {
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: Some(Vec::new()),
         }
     }
 
@@ -716,6 +717,7 @@ mod tests {
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: Some(Vec::new()),
         }
     }
 

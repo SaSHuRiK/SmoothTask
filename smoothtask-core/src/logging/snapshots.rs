@@ -1576,11 +1576,13 @@ mod tests {
 
         // Проверяем, что конфигурация ротации правильная
         if let Some(rotator) = &logger.log_rotator {
-            let (max_size, max_files, compression, interval) = rotator.get_config();
+            let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
             assert_eq!(max_size, 100);
             assert_eq!(max_files, 3);
             assert!(!compression);
             assert_eq!(interval, 0);
+            assert_eq!(max_age, 0);
+            assert_eq!(max_total_size, 0);
         }
     }
 

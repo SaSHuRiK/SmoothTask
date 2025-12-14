@@ -800,6 +800,82 @@ impl CatBoostMLClassifier {
         GLOBAL_FEATURE_CACHE.set_capacity(capacity);
     }
     
+    /// Оптимизирует извлечение фич для лучшей производительности.
+    ///
+    /// # Аргументы
+    ///
+    /// * `process` - процесс для преобразования
+    /// * `use_cache` - использовать кэш для оптимизации производительности
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор фич для ML-модели.
+    ///
+    /// # Примечание
+    ///
+    /// Этот метод предоставляет оптимизированную версию извлечения фич с возможностью
+    /// отключения кэширования для тестирования производительности.
+    pub fn process_to_features_optimized(&self, process: &ProcessRecord, use_cache: bool) -> Vec<f32> {
+        if use_cache {
+            // Используем кэширование для оптимизации производительности
+            self.process_to_features(process)
+        } else {
+            // Прямое извлечение фич без кэширования
+            let mut features = Vec::with_capacity(29);
+            
+            // Числовые фичи
+            features.push(process.cpu_share_1s.unwrap_or(0.0) as f32);
+            features.push(process.cpu_share_10s.unwrap_or(0.0) as f32);
+            
+            // Расширенные CPU фичи
+            features.push((process.cpu_share_1s.unwrap_or(0.0) * 100.0) as f32); // CPU %
+            features.push((process.cpu_share_10s.unwrap_or(0.0) * 100.0) as f32); // CPU %
+            
+            // IO фичи
+            features.push(process.io_read_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
+            features.push(process.io_write_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
+            features.push((process.io_read_bytes.unwrap_or(0) as f32 + process.io_write_bytes.unwrap_or(0) as f32) / (1024.0 * 1024.0)); // Total IO in MB
+            
+            // Память фичи
+            features.push(process.rss_mb.unwrap_or(0) as f32);
+            features.push(process.swap_mb.unwrap_or(0) as f32);
+            features.push((process.rss_mb.unwrap_or(0) as f32 + process.swap_mb.unwrap_or(0) as f32) * 1024.0); // Total memory KB
+            
+            // Контекстные переключения
+            features.push(process.voluntary_ctx.unwrap_or(0) as f32);
+            features.push(process.involuntary_ctx.unwrap_or(0) as f32);
+            features.push((process.voluntary_ctx.unwrap_or(0) as f32 + process.involuntary_ctx.unwrap_or(0) as f32) / process.uptime_sec.max(1) as f32); // ctx/sec
+            
+            // Расширенные фичи
+            features.push(process.uptime_sec as f32); // Время работы процесса
+            features.push(process.uptime_sec as f32 / 3600.0); // Время работы в часах
+            
+            // Нормализованные фичи
+            features.push((process.cpu_share_1s.unwrap_or(0.0) as f32).ln_1p()); // Log CPU
+            features.push((process.rss_mb.unwrap_or(0) as f32).ln_1p()); // Log memory
+            
+            // Булевые фичи (0/1)
+            features.push(if process.has_tty { 1.0 } else { 0.0 });
+            features.push(if process.has_gui_window { 1.0 } else { 0.0 });
+            features.push(if process.is_focused_window { 1.0 } else { 0.0 });
+            features.push(if process.env_has_display { 1.0 } else { 0.0 });
+            features.push(if process.env_has_wayland { 1.0 } else { 0.0 });
+            features.push(if process.env_ssh { 1.0 } else { 0.0 });
+            features.push(if process.is_audio_client { 1.0 } else { 0.0 });
+            features.push(if process.has_active_stream { 1.0 } else { 0.0 });
+            
+            // Расширенные булевые фичи
+            features.push(if process.has_tty && !process.env_ssh { 1.0 } else { 0.0 }); // Локальный TTY
+            features.push(if process.has_gui_window && process.is_focused_window { 1.0 } else { 0.0 }); // Фокусированное GUI
+            
+            // Интерактивные фичи
+            features.push(if process.has_gui_window || process.has_tty { 1.0 } else { 0.0 }); // Интерактивный процесс
+            features.push(if process.is_audio_client || process.has_active_stream { 1.0 } else { 0.0 }); // Аудио активность
+            
+            features
+        }
+    }
+    
     /// Возвращает текущую емкость кэша фич.
     ///
     /// # Возвращает
@@ -842,7 +918,7 @@ impl CatBoostMLClassifier {
             // IO фичи
             features.push(process.io_read_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
             features.push(process.io_write_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
-            features.push(process.io_read_bytes.unwrap_or(0) as f32 + process.io_write_bytes.unwrap_or(0) as f32); // Total IO
+            features.push((process.io_read_bytes.unwrap_or(0) as f32 + process.io_write_bytes.unwrap_or(0) as f32) / (1024.0 * 1024.0)); // Total IO in MB
             
             // Память фичи
             features.push(process.rss_mb.unwrap_or(0) as f32);
@@ -1461,6 +1537,9 @@ mod tests {
     fn test_catboost_ml_classifier_feature_extraction() {
         use crate::config::config_struct::{MLClassifierConfig, ModelType};
 
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
+
         let config = MLClassifierConfig {
             enabled: false, // Отключаем, чтобы использовать заглушку
             model_path: "test.json".to_string(),
@@ -1493,7 +1572,7 @@ mod tests {
         let features = classifier.process_to_features(&process);
 
         // Проверяем, что фичи извлечены правильно (расширенный набор)
-        assert_eq!(features.len(), 26); // 10 числовых + 16 булевых/интерактивных
+        assert_eq!(features.len(), 29); // 13 числовых + 16 булевых/интерактивных
 
         // Проверяем основные числовые фичи
         assert_eq!(features[0], 0.25); // cpu_share_1s
@@ -1517,19 +1596,28 @@ mod tests {
         assert!(features[16] > 0.0); // log memory
 
         // Проверяем булевые фичи (должны быть 1.0)
-        for i in 17..23 {
-            assert_eq!(features[i], 1.0);
-        }
+        assert_eq!(features[17], 1.0); // has_tty
+        assert_eq!(features[18], 1.0); // has_gui_window
+        assert_eq!(features[19], 1.0); // is_focused_window
+        assert_eq!(features[20], 1.0); // env_has_display
+        assert_eq!(features[21], 1.0); // env_has_wayland
+        assert_eq!(features[22], 1.0); // env_ssh
+        assert_eq!(features[23], 1.0); // is_audio_client
+        assert_eq!(features[24], 1.0); // has_active_stream
 
         // Проверяем расширенные булевые фичи
-        assert_eq!(features[23], 0.0); // локальный TTY (has_tty но env_ssh=true)
-        assert_eq!(features[24], 1.0); // фокусированное GUI
-        assert_eq!(features[25], 1.0); // интерактивный процесс
+        assert_eq!(features[25], 0.0); // локальный TTY (has_tty и env_ssh=true)
+        assert_eq!(features[26], 1.0); // фокусированное GUI
+        assert_eq!(features[27], 1.0); // интерактивный процесс
+        assert_eq!(features[28], 1.0); // аудио активность
     }
 
     #[test]
     fn test_catboost_ml_classifier_feature_extraction_defaults() {
         use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
 
         let config = MLClassifierConfig {
             enabled: false,
@@ -1544,12 +1632,14 @@ mod tests {
         let features = classifier.process_to_features(&process);
 
         // Проверяем, что фичи извлечены правильно (расширенный набор)
-        assert_eq!(features.len(), 26);
+        assert_eq!(features.len(), 29);
 
-        // Проверяем числовые фичи (должны быть 0.0)
-        for feature in &features[0..15] {
-            assert_eq!(*feature, 0.0);
+        // Проверяем числовые фичи (должны быть 0.0 кроме uptime)
+        for i in 0..13 {
+            assert_eq!(features[i], 0.0);
         }
+        assert_eq!(features[13], 100.0); // uptime_sec
+        assert_eq!(features[14], 100.0 / 3600.0); // uptime_hours
 
         // Проверяем логарифмические фичи (должны быть 0.0 для ln(0))
         assert_eq!(features[15], 0.0); // log CPU
@@ -1559,6 +1649,91 @@ mod tests {
         for feature in &features[17..26] {
             assert_eq!(*feature, 0.0);
         }
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_feature_extraction_optimized() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        let mut process = create_test_process();
+
+        // Устанавливаем различные значения
+        process.cpu_share_1s = Some(0.25);
+        process.cpu_share_10s = Some(0.5);
+        process.io_read_bytes = Some(2 * 1024 * 1024); // 2MB
+        process.io_write_bytes = Some(1024 * 1024); // 1MB
+        process.rss_mb = Some(100);
+        process.swap_mb = Some(50);
+        process.voluntary_ctx = Some(1000);
+        process.involuntary_ctx = Some(500);
+        process.has_tty = true;
+        process.has_gui_window = true;
+        process.is_focused_window = true;
+        process.env_has_display = true;
+        process.env_has_wayland = true;
+        process.env_ssh = false;
+        process.is_audio_client = true;
+        process.has_active_stream = true;
+        process.uptime_sec = 3600; // 1 час
+
+        // Тестируем оптимизированное извлечение фич без кэширования
+        let features_uncached = classifier.process_to_features_optimized(&process, false);
+        
+        // Тестируем оптимизированное извлечение фич с кэшированием
+        let features_cached = classifier.process_to_features_optimized(&process, true);
+        
+        // Проверяем, что оба метода возвращают одинаковые результаты
+        assert_eq!(features_uncached.len(), 29);
+        assert_eq!(features_cached.len(), 29);
+        assert_eq!(features_uncached, features_cached);
+        
+        // Проверяем основные числовые фичи
+        assert_eq!(features_uncached[0], 0.25); // cpu_share_1s
+        assert_eq!(features_uncached[1], 0.5); // cpu_share_10s
+        assert_eq!(features_uncached[2], 25.0); // cpu_share_1s %
+        assert_eq!(features_uncached[3], 50.0); // cpu_share_10s %
+        assert_eq!(features_uncached[4], 2.0); // io_read_bytes в MB
+        assert_eq!(features_uncached[5], 1.0); // io_write_bytes в MB
+        assert_eq!(features_uncached[6], 3.0); // total IO
+        assert_eq!(features_uncached[7], 100.0); // rss_mb
+        assert_eq!(features_uncached[8], 50.0); // swap_mb
+        assert_eq!(features_uncached[9], 150.0 * 1024.0); // total memory KB
+        assert_eq!(features_uncached[10], 1000.0); // voluntary_ctx
+        assert_eq!(features_uncached[11], 500.0); // involuntary_ctx
+        assert_eq!(features_uncached[12], (1000.0 + 500.0) / 3600.0); // ctx/sec
+        assert_eq!(features_uncached[13], 3600.0); // uptime_sec
+        assert_eq!(features_uncached[14], 1.0); // uptime_hours
+        
+        // Проверяем логарифмические фичи (приблизительно)
+        assert!(features_uncached[15] > 0.0); // log CPU
+        assert!(features_uncached[16] > 0.0); // log memory
+        
+        // Проверяем булевые фичи (должны быть 1.0)
+        assert_eq!(features_uncached[17], 1.0); // has_tty
+        assert_eq!(features_uncached[18], 1.0); // has_gui_window
+        assert_eq!(features_uncached[19], 1.0); // is_focused_window
+        assert_eq!(features_uncached[20], 1.0); // env_has_display
+        assert_eq!(features_uncached[21], 1.0); // env_has_wayland
+        assert_eq!(features_uncached[22], 0.0); // env_ssh
+        assert_eq!(features_uncached[23], 1.0); // is_audio_client
+        assert_eq!(features_uncached[24], 1.0); // has_active_stream
+
+        // Проверяем расширенные булевые фичи
+        assert_eq!(features_uncached[25], 1.0); // локальный TTY (has_tty и не env_ssh)
+        assert_eq!(features_uncached[26], 1.0); // фокусированное GUI
+        assert_eq!(features_uncached[27], 1.0); // интерактивный процесс
+        assert_eq!(features_uncached[28], 1.0); // аудио активность
     }
 
     #[test]
@@ -1600,33 +1775,33 @@ mod tests {
 
         // Создаем временный файл модели
         let mut temp_file = NamedTempFile::new().unwrap();
-        let model_path = temp_file.path();
+        let model_path = temp_file.path().to_path_buf();
 
         // Пишем начальное содержимое
         writeln!(temp_file, "{{\"version\": 1}}").unwrap();
         
         // Создаем информацию о версии
-        let version_info = ModelVersionInfo::new(model_path).unwrap();
+        let version_info = ModelVersionInfo::new(&model_path).unwrap();
         let original_hash = version_info.model_hash.clone();
         let original_size = version_info.model_size;
 
         // Проверяем, что изменения не обнаружены для того же файла
-        assert!(!version_info.has_changed(model_path).unwrap());
+        assert!(!version_info.has_changed(&model_path).unwrap());
 
         // Меняем содержимое файла
         let mut file = std::fs::OpenOptions::new()
             .write(true)
             .truncate(true)
-            .open(model_path)
+            .open(&model_path)
             .unwrap();
         writeln!(file, "{{\"version\": 2, \"updated\": true}}").unwrap();
         drop(file);
 
         // Проверяем, что изменения обнаружены
-        assert!(version_info.has_changed(model_path).unwrap());
+        assert!(version_info.has_changed(&model_path).unwrap());
 
         // Создаем новую информацию о версии
-        let new_version_info = ModelVersionInfo::new(model_path).unwrap();
+        let new_version_info = ModelVersionInfo::new(&model_path).unwrap();
         assert_ne!(new_version_info.model_hash, original_hash);
         assert_ne!(new_version_info.model_size, original_size);
     }
@@ -1728,7 +1903,7 @@ mod tests {
 
         // Создаем временный файл модели
         let mut temp_file = NamedTempFile::new().unwrap();
-        let model_path = temp_file.path();
+        let model_path = temp_file.path().to_path_buf();
         
         // Пишем начальное содержимое (невалидная модель, но это нормально для теста)
         writeln!(temp_file, "{{\"version\": 1}}").unwrap();
@@ -1742,7 +1917,7 @@ mod tests {
         };
 
         // Создаем классификатор (должно быть ошибка загрузки)
-        let mut classifier = CatBoostMLClassifier::new(config.clone()).unwrap_err();
+        let _classifier = CatBoostMLClassifier::new(config.clone()).unwrap_err();
         
         // Тестируем с отключенным классификатором
         let config_disabled = MLClassifierConfig {
@@ -1752,7 +1927,7 @@ mod tests {
             model_type: ModelType::Catboost,
         };
 
-        let mut classifier = CatBoostMLClassifier::new(config_disabled).unwrap();
+        let mut classifier = CatBoostMLClassifier::new(config_disabled.clone()).unwrap();
         
         // Проверяем, что перезагрузка не выполняется для отключенного классификатора
         let reload_result = classifier.reload_model_if_changed(&config_disabled);
@@ -1792,7 +1967,7 @@ mod tests {
 
         // Создаем временный файл модели
         let mut temp_file = NamedTempFile::new().unwrap();
-        let model_path = temp_file.path();
+        let model_path = temp_file.path().to_path_buf();
         
         // Пишем начальное содержимое
         writeln!(temp_file, "{{\"version\": 1}}").unwrap();
@@ -1875,13 +2050,16 @@ mod tests {
         assert!(duration2 <= duration1);
         
         // Проверяем, что фичи извлечены правильно
-        assert_eq!(features1.len(), 26);
+        assert_eq!(features1.len(), 29);
         assert!(features1[1] > 0.0); // cpu_share_10s
     }
 
     #[test]
     fn test_feature_cache_different_processes() {
         use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
 
         let config = MLClassifierConfig {
             enabled: false,
@@ -1909,14 +2087,14 @@ mod tests {
         assert_ne!(features1, features2);
         
         // Проверяем, что фичи извлечены правильно
-        assert_eq!(features1.len(), 26);
-        assert_eq!(features2.len(), 26);
+        assert_eq!(features1.len(), 29);
+        assert_eq!(features2.len(), 29);
         
         // GUI процесс должен иметь соответствующие фичи
         assert_eq!(features1[18], 1.0); // has_gui_window
         
         // Аудио процесс должен иметь соответствующие фичи
-        assert_eq!(features2[22], 1.0); // is_audio_client
+        assert_eq!(features2[23], 1.0); // is_audio_client
     }
 
     #[test]

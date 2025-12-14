@@ -84,6 +84,12 @@ zbus = { version = "4.1", optional = true }
 # systemd интеграция для уведомлений
 libsystemd = "0.3"
 
+# NVML поддержка для NVIDIA GPU
+nvml-wrapper = { version = "0.10", optional = true }
+
+# AMDGPU поддержка для AMD GPU (закомментировано, так как нет стабильной версии)
+# amdgpu-sys = { version = "0.1", optional = true }
+
 [features]
 default = []
 # libnotify = ["dep:libnotify"]

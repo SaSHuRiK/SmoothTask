@@ -708,8 +708,8 @@ mod tests {
     use std::io::Write;
     use tempfile::{NamedTempFile, TempDir};
 
-    #[test]
-    fn test_custom_metric_creation() {
+    #[tokio::test]
+    async fn test_custom_metric_creation() {
         let manager = CustomMetricsManager::new();
         
         let config = CustomMetricConfig {
@@ -724,12 +724,12 @@ mod tests {
             enabled: true,
         };
 
-        let result = manager.add_metric(config);
+        let result = manager.add_metric(config).await;
         assert!(result.is_ok(), "Should be able to add metric");
     }
 
-    #[test]
-    fn test_duplicate_metric() {
+    #[tokio::test]
+    async fn test_duplicate_metric() {
         let manager = CustomMetricsManager::new();
         
         let config = CustomMetricConfig {
@@ -744,12 +744,12 @@ mod tests {
             enabled: true,
         };
 
-        assert!(manager.add_metric(config.clone()).is_ok());
-        assert!(manager.add_metric(config).is_err(), "Should not allow duplicate metric");
+        assert!(manager.add_metric(config.clone()).await.is_ok());
+        assert!(manager.add_metric(config).await.is_err(), "Should not allow duplicate metric");
     }
 
-    #[test]
-    fn test_get_metric_config() {
+    #[tokio::test]
+    async fn test_get_metric_config() {
         let manager = CustomMetricsManager::new();
         
         let config = CustomMetricConfig {
@@ -764,14 +764,14 @@ mod tests {
             enabled: true,
         };
 
-        manager.add_metric(config.clone()).unwrap();
-        let retrieved = manager.get_metric_config("test_metric").unwrap();
+        manager.add_metric(config.clone()).await.unwrap();
+        let retrieved = manager.get_metric_config("test_metric").await.unwrap();
         assert!(retrieved.is_some(), "Should retrieve metric config");
         assert_eq!(retrieved.unwrap().id, "test_metric");
     }
 
-    #[test]
-    fn test_remove_metric() {
+    #[tokio::test]
+    async fn test_remove_metric() {
         let manager = CustomMetricsManager::new();
         
         let config = CustomMetricConfig {
@@ -786,10 +786,10 @@ mod tests {
             enabled: true,
         };
 
-        manager.add_metric(config).unwrap();
-        let result = manager.remove_metric("test_metric");
+        manager.add_metric(config).await.unwrap();
+        let result = manager.remove_metric("test_metric").await;
         assert!(result.is_ok(), "Should be able to remove metric");
-        assert!(manager.get_metric_config("test_metric").unwrap().is_none(), "Metric should be removed");
+        assert!(manager.get_metric_config("test_metric").await.unwrap().is_none(), "Metric should be removed");
     }
 
     #[tokio::test]
@@ -800,7 +800,8 @@ mod tests {
         
         // Создаём тестовый файл
         let mut file = fs::File::create(&file_path).await.unwrap();
-        writeln!(file, "12345").unwrap();
+        use tokio::io::AsyncWriteExt;
+        file.write_all(b"12345\n").await.unwrap();
         drop(file);
 
         let config = CustomMetricConfig {
@@ -816,10 +817,10 @@ mod tests {
             enabled: true,
         };
 
-        manager.add_metric(config).unwrap();
+        manager.add_metric(config).await.unwrap();
         manager.update_metric_value("file_metric").await.unwrap();
         
-        let value = manager.get_metric_value("file_metric").unwrap();
+        let value = manager.get_metric_value("file_metric").await.unwrap();
         assert!(value.is_some(), "Should have metric value");
         
         if let Some(CustomMetricValueWithTimestamp { value: metric_value, status, .. }) = value {
@@ -844,10 +845,10 @@ mod tests {
             enabled: true,
         };
 
-        manager.add_metric(config).unwrap();
+        manager.add_metric(config).await.unwrap();
         manager.update_metric_value("static_metric").await.unwrap();
         
-        let value = manager.get_metric_value("static_metric").unwrap();
+        let value = manager.get_metric_value("static_metric").await.unwrap();
         assert!(value.is_some(), "Should have metric value");
         
         if let Some(CustomMetricValueWithTimestamp { value: metric_value, status, .. }) = value {
@@ -856,8 +857,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_manager_clone() {
+    #[tokio::test]
+    async fn test_manager_clone() {
         let manager1 = CustomMetricsManager::new();
         let manager2 = manager1.clone();
         
@@ -873,17 +874,17 @@ mod tests {
             enabled: true,
         };
 
-        manager1.add_metric(config).unwrap();
-        let value1 = manager1.get_metric_config("test_metric").unwrap();
-        let value2 = manager2.get_metric_config("test_metric").unwrap();
+        manager1.add_metric(config).await.unwrap();
+        let value1 = manager1.get_metric_config("test_metric").await.unwrap();
+        let value2 = manager2.get_metric_config("test_metric").await.unwrap();
         
         assert!(value1.is_some(), "Manager1 should have metric");
         assert!(value2.is_some(), "Manager2 should have metric");
         assert_eq!(value1.unwrap().id, value2.unwrap().id, "Both managers should have same metric");
     }
 
-    #[test]
-    fn test_disabled_metric() {
+    #[tokio::test]
+    async fn test_disabled_metric() {
         let manager = CustomMetricsManager::new();
         
         let config = CustomMetricConfig {
@@ -898,11 +899,11 @@ mod tests {
             enabled: false,
         };
 
-        manager.add_metric(config).unwrap();
-        let result = manager.update_metric_value("disabled_metric");
+        manager.add_metric(config).await.unwrap();
+        let result = manager.update_metric_value("disabled_metric").await;
         assert!(result.is_ok(), "Should handle disabled metric without error");
         
-        let value = manager.get_metric_value("disabled_metric").unwrap();
+        let value = manager.get_metric_value("disabled_metric").await.unwrap();
         assert!(value.is_some(), "Should have metric value");
         
         if let Some(CustomMetricValueWithTimestamp { status, .. }) = value {

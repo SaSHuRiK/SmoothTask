@@ -11,11 +11,19 @@ use smoothtask_core::classify::ml_classifier::{
     create_ml_classifier, MLClassificationResult, MLClassifier,
 };
 #[cfg(any(feature = "catboost", feature = "onnx"))]
-use smoothtask_core::classify::rules::classify_process;
+use smoothtask_core::classify::rules::{classify_process, PatternDatabase};
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use smoothtask_core::classify::pattern_watcher::{PatternWatcher, PatternWatcherConfig};
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use smoothtask_core::config::config_struct::{MLClassifierConfig, ModelType};
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use smoothtask_core::logging::snapshots::ProcessRecord;
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use std::path::Path;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use std::collections::HashSet;
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+use std::sync::{Arc, Mutex};
 #[cfg(any(feature = "catboost", feature = "onnx"))]
 use tempfile::tempdir;
 
@@ -325,7 +333,7 @@ fn test_ml_classifier_feature_extraction_comprehensive() {
     let features = classifier.process_to_features(&process);
 
     // Проверяем, что все фичи извлечены правильно (расширенный набор)
-    assert_eq!(features.len(), 26); // 10 числовых + 16 булевых/интерактивных
+    assert_eq!(features.len(), 29); // 13 числовых + 16 булевых/интерактивных
 
     // Проверяем числовые фичи
     assert_eq!(features[0], 0.8); // cpu_share_1s

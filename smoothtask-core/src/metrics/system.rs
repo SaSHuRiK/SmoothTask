@@ -9,6 +9,16 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
+/// Безопасно разобрать строку в u32 с fallback значением.
+fn safe_parse_u32(s: &str, fallback: u32) -> u32 {
+    s.parse::<u32>().unwrap_or(fallback)
+}
+
+/// Безопасно разобрать строку в f32 с fallback значением.
+fn safe_parse_f32(s: &str, fallback: f32) -> f32 {
+    s.parse::<f32>().unwrap_or(fallback)
+}
+
 /// Сырые счётчики CPU из `/proc/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct CpuTimes {
@@ -3232,6 +3242,7 @@ SwapFree:        4096000 kB
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            hardware: HardwareMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -3305,6 +3316,7 @@ SwapFree:        4096000 kB
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            hardware: HardwareMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -3510,10 +3522,10 @@ SwapFree:        4096000 kB
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
-            hardware: HardwareMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            hardware: HardwareMetrics::default(),
         };
 
         // Проверяем, что метрики содержат новые поля
@@ -3851,6 +3863,7 @@ SwapFree:        4096000 kB
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
+            hardware: HardwareMetrics::default(),
         };
 
         // Проверяем, что метрики содержат новые поля

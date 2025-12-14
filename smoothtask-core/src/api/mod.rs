@@ -5,6 +5,8 @@
 
 mod server;
 mod custom_metrics_handlers;
+mod validation;
 
 pub use server::{ApiServer, ApiServerHandle, ApiStateBuilder};
 pub use custom_metrics_handlers::*;
+pub use validation::*;

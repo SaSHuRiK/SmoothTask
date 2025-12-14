@@ -18,7 +18,7 @@ use crate::metrics::app_performance::{AppPerformanceConfig, collect_all_app_perf
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tracing::{error, info, trace};
+use tracing::{error, info, trace, warn};
 
 // Health module imports
 use crate::health::{create_diagnostic_analyzer, HealthIssueSeverity, HealthMonitorTrait};
@@ -2275,6 +2275,18 @@ async fn notifications_custom_handler(
     State(state): State<ApiState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Валидируем payload
+    if let Err(_) = crate::api::validation::validate_custom_notification_payload(&payload) {
+        warn!("Invalid custom notification payload: {:?}", payload);
+        let error_response = crate::api::validation::create_validation_error_response(
+            "error",
+            "Invalid notification payload",
+            None,
+            Some("Check field types and lengths. Type: critical|warning|info. Title: 1-100 chars. Message: 1-500 chars. Details: 0-1000 chars")
+        );
+        return Ok(Json(error_response));
+    }
+
     match &state.notification_manager {
         Some(notification_manager_arc) => {
             let notification_manager = notification_manager_arc.lock().await;
@@ -2523,6 +2535,18 @@ async fn logs_handler(
     State(state): State<ApiState>,
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Валидируем параметры запроса
+    if let Err(_) = crate::api::validation::validate_logs_params(&params) {
+        warn!("Invalid logs query parameters: {:?}", params);
+        let error_response = crate::api::validation::create_validation_error_response(
+            "error",
+            "Invalid query parameters",
+            None,
+            Some("Valid levels: error, warn, info, debug, trace. Max limit: 1000")
+        );
+        return Ok(Json(error_response));
+    }
+
     // Извлекаем параметры запроса
     let level_param = params.get("level").map(|s| s.as_str());
     let limit_param = params.get("limit").and_then(|s| s.parse::<usize>().ok());
@@ -2817,6 +2841,18 @@ async fn notifications_config_handler(
     State(state): State<ApiState>,
     Json(payload): Json<Value>,
 ) -> Result<Json<Value>, StatusCode> {
+    // Валидируем payload
+    if let Err(_) = crate::api::validation::validate_notifications_config_payload(&payload) {
+        warn!("Invalid notifications config payload: {:?}", payload);
+        let error_response = crate::api::validation::create_validation_error_response(
+            "error",
+            "Invalid configuration payload",
+            None,
+            Some("Check field types and values. Enabled: boolean. Backend: stub|libnotify|dbus. App_name: 1-50 chars. Min_level: critical|warning|info")
+        );
+        return Ok(Json(error_response));
+    }
+
     match &state.config {
         Some(config_arc) => {
             // Пробуем обновить конфигурацию уведомлений
@@ -5100,7 +5136,6 @@ mod tests {
                 model_path: "/tmp/model.onnx".to_string(),
                 model_type: ModelType::Onnx,
             },
-            custom_metrics: None,
             ml_classifier: MLClassifierConfig {
                 enabled: false,
                 model_path: "/tmp/classifier.onnx".to_string(),
@@ -5139,6 +5174,7 @@ mod tests {
                 aggressive_cache_interval_ms: 5000,
                 filter_config: EbpfFilterConfig::default(),
             },
+            custom_metrics: None,
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
@@ -5196,6 +5232,9 @@ mod tests {
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -5250,6 +5289,7 @@ mod tests {
                 notification_thresholds: EbpfNotificationThresholds::default(),
                 filter_config: EbpfFilterConfig::default(),
             },
+            custom_metrics: None,
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiState::with_all_and_config(None, None, None, None, Some(config_arc));
@@ -5343,6 +5383,9 @@ mod tests {
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -5362,6 +5405,7 @@ mod tests {
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         let config_arc = Arc::new(RwLock::new(config));
         let server = ApiServer::with_all_and_config(addr, None, None, None, None, Some(config_arc));
@@ -6089,6 +6133,9 @@ apps:
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6108,6 +6155,7 @@ apps:
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -6172,6 +6220,9 @@ apps:
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6191,6 +6242,7 @@ apps:
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
@@ -6248,6 +6300,9 @@ apps:
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6267,6 +6322,7 @@ apps:
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         let _config_arc = Arc::new(config.clone());
         let responsiveness_metrics = ResponsivenessMetrics {
@@ -6330,6 +6386,9 @@ apps:
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6349,6 +6408,7 @@ apps:
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         let _config_arc = Arc::new(config.clone());
         // Создаём временную директорию для паттернов
@@ -6535,6 +6595,9 @@ apps:
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6554,6 +6617,7 @@ apps:
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
         let config_arc = Arc::new(RwLock::new(config));
         let state = ApiStateBuilder::new()
@@ -6662,6 +6726,9 @@ notifications:
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: crate::config::config_struct::CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6681,6 +6748,7 @@ notifications:
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
 
         let config_arc = Arc::new(RwLock::new(current_config));
@@ -6770,6 +6838,9 @@ max_candidates: 200
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: crate::config::config_struct::CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6789,6 +6860,7 @@ max_candidates: 200
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
 
         let config_arc = Arc::new(RwLock::new(current_config));
@@ -6927,6 +6999,9 @@ max_candidates: 200
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -6946,6 +7021,7 @@ max_candidates: 200
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
 
         let config_arc = Arc::new(RwLock::new(config));
@@ -7057,6 +7133,9 @@ max_candidates: 200
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -7076,6 +7155,7 @@ max_candidates: 200
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
 
         let config_arc = Arc::new(RwLock::new(config));
@@ -7144,6 +7224,9 @@ max_candidates: 200
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -7163,6 +7246,7 @@ max_candidates: 200
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: None,
         };
 
         let config_arc = Arc::new(RwLock::new(config));
@@ -7325,6 +7409,7 @@ max_candidates: 200
             cache: None,
             log_storage: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+            custom_metrics_manager: None,
             metrics_collector: None,
             metrics: None,
         };
