@@ -409,6 +409,74 @@ pub fn validate_cache_config_payload(payload: &Value) -> Result<(), StatusCode> 
     Ok(())
 }
 
+/// Валидирует payload для обновления основной конфигурации.
+///
+/// # Аргументы
+///
+/// * `payload` - JSON payload
+///
+/// # Возвращает
+///
+/// * `Result<(), StatusCode>` - Ok(()) если валидация прошла успешно, или ошибка с кодом статуса
+pub fn validate_config_update_payload(payload: &Value) -> Result<(), StatusCode> {
+    // Проверяем, что payload является объектом
+    if !payload.is_object() {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Проверяем polling_interval_ms
+    if let Some(interval) = payload.get("polling_interval_ms") {
+        if !interval.is_number() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        
+        let interval_value = interval.as_u64().unwrap_or(0);
+        if interval_value < 100 || interval_value > 60000 {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // Проверяем max_candidates
+    if let Some(max_candidates) = payload.get("max_candidates") {
+        if !max_candidates.is_number() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        
+        let max_candidates_value = max_candidates.as_u64().unwrap_or(0);
+        if max_candidates_value < 10 || max_candidates_value > 1000 {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // Проверяем dry_run_default
+    if let Some(dry_run) = payload.get("dry_run_default") {
+        if !dry_run.is_boolean() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // Проверяем policy_mode
+    if let Some(policy_mode) = payload.get("policy_mode") {
+        if !policy_mode.is_string() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+        
+        let policy_mode_str = policy_mode.as_str().unwrap();
+        if !matches!(policy_mode_str, "rules-only" | "hybrid") {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    // Проверяем enable_snapshot_logging
+    if let Some(enable_snapshot) = payload.get("enable_snapshot_logging") {
+        if !enable_snapshot.is_boolean() {
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    Ok(())
+}
+
 /// Создает детальное сообщение об ошибке валидации.
 ///
 /// # Аргументы
@@ -1057,6 +1125,86 @@ mod tests {
         assert_eq!(response["retry_after_seconds"], 60);
         assert_eq!(response["limit"], 100);
         assert_eq!(response["remaining"], 0);
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_valid() {
+        let payload = json!({
+            "polling_interval_ms": 1000,
+            "max_candidates": 100,
+            "dry_run_default": true,
+            "policy_mode": "hybrid",
+            "enable_snapshot_logging": false
+        });
+        
+        let result = validate_config_update_payload(&payload);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_partial() {
+        let payload = json!({
+            "polling_interval_ms": 500
+        });
+        
+        let result = validate_config_update_payload(&payload);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_invalid_interval() {
+        let payload = json!({
+            "polling_interval_ms": 50
+        });
+        
+        let result = validate_config_update_payload(&payload);
+        assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_invalid_max_candidates() {
+        let payload = json!({
+            "max_candidates": 5
+        });
+        
+        let result = validate_config_update_payload(&payload);
+        assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_invalid_policy_mode() {
+        let payload = json!({
+            "policy_mode": "invalid"
+        });
+        
+        let result = validate_config_update_payload(&payload);
+        assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_valid_policy_modes() {
+        // Тест валидных policy_mode значений
+        let payload1 = json!({
+            "policy_mode": "rules-only"
+        });
+        let result1 = validate_config_update_payload(&payload1);
+        assert!(result1.is_ok());
+
+        let payload2 = json!({
+            "policy_mode": "hybrid"
+        });
+        let result2 = validate_config_update_payload(&payload2);
+        assert!(result2.is_ok());
+    }
+
+    #[test]
+    fn test_validate_config_update_payload_invalid_type() {
+        let payload = json!({
+            "polling_interval_ms": "not_a_number"
+        });
+        
+        let result = validate_config_update_payload(&payload);
+        assert!(matches!(result, Err(StatusCode::BAD_REQUEST)));
     }
 
 

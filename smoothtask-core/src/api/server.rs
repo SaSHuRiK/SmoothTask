@@ -2972,6 +2972,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/appgroups", get(appgroups_handler))
         .route("/api/appgroups/:id", get(appgroup_by_id_handler))
         .route("/api/config", get(config_handler))
+        .route("/api/config", post(config_update_handler))
         .route("/api/config/reload", post(config_reload_handler))
         .route("/api/classes", get(classes_handler))
         .route("/api/patterns", get(patterns_handler))
@@ -3899,6 +3900,89 @@ async fn config_handler(State(state): State<ApiState>) -> Result<Json<Value>, St
         None => Ok(Json(json!({
             "status": "ok",
             "config": null,
+            "message": "Config not available (daemon may not be running or config not set)"
+        }))),
+    }
+}
+
+/// Обработчик для endpoint `/api/config` (POST).
+///
+/// Обновляет основные параметры конфигурации демона.
+/// Позволяет изменять параметры опроса, максимальное количество кандидатов,
+/// режим политики и другие основные настройки.
+///
+/// # Аргументы
+///
+/// * `State(state)` - Состояние API с конфигурацией
+/// * `Json(payload)` - JSON payload с параметрами для обновления
+///
+/// # Возвращает
+///
+/// * `Result<Json<Value>, StatusCode>` - Результат обновления конфигурации
+async fn config_update_handler(
+    State(state): State<ApiState>,
+    Json(payload): Json<Value>,
+) -> Result<Json<Value>, StatusCode> {
+    // Валидируем payload
+    if let Err(_) = crate::api::validation::validate_config_update_payload(&payload) {
+        warn!("Invalid config update payload: {:?}", payload);
+        let error_response = crate::api::validation::create_validation_error_response(
+            "error",
+            "Invalid configuration payload",
+            None,
+            Some("Check field types and values. polling_interval_ms: 100-60000, max_candidates: 10-1000, dry_run_default: boolean, policy_mode: rules-only|hybrid, enable_snapshot_logging: boolean")
+        );
+        return Ok(Json(error_response));
+    }
+
+    match &state.config {
+        Some(config_arc) => {
+            // Пробуем обновить конфигурацию
+            let mut config_guard = config_arc.write().await;
+
+            // Обновляем параметры, если они предоставлены
+            if let Some(interval) = payload.get("polling_interval_ms").and_then(|v| v.as_u64()) {
+                config_guard.polling_interval_ms = interval;
+            }
+
+            if let Some(max_candidates) = payload.get("max_candidates").and_then(|v| v.as_u64()) {
+                config_guard.max_candidates = max_candidates as usize;
+            }
+
+            if let Some(dry_run) = payload.get("dry_run_default").and_then(|v| v.as_bool()) {
+                config_guard.dry_run_default = dry_run;
+            }
+
+            if let Some(policy_mode_str) = payload.get("policy_mode").and_then(|v| v.as_str()) {
+                // Конвертируем строку в PolicyMode
+                config_guard.policy_mode = match policy_mode_str {
+                    "rules-only" => crate::config::config_struct::PolicyMode::RulesOnly,
+                    "hybrid" => crate::config::config_struct::PolicyMode::Hybrid,
+                    _ => config_guard.policy_mode.clone(), // Если что-то пошло не так, оставляем текущее значение
+                };
+            }
+
+            if let Some(enable_snapshot) = payload.get("enable_snapshot_logging").and_then(|v| v.as_bool()) {
+                config_guard.enable_snapshot_logging = enable_snapshot;
+            }
+
+            // Конфигурация обновлена успешно
+
+            // Очищаем кэш конфигурации
+            if let Some(cache_arc) = &state.cache {
+                let mut cache_guard = cache_arc.write().await;
+                cache_guard.cached_config_json = None;
+            }
+
+            info!("Configuration updated successfully");
+            Ok(Json(json!({
+                "status": "success",
+                "message": "Configuration updated successfully",
+                "config": serde_json::to_value(&*config_guard).unwrap_or(Value::Null)
+            })))
+        }
+        None => Ok(Json(json!({
+            "status": "error",
             "message": "Config not available (daemon may not be running or config not set)"
         }))),
     }
@@ -5142,6 +5226,233 @@ mod tests {
         assert_eq!(config_obj["enable_snapshot_logging"], true);
         assert!(config_obj["thresholds"].is_object());
         assert!(config_obj["paths"].is_object());
+    }
+
+    #[tokio::test]
+    async fn test_config_update_handler_without_config() {
+        // Тест для config_update_handler когда конфигурация недоступна
+        let state = ApiState::new();
+        let payload = json!({
+            "polling_interval_ms": 500
+        });
+        let result = config_update_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert!(value["message"]
+            .as_str()
+            .unwrap()
+            .contains("Config not available"));
+    }
+
+    #[tokio::test]
+    async fn test_config_update_handler_with_config() {
+        // Тест для config_update_handler когда конфигурация доступна
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig,
+            NotificationBackend, NotificationConfig, NotificationLevel, Paths,
+            PatternAutoUpdateConfig, PolicyMode, Thresholds,
+        };
+        use crate::metrics::ebpf::EbpfConfig;
+
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+                priority_hysteresis_stable_sec: Some(30),
+            },
+            paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: NotificationConfig {
+                enabled: false,
+                backend: NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: NotificationLevel::Warning,
+            },
+            custom_metrics: None,
+            model: crate::config::config_struct::ModelConfig::default(),
+            ml_classifier: MLClassifierConfig::default(),
+            ebpf: EbpfConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+        };
+        let config_arc = Arc::new(RwLock::new(config));
+        let state = ApiStateBuilder::new()
+            .with_config(Some(config_arc.clone()))
+            .build();
+
+        let payload = json!({
+            "polling_interval_ms": 500,
+            "max_candidates": 200,
+            "dry_run_default": true,
+            "policy_mode": "hybrid",
+            "enable_snapshot_logging": false
+        });
+        let result = config_update_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "success");
+        assert_eq!(
+            value["message"],
+            "Configuration updated successfully"
+        );
+        assert!(value["config"].is_object());
+        assert_eq!(value["config"]["polling_interval_ms"], 500);
+        assert_eq!(value["config"]["max_candidates"], 200);
+        assert_eq!(value["config"]["dry_run_default"], true);
+        assert_eq!(value["config"]["policy_mode"], "hybrid");
+        assert_eq!(value["config"]["enable_snapshot_logging"], false);
+
+        // Проверяем, что конфигурация действительно обновилась
+        let config_guard = config_arc.read().await;
+        assert_eq!(config_guard.polling_interval_ms, 500);
+        assert_eq!(config_guard.max_candidates, 200);
+        assert_eq!(config_guard.dry_run_default, true);
+        match config_guard.policy_mode {
+            PolicyMode::Hybrid => {},
+            _ => panic!("Policy mode should be Hybrid"),
+        }
+        assert_eq!(config_guard.enable_snapshot_logging, false);
+    }
+
+    #[tokio::test]
+    async fn test_config_update_handler_partial_update() {
+        // Тест для config_update_handler с частичным обновлением
+        use crate::config::config_struct::{
+            CacheIntervals, Config, LoggingConfig, MLClassifierConfig,
+            NotificationBackend, NotificationConfig, NotificationLevel, Paths,
+            PatternAutoUpdateConfig, PolicyMode, Thresholds,
+        };
+        use crate::metrics::ebpf::EbpfConfig;
+
+        let config = Config {
+            polling_interval_ms: 1000,
+            max_candidates: 150,
+            dry_run_default: false,
+            policy_mode: PolicyMode::RulesOnly,
+            enable_snapshot_logging: true,
+            thresholds: Thresholds {
+                psi_cpu_some_high: 0.6,
+                psi_io_some_high: 0.4,
+                user_idle_timeout_sec: 120,
+                interactive_build_grace_sec: 10,
+                noisy_neighbour_cpu_share: 0.7,
+                crit_interactive_percentile: 0.9,
+                interactive_percentile: 0.6,
+                normal_percentile: 0.3,
+                background_percentile: 0.1,
+                sched_latency_p99_threshold_ms: 20.0,
+                ui_loop_p95_threshold_ms: 16.67,
+                priority_hysteresis_stable_sec: Some(30),
+            },
+            paths: Paths {
+                log_file_path: "smoothtask.log".to_string(),
+                snapshot_db_path: "/tmp/test.db".to_string(),
+                patterns_dir: "/tmp/patterns".to_string(),
+                api_listen_addr: Some("127.0.0.1:8080".to_string()),
+            },
+            logging: LoggingConfig {
+                log_max_size_bytes: 10_485_760,
+                log_max_rotated_files: 5,
+                log_compression_enabled: true,
+                log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
+            },
+            cache_intervals: CacheIntervals {
+                system_metrics_cache_interval: 3,
+                process_metrics_cache_interval: 1,
+            },
+            notifications: NotificationConfig {
+                enabled: false,
+                backend: NotificationBackend::Stub,
+                app_name: "SmoothTask".to_string(),
+                min_level: NotificationLevel::Warning,
+            },
+            custom_metrics: None,
+            model: crate::config::config_struct::ModelConfig::default(),
+            ml_classifier: MLClassifierConfig::default(),
+            ebpf: EbpfConfig::default(),
+            pattern_auto_update: PatternAutoUpdateConfig::default(),
+        };
+        let config_arc = Arc::new(RwLock::new(config));
+        let state = ApiStateBuilder::new()
+            .with_config(Some(config_arc.clone()))
+            .build();
+
+        let payload = json!({
+            "polling_interval_ms": 750
+        });
+        let result = config_update_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "success");
+        assert_eq!(value["config"]["polling_interval_ms"], 750);
+        // Остальные параметры должны остаться без изменений
+        assert_eq!(value["config"]["max_candidates"], 150);
+        assert_eq!(value["config"]["dry_run_default"], false);
+        assert_eq!(value["config"]["policy_mode"], "rules-only");
+        assert_eq!(value["config"]["enable_snapshot_logging"], true);
+
+        // Проверяем, что конфигурация действительно обновилась частично
+        let config_guard = config_arc.read().await;
+        assert_eq!(config_guard.polling_interval_ms, 750);
+        assert_eq!(config_guard.max_candidates, 150);
+        assert_eq!(config_guard.dry_run_default, false);
+    }
+
+    #[tokio::test]
+    async fn test_config_update_handler_invalid_payload() {
+        // Тест для config_update_handler с невалидным payload
+        let state = ApiState::new();
+        let payload = json!({
+            "polling_interval_ms": 50
+        });
+        let result = config_update_handler(State(state), Json(payload)).await;
+        assert!(result.is_ok());
+
+        let json = result.unwrap();
+        let value: Value = json.0;
+        assert_eq!(value["status"], "error");
+        assert!(value["error"].is_string());
+        assert!(value["message"].is_string());
     }
 
     #[test]
