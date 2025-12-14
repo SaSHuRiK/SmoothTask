@@ -376,6 +376,130 @@ impl Notifier for StubNotifier {
 //     fn backend_name(&self) -> &str {
 //         "libnotify"
 
+/// Notifier на основе вебхуков для отправки уведомлений через HTTP/HTTPS.
+/// Поддерживает конфигурируемые URL, заголовки и таймауты.
+#[derive(Debug, Clone)]
+pub struct WebhookNotifier {
+    /// Базовый URL вебхука.
+    webhook_url: String,
+    /// Дополнительные заголовки для HTTP запросов.
+    headers: std::collections::HashMap<String, String>,
+    /// Таймаут для HTTP запросов в секундах.
+    timeout_seconds: u64,
+    /// Флаг, разрешающий небезопасные HTTPS соединения (для самоподписанных сертификатов).
+    allow_insecure_https: bool,
+    /// HTTP клиент для отправки запросов.
+    client: reqwest::Client,
+}
+
+impl WebhookNotifier {
+    /// Создаёт новый WebhookNotifier с указанным URL вебхука.
+    ///
+    /// # Аргументы
+    /// * `webhook_url` - URL вебхука для отправки уведомлений.
+    ///
+    /// # Возвращает
+    /// Новый экземпляр WebhookNotifier.
+    pub fn new(webhook_url: impl Into<String>) -> Self {
+        Self {
+            webhook_url: webhook_url.into(),
+            headers: std::collections::HashMap::new(),
+            timeout_seconds: 10,
+            allow_insecure_https: false,
+            client: reqwest::Client::new(),
+        }
+    }
+
+    /// Устанавливает дополнительные заголовки для HTTP запросов.
+    ///
+    /// # Аргументы
+    /// * `headers` - HashMap с заголовками.
+    ///
+    /// # Возвращает
+    /// Мутированный экземпляр WebhookNotifier.
+    pub fn with_headers(mut self, headers: std::collections::HashMap<String, String>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    /// Устанавливает таймаут для HTTP запросов.
+    ///
+    /// # Аргументы
+    /// * `timeout_seconds` - Таймаут в секундах.
+    ///
+    /// # Возвращает
+    /// Мутированный экземпляр WebhookNotifier.
+    pub fn with_timeout(mut self, timeout_seconds: u64) -> Self {
+        self.timeout_seconds = timeout_seconds;
+        self
+    }
+
+    /// Разрешает небезопасные HTTPS соединения (для самоподписанных сертификатов).
+    ///
+    /// # Возвращает
+    /// Мутированный экземпляр WebhookNotifier.
+    pub fn allow_insecure_https(mut self) -> Self {
+        self.allow_insecure_https = true;
+        self
+    }
+
+    /// Создаёт HTTP клиент с настройками таймаута и безопасности.
+    ///
+    /// # Возвращает
+    /// Новый экземпляр reqwest::Client.
+    fn create_client(&self) -> reqwest::Client {
+        let mut builder = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(self.timeout_seconds))
+            .connect_timeout(std::time::Duration::from_secs(5));
+
+        if self.allow_insecure_https {
+            builder = builder.danger_accept_invalid_certs(true);
+        }
+
+        builder.build().unwrap_or_else(|_| reqwest::Client::new())
+    }
+
+    /// Возвращает текущий HTTP клиент.
+    ///
+    /// # Возвращает
+    /// Экземпляр reqwest::Client.
+    pub fn client(&self) -> &reqwest::Client {
+        &self.client
+    }
+
+    /// Возвращает URL вебхука.
+    ///
+    /// # Возвращает
+    /// URL вебхука.
+    pub fn webhook_url(&self) -> &str {
+        &self.webhook_url
+    }
+
+    /// Возвращает дополнительные заголовки.
+    ///
+    /// # Возвращает
+    /// Ссылку на HashMap с заголовками.
+    pub fn headers(&self) -> &std::collections::HashMap<String, String> {
+        &self.headers
+    }
+
+    /// Возвращает таймаут в секундах.
+    ///
+    /// # Возвращает
+    /// Таймаут в секундах.
+    pub fn timeout_seconds(&self) -> u64 {
+        self.timeout_seconds
+    }
+
+    /// Возвращает true, если разрешены небезопасные HTTPS соединения.
+    ///
+    /// # Возвращает
+    /// Флаг allow_insecure_https.
+    pub fn is_insecure_https_allowed(&self) -> bool {
+        self.allow_insecure_https
+    }
+}
+
 /// Notifier на основе D-Bus для отправки уведомлений через системный D-Bus.
 /// Использует стандартный протокол org.freedesktop.Notifications.
 #[cfg(feature = "dbus")]
@@ -447,6 +571,89 @@ impl DBusNotifier {
     /// Проверяет, установлено ли соединение с D-Bus.
     pub fn is_connected(&self) -> bool {
         self.connection.is_some()
+    }
+}
+
+#[async_trait::async_trait]
+impl Notifier for WebhookNotifier {
+    async fn send_notification(&self, notification: &Notification) -> Result<()> {
+        // Создаём HTTP клиент с текущими настройками
+        let client = self.create_client();
+
+        // Преобразуем уведомление в JSON формат
+        let notification_json = serde_json::json!({
+            "notification_type": format!("{}", notification.notification_type),
+            "title": notification.title,
+            "message": notification.message,
+            "details": notification.details,
+            "timestamp": notification.timestamp.to_rfc3339(),
+        });
+
+        // Логируем отправку уведомления
+        tracing::info!(
+            "Sending webhook notification to {}: {} - {}",
+            self.webhook_url,
+            notification.title,
+            notification.message
+        );
+
+        // Отправляем POST запрос на вебхук
+        let mut request_builder = client.post(&self.webhook_url);
+
+        // Добавляем заголовки
+        for (key, value) in &self.headers {
+            request_builder = request_builder.header(key, value);
+        }
+
+        // Устанавливаем Content-Type как application/json
+        request_builder = request_builder.header("Content-Type", "application/json");
+
+        // Отправляем запрос
+        let response = request_builder
+            .json(&notification_json)
+            .send()
+            .await;
+
+        match response {
+            Ok(resp) => {
+                // Проверяем статус код
+                if resp.status().is_success() {
+                    tracing::info!(
+                        "Successfully sent webhook notification to {}: {} - {}",
+                        self.webhook_url,
+                        notification.title,
+                        notification.message
+                    );
+                    Ok(())
+                } else {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    tracing::error!(
+                        "Failed to send webhook notification to {}: HTTP {} - {}",
+                        self.webhook_url,
+                        status,
+                        body
+                    );
+                    Err(anyhow::anyhow!(
+                        "Webhook notification failed: HTTP {} - {}",
+                        status,
+                        body
+                    ))
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to send webhook notification to {}: {}",
+                    self.webhook_url,
+                    e
+                );
+                Err(anyhow::anyhow!("Webhook notification failed: {}", e))
+            }
+        }
+    }
+
+    fn backend_name(&self) -> &str {
+        "webhook"
     }
 }
 
@@ -699,6 +906,36 @@ impl NotificationManager {
     // pub fn new_libnotify(app_name: impl Into<String>) -> Self {
     //     Self::new(LibnotifyNotifier::new(app_name))
     // }
+
+    /// Создаёт новый NotificationManager с вебхук бэкендом.
+    ///
+    /// # Аргументы
+    /// * `webhook_url` - URL вебхука для отправки уведомлений.
+    ///
+    /// # Возвращает
+    /// Новый экземпляр NotificationManager с вебхук бэкендом.
+    pub fn new_webhook(webhook_url: impl Into<String>) -> Self {
+        Self::new(WebhookNotifier::new(webhook_url))
+    }
+
+    /// Создаёт новый NotificationManager с вебхук бэкендом и интеграцией с хранилищем логов.
+    ///
+    /// # Аргументы
+    /// * `webhook_url` - URL вебхука для отправки уведомлений.
+    /// * `log_storage` - Хранилище логов для интеграции.
+    ///
+    /// # Возвращает
+    /// Новый экземпляр NotificationManager с вебхук бэкендом и интеграцией с хранилищем логов.
+    pub fn new_webhook_with_logging(
+        webhook_url: impl Into<String>,
+        log_storage: std::sync::Arc<crate::logging::log_storage::SharedLogStorage>,
+    ) -> Self {
+        Self {
+            primary_notifier: Box::new(WebhookNotifier::new(webhook_url)),
+            enabled: true,
+            log_storage: Some(log_storage),
+        }
+    }
 
     /// Создаёт новый NotificationManager с D-Bus бэкендом.
     ///
@@ -1140,6 +1377,145 @@ mod tests {
         let system_notification = Notification::system_event("shutdown", "System shutting down");
         let result = notifier.send_notification(&system_notification).await;
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_creation() {
+        let notifier = WebhookNotifier::new("https://example.com/webhook");
+        assert_eq!(notifier.webhook_url(), "https://example.com/webhook");
+        assert_eq!(notifier.timeout_seconds(), 10);
+        assert!(!notifier.allow_insecure_https());
+        assert_eq!(notifier.backend_name(), "webhook");
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_with_headers() {
+        let mut headers = std::collections::HashMap::new();
+        headers.insert("Authorization".to_string(), "Bearer token123".to_string());
+        headers.insert("X-Custom-Header".to_string(), "CustomValue".to_string());
+
+        let notifier = WebhookNotifier::new("https://example.com/webhook")
+            .with_headers(headers.clone());
+
+        assert_eq!(notifier.headers().len(), 2);
+        assert_eq!(
+            notifier.headers().get("Authorization"),
+            Some(&"Bearer token123".to_string())
+        );
+        assert_eq!(
+            notifier.headers().get("X-Custom-Header"),
+            Some(&"CustomValue".to_string())
+        );
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_with_timeout() {
+        let notifier = WebhookNotifier::new("https://example.com/webhook")
+            .with_timeout(30);
+
+        assert_eq!(notifier.timeout_seconds(), 30);
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_allow_insecure_https() {
+        let notifier = WebhookNotifier::new("https://example.com/webhook")
+            .allow_insecure_https();
+
+        assert!(notifier.is_insecure_https_allowed());
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_create_client() {
+        let notifier = WebhookNotifier::new("https://example.com/webhook")
+            .with_timeout(15)
+            .allow_insecure_https();
+
+        let client = notifier.create_client();
+        // Проверяем, что клиент создан (не можем проверить таймаут напрямую)
+        assert!(client.timeout().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_webhook() {
+        let manager = NotificationManager::new_webhook("https://example.com/webhook");
+        assert_eq!(manager.backend_name(), "webhook");
+        assert!(manager.is_enabled());
+    }
+
+    #[tokio::test]
+    async fn test_notification_manager_webhook_with_logging() {
+        use crate::logging::log_storage::SharedLogStorage;
+        use std::sync::Arc;
+
+        let log_storage = Arc::new(SharedLogStorage::new(10));
+        let manager = NotificationManager::new_webhook_with_logging(
+            "https://example.com/webhook",
+            Arc::clone(&log_storage),
+        );
+
+        assert!(manager.is_enabled());
+        assert!(manager.log_storage.is_some());
+        assert_eq!(manager.backend_name(), "webhook");
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_serialization() {
+        let notification = Notification::new(
+            NotificationType::Critical,
+            "Test Title",
+            "Test Message",
+        )
+        .with_details("Test details");
+
+        let notifier = WebhookNotifier::new("https://example.com/webhook");
+
+        // Создаём JSON, как это делает notifier
+        let notification_json = serde_json::json!({
+            "notification_type": format!("{}", notification.notification_type),
+            "title": notification.title,
+            "message": notification.message,
+            "details": notification.details,
+            "timestamp": notification.timestamp.to_rfc3339(),
+        });
+
+        // Проверяем, что JSON корректно сериализуется
+        let json_string = notification_json.to_string();
+        assert!(json_string.contains("CRITICAL"));
+        assert!(json_string.contains("Test Title"));
+        assert!(json_string.contains("Test Message"));
+        assert!(json_string.contains("Test details"));
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_disabled() {
+        let mut manager = NotificationManager::new_webhook("https://example.com/webhook");
+        manager.set_enabled(false);
+        let notification = Notification::new(NotificationType::Info, "Test Title", "Test Message");
+
+        assert!(!manager.is_enabled());
+        let result = manager.send(&notification).await;
+        assert!(result.is_ok()); // Должно возвращать Ok, даже если отключено
+    }
+
+    #[tokio::test]
+    async fn test_webhook_notifier_new_types() {
+        let manager = NotificationManager::new_webhook("https://example.com/webhook");
+
+        // Тестируем новые типы уведомлений
+        let notifications = vec![
+            Notification::priority_change("test_app", "normal", "high", "policy change"),
+            Notification::config_change("config.yml", "updated settings"),
+            Notification::system_event("shutdown", "System shutting down"),
+            Notification::resource_event("Memory", "12GB", "10GB"),
+            Notification::temperature_event("GPU", "80", "75"),
+            Notification::network_event("Connection Spike", "1000 active connections"),
+        ];
+
+        // Проверяем, что все уведомления корректно создаются
+        for notification in &notifications {
+            assert!(notification.title.len() > 0);
+            assert!(notification.message.len() > 0);
+        }
     }
 
     #[tokio::test]
