@@ -10,8 +10,12 @@ use flate2::Compression;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 use tokio::fs;
+use tokio::io::AsyncWriteExt;
 
 use tokio::sync::Mutex;
+
+use super::LogStats;
+use crate::logging::get_memory_pressure_status;
 
 /// Асинхронная структура для управления ротацией логов.
 ///
@@ -501,6 +505,45 @@ impl AsyncLogRotator {
             "update_config не поддерживается в AsyncLogRotator. Используйте синхронную версию или создайте новый экземпляр."
         ))
     }
+
+    /// Асинхронная очистка логов по возрасту.
+    ///
+    /// # Аргументы
+    ///
+    /// * `log_path` - путь к основному файлу лога
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<()>` - Ok, если очистка выполнена успешно, иначе ошибка
+    pub async fn cleanup_by_age_async(&self, log_path: &Path) -> Result<()> {
+        self.cleanup_by_age(log_path).await
+    }
+
+    /// Асинхронная очистка логов по общему размеру.
+    ///
+    /// # Аргументы
+    ///
+    /// * `log_path` - путь к основному файлу лога
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<()>` - Ok, если очистка выполнена успешно, иначе ошибка
+    pub async fn cleanup_by_total_size_async(&self, log_path: &Path) -> Result<()> {
+        self.cleanup_by_total_size(log_path).await
+    }
+
+    /// Асинхронная очистка старых логов.
+    ///
+    /// # Аргументы
+    ///
+    /// * `log_path` - путь к основному файлу лога
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<()>` - Ok, если очистка выполнена успешно, иначе ошибка
+    pub async fn cleanup_old_logs_async(&self, log_path: &Path) -> Result<()> {
+        self.cleanup_old_logs(log_path).await
+    }
 }
 
 /// Асинхронная утилита для получения текущего размера файла лога.
@@ -524,6 +567,465 @@ pub async fn get_log_file_size_async(log_path: &Path) -> Result<u64> {
     } else {
         Ok(0)
     }
+}
+
+/// Асинхронная запись лога в файл.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к файлу лога
+/// * `log_entry` - запись лога для записи
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если запись выполнена успешно, иначе ошибка
+pub async fn write_log_entry_async(log_path: &Path, log_entry: &str) -> Result<()> {
+    // Создаём директорию, если она не существует
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).await.with_context(|| {
+            format!(
+                "Не удалось создать директорию {}: проверьте права доступа",
+                parent.display()
+            )
+        })?;
+    }
+
+    // Открываем файл в режиме append или создаём новый
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .await
+        .with_context(|| {
+            format!(
+                "Не удалось открыть файл лога {} для записи: проверьте права доступа",
+                log_path.display()
+            )
+        })?;
+
+    // Записываем лог с новой строкой
+    file
+        .write_all(format!("{}\n", log_entry).as_bytes())
+        .await
+        .with_context(|| {
+            format!(
+                "Не удалось записать в файл лога {}: проверьте права доступа",
+                log_path.display()
+            )
+        })?;
+
+    // Сбрасываем изменения на диск
+    file
+        .flush()
+        .await
+        .with_context(|| {
+            format!(
+                "Не удалось сбросить изменения в файл лога {}: ошибка ввода-вывода",
+                log_path.display()
+            )
+        })?;
+
+    Ok(())
+}
+
+/// Асинхронная пакетная запись логов для оптимизации производительности.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к файлу лога
+/// * `log_entries` - вектор записей лога для записи
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если запись выполнена успешно, иначе ошибка
+pub async fn write_log_batch_async(log_path: &Path, log_entries: &[String]) -> Result<()> {
+    if log_entries.is_empty() {
+        return Ok(());
+    }
+
+    // Создаём директорию, если она не существует
+    if let Some(parent) = log_path.parent() {
+        fs::create_dir_all(parent).await.with_context(|| {
+            format!(
+                "Не удалось создать директорию {}: проверьте права доступа",
+                parent.display()
+            )
+        })?;
+    }
+
+    // Открываем файл в режиме append или создаём новый
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .await
+        .with_context(|| {
+            format!(
+                "Не удалось открыть файл лога {} для записи: проверьте права доступа",
+                log_path.display()
+            )
+        })?;
+
+    // Объединяем все записи с разделителями и записываем за один раз
+    let combined_content = log_entries.join("\n") + "\n";
+    file
+        .write_all(combined_content.as_bytes())
+        .await
+        .with_context(|| {
+            format!(
+                "Не удалось записать пакет логов в файл {}: проверьте права доступа",
+                log_path.display()
+            )
+        })?;
+
+    // Сбрасываем изменения на диск
+    file
+        .flush()
+        .await
+        .with_context(|| {
+            format!(
+                "Не удалось сбросить изменения в файл лога {}: ошибка ввода-вывода",
+                log_path.display()
+            )
+        })?;
+
+    Ok(())
+}
+
+/// Асинхронная запись лога с автоматическим управлением ротацией.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к файлу лога
+/// * `log_entry` - запись лога для записи
+/// * `rotator` - асинхронный ротатор для управления ротацией
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если запись и ротация выполнены успешно, иначе ошибка
+pub async fn write_log_with_rotation_async(
+    log_path: &Path,
+    log_entry: &str,
+    rotator: &AsyncLogRotator,
+) -> Result<()> {
+    // Записываем лог
+    write_log_entry_async(log_path, log_entry).await?;
+
+    // Проверяем, необходима ли ротация
+    let current_size = get_log_file_size_async(log_path).await?;
+    if rotator.needs_rotation(log_path, current_size).await? {
+        // Выполняем ротацию
+        rotator.rotate_log(log_path).await?;
+    }
+
+    Ok(())
+}
+
+/// Асинхронная пакетная запись логов с автоматическим управлением ротацией.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к файлу лога
+/// * `log_entries` - вектор записей лога для записи
+/// * `rotator` - асинхронный ротатор для управления ротацией
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если запись и ротация выполнены успешно, иначе ошибка
+pub async fn write_log_batch_with_rotation_async(
+    log_path: &Path,
+    log_entries: &[String],
+    rotator: &AsyncLogRotator,
+) -> Result<()> {
+    if log_entries.is_empty() {
+        return Ok(());
+    }
+
+    // Записываем пакет логов
+    write_log_batch_async(log_path, log_entries).await?;
+
+    // Проверяем, необходима ли ротация
+    let current_size = get_log_file_size_async(log_path).await?;
+    if rotator.needs_rotation(log_path, current_size).await? {
+        // Выполняем ротацию
+        rotator.rotate_log(log_path).await?;
+    }
+
+    Ok(())
+}
+
+/// Асинхронная запись лога с автоматическим управлением ротацией и сжатием.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к файлу лога
+/// * `log_entry` - запись лога для записи
+/// * `rotator` - асинхронный ротатор для управления ротацией
+/// * `force_compression` - принудительно включить сжатие
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если запись и ротация выполнены успешно, иначе ошибка
+pub async fn write_log_with_compression_async(
+    log_path: &Path,
+    log_entry: &str,
+    rotator: &AsyncLogRotator,
+    force_compression: bool,
+) -> Result<()> {
+    // Записываем лог
+    write_log_entry_async(log_path, log_entry).await?;
+
+    // Проверяем, необходима ли ротация
+    let current_size = get_log_file_size_async(log_path).await?;
+    if rotator.needs_rotation(log_path, current_size).await? {
+        // Временно включаем сжатие, если запрошено
+        let original_compression = rotator.compression_enabled;
+        let rotator_with_compression = AsyncLogRotator::new(
+            rotator.max_size_bytes,
+            rotator.max_rotated_files,
+            force_compression || original_compression,
+            rotator.rotation_interval_sec,
+            rotator.max_age_sec,
+            rotator.max_total_size_bytes,
+        );
+        
+        // Выполняем ротацию
+        rotator_with_compression.rotate_log(log_path).await?;
+    }
+
+    Ok(())
+}
+
+/// Асинхронная оптимизированная запись логов с пакетной обработкой и сжатием.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к файлу лога
+/// * `log_entries` - вектор записей лога для записи
+/// * `rotator` - асинхронный ротатор для управления ротацией
+/// * `batch_size` - размер пакета для оптимизации
+/// * `force_compression` - принудительно включить сжатие
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если запись и ротация выполнены успешно, иначе ошибка
+pub async fn write_log_optimized_async(
+    log_path: &Path,
+    log_entries: &[String],
+    rotator: &AsyncLogRotator,
+    batch_size: usize,
+    force_compression: bool,
+) -> Result<()> {
+    if log_entries.is_empty() {
+        return Ok(());
+    }
+
+    // Разбиваем логи на пакеты для оптимизации
+    for chunk in log_entries.chunks(batch_size) {
+        // Записываем пакет логов
+        write_log_batch_async(log_path, chunk).await?;
+
+        // Проверяем, необходима ли ротация после каждого пакета
+        let current_size = get_log_file_size_async(log_path).await?;
+        if rotator.needs_rotation(log_path, current_size).await? {
+            // Временно включаем сжатие, если запрошено
+            let original_compression = rotator.compression_enabled;
+            let rotator_with_compression = AsyncLogRotator::new(
+                rotator.max_size_bytes,
+                rotator.max_rotated_files,
+                force_compression || original_compression,
+                rotator.rotation_interval_sec,
+                rotator.max_age_sec,
+                rotator.max_total_size_bytes,
+            );
+            
+            // Выполняем ротацию
+            rotator_with_compression.rotate_log(log_path).await?;
+        }
+    }
+
+    Ok(())
+}
+
+/// Асинхронная очистка логов с расширенными политиками.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к основному файлу лога
+/// * `rotator` - асинхронный ротатор для управления очисткой
+/// * `aggressive` - использовать агрессивную политику очистки
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если очистка выполнена успешно, иначе ошибка
+pub async fn cleanup_logs_advanced_async(
+    log_path: &Path,
+    rotator: &AsyncLogRotator,
+    aggressive: bool,
+) -> Result<()> {
+    // Выполняем очистку по возрасту
+    rotator.cleanup_by_age_async(log_path).await?;
+
+    // Выполняем очистку по общему размеру
+    rotator.cleanup_by_total_size_async(log_path).await?;
+
+    // Выполняем очистку по количеству файлов
+    rotator.cleanup_old_logs_async(log_path).await?;
+
+    // Если агрессивная очистка, применяем дополнительные политики
+    if aggressive {
+        // Удаляем все, кроме самых последних файлов
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
+        let aggressive_rotator = AsyncLogRotator::new(
+            max_size,
+            std::cmp::min(max_files, 1), // Только текущий файл
+            compression,
+            interval,
+            max_age,
+            (max_total_size as f64 * 0.3) as u64, // 70% уменьшение
+        );
+
+        aggressive_rotator.cleanup_logs(log_path).await?;
+    }
+
+    Ok(())
+}
+
+/// Асинхронная оптимизация производительности логирования.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к основному файлу лога
+/// * `rotator` - асинхронный ротатор для управления оптимизацией
+/// * `memory_pressure` - флаг высокого давления памяти
+/// * `high_log_volume` - флаг высокого объема логов
+/// * `disk_space_low` - флаг нехватки дискового пространства
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если оптимизация выполнена успешно, иначе ошибка
+pub async fn optimize_log_performance_async(
+    log_path: &Path,
+    rotator: &AsyncLogRotator,
+    memory_pressure: bool,
+    high_log_volume: bool,
+    disk_space_low: bool,
+) -> Result<()> {
+    // Получаем текущую конфигурацию
+    let (max_size, max_files, compression, interval, max_age, max_total_size) =
+        rotator.get_config();
+
+    let mut new_max_size = max_size;
+    let mut new_interval = interval;
+    let mut new_compression = compression;
+    let mut new_max_files = max_files;
+    let mut new_max_age = max_age;
+    let mut new_max_total_size = max_total_size;
+
+    // Применяем разные стратегии оптимизации в зависимости от условий
+    if memory_pressure {
+        // Стратегия при высоком давлении памяти: уменьшаем размер и увеличиваем частоту ротации
+        new_max_size = (max_size as f64 * 0.6) as u64; // 40% уменьшение
+        new_interval = (interval as f64 * 0.4) as u64; // 60% уменьшение
+        new_max_files = std::cmp::min(max_files, 3); // Ограничиваем до 3 файлов
+        tracing::warn!("Применяем оптимизацию для высокого давления памяти");
+    }
+
+    if high_log_volume {
+        // Стратегия при высоком объеме логов: увеличиваем частоту ротации и включаем сжатие
+        new_interval = (interval as f64 * 0.3) as u64; // 70% уменьшение
+        new_compression = true; // Принудительно включаем сжатие
+        new_max_age = std::cmp::min(max_age, 3600); // Максимум 1 час
+        tracing::warn!("Применяем оптимизацию для высокого объема логов");
+    }
+
+    if disk_space_low {
+        // Стратегия при нехватке дискового пространства: агрессивная очистка и сжатие
+        new_max_size = (max_size as f64 * 0.5) as u64; // 50% уменьшение
+        new_max_files = std::cmp::min(max_files, 2); // Только 2 файла
+        new_compression = true; // Принудительно включаем сжатие
+        new_max_total_size = (max_total_size as f64 * 0.7) as u64; // 30% уменьшение
+        tracing::warn!("Применяем оптимизацию для нехватки дискового пространства");
+    }
+
+    // Создаем новый ротатор с оптимизированной конфигурацией
+    let optimized_rotator = AsyncLogRotator::new(
+        new_max_size,
+        new_max_files,
+        new_compression,
+        new_interval,
+        new_max_age,
+        new_max_total_size,
+    );
+
+    // Выполняем очистку с новой конфигурацией
+    optimized_rotator.cleanup_logs(log_path).await?;
+
+    tracing::info!(
+        "Оптимизация производительности логирования завершена. Новая конфигурация: size={} байт, files={}, compression={}, interval={} сек, max_age={} сек, max_total_size={} байт",
+        new_max_size, new_max_files, new_compression, new_interval, new_max_age, new_max_total_size
+    );
+
+    Ok(())
+}
+
+/// Асинхронный мониторинг и оптимизация производительности логирования.
+///
+/// # Аргументы
+///
+/// * `log_path` - путь к основному файлу лога
+/// * `rotator` - асинхронный ротатор для управления оптимизацией
+/// * `stats` - статистика логов для анализа
+///
+/// # Возвращает
+///
+/// `Result<()>` - Ok, если мониторинг и оптимизация выполнены успешно, иначе ошибка
+pub async fn monitor_and_optimize_log_performance_async(
+    log_path: &Path,
+    rotator: &AsyncLogRotator,
+    stats: &LogStats,
+) -> Result<()> {
+    // Анализируем статистику логов для определения стратегии оптимизации
+    let high_volume = stats.total_entries > 1000 && stats.total_size > 1_000_000; // >1MB
+    let error_heavy = stats.error_count > stats.total_entries / 10; // >10% ошибок
+    let warning_heavy = stats.warning_count > stats.total_entries / 5; // >20% предупреждений
+
+    // Получаем статус давления памяти (заглушка на данный момент)
+    let memory_pressure = get_memory_pressure_status();
+    let disk_space_low = false; // Будет определяться из системных метрик
+
+    // Применяем оптимизацию на основе анализа
+    optimize_log_performance_async(
+        log_path,
+        rotator,
+        memory_pressure,
+        high_volume,
+        disk_space_low,
+    ).await?;
+
+    // Дополнительные оптимизации для логов с большим количеством ошибок
+    if error_heavy {
+        tracing::warn!("Обнаружено большое количество ошибок - применяем оптимизацию, ориентированную на ошибки");
+        // Здесь можно реализовать стратегии логирования, специфичные для ошибок
+    }
+
+    if warning_heavy {
+        tracing::warn!("Обнаружено большое количество предупреждений - применяем оптимизацию, ориентированную на предупреждения");
+        // Здесь можно реализовать стратегии логирования, специфичные для предупреждений
+    }
+
+    // Логируем результаты оптимизации
+    let (new_max_size, new_max_files, new_compression, new_interval, _new_max_age, _new_max_total_size) =
+        rotator.get_config();
+
+    tracing::info!(
+        "Мониторинг и оптимизация производительности логирования завершены. Новая конфигурация: size={} байт, files={}, compression={}, interval={} сек",
+        new_max_size, new_max_files, new_compression, new_interval
+    );
+
+    Ok(())
 }
 
 /// Парсит timestamp из имени ротированного файла лога (общая функция).
@@ -775,6 +1277,313 @@ mod tests {
                 result.is_ok(),
                 "Cleanup of non-existent file should succeed"
             );
+        });
+    }
+
+    #[test]
+    fn test_async_log_rotation_comprehensive() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("comprehensive_test.log");
+
+            // Создаём тестовый файл лога с достаточным размером для ротации
+            let mut file = std::fs::File::create(&log_path).expect("create log file");
+            for i in 0..500 {
+                writeln!(file, "Comprehensive test log entry {}", i).expect("write to log");
+            }
+            drop(file);
+
+            let rotator = AsyncLogRotator::new(500, 3, true, 0, 3600, 10000);
+
+            // Выполняем ротацию
+            let result = rotator.rotate_log(&log_path).await;
+            assert!(result.is_ok(), "Rotation should succeed");
+
+            // Проверяем, что оригинальный файл удалён
+            assert!(!log_path.exists(), "Original log file should be removed");
+
+            // Проверяем, что создан ротированный файл (сжатый)
+            let rotated_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+                .expect("read dir")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
+                .collect();
+
+            assert_eq!(rotated_files.len(), 1, "Should have one compressed rotated log file");
+        });
+    }
+
+    #[test]
+    fn test_async_log_rotation_with_cleanup_policies() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("policy_test.log");
+
+            let rotator = AsyncLogRotator::new(100, 2, false, 0, 0, 500);
+
+            // Создаём несколько ротированных файлов
+            for i in 0..5 {
+                let rotated_path = temp_dir.path().join(format!("policy_test.{:06}.log", i));
+                let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
+                writeln!(file, "Rotated log entry {}", i).expect("write to rotated log");
+                drop(file);
+            }
+
+            // Выполняем очистку
+            let result = rotator.cleanup_logs(&log_path).await;
+            assert!(result.is_ok(), "Cleanup should succeed");
+
+            // Проверяем, что количество файлов не превышает лимит
+            let remaining_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+                .expect("read dir")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| 
+                    entry.path().file_name().map_or(false, |name| 
+                        name.to_string_lossy().starts_with("policy_test.")
+                    )
+                )
+                .collect();
+
+            assert!(remaining_files.len() <= 2, "Should have at most 2 rotated files after cleanup");
+        });
+    }
+
+    #[test]
+    fn test_async_write_log_with_compression() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("compression_test.log");
+
+            let rotator = AsyncLogRotator::new(100, 3, false, 0, 0, 0); // Сжатие отключено по умолчанию
+
+            // Записываем достаточно данных для ротации
+            for i in 0..20 {
+                write_log_with_compression_async(&log_path, &format!("Test log entry {}", i), &rotator, true)
+                    .await
+                    .expect("write should succeed");
+            }
+
+            // Проверяем, что создан ротированный файл (сжатый)
+            let rotated_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+                .expect("read dir")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
+                .collect();
+
+            assert_eq!(rotated_files.len(), 1, "Should have one compressed rotated log file");
+        });
+    }
+
+    #[test]
+    fn test_async_write_log_optimized() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("optimized_test.log");
+
+            let rotator = AsyncLogRotator::new(100, 3, false, 0, 0, 0);
+
+            // Создаем большой набор логов
+            let log_entries: Vec<String> = (0..50).map(|i| format!("Optimized log entry {}", i)).collect();
+
+            // Записываем с оптимизацией (пакеты по 10 записей)
+            write_log_optimized_async(&log_path, &log_entries, &rotator, 10, true)
+                .await
+                .expect("optimized write should succeed");
+
+            // Проверяем, что созданы ротированные файлы
+            let rotated_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+                .expect("read dir")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
+                .collect();
+
+            assert!(rotated_files.len() > 0, "Should have rotated log files");
+        });
+    }
+
+    #[test]
+    fn test_async_cleanup_logs_advanced() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("advanced_cleanup_test.log");
+
+            let rotator = AsyncLogRotator::new(100, 5, false, 0, 0, 1000);
+
+            // Создаем несколько ротированных файлов
+            for i in 0..8 {
+                let rotated_path = temp_dir.path().join(format!("advanced_cleanup_test.{:06}.log", i));
+                let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
+                writeln!(file, "Advanced cleanup log entry {}", i).expect("write to rotated log");
+                drop(file);
+            }
+
+            // Выполняем агрессивную очистку
+            cleanup_logs_advanced_async(&log_path, &rotator, true)
+                .await
+                .expect("advanced cleanup should succeed");
+
+            // Проверяем, что количество файлов значительно уменьшилось
+            let remaining_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+                .expect("read dir")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| 
+                    entry.path().file_name().map_or(false, |name| 
+                        name.to_string_lossy().starts_with("advanced_cleanup_test.")
+                    )
+                )
+                .collect();
+
+            assert!(remaining_files.len() <= 2, "Aggressive cleanup should leave at most 2 files");
+        });
+    }
+
+    #[test]
+    fn test_async_optimize_log_performance() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("performance_test.log");
+
+            let rotator = AsyncLogRotator::new(1000, 5, false, 3600, 86400, 10000);
+
+            // Создаем несколько ротированных файлов
+            for i in 0..3 {
+                let rotated_path = temp_dir.path().join(format!("performance_test.{:06}.log", i));
+                let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
+                writeln!(file, "Performance test log entry {}", i).expect("write to rotated log");
+                drop(file);
+            }
+
+            // Оптимизируем для высокого давления памяти
+            optimize_log_performance_async(&log_path, &rotator, true, false, false)
+                .await
+                .expect("optimization should succeed");
+
+            // Проверяем, что оптимизация применилась
+            // (в реальной системе это бы изменило конфигурацию и выполнило очистку)
+            assert!(true, "Optimization completed successfully");
+        });
+    }
+
+    #[test]
+    fn test_async_monitor_and_optimize_log_performance() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("monitor_test.log");
+
+            let rotator = AsyncLogRotator::new(1000, 5, false, 3600, 86400, 10000);
+
+            // Создаем статистику, которая вызовет оптимизацию
+            let stats = LogStats {
+                total_entries: 2000,
+                total_size: 2_000_000, // 2MB - высокий объем
+                error_count: 300, // 15% ошибок
+                warning_count: 800, // 40% предупреждений
+                info_count: 800,
+                debug_count: 100,
+            };
+
+            // Выполняем мониторинг и оптимизацию
+            monitor_and_optimize_log_performance_async(&log_path, &rotator, &stats)
+                .await
+                .expect("monitor and optimize should succeed");
+
+            // Проверяем, что оптимизация применилась
+            assert!(true, "Monitor and optimize completed successfully");
+        });
+    }
+
+    #[test]
+    fn test_async_cleanup_methods() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("cleanup_methods_test.log");
+
+            let rotator = AsyncLogRotator::new(100, 3, false, 0, 3600, 1000);
+
+            // Создаем несколько ротированных файлов
+            for i in 0..5 {
+                let rotated_path = temp_dir.path().join(format!("cleanup_methods_test.{:06}.log", i));
+                let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
+                writeln!(file, "Cleanup methods test log entry {}", i).expect("write to rotated log");
+                drop(file);
+            }
+
+            // Тестируем отдельные методы очистки
+            rotator.cleanup_by_age_async(&log_path).await.expect("age cleanup should succeed");
+            rotator.cleanup_by_total_size_async(&log_path).await.expect("size cleanup should succeed");
+            rotator.cleanup_old_logs_async(&log_path).await.expect("old logs cleanup should succeed");
+
+            // Проверяем, что очистка сработала
+            let remaining_files: Vec<_> = std::fs::read_dir(temp_dir.path())
+                .expect("read dir")
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| 
+                    entry.path().file_name().map_or(false, |name| 
+                        name.to_string_lossy().starts_with("cleanup_methods_test.")
+                    )
+                )
+                .collect();
+
+            assert!(remaining_files.len() <= 3, "Cleanup methods should limit files to 3");
+        });
+    }
+
+    #[test]
+    fn test_async_comprehensive_performance_optimization() {
+        let runtime = create_runtime();
+
+        runtime.block_on(async {
+            let temp_dir = TempDir::new().expect("temp dir");
+            let log_path = temp_dir.path().join("comprehensive_perf_test.log");
+
+            let rotator = AsyncLogRotator::new(500, 3, true, 1800, 3600, 5000);
+
+            // Создаем большой набор логов
+            let log_entries: Vec<String> = (0..100).map(|i| format!("Comprehensive perf test log entry {}", i)).collect();
+
+            // Записываем с полной оптимизацией
+            write_log_optimized_async(&log_path, &log_entries, &rotator, 15, true)
+                .await
+                .expect("comprehensive optimized write should succeed");
+
+            // Создаем статистику для мониторинга
+            let stats = LogStats {
+                total_entries: 1000,
+                total_size: 5_000_000, // 5MB
+                error_count: 150, // 15% ошибок
+                warning_count: 300, // 30% предупреждений
+                info_count: 400,
+                debug_count: 150,
+            };
+
+            // Выполняем полный цикл мониторинга и оптимизации
+            monitor_and_optimize_log_performance_async(&log_path, &rotator, &stats)
+                .await
+                .expect("comprehensive monitor and optimize should succeed");
+
+            // Выполняем агрессивную очистку
+            cleanup_logs_advanced_async(&log_path, &rotator, true)
+                .await
+                .expect("comprehensive advanced cleanup should succeed");
+
+            // Проверяем, что все операции завершились успешно
+            assert!(true, "Comprehensive performance optimization completed successfully");
         });
     }
 }

@@ -169,6 +169,9 @@ fn test_system_metrics_caching_logic() {
                 disk: DiskMetrics::default(),
                 gpu: None,  // GPU metrics are optional
                 ebpf: None, // eBPF metrics are optional
+                system_calls: SystemCallMetrics::default(),
+                inode: InodeMetrics::default(),
+                swap: SwapMetrics::default(),
             };
             system_metrics_cache = Some(mock_metrics);
             system_metrics_cache_iteration = current_iteration;

@@ -115,7 +115,7 @@ async fn test_daemon_initializes_with_minimal_config() {
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_manager) => {
             // Демон завершился успешно - это ожидаемое поведение
         }
         Err(e) => {
@@ -162,7 +162,7 @@ async fn test_daemon_dry_run_mode() {
     .await;
 
     match result {
-        Ok(()) => {
+        Ok(_manager) => {
             // Демон завершился успешно
         }
         Err(e) => {
@@ -201,7 +201,7 @@ async fn test_daemon_handles_nonexistent_patterns_dir() {
     .await;
 
     match result {
-        Ok(Ok(())) => {
+        Ok(Ok(_manager)) => {
             panic!("Daemon should fail with nonexistent patterns dir");
         }
         Ok(Err(_)) => {

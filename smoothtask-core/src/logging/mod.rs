@@ -417,6 +417,90 @@ pub async fn get_log_file_size_async(log_path: &std::path::Path) -> Result<u64, 
     async_logging::get_log_file_size_async(log_path).await
 }
 
+/// Write log entry asynchronously
+pub async fn write_log_entry_async(
+    log_path: &std::path::Path,
+    log_entry: &str,
+) -> Result<(), anyhow::Error> {
+    async_logging::write_log_entry_async(log_path, log_entry).await
+}
+
+/// Write log batch asynchronously
+pub async fn write_log_batch_async(
+    log_path: &std::path::Path,
+    log_entries: &[String],
+) -> Result<(), anyhow::Error> {
+    async_logging::write_log_batch_async(log_path, log_entries).await
+}
+
+/// Write log with rotation asynchronously
+pub async fn write_log_with_rotation_async(
+    log_path: &std::path::Path,
+    log_entry: &str,
+    rotator: &async_logging::AsyncLogRotator,
+) -> Result<(), anyhow::Error> {
+    async_logging::write_log_with_rotation_async(log_path, log_entry, rotator).await
+}
+
+/// Write log batch with rotation asynchronously
+pub async fn write_log_batch_with_rotation_async(
+    log_path: &std::path::Path,
+    log_entries: &[String],
+    rotator: &async_logging::AsyncLogRotator,
+) -> Result<(), anyhow::Error> {
+    async_logging::write_log_batch_with_rotation_async(log_path, log_entries, rotator).await
+}
+
+/// Write log with compression asynchronously
+pub async fn write_log_with_compression_async(
+    log_path: &std::path::Path,
+    log_entry: &str,
+    rotator: &async_logging::AsyncLogRotator,
+    force_compression: bool,
+) -> Result<(), anyhow::Error> {
+    async_logging::write_log_with_compression_async(log_path, log_entry, rotator, force_compression).await
+}
+
+/// Write log optimized asynchronously
+pub async fn write_log_optimized_async(
+    log_path: &std::path::Path,
+    log_entries: &[String],
+    rotator: &async_logging::AsyncLogRotator,
+    batch_size: usize,
+    force_compression: bool,
+) -> Result<(), anyhow::Error> {
+    async_logging::write_log_optimized_async(log_path, log_entries, rotator, batch_size, force_compression).await
+}
+
+/// Cleanup logs advanced asynchronously
+pub async fn cleanup_logs_advanced_async(
+    log_path: &std::path::Path,
+    rotator: &async_logging::AsyncLogRotator,
+    aggressive: bool,
+) -> Result<(), anyhow::Error> {
+    async_logging::cleanup_logs_advanced_async(log_path, rotator, aggressive).await
+}
+
+/// Optimize log performance asynchronously
+pub async fn optimize_log_performance_async(
+    log_path: &std::path::Path,
+    rotator: &async_logging::AsyncLogRotator,
+    memory_pressure: bool,
+    high_log_volume: bool,
+    disk_space_low: bool,
+) -> Result<(), anyhow::Error> {
+    async_logging::optimize_log_performance_async(log_path, rotator, memory_pressure, high_log_volume, disk_space_low).await
+}
+
+/// Monitor and optimize log performance asynchronously
+pub async fn monitor_and_optimize_log_performance_async(
+    log_path: &std::path::Path,
+    rotator: &async_logging::AsyncLogRotator,
+    stats: &LogStats,
+) -> Result<(), anyhow::Error> {
+    async_logging::monitor_and_optimize_log_performance_async(log_path, rotator, stats).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -761,5 +845,69 @@ mod tests {
         // Should see optimization applied
         assert!(interval < 3600); // Reduced interval
         assert!(compression); // Compression enabled
+    }
+
+    #[test]
+    fn test_async_logging_functions_exposed() {
+        // Test that async functions are properly exposed in the main module
+        let stats = LogStats::default();
+        assert_eq!(stats.total_entries, 0);
+        assert_eq!(stats.total_size, 0);
+        
+        // Test that we can create an async rotator
+        let rotator = create_async_log_rotator(1000, 3, true, 3600, 86400, 10000);
+        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
+        
+        assert_eq!(max_size, 1000);
+        assert_eq!(max_files, 3);
+        assert!(compression);
+        assert_eq!(interval, 3600);
+        assert_eq!(max_age, 86400);
+        assert_eq!(max_total_size, 10000);
+    }
+
+    #[test]
+    fn test_log_stats_structure() {
+        // Test LogStats structure and methods
+        let stats = LogStats {
+            total_entries: 1000,
+            total_size: 524288,
+            error_count: 10,
+            warning_count: 50,
+            info_count: 500,
+            debug_count: 440,
+        };
+        
+        // Verify the stats are reasonable
+        assert!(stats.total_size > 0);
+        assert!(stats.total_entries > 0);
+        
+        // Calculate average size
+        let avg_size = stats.total_size as f64 / stats.total_entries as f64;
+        assert!(avg_size > 0.0);
+        assert!(avg_size < 1024.0); // Less than 1KB per entry (reasonable for logs)
+    }
+
+    #[test]
+    fn test_log_performance_metrics_structure() {
+        // Test LogPerformanceMetrics structure
+        let metrics = LogPerformanceMetrics {
+            average_log_time_us: 250,
+            max_log_time_us: 1200,
+            log_throughput: 500,
+            compression_ratio: 3.0,
+            memory_usage_bytes: 10_000_000,
+            disk_usage_bytes: 100_000_000,
+            cache_hit_rate: 0.9,
+        };
+        
+        // Verify the metrics are reasonable
+        assert!(metrics.average_log_time_us > 0);
+        assert!(metrics.max_log_time_us >= metrics.average_log_time_us);
+        assert!(metrics.log_throughput > 0);
+        assert!(metrics.compression_ratio > 1.0); // Should be >1:1
+        assert!(metrics.memory_usage_bytes > 0);
+        assert!(metrics.disk_usage_bytes > 0);
+        assert!(metrics.cache_hit_rate > 0.0 && metrics.cache_hit_rate <= 1.0);
     }
 }

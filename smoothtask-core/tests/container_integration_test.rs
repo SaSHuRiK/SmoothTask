@@ -70,6 +70,17 @@ fn test_container_metrics_structure() {
         cpu_quota: Some(200000),
         cpu_period: Some(100000),
         network_interfaces: vec!["eth0".to_string(), "veth1".to_string()],
+        network_rx_bytes: None,
+        network_tx_bytes: None,
+        network_rx_packets: None,
+        network_tx_packets: None,
+        disk_read_bytes: None,
+        disk_write_bytes: None,
+        disk_read_ops: None,
+        disk_write_ops: None,
+        cpu_usage_ns: None,
+        cpu_throttled_time_ns: None,
+        cpu_throttled_periods: None,
     };
 
     assert_eq!(metrics.runtime, ContainerRuntime::Podman);
