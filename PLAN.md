@@ -11,67 +11,96 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-834: Add container support for Docker and Podman environments
+- [x] ST-834: Add container support for Docker and Podman environments (Part 1: Detection)
   - Тип: Rust / core / integration
-  - Примечания: Enable SmoothTask to run in containerized environments with proper cgroup and process monitoring
+  - Примечания: Implement container detection and basic environment adaptation
   - Приоритет: Средний
-  - Оценка времени: ~180 минут
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
   - Критерии готовности:
-    - [ ] Research container monitoring requirements and limitations
-    - [ ] Implement container detection and environment adaptation
-    - [ ] Add Dockerfile and container configuration examples
-    - [ ] Implement cgroup v2 support for containerized environments
-    - [ ] Add container-specific metrics and monitoring
-    - [ ] Add unit and integration tests for container support
-    - [ ] Update documentation with container usage examples
-  - Ожидаемые результаты: SmoothTask can run effectively in Docker/Podman containers with proper process monitoring and priority management
+    - [x] Research container detection methods (cgroups, /proc/1/cgroup, environment variables)
+    - [x] Implement container detection function in utils module
+    - [x] Add basic container environment adaptation logic
+    - [x] Add unit tests for container detection
+  - Ожидаемые результаты: Basic container detection capability
+  - Результаты:
+    - Created smoothtask-core/src/utils/container.rs module
+    - Implemented ContainerRuntime enum (Docker, Podman, Containerd, Lxc, Unknown, None)
+    - Implemented ContainerInfo struct with runtime, container_id, and cgroup_path
+    - Implemented detect_container_runtime() function with multiple detection methods
+    - Implemented get_container_info() function for detailed container information
+    - Implemented is_containerized() helper function
+    - Implemented adapt_for_container() function for environment adaptation
+    - Added comprehensive unit tests for all functionality
 
-- [ ] ST-835: Add Prometheus and Grafana integration for monitoring
-  - Тип: Rust / core / monitoring
-  - Примечания: Expose metrics in Prometheus format and provide Grafana dashboards for visualization
+- [x] ST-835: Add container support for Docker and Podman environments (Part 2: Metrics)
+  - Тип: Rust / core / integration
+  - Примечания: Add container-specific metrics and monitoring
   - Приоритет: Средний
-  - Оценка времени: ~150 минут
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - [x] Research container metrics collection approaches
+    - [x] Implement container-specific metrics collection
+    - [x] Add container process monitoring integration
+    - [x] Add unit tests for container metrics
+  - Ожидаемые результаты: Container-specific metrics collection
+  - Результаты:
+    - Implemented ContainerMetrics struct with memory, CPU, and network metrics
+    - Implemented collect_container_metrics() function for comprehensive container metrics
+    - Added memory limit/usage collection from cgroup v2
+    - Added CPU shares/quota/period collection from cgroup v2
+    - Added network interface detection for container networking
+    - Enhanced adapt_for_container() to collect and log container metrics
+    - Added unit tests for metrics functionality
+    - All code compiles cleanly with no warnings
+
+- [ ] ST-836: Add container support for Docker and Podman environments (Part 3: Integration)
+  - Тип: Rust / core / integration
+  - Примечания: Complete container integration with cgroup v2 support
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Критерии готовности:
+    - [ ] Implement cgroup v2 support for containerized environments
+    - [ ] Add Dockerfile and container configuration examples
+    - [ ] Add integration tests for container support
+    - [ ] Update documentation with container usage examples
+  - Ожидаемые результаты: Complete container support with proper integration
+
+- [ ] ST-837: Add Prometheus metrics endpoint (Part 1: Basic endpoint)
+  - Тип: Rust / core / monitoring
+  - Примечания: Implement basic Prometheus metrics endpoint
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
   - Критерии готовности:
     - [ ] Research Prometheus metrics format and best practices
-    - [ ] Implement Prometheus metrics endpoint in API server
-    - [ ] Add key system and process metrics in Prometheus format
-    - [ ] Create basic Grafana dashboard templates
-    - [ ] Add health and performance metrics for monitoring
-    - [ ] Add unit and integration tests for metrics endpoint
-    - [ ] Update documentation with monitoring setup guide
-  - Ожидаемые результаты: Comprehensive monitoring integration with Prometheus/Grafana for better observability
+    - [ ] Implement basic Prometheus metrics endpoint in API server
+    - [ ] Add key system metrics in Prometheus format
+    - [ ] Add unit tests for metrics endpoint
+  - Ожидаемые результаты: Basic Prometheus metrics endpoint
 
-- [ ] ST-836: Implement basic web UI for status monitoring and configuration
-  - Тип: Web / UI
-  - Примечания: Simple web interface to view system status, metrics, and basic configuration
-  - Приоритет: Низкий
-  - Оценка времени: ~240 минут
-  - Критерии готовности:
-    - [ ] Research web UI frameworks (React, Svelte, or simple HTML/JS)
-    - [ ] Design basic UI layout and components
-    - [ ] Implement system status dashboard
-    - [ ] Add process and metrics visualization
-    - [ ] Implement basic configuration editing
-    - [ ] Add API integration for data fetching
-    - [ ] Add unit tests for UI components
-    - [ ] Update documentation with UI usage guide
-  - Ожидаемые результаты: User-friendly web interface for monitoring and basic configuration
-
-- [ ] ST-837: Add automatic pattern discovery system
-  - Тип: Rust / core / classification
-  - Примечания: System for detecting new applications and suggesting pattern additions
+- [ ] ST-838: Add Prometheus metrics endpoint (Part 2: Process metrics)
+  - Тип: Rust / core / monitoring
+  - Примечания: Add process and application metrics to Prometheus endpoint
   - Приоритет: Средний
-  - Оценка времени: ~210 минут
+  - Оценка времени: ~60 минут
   - Критерии готовности:
-    - [ ] Research pattern discovery algorithms and techniques
-    - [ ] Implement application fingerprinting and identification
-    - [ ] Add pattern suggestion system
-    - [ ] Implement automatic pattern generation
-    - [ ] Add pattern validation and testing
-    - [ ] Integrate with existing pattern watcher system
-    - [ ] Add unit and integration tests
-    - [ ] Update documentation with pattern discovery guide
-  - Ожидаемые результаты: Automatic detection and suggestion of new application patterns for better classification
+    - [ ] Add process metrics in Prometheus format
+    - [ ] Add application classification metrics
+    - [ ] Add health and performance metrics
+    - [ ] Add integration tests for process metrics
+  - Ожидаемые результаты: Complete process metrics in Prometheus format
+
+- [ ] ST-839: Add Prometheus metrics endpoint (Part 3: Grafana integration)
+  - Тип: Rust / core / monitoring
+  - Примечания: Add Grafana dashboard templates and documentation
+  - Приоритет: Средний
+  - Оценка времени: ~30 минут
+  - Критерии готовности:
+    - [ ] Create basic Grafana dashboard templates
+    - [ ] Add monitoring setup guide documentation
+    - [ ] Add example queries and visualizations
+  - Ожидаемые результаты: Complete Prometheus/Grafana integration
 
 ## 2. Бэклог
 
@@ -123,6 +152,22 @@
     - High test coverage across all major components and integration points
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-835: Add container support for Docker and Podman environments (Part 2: Metrics)
+  - Тип: Rust / core / integration
+  - Примечания: Add container-specific metrics and monitoring
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~30 минут
+  - Результаты: Container-specific metrics collection with memory, CPU, and network metrics
+
+- [x] ST-834: Add container support for Docker and Podman environments (Part 1: Detection)
+  - Тип: Rust / core / integration
+  - Примечания: Implement container detection and basic environment adaptation
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
+  - Результаты: Basic container detection capability with Docker/Podman/Containerd/Lxc support
 
 - [x] ST-824: Implement PipeWire audio monitoring for XRUN detection and audio stream analysis
   - Тип: Rust / core / metrics / audio
