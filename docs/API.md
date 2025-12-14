@@ -254,6 +254,254 @@ curl http://127.0.0.1:8080/health
 
 ---
 
+### GET /api/custom-metrics
+
+Получение списка всех пользовательских метрик.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/custom-metrics
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "custom_metrics": [
+    {
+      "id": "cpu_usage",
+      "name": "CPU Usage",
+      "description": "Current CPU usage percentage",
+      "value": 42.5,
+      "source": "command",
+      "source_config": {
+        "command": "top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}'"
+      },
+      "last_updated": "2025-01-01T12:00:00+00:00",
+      "update_interval": 60
+    },
+    {
+      "id": "memory_free",
+      "name": "Free Memory",
+      "description": "Available memory in MB",
+      "value": 2048.0,
+      "source": "file",
+      "source_config": {
+        "path": "/proc/meminfo",
+        "pattern": "MemFree: *(\d+) kB"
+      },
+      "last_updated": "2025-01-01T12:00:00+00:00",
+      "update_interval": 30
+    }
+  ]
+}
+```
+
+**Статус коды:**
+- `200 OK` - Успешное получение списка метрик
+- `500 Internal Server Error` - Ошибка при получении метрик
+
+---
+
+### GET /api/custom-metrics/{id}
+
+Получение информации о конкретной пользовательской метрике.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/custom-metrics/cpu_usage
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "custom_metric": {
+    "id": "cpu_usage",
+    "name": "CPU Usage",
+    "description": "Current CPU usage percentage",
+    "value": 42.5,
+    "source": "command",
+    "source_config": {
+      "command": "top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}'"
+    },
+    "last_updated": "2025-01-01T12:00:00+00:00",
+    "update_interval": 60
+  }
+}
+```
+
+**Ошибки:**
+- `404 Not Found` - Метрика с указанным ID не найдена
+- `500 Internal Server Error` - Ошибка при получении метрики
+
+---
+
+### POST /api/custom-metrics
+
+Добавление новой пользовательской метрики.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/custom-metrics \
+  -H "Content-Type: application/json" \
+  -d '{
+    "id": "disk_usage",
+    "name": "Disk Usage",
+    "description": "Current disk usage percentage",
+    "source": "command",
+    "source_config": {
+      "command": "df --output=pcent / | tail -n 1 | tr -d '%'"
+    },
+    "update_interval": 120
+  }'
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "message": "Custom metric 'disk_usage' added successfully",
+  "custom_metric": {
+    "id": "disk_usage",
+    "name": "Disk Usage",
+    "description": "Current disk usage percentage",
+    "value": null,
+    "source": "command",
+    "source_config": {
+      "command": "df --output=pcent / | tail -n 1 | tr -d '%'"
+    },
+    "last_updated": null,
+    "update_interval": 120
+  }
+}
+```
+
+**Ошибки:**
+- `400 Bad Request` - Некорректные данные запроса
+- `409 Conflict` - Метрика с таким ID уже существует
+- `500 Internal Server Error` - Ошибка при добавлении метрики
+
+---
+
+### PUT /api/custom-metrics/{id}
+
+Обновление существующей пользовательской метрики.
+
+**Запрос:**
+```bash
+curl -X PUT http://127.0.0.1:8080/api/custom-metrics/cpu_usage \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "CPU Usage Updated",
+    "description": "Updated CPU usage percentage",
+    "update_interval": 30
+  }'
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "message": "Custom metric 'cpu_usage' updated successfully",
+  "custom_metric": {
+    "id": "cpu_usage",
+    "name": "CPU Usage Updated",
+    "description": "Updated CPU usage percentage",
+    "value": 42.5,
+    "source": "command",
+    "source_config": {
+      "command": "top -bn1 | grep "Cpu(s)" | sed "s/.*, *\([0-9.]*\)%* id.*/\1/" | awk '{print 100 - $1}'"
+    },
+    "last_updated": "2025-01-01T12:00:00+00:00",
+    "update_interval": 30
+  }
+}
+```
+
+**Ошибки:**
+- `400 Bad Request` - Некорректные данные запроса
+- `404 Not Found` - Метрика с указанным ID не найдена
+- `500 Internal Server Error` - Ошибка при обновлении метрики
+
+---
+
+### DELETE /api/custom-metrics/{id}
+
+Удаление пользовательской метрики.
+
+**Запрос:**
+```bash
+curl -X DELETE http://127.0.0.1:8080/api/custom-metrics/cpu_usage
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "message": "Custom metric 'cpu_usage' deleted successfully"
+}
+```
+
+**Ошибки:**
+- `404 Not Found` - Метрика с указанным ID не найдена
+- `500 Internal Server Error` - Ошибка при удалении метрики
+
+---
+
+### GET /api/custom-metrics/{id}/value
+
+Получение текущего значения пользовательской метрики.
+
+**Запрос:**
+```bash
+curl http://127.0.0.1:8080/api/custom-metrics/cpu_usage/value
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "metric_id": "cpu_usage",
+  "value": 42.5,
+  "last_updated": "2025-01-01T12:00:00+00:00"
+}
+```
+
+**Ошибки:**
+- `404 Not Found` - Метрика с указанным ID не найдена
+- `500 Internal Server Error` - Ошибка при получении значения метрики
+
+---
+
+### POST /api/custom-metrics/{id}/refresh
+
+Принудительное обновление значения пользовательской метрики.
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/custom-metrics/cpu_usage/refresh
+```
+
+**Успешный ответ:**
+```json
+{
+  "status": "ok",
+  "message": "Custom metric 'cpu_usage' refreshed successfully",
+  "metric_id": "cpu_usage",
+  "value": 45.2,
+  "last_updated": "2025-01-01T12:05:00+00:00"
+}
+```
+
+**Ошибки:**
+- `404 Not Found` - Метрика с указанным ID не найдена
+- `500 Internal Server Error` - Ошибка при обновлении метрики
+
+---
+
+### GET /api/network/connections
+
 ### GET /api/network/connections
 
 Получение информации о текущих сетевых соединениях, собранных через eBPF.

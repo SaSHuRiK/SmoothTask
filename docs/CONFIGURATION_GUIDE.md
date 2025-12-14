@@ -28,6 +28,31 @@ priority_rules:
     match:
       tags: ["audio", "video", "game"]
     priority: "latency_critical"
+
+# Пользовательские метрики
+custom_metrics:
+  - id: "cpu_usage"
+    name: "CPU Usage"
+    description: "Current CPU usage percentage"
+    source: "command"
+    source_config:
+      command: "top -bn1 | grep \"Cpu(s)\" | sed \"s/.*, *\([0-9.]*\)%* id.*/\1/\" | awk '{print 100 - $1}'"
+    update_interval: 60
+
+  - id: "memory_free"
+    name: "Free Memory"
+    description: "Available memory in MB"
+    source: "file"
+    source_config:
+      path: "/proc/meminfo"
+      pattern: "MemFree: *(\d+) kB"
+    update_interval: 30
+
+# Настройки кэширования
+cache_config:
+  feature_cache_capacity: 1000
+  enable_memory_pressure_aware_caching: true
+  memory_pressure_threshold: 0.8
 ```
 
 ## 🎯 Сценарии конфигурации
