@@ -5,12 +5,13 @@
 //! Добавляет поддержку дополнительных типов сенсоров, не покрытых базовым мониторингом
 
 use anyhow::Result;
+use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::Path;
 use tracing::{debug, info, warn};
 
 /// Расширенные метрики аппаратных сенсоров
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ExtendedHardwareSensors {
     pub temperatures_c: Vec<(String, f32)>, // Имя сенсора и температура в °C
     pub additional_fan_speeds_rpm: Vec<(String, f32)>, // Дополнительные вентиляторы
@@ -45,10 +46,16 @@ pub struct ExtendedHardwareSensors {
     pub additional_throughputs_mbps: Vec<(String, f32)>, // Дополнительные пропускные способности
     pub additional_latencies_ns: Vec<(String, f32)>, // Дополнительные задержки
     pub additional_errors_count: Vec<(String, f32)>, // Дополнительные ошибки
+    // Новые типы сенсоров
+    pub vibration_mps2: Vec<(String, f32)>, // Вибрация в м/с²
+    pub acceleration_mps2: Vec<(String, f32)>, // Ускорение в м/с²
+    pub magnetic_field_ut: Vec<(String, f32)>, // Магнитное поле в микротеслах
+    pub sound_level_db: Vec<(String, f32)>, // Уровень звука в децибелах
+    pub light_level_lux: Vec<(String, f32)>, // Уровень света в люксах
 }
 
 /// Конфигурация расширенного мониторинга сенсоров
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtendedHardwareSensorsConfig {
     pub enable_temperature_sensors: bool,
     pub enable_additional_fan_sensors: bool,
@@ -83,6 +90,12 @@ pub struct ExtendedHardwareSensorsConfig {
     pub enable_additional_throughput_sensors: bool,
     pub enable_additional_latency_sensors: bool,
     pub enable_additional_error_sensors: bool,
+    // Новые типы сенсоров
+    pub enable_vibration_sensors: bool,
+    pub enable_acceleration_sensors: bool,
+    pub enable_magnetic_field_sensors: bool,
+    pub enable_sound_level_sensors: bool,
+    pub enable_light_level_sensors: bool,
 }
 
 impl Default for ExtendedHardwareSensorsConfig {
@@ -121,6 +134,12 @@ impl Default for ExtendedHardwareSensorsConfig {
             enable_additional_throughput_sensors: true,
             enable_additional_latency_sensors: true,
             enable_additional_error_sensors: true,
+            // Новые типы сенсоров
+            enable_vibration_sensors: true,
+            enable_acceleration_sensors: true,
+            enable_magnetic_field_sensors: true,
+            enable_sound_level_sensors: true,
+            enable_light_level_sensors: true,
         }
     }
 }
@@ -443,6 +462,41 @@ impl ExtendedHardwareSensorsMonitor {
                                 && file_name.ends_with("_input")
                             {
                                 self.process_additional_error_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем вибрацию
+                            else if self.config.enable_vibration_sensors
+                                && file_name.starts_with("vibration")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_vibration_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем ускорение
+                            else if self.config.enable_acceleration_sensors
+                                && file_name.starts_with("accel")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_acceleration_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем магнитное поле
+                            else if self.config.enable_magnetic_field_sensors
+                                && file_name.starts_with("magnet")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_magnetic_field_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем уровень звука
+                            else if self.config.enable_sound_level_sensors
+                                && file_name.starts_with("sound")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_sound_level_sensor(&file_path, file_name, sensors)?;
+                            }
+                            // Обрабатываем уровень света
+                            else if self.config.enable_light_level_sensors
+                                && file_name.starts_with("light")
+                                && file_name.ends_with("_input")
+                            {
+                                self.process_light_level_sensor(&file_path, file_name, sensors)?;
                             }
                         }
                         Err(e) => {
@@ -2299,6 +2353,221 @@ impl ExtendedHardwareSensorsMonitor {
 
         Ok(())
     }
+
+    /// Обрабатывает сенсор вибрации
+    fn process_vibration_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_vibration_sensors {
+            return Ok(());
+        }
+
+        debug!("Found vibration sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "vibration")?;
+                        sensors.vibration_mps2.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read vibration sensor: {} m/s² from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse vibration sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read vibration sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает сенсор ускорения
+    fn process_acceleration_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_acceleration_sensors {
+            return Ok(());
+        }
+
+        debug!("Found acceleration sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "acceleration")?;
+                        sensors.acceleration_mps2.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read acceleration sensor: {} m/s² from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse acceleration sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read acceleration sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает сенсор магнитного поля
+    fn process_magnetic_field_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_magnetic_field_sensors {
+            return Ok(());
+        }
+
+        debug!("Found magnetic field sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "magnetic_field")?;
+                        sensors.magnetic_field_ut.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read magnetic field sensor: {} µT from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse magnetic field sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read magnetic field sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает сенсор уровня звука
+    fn process_sound_level_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_sound_level_sensors {
+            return Ok(());
+        }
+
+        debug!("Found sound level sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "sound_level")?;
+                        sensors.sound_level_db.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read sound level sensor: {} dB from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse sound level sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read sound level sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обрабатывает сенсор уровня света
+    fn process_light_level_sensor(
+        &self,
+        file_path: &Path,
+        file_name: &str,
+        sensors: &mut ExtendedHardwareSensors,
+    ) -> Result<()> {
+        if !self.config.enable_light_level_sensors {
+            return Ok(());
+        }
+
+        debug!("Found light level sensor file: {}", file_path.display());
+
+        match fs::read_to_string(file_path) {
+            Ok(sensor_content) => {
+                match sensor_content.trim().parse::<f32>() {
+                    Ok(sensor_value) => {
+                        let sensor_name = self.get_sensor_name(file_path, file_name, "light_level")?;
+                        sensors.light_level_lux.push((sensor_name, sensor_value));
+                        debug!(
+                            "Successfully read light level sensor: {} lux from {}",
+                            sensor_value, file_path.display()
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "Failed to parse light level sensor value from {}: {}",
+                            file_path.display(), e
+                        );
+                    }
+                }
+            }
+            Err(e) => {
+                warn!(
+                    "Failed to read light level sensor from {}: {}",
+                    file_path.display(), e
+                );
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Тесты для расширенного мониторинга аппаратных сенсоров
@@ -2788,5 +3057,85 @@ mod tests {
         assert!(sensors.additional_throughputs_mbps.len() >= 0);
         assert!(sensors.additional_latencies_ns.len() >= 0);
         assert!(sensors.additional_errors_count.len() >= 0);
+        
+        // Проверяем новые типы сенсоров
+        assert!(sensors.vibration_mps2.len() >= 0);
+        assert!(sensors.acceleration_mps2.len() >= 0);
+        assert!(sensors.magnetic_field_ut.len() >= 0);
+        assert!(sensors.sound_level_db.len() >= 0);
+        assert!(sensors.light_level_lux.len() >= 0);
+    }
+
+    #[test]
+    fn test_new_sensor_processing() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+        let mut sensors = ExtendedHardwareSensors::default();
+
+        // Тестируем обработку вибрации
+        let vibration_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(vibration_file.path(), "2.5").expect("write vibration");
+        let result = monitor.process_vibration_sensor(vibration_file.path(), "vibration1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.vibration_mps2.len(), 1);
+        assert_eq!(sensors.vibration_mps2[0].1, 2.5);
+
+        // Тестируем обработку ускорения
+        let accel_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(accel_file.path(), "9.81").expect("write accel");
+        let result = monitor.process_acceleration_sensor(accel_file.path(), "accel1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.acceleration_mps2.len(), 1);
+        assert_eq!(sensors.acceleration_mps2[0].1, 9.81);
+
+        // Тестируем обработку магнитного поля
+        let magnet_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(magnet_file.path(), "50.0").expect("write magnet");
+        let result = monitor.process_magnetic_field_sensor(magnet_file.path(), "magnet1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.magnetic_field_ut.len(), 1);
+        assert_eq!(sensors.magnetic_field_ut[0].1, 50.0);
+
+        // Тестируем обработку уровня звука
+        let sound_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(sound_file.path(), "65.0").expect("write sound");
+        let result = monitor.process_sound_level_sensor(sound_file.path(), "sound1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.sound_level_db.len(), 1);
+        assert_eq!(sensors.sound_level_db[0].1, 65.0);
+
+        // Тестируем обработку уровня света
+        let light_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(light_file.path(), "1000.0").expect("write light");
+        let result = monitor.process_light_level_sensor(light_file.path(), "light1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.light_level_lux.len(), 1);
+        assert_eq!(sensors.light_level_lux[0].1, 1000.0);
+    }
+
+    #[test]
+    fn test_new_sensors_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_vibration_sensors = false;
+        config.enable_acceleration_sensors = false;
+        config.enable_magnetic_field_sensors = false;
+        config.enable_sound_level_sensors = false;
+        config.enable_light_level_sensors = false;
+
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+        let mut sensors = ExtendedHardwareSensors::default();
+
+        // Пробуем обработать сенсоры с отключенными опциями
+        let vibration_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(vibration_file.path(), "2.5").expect("write vibration");
+        let result = monitor.process_vibration_sensor(vibration_file.path(), "vibration1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.vibration_mps2.len(), 0);
+
+        let accel_file = tempfile::NamedTempFile::new().expect("temp file");
+        std::fs::write(accel_file.path(), "9.81").expect("write accel");
+        let result = monitor.process_acceleration_sensor(accel_file.path(), "accel1_input", &mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.acceleration_mps2.len(), 0);
     }
 }

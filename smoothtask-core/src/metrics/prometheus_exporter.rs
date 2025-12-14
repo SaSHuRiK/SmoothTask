@@ -19,6 +19,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::metrics::system::SystemMetrics;
 use crate::logging::snapshots::ProcessRecord;
 use crate::metrics::network::NetworkInterfaceStats;
+use crate::metrics::extended_hardware_sensors::{ExtendedHardwareSensors, ExtendedHardwareSensorsMonitor};
 
 /// Simple process metrics structure for Prometheus export
 #[derive(Debug, Clone, Default)]
@@ -64,6 +65,8 @@ pub struct PrometheusExporterConfig {
     pub enable_ml_metrics: bool,
     /// Enable custom metrics export
     pub enable_custom_metrics: bool,
+    /// Enable extended hardware sensors export
+    pub enable_extended_hardware_sensors: bool,
     /// Include detailed process metrics
     pub include_detailed_process_metrics: bool,
     /// Maximum number of processes to export
@@ -83,6 +86,7 @@ impl Default for PrometheusExporterConfig {
             enable_gpu_metrics: true,
             enable_ml_metrics: true,
             enable_custom_metrics: true,
+            enable_extended_hardware_sensors: true,
             include_detailed_process_metrics: false,
             max_processes_to_export: 100,
             include_timestamps: true,
@@ -95,6 +99,7 @@ impl Default for PrometheusExporterConfig {
 pub struct PrometheusExporter {
     config: PrometheusExporterConfig,
     custom_metrics: HashMap<String, f64>,
+    extended_sensors_monitor: ExtendedHardwareSensorsMonitor,
 }
 
 impl PrometheusExporter {
@@ -108,6 +113,9 @@ impl PrometheusExporter {
         Self {
             config,
             custom_metrics: HashMap::new(),
+            extended_sensors_monitor: ExtendedHardwareSensorsMonitor::new(
+                crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default()
+            ),
         }
     }
 
@@ -134,6 +142,7 @@ impl PrometheusExporter {
         network_metrics: &[NetworkInterfaceStats],
         gpu_metrics: &GpuMetricsCollection,
         ml_metrics: &HashMap<String, MLPerformanceMetrics>,
+        extended_sensors: &ExtendedHardwareSensors,
     ) -> Result<String> {
         let mut output = String::new();
 
@@ -171,6 +180,11 @@ impl PrometheusExporter {
         // Export custom metrics
         if self.config.enable_custom_metrics {
             self.export_custom_metrics(&mut output)?;
+        }
+
+        // Export extended hardware sensors
+        if self.config.enable_extended_hardware_sensors {
+            self.export_extended_hardware_sensors(extended_sensors, &mut output)?;
         }
 
         // Add timestamp if enabled
@@ -412,6 +426,311 @@ impl PrometheusExporter {
         Ok(())
     }
 
+    /// Export extended hardware sensors metrics
+    fn export_extended_hardware_sensors(&self, sensors: &ExtendedHardwareSensors, output: &mut String) -> Result<()> {
+        if self.config.include_help_text {
+            output.push_str("# HELP extended_hardware_temperature_c Extended hardware temperature sensors in Celsius\n");
+            output.push_str("# TYPE extended_hardware_temperature_c gauge\n");
+            output.push_str("# HELP extended_hardware_fan_speed_rpm Extended hardware fan speeds in RPM\n");
+            output.push_str("# TYPE extended_hardware_fan_speed_rpm gauge\n");
+            output.push_str("# HELP extended_hardware_voltage_v Extended hardware voltages in Volts\n");
+            output.push_str("# TYPE extended_hardware_voltage_v gauge\n");
+            output.push_str("# HELP extended_hardware_current_a Extended hardware currents in Amperes\n");
+            output.push_str("# TYPE extended_hardware_current_a gauge\n");
+            output.push_str("# HELP extended_hardware_power_w Extended hardware power in Watts\n");
+            output.push_str("# TYPE extended_hardware_power_w gauge\n");
+            output.push_str("# HELP extended_hardware_energy_j Extended hardware energy in Joules\n");
+            output.push_str("# TYPE extended_hardware_energy_j gauge\n");
+            output.push_str("# HELP extended_hardware_humidity_percent Extended hardware humidity in percent\n");
+            output.push_str("# TYPE extended_hardware_humidity_percent gauge\n");
+            output.push_str("# HELP extended_hardware_pressure_pa Extended hardware pressure in Pascals\n");
+            output.push_str("# TYPE extended_hardware_pressure_pa gauge\n");
+            output.push_str("# HELP extended_hardware_illumination_lux Extended hardware illumination in Lux\n");
+            output.push_str("# TYPE extended_hardware_illumination_lux gauge\n");
+            output.push_str("# HELP extended_hardware_custom_sensor Extended hardware custom sensors\n");
+            output.push_str("# TYPE extended_hardware_custom_sensor gauge\n");
+            output.push_str("# HELP extended_hardware_thunderbolt_speed_gbps Thunderbolt device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_thunderbolt_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_pcie_speed_gbps PCIe device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_pcie_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_usb4_speed_gbps USB4 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_usb4_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_nvme_speed_gbps NVMe device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_nvme_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_thunderbolt5_speed_gbps Thunderbolt 5 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_thunderbolt5_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_pcie6_speed_gbps PCIe 6.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_pcie6_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_usb4_v2_speed_gbps USB4 v2 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_usb4_v2_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_nvme_2_0_speed_gbps NVMe 2.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_nvme_2_0_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_thunderbolt6_speed_gbps Thunderbolt 6 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_thunderbolt6_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_pcie7_speed_gbps PCIe 7.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_pcie7_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_usb4_v3_speed_gbps USB4 v3 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_usb4_v3_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_nvme_3_0_speed_gbps NVMe 3.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_nvme_3_0_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_additional_temperature_c Additional extended hardware temperature sensors in Celsius\n");
+            output.push_str("# TYPE extended_hardware_additional_temperature_c gauge\n");
+            output.push_str("# HELP extended_hardware_additional_frequency_hz Additional extended hardware frequencies in Hertz\n");
+            output.push_str("# TYPE extended_hardware_additional_frequency_hz gauge\n");
+            output.push_str("# HELP extended_hardware_additional_utilization_percent Additional extended hardware utilizations in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_utilization_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_load_percent Additional extended hardware loads in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_load_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_efficiency_percent Additional extended hardware efficiencies in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_efficiency_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_health_percent Additional extended hardware health in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_health_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_capacity_percent Additional extended hardware capacities in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_capacity_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_throughput_mbps Additional extended hardware throughputs in MB/s\n");
+            output.push_str("# TYPE extended_hardware_additional_throughput_mbps gauge\n");
+            output.push_str("# HELP extended_hardware_additional_latency_ns Additional extended hardware latencies in nanoseconds\n");
+            output.push_str("# TYPE extended_hardware_additional_latency_ns gauge\n");
+            output.push_str("# HELP extended_hardware_additional_error_count Additional extended hardware error counts\n");
+            output.push_str("# TYPE extended_hardware_additional_error_count gauge\n");
+            output.push_str("# HELP extended_hardware_vibration_mps2 Extended hardware vibration sensors in m/s²\n");
+            output.push_str("# TYPE extended_hardware_vibration_mps2 gauge\n");
+            output.push_str("# HELP extended_hardware_acceleration_mps2 Extended hardware acceleration sensors in m/s²\n");
+            output.push_str("# TYPE extended_hardware_acceleration_mps2 gauge\n");
+            output.push_str("# HELP extended_hardware_magnetic_field_ut Extended hardware magnetic field sensors in microteslas\n");
+            output.push_str("# TYPE extended_hardware_magnetic_field_ut gauge\n");
+            output.push_str("# HELP extended_hardware_sound_level_db Extended hardware sound level sensors in decibels\n");
+            output.push_str("# TYPE extended_hardware_sound_level_db gauge\n");
+            output.push_str("# HELP extended_hardware_light_level_lux Extended hardware light level sensors in lux\n");
+            output.push_str("# TYPE extended_hardware_light_level_lux gauge\n");
+        }
+
+        // Export temperature sensors
+        for (sensor_name, temp) in &sensors.temperatures_c {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_temperature_c{{sensor=\"{}\"}} {}\n", sanitized_name, temp));
+        }
+
+        // Export additional fan speeds
+        for (sensor_name, speed) in &sensors.additional_fan_speeds_rpm {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_fan_speed_rpm{{sensor=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export additional voltages
+        for (sensor_name, voltage) in &sensors.additional_voltages_v {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_voltage_v{{sensor=\"{}\"}} {}\n", sanitized_name, voltage));
+        }
+
+        // Export additional currents
+        for (sensor_name, current) in &sensors.additional_currents_a {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_current_a{{sensor=\"{}\"}} {}\n", sanitized_name, current));
+        }
+
+        // Export additional power
+        for (sensor_name, power) in &sensors.additional_power_w {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_power_w{{sensor=\"{}\"}} {}\n", sanitized_name, power));
+        }
+
+        // Export additional energy
+        for (sensor_name, energy) in &sensors.additional_energy_j {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_energy_j{{sensor=\"{}\"}} {}\n", sanitized_name, energy));
+        }
+
+        // Export additional humidity
+        for (sensor_name, humidity) in &sensors.additional_humidity_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_humidity_percent{{sensor=\"{}\"}} {}\n", sanitized_name, humidity));
+        }
+
+        // Export pressure
+        for (sensor_name, pressure) in &sensors.pressure_pa {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_pressure_pa{{sensor=\"{}\"}} {}\n", sanitized_name, pressure));
+        }
+
+        // Export illumination
+        for (sensor_name, illum) in &sensors.illumination_lux {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_illumination_lux{{sensor=\"{}\"}} {}\n", sanitized_name, illum));
+        }
+
+        // Export custom sensors
+        for (sensor_name, value, unit) in &sensors.custom_sensors {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            let sanitized_unit = self.sanitize_metric_name(unit);
+            output.push_str(&format!("extended_hardware_custom_sensor{{sensor=\"{}\",unit=\"{}\"}} {}\n", sanitized_name, sanitized_unit, value));
+        }
+
+        // Export Thunderbolt devices
+        for (device_name, speed) in &sensors.thunderbolt_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_thunderbolt_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export PCIe devices
+        for (device_name, speed) in &sensors.pcie_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_pcie_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export USB4 devices
+        for (device_name, speed) in &sensors.usb4_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_usb4_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export NVMe devices
+        for (device_name, speed) in &sensors.nvme_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_nvme_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export Thunderbolt 5 devices
+        for (device_name, speed) in &sensors.thunderbolt5_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_thunderbolt5_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export PCIe 6.0 devices
+        for (device_name, speed) in &sensors.pcie6_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_pcie6_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export USB4 v2 devices
+        for (device_name, speed) in &sensors.usb4_v2_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_usb4_v2_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export NVMe 2.0 devices
+        for (device_name, speed) in &sensors.nvme_2_0_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_nvme_2_0_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export Thunderbolt 6 devices
+        for (device_name, speed) in &sensors.thunderbolt6_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_thunderbolt6_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export PCIe 7.0 devices
+        for (device_name, speed) in &sensors.pcie7_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_pcie7_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export USB4 v3 devices
+        for (device_name, speed) in &sensors.usb4_v3_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_usb4_v3_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export NVMe 3.0 devices
+        for (device_name, speed) in &sensors.nvme_3_0_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_nvme_3_0_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export additional temperature sensors
+        for (sensor_name, temp) in &sensors.additional_temperatures_c {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_temperature_c{{sensor=\"{}\"}} {}\n", sanitized_name, temp));
+        }
+
+        // Export additional frequency sensors
+        for (sensor_name, freq) in &sensors.additional_frequencies_hz {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_frequency_hz{{sensor=\"{}\"}} {}\n", sanitized_name, freq));
+        }
+
+        // Export additional utilization sensors
+        for (sensor_name, util) in &sensors.additional_utilizations_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_utilization_percent{{sensor=\"{}\"}} {}\n", sanitized_name, util));
+        }
+
+        // Export additional load sensors
+        for (sensor_name, load) in &sensors.additional_loads_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_load_percent{{sensor=\"{}\"}} {}\n", sanitized_name, load));
+        }
+
+        // Export additional efficiency sensors
+        for (sensor_name, eff) in &sensors.additional_efficiencies_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_efficiency_percent{{sensor=\"{}\"}} {}\n", sanitized_name, eff));
+        }
+
+        // Export additional health sensors
+        for (sensor_name, health) in &sensors.additional_health_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_health_percent{{sensor=\"{}\"}} {}\n", sanitized_name, health));
+        }
+
+        // Export additional capacity sensors
+        for (sensor_name, cap) in &sensors.additional_capacities_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_capacity_percent{{sensor=\"{}\"}} {}\n", sanitized_name, cap));
+        }
+
+        // Export additional throughput sensors
+        for (sensor_name, throughput) in &sensors.additional_throughputs_mbps {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_throughput_mbps{{sensor=\"{}\"}} {}\n", sanitized_name, throughput));
+        }
+
+        // Export additional latency sensors
+        for (sensor_name, latency) in &sensors.additional_latencies_ns {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_latency_ns{{sensor=\"{}\"}} {}\n", sanitized_name, latency));
+        }
+
+        // Export additional error sensors
+        for (sensor_name, errors) in &sensors.additional_errors_count {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_error_count{{sensor=\"{}\"}} {}\n", sanitized_name, errors));
+        }
+
+        // Export vibration sensors
+        for (sensor_name, vibration) in &sensors.vibration_mps2 {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_vibration_mps2{{sensor=\"{}\"}} {}\n", sanitized_name, vibration));
+        }
+
+        // Export acceleration sensors
+        for (sensor_name, acceleration) in &sensors.acceleration_mps2 {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_acceleration_mps2{{sensor=\"{}\"}} {}\n", sanitized_name, acceleration));
+        }
+
+        // Export magnetic field sensors
+        for (sensor_name, magnetic_field) in &sensors.magnetic_field_ut {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_magnetic_field_ut{{sensor=\"{}\"}} {}\n", sanitized_name, magnetic_field));
+        }
+
+        // Export sound level sensors
+        for (sensor_name, sound_level) in &sensors.sound_level_db {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_sound_level_db{{sensor=\"{}\"}} {}\n", sanitized_name, sound_level));
+        }
+
+        // Export light level sensors
+        for (sensor_name, light_level) in &sensors.light_level_lux {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_light_level_lux{{sensor=\"{}\"}} {}\n", sanitized_name, light_level));
+        }
+
+        Ok(())
+    }
+
     /// Sanitize metric name for Prometheus compatibility
     fn sanitize_metric_name(&self, name: &str) -> String {
         name.chars()
@@ -526,6 +845,273 @@ impl PrometheusExporter {
         Ok(output)
     }
 
+    /// Export extended hardware sensors metrics in Prometheus format
+    pub fn export_extended_hardware_sensors_prometheus(&self, sensors: &ExtendedHardwareSensors) -> Result<String> {
+        let mut output = String::new();
+
+        if self.config.include_help_text {
+            output.push_str("# HELP extended_hardware_temperature_c Extended hardware temperature sensors in Celsius\n");
+            output.push_str("# TYPE extended_hardware_temperature_c gauge\n");
+            output.push_str("# HELP extended_hardware_fan_speed_rpm Extended hardware fan speeds in RPM\n");
+            output.push_str("# TYPE extended_hardware_fan_speed_rpm gauge\n");
+            output.push_str("# HELP extended_hardware_voltage_v Extended hardware voltages in Volts\n");
+            output.push_str("# TYPE extended_hardware_voltage_v gauge\n");
+            output.push_str("# HELP extended_hardware_current_a Extended hardware currents in Amperes\n");
+            output.push_str("# TYPE extended_hardware_current_a gauge\n");
+            output.push_str("# HELP extended_hardware_power_w Extended hardware power in Watts\n");
+            output.push_str("# TYPE extended_hardware_power_w gauge\n");
+            output.push_str("# HELP extended_hardware_energy_j Extended hardware energy in Joules\n");
+            output.push_str("# TYPE extended_hardware_energy_j gauge\n");
+            output.push_str("# HELP extended_hardware_humidity_percent Extended hardware humidity in percent\n");
+            output.push_str("# TYPE extended_hardware_humidity_percent gauge\n");
+            output.push_str("# HELP extended_hardware_pressure_pa Extended hardware pressure in Pascals\n");
+            output.push_str("# TYPE extended_hardware_pressure_pa gauge\n");
+            output.push_str("# HELP extended_hardware_illumination_lux Extended hardware illumination in Lux\n");
+            output.push_str("# TYPE extended_hardware_illumination_lux gauge\n");
+            output.push_str("# HELP extended_hardware_custom_sensor Extended hardware custom sensors\n");
+            output.push_str("# TYPE extended_hardware_custom_sensor gauge\n");
+            output.push_str("# HELP extended_hardware_thunderbolt_speed_gbps Thunderbolt device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_thunderbolt_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_pcie_speed_gbps PCIe device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_pcie_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_usb4_speed_gbps USB4 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_usb4_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_nvme_speed_gbps NVMe device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_nvme_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_thunderbolt5_speed_gbps Thunderbolt 5 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_thunderbolt5_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_pcie6_speed_gbps PCIe 6.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_pcie6_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_usb4_v2_speed_gbps USB4 v2 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_usb4_v2_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_nvme_2_0_speed_gbps NVMe 2.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_nvme_2_0_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_thunderbolt6_speed_gbps Thunderbolt 6 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_thunderbolt6_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_pcie7_speed_gbps PCIe 7.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_pcie7_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_usb4_v3_speed_gbps USB4 v3 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_usb4_v3_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_nvme_3_0_speed_gbps NVMe 3.0 device speeds in Gbps\n");
+            output.push_str("# TYPE extended_hardware_nvme_3_0_speed_gbps gauge\n");
+            output.push_str("# HELP extended_hardware_additional_temperature_c Additional extended hardware temperature sensors in Celsius\n");
+            output.push_str("# TYPE extended_hardware_additional_temperature_c gauge\n");
+            output.push_str("# HELP extended_hardware_additional_frequency_hz Additional extended hardware frequencies in Hertz\n");
+            output.push_str("# TYPE extended_hardware_additional_frequency_hz gauge\n");
+            output.push_str("# HELP extended_hardware_additional_utilization_percent Additional extended hardware utilizations in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_utilization_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_load_percent Additional extended hardware loads in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_load_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_efficiency_percent Additional extended hardware efficiencies in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_efficiency_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_health_percent Additional extended hardware health in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_health_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_capacity_percent Additional extended hardware capacities in percent\n");
+            output.push_str("# TYPE extended_hardware_additional_capacity_percent gauge\n");
+            output.push_str("# HELP extended_hardware_additional_throughput_mbps Additional extended hardware throughputs in MB/s\n");
+            output.push_str("# TYPE extended_hardware_additional_throughput_mbps gauge\n");
+            output.push_str("# HELP extended_hardware_additional_latency_ns Additional extended hardware latencies in nanoseconds\n");
+            output.push_str("# TYPE extended_hardware_additional_latency_ns gauge\n");
+            output.push_str("# HELP extended_hardware_additional_error_count Additional extended hardware error counts\n");
+            output.push_str("# TYPE extended_hardware_additional_error_count gauge\n");
+        }
+
+        // Export temperature sensors
+        for (sensor_name, temp) in &sensors.temperatures_c {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_temperature_c{{sensor=\"{}\"}} {}\n", sanitized_name, temp));
+        }
+
+        // Export additional fan speeds
+        for (sensor_name, speed) in &sensors.additional_fan_speeds_rpm {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_fan_speed_rpm{{sensor=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export additional voltages
+        for (sensor_name, voltage) in &sensors.additional_voltages_v {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_voltage_v{{sensor=\"{}\"}} {}\n", sanitized_name, voltage));
+        }
+
+        // Export additional currents
+        for (sensor_name, current) in &sensors.additional_currents_a {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_current_a{{sensor=\"{}\"}} {}\n", sanitized_name, current));
+        }
+
+        // Export additional power
+        for (sensor_name, power) in &sensors.additional_power_w {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_power_w{{sensor=\"{}\"}} {}\n", sanitized_name, power));
+        }
+
+        // Export additional energy
+        for (sensor_name, energy) in &sensors.additional_energy_j {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_energy_j{{sensor=\"{}\"}} {}\n", sanitized_name, energy));
+        }
+
+        // Export additional humidity
+        for (sensor_name, humidity) in &sensors.additional_humidity_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_humidity_percent{{sensor=\"{}\"}} {}\n", sanitized_name, humidity));
+        }
+
+        // Export pressure
+        for (sensor_name, pressure) in &sensors.pressure_pa {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_pressure_pa{{sensor=\"{}\"}} {}\n", sanitized_name, pressure));
+        }
+
+        // Export illumination
+        for (sensor_name, illum) in &sensors.illumination_lux {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_illumination_lux{{sensor=\"{}\"}} {}\n", sanitized_name, illum));
+        }
+
+        // Export custom sensors
+        for (sensor_name, value, unit) in &sensors.custom_sensors {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            let sanitized_unit = self.sanitize_metric_name(unit);
+            output.push_str(&format!("extended_hardware_custom_sensor{{sensor=\"{}\",unit=\"{}\"}} {}\n", sanitized_name, sanitized_unit, value));
+        }
+
+        // Export Thunderbolt devices
+        for (device_name, speed) in &sensors.thunderbolt_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_thunderbolt_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export PCIe devices
+        for (device_name, speed) in &sensors.pcie_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_pcie_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export USB4 devices
+        for (device_name, speed) in &sensors.usb4_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_usb4_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export NVMe devices
+        for (device_name, speed) in &sensors.nvme_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_nvme_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export Thunderbolt 5 devices
+        for (device_name, speed) in &sensors.thunderbolt5_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_thunderbolt5_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export PCIe 6.0 devices
+        for (device_name, speed) in &sensors.pcie6_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_pcie6_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export USB4 v2 devices
+        for (device_name, speed) in &sensors.usb4_v2_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_usb4_v2_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export NVMe 2.0 devices
+        for (device_name, speed) in &sensors.nvme_2_0_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_nvme_2_0_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export Thunderbolt 6 devices
+        for (device_name, speed) in &sensors.thunderbolt6_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_thunderbolt6_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export PCIe 7.0 devices
+        for (device_name, speed) in &sensors.pcie7_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_pcie7_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export USB4 v3 devices
+        for (device_name, speed) in &sensors.usb4_v3_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_usb4_v3_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export NVMe 3.0 devices
+        for (device_name, speed) in &sensors.nvme_3_0_devices {
+            let sanitized_name = self.sanitize_metric_name(device_name);
+            output.push_str(&format!("extended_hardware_nvme_3_0_speed_gbps{{device=\"{}\"}} {}\n", sanitized_name, speed));
+        }
+
+        // Export additional temperature sensors
+        for (sensor_name, temp) in &sensors.additional_temperatures_c {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_temperature_c{{sensor=\"{}\"}} {}\n", sanitized_name, temp));
+        }
+
+        // Export additional frequency sensors
+        for (sensor_name, freq) in &sensors.additional_frequencies_hz {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_frequency_hz{{sensor=\"{}\"}} {}\n", sanitized_name, freq));
+        }
+
+        // Export additional utilization sensors
+        for (sensor_name, util) in &sensors.additional_utilizations_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_utilization_percent{{sensor=\"{}\"}} {}\n", sanitized_name, util));
+        }
+
+        // Export additional load sensors
+        for (sensor_name, load) in &sensors.additional_loads_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_load_percent{{sensor=\"{}\"}} {}\n", sanitized_name, load));
+        }
+
+        // Export additional efficiency sensors
+        for (sensor_name, eff) in &sensors.additional_efficiencies_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_efficiency_percent{{sensor=\"{}\"}} {}\n", sanitized_name, eff));
+        }
+
+        // Export additional health sensors
+        for (sensor_name, health) in &sensors.additional_health_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_health_percent{{sensor=\"{}\"}} {}\n", sanitized_name, health));
+        }
+
+        // Export additional capacity sensors
+        for (sensor_name, cap) in &sensors.additional_capacities_percent {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_capacity_percent{{sensor=\"{}\"}} {}\n", sanitized_name, cap));
+        }
+
+        // Export additional throughput sensors
+        for (sensor_name, throughput) in &sensors.additional_throughputs_mbps {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_throughput_mbps{{sensor=\"{}\"}} {}\n", sanitized_name, throughput));
+        }
+
+        // Export additional latency sensors
+        for (sensor_name, latency) in &sensors.additional_latencies_ns {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_latency_ns{{sensor=\"{}\"}} {}\n", sanitized_name, latency));
+        }
+
+        // Export additional error sensors
+        for (sensor_name, errors) in &sensors.additional_errors_count {
+            let sanitized_name = self.sanitize_metric_name(sensor_name);
+            output.push_str(&format!("extended_hardware_additional_error_count{{sensor=\"{}\"}} {}\n", sanitized_name, errors));
+        }
+
+        Ok(output)
+    }
+
     /// Export metrics in Prometheus format with HTTP headers
     pub fn export_with_http_headers(&self, prometheus_output: &str) -> String {
         let mut result = String::new();
@@ -550,9 +1136,10 @@ impl PrometheusExporter {
         network_metrics: &[NetworkInterfaceStats],
         gpu_metrics: &GpuMetricsCollection,
         ml_metrics: &HashMap<String, MLPerformanceMetrics>,
+        extended_sensors: &ExtendedHardwareSensors,
     ) -> Result<String> {
         let prometheus_output = self.export_all_metrics(
-            system_metrics, process_metrics, network_metrics, gpu_metrics, ml_metrics
+            system_metrics, process_metrics, network_metrics, gpu_metrics, ml_metrics, extended_sensors
         )?;
         
         Ok(self.export_with_http_headers(&prometheus_output))
@@ -564,6 +1151,9 @@ impl Default for PrometheusExporter {
         Self {
             config: PrometheusExporterConfig::default(),
             custom_metrics: HashMap::new(),
+            extended_sensors_monitor: ExtendedHardwareSensorsMonitor::new(
+                crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default()
+            ),
         }
     }
 }
@@ -781,5 +1371,136 @@ mod tests {
         
         let output = result.unwrap();
         assert!(output.contains("test-process.name"));
+    }
+
+    #[test]
+    fn test_extended_hardware_sensors_export() {
+        let exporter = PrometheusExporter::new();
+        let mut sensors = ExtendedHardwareSensors::default();
+        
+        // Add some test sensor data
+        sensors.temperatures_c.push(("cpu_thermal".to_string(), 45.5));
+        sensors.additional_fan_speeds_rpm.push(("chassis_fan".to_string(), 1200.0));
+        sensors.additional_voltages_v.push(("vcore".to_string(), 1.25));
+        sensors.thunderbolt_devices.push(("thunderbolt_port_1".to_string(), 40.0));
+        sensors.pcie_devices.push(("gpu_pcie".to_string(), 16.0));
+        sensors.additional_temperatures_c.push(("gpu_temp".to_string(), 65.0));
+        sensors.additional_frequencies_hz.push(("cpu_freq".to_string(), 3500000000.0));
+        
+        // Add new sensor data
+        sensors.vibration_mps2.push(("vibration_sensor_1".to_string(), 2.5));
+        sensors.acceleration_mps2.push(("accel_sensor_1".to_string(), 9.81));
+        sensors.magnetic_field_ut.push(("magnet_sensor_1".to_string(), 50.0));
+        sensors.sound_level_db.push(("sound_sensor_1".to_string(), 65.0));
+        sensors.light_level_lux.push(("light_sensor_1".to_string(), 1000.0));
+        
+        // Test the export
+        let result = exporter.export_extended_hardware_sensors_prometheus(&sensors);
+        assert!(result.is_ok());
+        
+        let output = result.unwrap();
+        
+        // Verify the output contains expected metrics
+        assert!(output.contains("extended_hardware_temperature_c"));
+        assert!(output.contains("sensor=\"cpu_thermal\""));
+        assert!(output.contains("45.5"));
+        
+        assert!(output.contains("extended_hardware_fan_speed_rpm"));
+        assert!(output.contains("sensor=\"chassis_fan\""));
+        assert!(output.contains("1200"));
+        
+        assert!(output.contains("extended_hardware_voltage_v"));
+        assert!(output.contains("sensor=\"vcore\""));
+        assert!(output.contains("1.25"));
+        
+        assert!(output.contains("extended_hardware_thunderbolt_speed_gbps"));
+        assert!(output.contains("device=\"thunderbolt_port_1\""));
+        assert!(output.contains("40"));
+        
+        assert!(output.contains("extended_hardware_pcie_speed_gbps"));
+        assert!(output.contains("device=\"gpu_pcie\""));
+        assert!(output.contains("16"));
+        
+        assert!(output.contains("extended_hardware_additional_temperature_c"));
+        assert!(output.contains("sensor=\"gpu_temp\""));
+        assert!(output.contains("65"));
+        
+        assert!(output.contains("extended_hardware_additional_frequency_hz"));
+        assert!(output.contains("sensor=\"cpu_freq\""));
+        assert!(output.contains("3500000000"));
+        
+        // Verify new sensor metrics
+        assert!(output.contains("extended_hardware_vibration_mps2"));
+        assert!(output.contains("sensor=\"vibration_sensor_1\""));
+        assert!(output.contains("2.5"));
+        
+        assert!(output.contains("extended_hardware_acceleration_mps2"));
+        assert!(output.contains("sensor=\"accel_sensor_1\""));
+        assert!(output.contains("9.81"));
+        
+        assert!(output.contains("extended_hardware_magnetic_field_ut"));
+        assert!(output.contains("sensor=\"magnet_sensor_1\""));
+        assert!(output.contains("50"));
+        
+        assert!(output.contains("extended_hardware_sound_level_db"));
+        assert!(output.contains("sensor=\"sound_sensor_1\""));
+        assert!(output.contains("65"));
+        
+        assert!(output.contains("extended_hardware_light_level_lux"));
+        assert!(output.contains("sensor=\"light_sensor_1\""));
+        assert!(output.contains("1000"));
+    }
+
+    #[test]
+    fn test_extended_hardware_sensors_disabled() {
+        let mut config = PrometheusExporterConfig::default();
+        config.enable_extended_hardware_sensors = false;
+        let exporter = PrometheusExporter::with_config(config);
+        let sensors = ExtendedHardwareSensors::default();
+        
+        // Test that when disabled, no extended sensor metrics are exported
+        let result = exporter.export_all_metrics(
+            &SystemMetrics::default(),
+            &[],
+            &[],
+            &crate::metrics::gpu::GpuMetricsCollection::default(),
+            &HashMap::new(),
+            &sensors,
+        );
+        
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        
+        // Should not contain extended hardware sensor metrics
+        assert!(!output.contains("extended_hardware_temperature_c"));
+        assert!(!output.contains("extended_hardware_fan_speed_rpm"));
+    }
+
+    #[test]
+    fn test_extended_hardware_sensors_enabled() {
+        let mut config = PrometheusExporterConfig::default();
+        config.enable_extended_hardware_sensors = true;
+        let exporter = PrometheusExporter::with_config(config);
+        
+        let mut sensors = ExtendedHardwareSensors::default();
+        sensors.temperatures_c.push(("test_sensor".to_string(), 30.0));
+        
+        // Test that when enabled, extended sensor metrics are exported
+        let result = exporter.export_all_metrics(
+            &SystemMetrics::default(),
+            &[],
+            &[],
+            &crate::metrics::gpu::GpuMetricsCollection::default(),
+            &HashMap::new(),
+            &sensors,
+        );
+        
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        
+        // Should contain extended hardware sensor metrics
+        assert!(output.contains("extended_hardware_temperature_c"));
+        assert!(output.contains("sensor=\"test_sensor\""));
+        assert!(output.contains("30"));
     }
 }

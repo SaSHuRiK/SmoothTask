@@ -41,6 +41,7 @@ use crate::metrics::audio_pipewire::PipeWireIntrospector;
 use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
+use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
 use crate::metrics::system::{
     collect_system_metrics, CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo,
     NetworkMetrics, PowerMetrics, PressureMetrics, ProcPaths, SystemMetrics, TemperatureMetrics,
@@ -1612,6 +1613,17 @@ pub async fn collect_snapshot(
         }
     }
 
+    // Сбор расширенных метрик аппаратных сенсоров
+    let extended_sensors = tokio::task::spawn_blocking(|| {
+        let monitor = crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsMonitor::new(
+            crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default()
+        );
+        monitor.collect_extended_sensors()
+    })
+    .await
+    .context("Failed to join extended hardware sensors task")?
+    .context("Failed to collect extended hardware sensors metrics")?;
+
     // Сбор метрик ввода (может быть блокирующим для evdev - оборачиваем в spawn_blocking)
     // InputTracker::update() может читать из /dev/input, что является блокирующей операцией
     let input_tracker_clone = Arc::clone(input_tracker);
@@ -1692,6 +1704,7 @@ pub async fn collect_snapshot(
         processes,
         app_groups: Vec::new(),
         responsiveness,
+        extended_sensors,
     })
 }
 
@@ -2041,6 +2054,7 @@ pub async fn collect_snapshot_with_caching(
         processes,
         app_groups: vec![],
         responsiveness: responsiveness_metrics,
+        extended_sensors: ExtendedHardwareSensors::default(),
     };
 
     Ok(snapshot)

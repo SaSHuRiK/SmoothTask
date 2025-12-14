@@ -9,6 +9,7 @@ use std::path::Path;
 use crate::config::config_struct::Thresholds;
 use crate::logging::rotation::{get_log_file_size, LogRotator};
 use crate::metrics::system::SystemMetrics;
+use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
 
 /// Идентификатор снапшота (timestamp в миллисекундах).
 pub type SnapshotId = u64;
@@ -508,6 +509,7 @@ pub struct Snapshot {
     pub processes: Vec<ProcessRecord>,
     pub app_groups: Vec<AppGroupRecord>,
     pub responsiveness: ResponsivenessMetrics,
+    pub extended_sensors: ExtendedHardwareSensors,
 }
 
 /// Менеджер для записи снапшотов в SQLite.
