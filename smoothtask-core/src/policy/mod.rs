@@ -8,6 +8,8 @@
 //! - **classes**: Классы приоритетов (CRIT_INTERACTIVE, INTERACTIVE, NORMAL, BACKGROUND, IDLE)
 //!   и их маппинг на системные параметры (nice, ionice, cpu.weight, latency_nice)
 //! - **engine**: Движок политики, применяющий жёсткие и семантические правила
+//! - **dynamic**: Динамическое масштабирование приоритетов на основе нагрузки системы
 
 pub mod classes;
+pub mod dynamic;
 pub mod engine;

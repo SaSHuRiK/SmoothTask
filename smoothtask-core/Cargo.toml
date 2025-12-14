@@ -52,6 +52,9 @@ flate2 = { version = "1.0", features = ["zlib"] }
 # Lazy static для глобальных кэшей
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 
+# Для определения количества CPU ядер
+num_cpus = "1.16"
+
 # LRU кэш для оптимизации производительности
 lru = "0.12"
 

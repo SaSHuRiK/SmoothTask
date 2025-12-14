@@ -9,6 +9,7 @@ use crate::config::config_struct::{Config, PolicyMode};
 use crate::logging::snapshots::{AppGroupRecord, ProcessRecord, Snapshot};
 use crate::model::ranker::{Ranker, RankingResult};
 use crate::policy::classes::PriorityClass;
+use crate::policy::dynamic::{DynamicPriorityScaler, SystemLoadInfo};
 
 /// Результат оценки политики для одной AppGroup.
 #[derive(Debug, Clone)]
@@ -98,6 +99,7 @@ pub struct PolicyResult {
 pub struct PolicyEngine {
     config: Config,
     ranker: Option<Box<dyn Ranker>>,
+    dynamic_scaler: DynamicPriorityScaler,
 }
 
 impl PolicyEngine {
@@ -168,7 +170,10 @@ impl PolicyEngine {
             tracing::debug!("Режим policy_mode = {:?}, ML-ранкер не используется", config.policy_mode);
             None
         };
-        Self { config, ranker }
+        
+        let dynamic_scaler = DynamicPriorityScaler::new(config.clone());
+        
+        Self { config, ranker, dynamic_scaler }
     }
 
     /// Создать Policy Engine с явно заданным ранкером (для тестирования).
@@ -196,9 +201,11 @@ impl PolicyEngine {
     /// # }
     /// ```
     pub fn with_ranker(config: Config, ranker: Box<dyn Ranker>) -> Self {
+        let dynamic_scaler = DynamicPriorityScaler::new(config.clone());
         Self {
             config,
             ranker: Some(ranker),
+            dynamic_scaler,
         }
     }
 
@@ -292,7 +299,45 @@ impl PolicyEngine {
             results.insert(app_group.app_group_id.clone(), result);
         }
 
-        results
+        // Применяем динамическое масштабирование приоритетов на основе нагрузки системы
+        let base_priorities: std::collections::HashMap<String, PriorityClass> = results
+            .iter()
+            .map(|(app_group_id, result)| (app_group_id.clone(), result.priority_class))
+            .collect();
+        
+        let scaled_priorities = self.dynamic_scaler.scale_priorities(snapshot, &base_priorities);
+        
+        // Обновляем результаты с учетом динамического масштабирования
+        let mut final_results = std::collections::HashMap::new();
+        for (app_group_id, result) in results {
+            if let Some(scaled_priority) = scaled_priorities.get(&app_group_id) {
+                if *scaled_priority != result.priority_class {
+                    // Если приоритет был изменен динамическим масштабированием, обновляем причину
+                    let load_info = SystemLoadInfo::from_global_metrics(&snapshot.global);
+                    let load_category = load_info.get_load_category();
+                    let reason = format!(
+                        "{}. dynamic-scaling: {} -> {} (load={:.3})",
+                        result.reason,
+                        result.priority_class.as_str(),
+                        scaled_priority.as_str(),
+                        load_info.load_level
+                    );
+                    final_results.insert(
+                        app_group_id,
+                        PolicyResult {
+                            priority_class: *scaled_priority,
+                            reason,
+                        },
+                    );
+                } else {
+                    final_results.insert(app_group_id, result);
+                }
+            } else {
+                final_results.insert(app_group_id, result);
+            }
+        }
+
+        final_results
     }
 
     /// Оценить одну AppGroup и определить её приоритет.
@@ -1884,5 +1929,108 @@ mod tests {
         // Фокусная игра с аудио должна получить CritInteractive
         assert_eq!(result.priority_class, PriorityClass::CritInteractive);
         assert!(result.reason.contains("focused group with audio/game"));
+    }
+
+    #[test]
+    fn test_dynamic_scaling_high_load() {
+        let config = create_test_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        // Устанавливаем высокую нагрузку системы
+        snapshot.global.load_avg_one = 5.0; // Высокая нагрузка на 4-ядерной системе
+        snapshot.global.psi_cpu_some_avg10 = Some(0.9);
+        snapshot.global.psi_io_some_avg10 = Some(0.8);
+        snapshot.global.psi_mem_some_avg10 = Some(0.7);
+
+        // Создаем группу с нормальным приоритетом
+        let app_group = AppGroupRecord {
+            app_group_id: "background-app".to_string(),
+            root_pid: 3000,
+            process_ids: vec![3000],
+            app_name: Some("background-app".to_string()),
+            total_cpu_share: Some(0.2),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_io_read_operations: None,
+            total_io_write_operations: None,
+            total_io_operations: None,
+            io_data_source: None,
+            total_rss_mb: Some(200),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
+        };
+
+        snapshot.app_groups = vec![app_group.clone()];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+        let result = results.get("background-app").unwrap();
+
+        // При высокой нагрузке нормальный приоритет должен быть понижен до фонового
+        assert_eq!(result.priority_class, PriorityClass::Background);
+        assert!(result.reason.contains("dynamic-scaling"));
+        assert!(result.reason.contains("NORMAL -> BACKGROUND"));
+    }
+
+    #[test]
+    fn test_dynamic_scaling_no_change_low_load() {
+        let config = create_test_config();
+        let engine = PolicyEngine::new(config);
+        let mut snapshot = create_test_snapshot();
+
+        // Устанавливаем низкую нагрузку системы
+        snapshot.global.load_avg_one = 0.5; // Низкая нагрузка
+        snapshot.global.psi_cpu_some_avg10 = Some(0.1);
+        snapshot.global.psi_io_some_avg10 = Some(0.1);
+        snapshot.global.psi_mem_some_avg10 = Some(0.1);
+
+        // Создаем группу с нормальным приоритетом
+        let app_group = AppGroupRecord {
+            app_group_id: "normal-app".to_string(),
+            root_pid: 4000,
+            process_ids: vec![4000],
+            app_name: Some("normal-app".to_string()),
+            total_cpu_share: Some(0.3),
+            total_io_read_bytes: None,
+            total_io_write_bytes: None,
+            total_io_read_operations: None,
+            total_io_write_operations: None,
+            total_io_operations: None,
+            io_data_source: None,
+            total_rss_mb: Some(300),
+            has_gui_window: false,
+            is_focused_group: false,
+            tags: vec![],
+            priority_class: None,
+            total_energy_uj: None,
+            total_power_w: None,
+            total_network_rx_bytes: None,
+            total_network_tx_bytes: None,
+            total_network_rx_packets: None,
+            total_network_tx_packets: None,
+            total_network_tcp_connections: None,
+            total_network_udp_connections: None,
+            network_data_source: None,
+        };
+
+        snapshot.app_groups = vec![app_group.clone()];
+
+        let results = engine.evaluate_snapshot(&snapshot);
+        let result = results.get("normal-app").unwrap();
+
+        // При низкой нагрузке приоритет не должен измениться
+        assert_eq!(result.priority_class, PriorityClass::Normal);
+        assert!(!result.reason.contains("dynamic-scaling"));
     }
 }
