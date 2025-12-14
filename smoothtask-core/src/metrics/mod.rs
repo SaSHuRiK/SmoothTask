@@ -20,11 +20,14 @@
 //! - **audio**: Метрики аудио-системы (PipeWire/PulseAudio)
 //! - **input**: Отслеживание активности пользователя
 //! - **scheduling_latency**: Измерение задержек планировщика
+//! - **nvml_wrapper**: Расширенный мониторинг NVIDIA GPU через NVML
+//! - **amdgpu_wrapper**: Расширенный мониторинг AMD GPU через AMDGPU
 //! - **gpu**: Мониторинг GPU устройств и их метрик
 //! - **ebpf**: Высокопроизводительный сбор метрик через eBPF
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
 
+pub mod amdgpu_wrapper;
 pub mod app_performance;
 pub mod audio;
 pub mod audio_pipewire;
@@ -36,6 +39,7 @@ pub mod gpu;
 pub mod input;
 pub mod ml_performance;
 pub mod network;
+pub mod nvml_wrapper;
 pub mod process;
 pub mod process_network;
 pub mod scheduling_latency;

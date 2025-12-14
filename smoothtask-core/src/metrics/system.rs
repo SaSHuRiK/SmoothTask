@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tracing::warn;
+use tracing::{debug, error, info, warn};
 
 /// Сырые счётчики CPU из `/proc/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
@@ -1949,7 +1949,134 @@ fn collect_disk_metrics() -> DiskMetrics {
 
 /// Собирает метрики GPU из различных источников
 fn collect_gpu_metrics() -> crate::metrics::gpu::GpuMetricsCollection {
-    crate::metrics::gpu::collect_gpu_metrics().unwrap_or_default()
+    // Сначала пытаемся использовать расширенные NVML и AMDGPU метрики
+    let mut gpu_collection = crate::metrics::gpu::collect_gpu_metrics().unwrap_or_default();
+    
+    // Добавляем расширенные метрики от NVML (для NVIDIA GPU)
+    if let Ok(nvml_metrics) = crate::metrics::nvml_wrapper::collect_nvml_metrics() {
+        if !nvml_metrics.devices.is_empty() {
+            info!("Добавлены расширенные NVIDIA GPU метрики для {} устройств", nvml_metrics.devices.len());
+            gpu_collection = integrate_nvml_metrics(gpu_collection, nvml_metrics);
+        }
+    }
+    
+    // Добавляем расширенные метрики от AMDGPU (для AMD GPU)
+    if let Ok(amdgpu_metrics) = crate::metrics::amdgpu_wrapper::collect_amdgpu_metrics() {
+        if !amdgpu_metrics.devices.is_empty() {
+            info!("Добавлены расширенные AMD GPU метрики для {} устройств", amdgpu_metrics.devices.len());
+            gpu_collection = integrate_amdgpu_metrics(gpu_collection, amdgpu_metrics);
+        }
+    }
+    
+    gpu_collection
+}
+
+/// Интегрирует NVML метрики в основную GPU коллекцию
+fn integrate_nvml_metrics(
+    mut gpu_collection: crate::metrics::gpu::GpuMetricsCollection,
+    nvml_metrics: crate::metrics::nvml_wrapper::NvmlMetricsCollection,
+) -> crate::metrics::gpu::GpuMetricsCollection {
+    use crate::metrics::gpu::{GpuDevice, GpuMetrics, GpuUtilization, GpuMemory, GpuTemperature, GpuPower, GpuClocks};
+    
+    for nvml_device in nvml_metrics.devices {
+        let gpu_device = GpuDevice {
+            name: nvml_device.device.name.clone(),
+            device_path: PathBuf::from(nvml_device.device.device_path.clone()),
+            vendor_id: Some("0x10de".to_string()), // NVIDIA vendor ID
+            device_id: None, // Could be extracted from device info
+            driver: Some("nvidia".to_string()),
+        };
+        
+        let gpu_metrics = GpuMetrics {
+            device: gpu_device,
+            utilization: GpuUtilization {
+                gpu_util: nvml_device.utilization.gpu_util as f32 / 100.0,
+                memory_util: nvml_device.utilization.memory_util as f32 / 100.0,
+                encoder_util: nvml_device.utilization.encoder_util.map(|v| v as f32 / 100.0),
+                decoder_util: nvml_device.utilization.decoder_util.map(|v| v as f32 / 100.0),
+            },
+            memory: GpuMemory {
+                total_bytes: nvml_device.memory.total_bytes,
+                used_bytes: nvml_device.memory.used_bytes,
+                free_bytes: nvml_device.memory.free_bytes,
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(nvml_device.temperature.temperature_c as f32),
+                hotspot_c: nvml_device.temperature.hotspot_c.map(|v| v as f32),
+                memory_c: nvml_device.temperature.memory_c.map(|v| v as f32),
+            },
+            power: GpuPower {
+                power_w: Some(nvml_device.power.power_mw as f32 / 1000.0),
+                power_limit_w: Some(nvml_device.power.power_limit_mw as f32 / 1000.0),
+                power_cap_w: nvml_device.power.power_cap_mw.map(|v| v as f32 / 1000.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(nvml_device.clocks.core_clock_mhz),
+                memory_clock_mhz: Some(nvml_device.clocks.memory_clock_mhz),
+                shader_clock_mhz: nvml_device.clocks.shader_clock_mhz,
+            },
+            timestamp: nvml_device.timestamp,
+        };
+        
+        gpu_collection.devices.push(gpu_metrics);
+    }
+    
+    gpu_collection.gpu_count = gpu_collection.devices.len();
+    gpu_collection
+}
+
+/// Интегрирует AMDGPU метрики в основную GPU коллекцию
+fn integrate_amdgpu_metrics(
+    mut gpu_collection: crate::metrics::gpu::GpuMetricsCollection,
+    amdgpu_metrics: crate::metrics::amdgpu_wrapper::AmdGpuMetricsCollection,
+) -> crate::metrics::gpu::GpuMetricsCollection {
+    use crate::metrics::gpu::{GpuDevice, GpuMetrics, GpuUtilization, GpuMemory, GpuTemperature, GpuPower, GpuClocks};
+    
+    for amdgpu_device in amdgpu_metrics.devices {
+        let gpu_device = GpuDevice {
+            name: amdgpu_device.device.name.clone(),
+            device_path: PathBuf::from(amdgpu_device.device.device_path.clone()),
+            vendor_id: Some("0x1002".to_string()), // AMD vendor ID
+            device_id: Some(amdgpu_device.device.device_id.clone()),
+            driver: Some("amdgpu".to_string()),
+        };
+        
+        let gpu_metrics = GpuMetrics {
+            device: gpu_device,
+            utilization: GpuUtilization {
+                gpu_util: amdgpu_device.utilization.gpu_util as f32 / 100.0,
+                memory_util: amdgpu_device.utilization.memory_util as f32 / 100.0,
+                encoder_util: None, // AMD doesn't typically expose encoder util separately
+                decoder_util: amdgpu_device.utilization.video_util.map(|v| v as f32 / 100.0),
+            },
+            memory: GpuMemory {
+                total_bytes: amdgpu_device.memory.total_bytes,
+                used_bytes: amdgpu_device.memory.used_bytes,
+                free_bytes: amdgpu_device.memory.free_bytes,
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(amdgpu_device.temperature.temperature_c as f32),
+                hotspot_c: amdgpu_device.temperature.hotspot_c.map(|v| v as f32),
+                memory_c: amdgpu_device.temperature.memory_c.map(|v| v as f32),
+            },
+            power: GpuPower {
+                power_w: Some(amdgpu_device.power.power_mw as f32 / 1000.0),
+                power_limit_w: Some(amdgpu_device.power.power_limit_mw as f32 / 1000.0),
+                power_cap_w: amdgpu_device.power.power_cap_mw.map(|v| v as f32 / 1000.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(amdgpu_device.clocks.core_clock_mhz),
+                memory_clock_mhz: Some(amdgpu_device.clocks.memory_clock_mhz),
+                shader_clock_mhz: amdgpu_device.clocks.shader_clock_mhz,
+            },
+            timestamp: amdgpu_device.timestamp,
+        };
+        
+        gpu_collection.devices.push(gpu_metrics);
+    }
+    
+    gpu_collection.gpu_count = gpu_collection.devices.len();
+    gpu_collection
 }
 
 /// Собирает метрики eBPF
@@ -3235,6 +3362,43 @@ SwapFree:        4096000 kB
             // Если eBPF недоступен, это нормальное поведение в тестовой среде
             // Просто проверяем, что функция не паникует
         }
+    }
+
+    #[test]
+    fn test_gpu_metrics_integration() {
+        // Тест проверяет, что интеграция GPU метрик работает корректно
+        let gpu_metrics = collect_gpu_metrics();
+        assert_eq!(gpu_metrics.devices.len(), gpu_metrics.gpu_count);
+    }
+
+    #[test]
+    fn test_nvml_integration_with_empty_collection() {
+        // Тест проверяет, что интеграция NVML метрик работает с пустой коллекцией
+        let empty_collection = crate::metrics::gpu::GpuMetricsCollection::default();
+        let empty_nvml = crate::metrics::nvml_wrapper::NvmlMetricsCollection::default();
+        
+        let result = integrate_nvml_metrics(empty_collection, empty_nvml);
+        assert_eq!(result.devices.len(), 0);
+        assert_eq!(result.gpu_count, 0);
+    }
+
+    #[test]
+    fn test_amdgpu_integration_with_empty_collection() {
+        // Тест проверяет, что интеграция AMDGPU метрик работает с пустой коллекцией
+        let empty_collection = crate::metrics::gpu::GpuMetricsCollection::default();
+        let empty_amdgpu = crate::metrics::amdgpu_wrapper::AmdGpuMetricsCollection::default();
+        
+        let result = integrate_amdgpu_metrics(empty_collection, empty_amdgpu);
+        assert_eq!(result.devices.len(), 0);
+        assert_eq!(result.gpu_count, 0);
+    }
+
+    #[test]
+    fn test_gpu_metrics_integration_fallback() {
+        // Тест проверяет, что интеграция GPU метрик работает корректно даже если NVML/AMDGPU недоступны
+        let gpu_metrics = collect_gpu_metrics();
+        // Должно вернуть хотя бы пустую коллекцию, не паникуя
+        assert_eq!(gpu_metrics.devices.len(), gpu_metrics.gpu_count);
     }
 
     #[test]
