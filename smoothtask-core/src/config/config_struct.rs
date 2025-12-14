@@ -86,6 +86,205 @@ pub(crate) fn default_ml_classifier_model_type() -> ModelType {
     ModelType::Catboost
 }
 
+impl MLClassifierConfig {
+    /// Валидация конфигурации ML-классификатора.
+    ///
+    /// Проверяет, что все параметры находятся в допустимых диапазонах.
+    /// Возвращает ошибку, если какие-либо параметры недопустимы.
+    ///
+    /// # Ошибки
+    ///
+    /// - `anyhow::Error` если `confidence_threshold` находится вне диапазона [0.0, 1.0]
+    /// - `anyhow::Error` если `model_path` пуст
+    pub(crate) fn validate(&self) -> Result<()> {
+        // Валидация confidence_threshold
+        ensure!(
+            (0.0..=1.0).contains(&self.confidence_threshold),
+            "ml_classifier.confidence_threshold must be in the [0.0, 1.0] range (got {})",
+            self.confidence_threshold
+        );
+
+        // Валидация model_path
+        ensure!(
+            !self.model_path.trim().is_empty(),
+            "ml_classifier.model_path must not be empty"
+        );
+
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ml_classifier_config_validation() {
+        // Тест валидной конфигурации
+        let valid_config = MLClassifierConfig {
+            enabled: true,
+            model_path: "models/test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+        assert!(valid_config.validate().is_ok());
+
+        // Тест невалидного confidence_threshold (слишком высокий)
+        let mut invalid_config = valid_config.clone();
+        invalid_config.confidence_threshold = 1.5;
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be in the [0.0, 1.0] range"));
+
+        // Тест невалидного confidence_threshold (слишком низкий)
+        invalid_config.confidence_threshold = -0.1;
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be in the [0.0, 1.0] range"));
+
+        // Тест пустого model_path
+        invalid_config = valid_config.clone();
+        invalid_config.model_path = "".to_string();
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+
+        // Тест model_path с пробелами
+        invalid_config.model_path = "   ".to_string();
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_pattern_auto_update_config_validation() {
+        // Тест валидной конфигурации
+        let valid_config = PatternAutoUpdateConfig {
+            enabled: true,
+            interval_sec: 60,
+            notify_on_update: true,
+        };
+        assert!(valid_config.validate().is_ok());
+
+        // Тест невалидного interval_sec (слишком маленький)
+        let invalid_config = PatternAutoUpdateConfig {
+            enabled: true,
+            interval_sec: 5,
+            notify_on_update: true,
+        };
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must be >= 10 seconds"));
+
+        // Тест минимального валидного interval_sec
+        let edge_config = PatternAutoUpdateConfig {
+            enabled: true,
+            interval_sec: 10,
+            notify_on_update: true,
+        };
+        assert!(edge_config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_notification_config_validation() {
+        // Тест валидной конфигурации
+        let valid_config = NotificationConfig {
+            enabled: true,
+            backend: NotificationBackend::Libnotify,
+            app_name: "SmoothTask".to_string(),
+            min_level: NotificationLevel::Info,
+        };
+        assert!(valid_config.validate().is_ok());
+
+        // Тест пустого app_name
+        let invalid_config = NotificationConfig {
+            enabled: true,
+            backend: NotificationBackend::Libnotify,
+            app_name: "".to_string(),
+            min_level: NotificationLevel::Info,
+        };
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+
+        // Тест app_name с пробелами
+        let invalid_config = NotificationConfig {
+            enabled: true,
+            backend: NotificationBackend::Libnotify,
+            app_name: "   ".to_string(),
+            min_level: NotificationLevel::Info,
+        };
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_model_config_validation() {
+        // Тест валидной конфигурации
+        let valid_config = ModelConfig {
+            enabled: true,
+            model_path: "models/ranker.onnx".to_string(),
+            model_type: ModelType::Onnx,
+        };
+        assert!(valid_config.validate().is_ok());
+
+        // Тест пустого model_path
+        let invalid_config = ModelConfig {
+            enabled: true,
+            model_path: "".to_string(),
+            model_type: ModelType::Onnx,
+        };
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+
+        // Тест model_path с пробелами
+        let invalid_config = ModelConfig {
+            enabled: true,
+            model_path: "   ".to_string(),
+            model_type: ModelType::Onnx,
+        };
+        let result = invalid_config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("must not be empty"));
+    }
+
+    #[test]
+    fn test_full_config_validation() {
+        // Тест полной конфигурации с валидными значениями
+        let mut config = Config::default();
+        assert!(config.validate().is_ok());
+
+        // Тест с невалидным ml_classifier
+        config.ml_classifier.confidence_threshold = 1.5;
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("ml_classifier.confidence_threshold"));
+
+        // Тест с невалидным pattern_auto_update
+        config = Config::default();
+        config.pattern_auto_update.interval_sec = 5;
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("pattern_auto_update.interval_sec"));
+
+        // Тест с невалидным notification
+        config = Config::default();
+        config.notifications.app_name = "".to_string();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("notifications.app_name"));
+
+        // Тест с невалидным model
+        config = Config::default();
+        config.model.model_path = "".to_string();
+        let result = config.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("model.model_path"));
+    }
+}
+
 /// Конфигурация логирования для системы.
 ///
 /// Определяет параметры ротации логов, сжатия и другие настройки логирования.
@@ -354,6 +553,27 @@ pub(crate) fn default_pattern_auto_update_interval_sec() -> u64 {
 /// Возвращает дефолтное значение для `pattern_auto_update_notify`.
 pub(crate) fn default_pattern_auto_update_notify() -> bool {
     false
+}
+
+impl PatternAutoUpdateConfig {
+    /// Валидация конфигурации автообновления паттернов.
+    ///
+    /// Проверяет, что все параметры находятся в допустимых диапазонах.
+    /// Возвращает ошибку, если какие-либо параметры недопустимы.
+    ///
+    /// # Ошибки
+    ///
+    /// - `anyhow::Error` если `interval_sec` меньше 10 секунд
+    pub(crate) fn validate(&self) -> Result<()> {
+        // Валидация interval_sec
+        ensure!(
+            self.interval_sec >= 10,
+            "pattern_auto_update.interval_sec must be >= 10 seconds to prevent excessive filesystem polling (got {})",
+            self.interval_sec
+        );
+
+        Ok(())
+    }
 }
 
 /// Возвращает дефолтное значение для `pattern_auto_update`.
@@ -688,6 +908,26 @@ pub struct ModelConfig {
     pub model_type: ModelType,
 }
 
+impl ModelConfig {
+    /// Валидация конфигурации ML-модели.
+    ///
+    /// Проверяет, что все параметры находятся в допустимых диапазонах.
+    /// Возвращает ошибку, если какие-либо параметры недопустимы.
+    ///
+    /// # Ошибки
+    ///
+    /// - `anyhow::Error` если `model_path` пуст
+    pub(crate) fn validate(&self) -> Result<()> {
+        // Валидация model_path
+        ensure!(
+            !self.model_path.trim().is_empty(),
+            "model.model_path must not be empty"
+        );
+
+        Ok(())
+    }
+}
+
 /// Тип бэкенда для отправки уведомлений.
 ///
 /// Определяет, какой бэкенд будет использоваться для отправки уведомлений.
@@ -784,6 +1024,26 @@ pub(crate) fn default_notification_app_name() -> String {
 /// - Дефолтное значение применяется автоматически при загрузке конфигурации
 pub(crate) fn default_notification_min_level() -> NotificationLevel {
     NotificationLevel::Warning
+}
+
+impl NotificationConfig {
+    /// Валидация конфигурации уведомлений.
+    ///
+    /// Проверяет, что все параметры находятся в допустимых диапазонах.
+    /// Возвращает ошибку, если какие-либо параметры недопустимы.
+    ///
+    /// # Ошибки
+    ///
+    /// - `anyhow::Error` если `app_name` пусто
+    pub(crate) fn validate(&self) -> Result<()> {
+        // Валидация app_name
+        ensure!(
+            !self.app_name.trim().is_empty(),
+            "notifications.app_name must not be empty"
+        );
+
+        Ok(())
+    }
 }
 
 /// Возвращает дефолтное значение для `enabled` ML-модели.
@@ -1035,6 +1295,10 @@ impl Config {
         self.paths.validate()?;
         self.cache_intervals.validate()?;
         self.logging.validate()?;
+        self.ml_classifier.validate()?;
+        self.pattern_auto_update.validate()?;
+        self.notifications.validate()?;
+        self.model.validate()?;
 
         Ok(())
     }
