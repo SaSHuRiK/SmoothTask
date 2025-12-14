@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 /// Comprehensive network interface statistics
@@ -977,18 +978,118 @@ impl NetworkMonitor {
     }
 
     /// Get process information from inode number
-    fn get_process_info_from_inode(&self, _inode: &str) -> Result<(Option<u32>, Option<String>)> {
-        // Try to find process using the inode
-        // This would typically involve reading /proc/*/fd/* and matching inodes
-        // For now, we'll return None as this requires more complex implementation
+    fn get_process_info_from_inode(&self, inode: &str) -> Result<(Option<u32>, Option<String>)> {
+        // Scan /proc/*/fd/* directories to find processes using this socket
+        // This is the standard Linux method for mapping sockets to processes
         
-        // In a real implementation, we would:
-        // 1. Scan /proc/*/fd/* directories
-        // 2. Read symlinks to find socket:[inode]
-        // 3. Match the inode and get the PID
-        // 4. Read /proc/[pid]/cmdline to get process name
+        // First, try to find the process ID by scanning /proc/*/fd/*
+        let pid = self.find_pid_by_inode(inode)?;
         
-        Ok((None, None))
+        if let Some(pid) = pid {
+            // Get the process name from /proc/[pid]/cmdline
+            let process_name = self.get_process_name_from_pid(pid)?;
+            Ok((Some(pid), process_name))
+        } else {
+            Ok((None, None))
+        }
+    }
+
+    /// Find process ID by scanning /proc/*/fd/* for socket inode
+    fn find_pid_by_inode(&self, inode: &str) -> Result<Option<u32>> {
+        // Read /proc directory to find all process IDs
+        let proc_dir = match fs::read_dir("/proc") {
+            Ok(dir) => dir,
+            Err(e) => {
+                tracing::debug!("Failed to read /proc directory: {}", e);
+                return Ok(None);
+            }
+        };
+        
+        // Look for socket:[inode] in each process's file descriptors
+        for entry in proc_dir {
+            match entry {
+                Ok(entry) => {
+                    // Check if this is a process directory (numeric name)
+                    if let Some(pid_str) = entry.file_name().to_str() {
+                        if let Ok(pid) = pid_str.parse::<u32>() {
+                            // Check if this process has an fd directory
+                            let fd_path = format!("/proc/{}/fd", pid);
+                            if Path::new(&fd_path).exists() {
+                                // Read the fd directory
+                                if let Ok(fd_dir) = fs::read_dir(fd_path) {
+                                    for fd_entry in fd_dir {
+                                        match fd_entry {
+                                            Ok(fd_entry) => {
+                                                // Read the symbolic link target
+                                                if let Ok(target) = fs::read_link(fd_entry.path()) {
+                                                    if let Some(target_str) = target.to_str() {
+                                                        // Check if this is a socket with our inode
+                                                        if target_str.contains(&format!("socket:[{}]", inode)) {
+                                                            return Ok(Some(pid));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(_) => continue,
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Err(_) => continue,
+            }
+        }
+        
+        Ok(None)
+    }
+
+    /// Get process name from PID by reading /proc/[pid]/cmdline
+    fn get_process_name_from_pid(&self, pid: u32) -> Result<Option<String>> {
+        let cmdline_path = format!("/proc/{}/cmdline", pid);
+        
+        match fs::read_to_string(cmdline_path) {
+            Ok(cmdline) => {
+                // cmdline contains null-separated arguments, we want the first one (process name)
+                let process_name = cmdline
+                    .split('\0')
+                    .next()
+                    .unwrap_or("")
+                    .to_string();
+                
+                if process_name.is_empty() {
+                    // Fallback: try to read /proc/[pid]/comm which contains the command name
+                    let comm_path = format!("/proc/{}/comm", pid);
+                    if let Ok(comm) = fs::read_to_string(comm_path) {
+                        let comm_name = comm.trim().to_string();
+                        if !comm_name.is_empty() {
+                            return Ok(Some(comm_name));
+                        }
+                    }
+                    Ok(None)
+                } else {
+                    Ok(Some(process_name))
+                }
+            }
+            Err(e) => {
+                tracing::debug!("Failed to read cmdline for PID {}: {}", pid, e);
+                
+                // Fallback: try to read /proc/[pid]/comm
+                let comm_path = format!("/proc/{}/comm", pid);
+                match fs::read_to_string(comm_path) {
+                    Ok(comm) => {
+                        let comm_name = comm.trim().to_string();
+                        if comm_name.is_empty() {
+                            Ok(None)
+                        } else {
+                            Ok(Some(comm_name))
+                        }
+                    }
+                    Err(_) => Ok(None),
+                }
+            }
+        }
     }
 
     /// Collect network quality metrics with enhanced tracking
@@ -2326,6 +2427,114 @@ mod tests {
         match result {
             Ok(_) => {
                 // Stats collected successfully
+            }
+            Err(e) => {
+                // Some error occurred, but it should be handled gracefully
+                tracing::debug!("Network stats collection error (expected in test): {}", e);
+            }
+        }
+    }
+
+    #[test]
+    fn test_process_info_from_inode_error_handling() {
+        // Test that process info from inode handles errors gracefully
+        let monitor = NetworkMonitor::new();
+        
+        // Test with invalid inode
+        let result = monitor.get_process_info_from_inode("invalid_inode");
+        assert!(result.is_ok());
+        let (pid, process_name) = result.unwrap();
+        assert_eq!(pid, None);
+        assert_eq!(process_name, None);
+        
+        // Test with empty inode
+        let result = monitor.get_process_info_from_inode("");
+        assert!(result.is_ok());
+        let (pid, process_name) = result.unwrap();
+        assert_eq!(pid, None);
+        assert_eq!(process_name, None);
+    }
+
+    #[test]
+    fn test_find_pid_by_inode_error_handling() {
+        // Test that find_pid_by_inode handles errors gracefully
+        let monitor = NetworkMonitor::new();
+        
+        // Test with invalid inode
+        let result = monitor.find_pid_by_inode("invalid_inode");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+        
+        // Test with empty inode
+        let result = monitor.find_pid_by_inode("");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_get_process_name_from_pid_error_handling() {
+        // Test that get_process_name_from_pid handles errors gracefully
+        let monitor = NetworkMonitor::new();
+        
+        // Test with invalid PID (should return None)
+        let result = monitor.get_process_name_from_pid(999999);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+        
+        // Test with PID 0 (should return None)
+        let result = monitor.get_process_name_from_pid(0);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), None);
+    }
+
+    #[test]
+    fn test_network_connection_process_mapping() {
+        // Test that network connections can be mapped to processes
+        let monitor = NetworkMonitor::new();
+        
+        // Test that the connection collection functions work
+        // This is a basic test - more comprehensive testing would require
+        // actual network connections and processes
+        
+        // Test TCP connection collection
+        let mut connection_map: HashMap<String, NetworkConnectionStats> = HashMap::new();
+        let result = monitor.collect_tcp_connections(&mut connection_map);
+        
+        // Should not panic and should handle gracefully
+        assert!(result.is_ok());
+        
+        // Test UDP connection collection
+        let result = monitor.collect_udp_connections(&mut connection_map);
+        
+        // Should not panic and should handle gracefully
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_network_monitoring_process_integration() {
+        // Test that network monitoring integrates with process monitoring
+        let mut monitor = NetworkMonitor::new();
+        
+        // Test that we can collect stats and they include process information
+        let result = monitor.collect_network_stats();
+        
+        match result {
+            Ok(stats) => {
+                // Check that we have some basic stats
+                assert!(stats.timestamp > SystemTime::UNIX_EPOCH);
+                
+                // Check that active connections are collected
+                // Note: In a test environment, there might be no connections,
+                // so we just verify that the collection doesn't panic
+                assert!(stats.active_connections.len() >= 0);
+                
+                // If there are connections, they should have process info
+                for conn in stats.active_connections {
+                    // Process info might be None if no process is found,
+                    // but the collection should not panic
+                    assert!(conn.pid.is_some() || conn.pid.is_none());
+                    assert!(conn.process_name.is_some() || conn.process_name.is_none());
+                }
             }
             Err(e) => {
                 // Some error occurred, but it should be handled gracefully

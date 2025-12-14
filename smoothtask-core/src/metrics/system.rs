@@ -5050,6 +5050,9 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: None,
             hardware: HardwareMetrics::default(),
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         let usage = cur_metrics.cpu_usage_since(&prev_metrics);
@@ -5342,6 +5345,9 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: None,
             hardware: HardwareMetrics::default(),
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         // Проверяем, что метрики содержат новые поля
@@ -5680,6 +5686,9 @@ SwapFree:        4096000 kB
             gpu: None,
             ebpf: None,
             hardware: HardwareMetrics::default(),
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         // Проверяем, что метрики содержат новые поля
@@ -5707,6 +5716,9 @@ SwapFree:        4096000 kB
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: Some(crate::metrics::ebpf::EbpfMetrics::default()),
+            system_calls: SystemCallMetrics::default(),
+            inode: InodeMetrics::default(),
+            swap: SwapMetrics::default(),
         };
 
         // Проверяем, что метрики содержат поле eBPF
