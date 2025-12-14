@@ -11,83 +11,69 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-825: Add evdev input device monitoring for user activity detection
-  - Тип: Rust / core / metrics / input
-  - Примечания: Input device monitoring for user presence and activity detection
-  - Приоритет: Высокий
-  - Оценка времени: ~90 минут
-  - Время выполнения: ~90 минут
-  - Критерии готовности:
-    - [x] Research evdev APIs and input monitoring techniques
-    - [x] Implement keyboard and mouse activity tracking
-    - [x] Add touchpad and touchscreen support
-    - [x] Implement user presence detection algorithms
-    - [x] Add error handling for input device issues
-    - [x] Integrate with policy engine for activity-based prioritization
-    - [x] Add unit and integration tests
-  - Ожидаемые результаты: Better user activity awareness for intelligent priority management
-  - Технические детали:
-    - Файлы: smoothtask-core/src/metrics/input.rs
-    - Функции: EvdevInputTracker, InputActivityTracker, InputTracker enum
-    - Возможности: evdev device discovery, non-blocking event reading, comprehensive error handling
-    - Интеграция: Full integration with main metrics collection pipeline
-    - Тесты: 40+ comprehensive unit tests covering all functionality and edge cases
-  - Результаты:
-    - Complete evdev input monitoring system with automatic device discovery
-    - Support for keyboard, mouse, touchpad, and touchscreen devices
-    - Advanced user presence detection with configurable idle thresholds
-    - Comprehensive error handling with practical troubleshooting messages
-    - Graceful degradation to simple tracker when evdev is unavailable
-    - Full integration with policy engine for activity-based prioritization
-    - Extensive test coverage with edge case testing
-
-- [x] ST-829: Implement advanced error recovery and system health monitoring
-  - Тип: Rust / core / health
-  - Примечания: Comprehensive system health monitoring and automatic recovery
+- [ ] ST-834: Add container support for Docker and Podman environments
+  - Тип: Rust / core / integration
+  - Примечания: Enable SmoothTask to run in containerized environments with proper cgroup and process monitoring
   - Приоритет: Средний
-  - Оценка времени: ~120 минут
-  - Время выполнения: ~90 минут
+  - Оценка времени: ~180 минут
   - Критерии готовности:
-    - [x] Research system health monitoring patterns
-    - [x] Implement component health checks and status monitoring
-    - [x] Add automatic recovery mechanisms for critical components
-    - [x] Implement system-wide health scoring
-    - [x] Add comprehensive logging and alerting
-    - [x] Integrate with existing monitoring infrastructure
-    - [x] Add unit and integration tests
-  - Ожидаемые результаты: More robust and self-healing system operation
-  - Технические детали:
-    - Файлы: smoothtask-core/src/health/mod.rs, smoothtask-core/src/health/monitoring.rs, smoothtask-core/src/health/tests.rs
-    - Функции: AutoRecoveryFlags, RecoveryAttempt, RecoveryType, RecoveryStatus, HealthScoreEntry
-    - Возможности: Automatic component recovery, health scoring (0-100), enhanced logging, recovery statistics
-    - Интеграция: Full integration with existing health monitoring infrastructure
-    - Тесты: Comprehensive unit tests covering all new functionality
-  - Результаты:
-    - Complete auto-recovery system with configurable flags and statistics
-    - System-wide health scoring (0-100) with trend analysis capabilities
-    - Enhanced logging with different severity levels (debug, info, warn, error)
-    - Comprehensive recovery statistics tracking and history
-    - Full integration with existing monitoring infrastructure
-    - Automatic recovery for critical components (system_metrics, process_monitoring, resource_usage)
-    - Configurable recovery behavior with allowed/blocked component lists
-    - Graceful degradation when auto-recovery is disabled or fails
+    - [ ] Research container monitoring requirements and limitations
+    - [ ] Implement container detection and environment adaptation
+    - [ ] Add Dockerfile and container configuration examples
+    - [ ] Implement cgroup v2 support for containerized environments
+    - [ ] Add container-specific metrics and monitoring
+    - [ ] Add unit and integration tests for container support
+    - [ ] Update documentation with container usage examples
+  - Ожидаемые результаты: SmoothTask can run effectively in Docker/Podman containers with proper process monitoring and priority management
+
+- [ ] ST-835: Add Prometheus and Grafana integration for monitoring
+  - Тип: Rust / core / monitoring
+  - Примечания: Expose metrics in Prometheus format and provide Grafana dashboards for visualization
+  - Приоритет: Средний
+  - Оценка времени: ~150 минут
+  - Критерии готовности:
+    - [ ] Research Prometheus metrics format and best practices
+    - [ ] Implement Prometheus metrics endpoint in API server
+    - [ ] Add key system and process metrics in Prometheus format
+    - [ ] Create basic Grafana dashboard templates
+    - [ ] Add health and performance metrics for monitoring
+    - [ ] Add unit and integration tests for metrics endpoint
+    - [ ] Update documentation with monitoring setup guide
+  - Ожидаемые результаты: Comprehensive monitoring integration with Prometheus/Grafana for better observability
+
+- [ ] ST-836: Implement basic web UI for status monitoring and configuration
+  - Тип: Web / UI
+  - Примечания: Simple web interface to view system status, metrics, and basic configuration
+  - Приоритет: Низкий
+  - Оценка времени: ~240 минут
+  - Критерии готовности:
+    - [ ] Research web UI frameworks (React, Svelte, or simple HTML/JS)
+    - [ ] Design basic UI layout and components
+    - [ ] Implement system status dashboard
+    - [ ] Add process and metrics visualization
+    - [ ] Implement basic configuration editing
+    - [ ] Add API integration for data fetching
+    - [ ] Add unit tests for UI components
+    - [ ] Update documentation with UI usage guide
+  - Ожидаемые результаты: User-friendly web interface for monitoring and basic configuration
+
+- [ ] ST-837: Add automatic pattern discovery system
+  - Тип: Rust / core / classification
+  - Примечания: System for detecting new applications and suggesting pattern additions
+  - Приоритет: Средний
+  - Оценка времени: ~210 минут
+  - Критерии готовности:
+    - [ ] Research pattern discovery algorithms and techniques
+    - [ ] Implement application fingerprinting and identification
+    - [ ] Add pattern suggestion system
+    - [ ] Implement automatic pattern generation
+    - [ ] Add pattern validation and testing
+    - [ ] Integrate with existing pattern watcher system
+    - [ ] Add unit and integration tests
+    - [ ] Update documentation with pattern discovery guide
+  - Ожидаемые результаты: Automatic detection and suggestion of new application patterns for better classification
 
 ## 2. Бэклог
-
-- [ ] ST-824: Implement PipeWire audio monitoring for XRUN detection and audio stream analysis
-  - Тип: Rust / core / metrics / audio
-  - Примечания: Audio monitoring for real-time audio application detection and XRUN tracking
-  - Приоритет: Средний
-  - Оценка времени: ~120 минут
-  - Критерии готовности:
-    - [ ] Research PipeWire APIs and audio monitoring techniques
-    - [ ] Implement XRUN detection for audio glitch monitoring
-    - [ ] Add audio stream analysis with process mapping
-    - [ ] Implement volume and latency monitoring
-    - [ ] Add error handling for audio subsystem issues
-    - [ ] Integrate with process classification system
-    - [ ] Add unit and integration tests
-  - Ожидаемые результаты: Better audio application awareness and real-time audio monitoring
 
 - [x] ST-827: Implement comprehensive caching system for metrics to reduce I/O overhead
   - Тип: Rust / core / metrics / optimization
@@ -111,21 +97,6 @@
     - Advanced cache statistics and monitoring capabilities
     - Comprehensive test suite with 15+ test cases covering various scenarios
     - Significant reduction in filesystem I/O operations through intelligent caching
-
-- [ ] ST-828: Add Wayland window introspection support for modern desktop environments
-  - Тип: Rust / core / metrics / windows
-  - Примечания: Wayland compositor integration for window monitoring
-  - Приоритет: Средний
-  - Оценка времени: ~180 минут
-  - Критерии готовности:
-    - [ ] Research Wayland protocols and compositor APIs
-    - [ ] Implement window listing and focus detection for major compositors
-    - [ ] Add workspace and virtual desktop tracking
-    - [ ] Implement application-to-window mapping
-    - [ ] Add error handling for Wayland connection issues
-    - [ ] Integrate with existing X11 window monitoring
-    - [ ] Add unit and integration tests
-  - Ожидаемые результаты: Complete window monitoring support for modern Linux desktops
 
 - [x] ST-830: Add comprehensive integration tests for new features
   - Тип: Testing / integration
@@ -224,6 +195,36 @@
     - [x] Verify compilation succeeds with no warnings
   - Ожидаемые результаты: Clean codebase with zero warnings
   - Результаты: Successfully eliminated all compilation warnings. The codebase now compiles cleanly with no warnings.
+
+- [x] ST-828: Add Wayland window introspection support for modern desktop environments
+  - Тип: Rust / core / metrics / windows
+  - Примечания: Wayland compositor integration for window monitoring
+  - Приоритет: Средний
+  - Оценка времени: ~180 минут
+  - Время выполнения: ~120 минут
+  - Критерии готовности:
+    - [x] Research Wayland protocols and compositor APIs
+    - [x] Implement window listing and focus detection for major compositors
+    - [x] Add workspace and virtual desktop tracking
+    - [x] Implement application-to-window mapping
+    - [x] Add error handling for Wayland connection issues
+    - [x] Integrate with existing X11 window monitoring
+    - [x] Add unit and integration tests
+  - Ожидаемые результаты: Complete window monitoring support for modern Linux desktops
+  - Технические детали:
+    - Файлы: smoothtask-core/src/metrics/windows_wayland.rs
+    - Функции: WaylandIntrospector, is_wayland_available, detect_wayland_compositor
+    - Возможности: wlr-foreign-toplevel-management protocol support, compositor detection, comprehensive error handling
+    - Интеграция: Full integration with main metrics collection pipeline via WindowIntrospector trait
+    - Тесты: Comprehensive unit tests covering all functionality and edge cases
+  - Результаты:
+    - Complete Wayland window introspection system with automatic compositor detection
+    - Support for major compositors: Mutter (GNOME), KWin (KDE), Sway, Hyprland, Wayfire, Wlroots
+    - Advanced window state tracking with focused window detection and workspace mapping
+    - Comprehensive error handling with practical troubleshooting messages
+    - Graceful degradation to StaticWindowIntrospector when Wayland is unavailable
+    - Full integration with existing X11 window monitoring for hybrid environments
+    - Extensive test coverage with edge case testing and error handling scenarios
 
 - [x] ST-829: Implement advanced error recovery and system health monitoring
   - Тип: Rust / core / health
