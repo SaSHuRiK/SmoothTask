@@ -52,8 +52,68 @@ pub mod process;
 pub mod process_energy;
 pub mod process_gpu;
 pub mod process_network;
+pub mod prometheus_exporter;
 pub mod scheduling_latency;
 pub mod system;
 pub mod windows;
 pub mod windows_wayland;
 pub mod windows_x11;
+
+/// Интеграция асинхронного логирования в модуль метрик
+use crate::logging::async_logging::{write_log_entry_async, write_log_batch_async};
+use std::path::Path;
+use anyhow::Result;
+
+/// Асинхронное логирование метрик
+pub async fn log_metrics_async(log_path: &Path, metrics_data: &str) -> Result<()> {
+    write_log_entry_async(log_path, metrics_data).await
+}
+
+/// Асинхронное пакетное логирование метрик
+pub async fn log_metrics_batch_async(log_path: &Path, metrics_batch: &[String]) -> Result<()> {
+    write_log_batch_async(log_path, metrics_batch).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::{NamedTempFile, TempDir};
+    use tokio::runtime::Runtime;
+
+    fn create_runtime() -> Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create runtime")
+    }
+
+    #[test]
+    fn test_log_metrics_async() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_path = temp_dir.path().join("metrics_test.log");
+
+        runtime.block_on(async {
+            let result = log_metrics_async(&log_path, "Test metrics data").await;
+            assert!(result.is_ok(), "Metrics logging should succeed");
+        });
+    }
+
+    #[test]
+    fn test_log_metrics_batch_async() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_path = temp_dir.path().join("metrics_batch_test.log");
+
+        runtime.block_on(async {
+            let metrics_batch = vec![
+                "Metrics entry 1".to_string(),
+                "Metrics entry 2".to_string(),
+                "Metrics entry 3".to_string(),
+            ];
+
+            let result = log_metrics_batch_async(&log_path, &metrics_batch).await;
+            assert!(result.is_ok(), "Batch metrics logging should succeed");
+        });
+    }
+}

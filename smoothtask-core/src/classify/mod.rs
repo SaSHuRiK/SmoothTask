@@ -83,3 +83,62 @@ pub mod grouper;
 pub mod ml_classifier;
 pub mod pattern_watcher;
 pub mod rules;
+
+/// Интеграция асинхронного логирования в модуль классификации
+use crate::logging::async_logging::{write_log_entry_async, write_log_batch_async};
+use std::path::Path;
+use anyhow::Result;
+
+/// Асинхронное логирование классификации
+pub async fn log_classification_async(log_path: &Path, classification_data: &str) -> Result<()> {
+    write_log_entry_async(log_path, classification_data).await
+}
+
+/// Асинхронное пакетное логирование классификации
+pub async fn log_classification_batch_async(log_path: &Path, classification_batch: &[String]) -> Result<()> {
+    write_log_batch_async(log_path, classification_batch).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::{NamedTempFile, TempDir};
+    use tokio::runtime::Runtime;
+
+    fn create_runtime() -> Runtime {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create runtime")
+    }
+
+    #[test]
+    fn test_log_classification_async() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_path = temp_dir.path().join("classification_test.log");
+
+        runtime.block_on(async {
+            let result = log_classification_async(&log_path, "Test classification data").await;
+            assert!(result.is_ok(), "Classification logging should succeed");
+        });
+    }
+
+    #[test]
+    fn test_log_classification_batch_async() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_path = temp_dir.path().join("classification_batch_test.log");
+
+        runtime.block_on(async {
+            let classification_batch = vec![
+                "Classification entry 1".to_string(),
+                "Classification entry 2".to_string(),
+                "Classification entry 3".to_string(),
+            ];
+
+            let result = log_classification_batch_async(&log_path, &classification_batch).await;
+            assert!(result.is_ok(), "Batch classification logging should succeed");
+        });
+    }
+}
