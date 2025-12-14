@@ -6,7 +6,6 @@
 use axum::{
     extract::{Json, Path, State},
     http::StatusCode,
-    response::IntoResponse,
 };
 use serde_json::{json, Value};
 use std::time::Instant;
@@ -28,12 +27,12 @@ pub async fn custom_metrics_handler(State(state): State<ApiState>) -> Result<Jso
 
     match &state.custom_metrics_manager {
         Some(manager) => {
-            let configs = manager.get_all_metrics_config().map_err(|e| {
+            let configs = manager.get_all_metrics_config().await.map_err(|e| {
                 tracing::error!("Failed to get custom metrics configs: {}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
-            let values = manager.get_all_metrics_values().map_err(|e| {
+            let values = manager.get_all_metrics_values().await.map_err(|e| {
                 tracing::error!("Failed to get custom metrics values: {}", e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -50,12 +49,12 @@ pub async fn custom_metrics_handler(State(state): State<ApiState>) -> Result<Jso
                         },
                         "timestamp": value.timestamp,
                         "status": match &value.status {
-                            crate::metrics::custom::MetricStatus::Ok => "ok",
+                            crate::metrics::custom::MetricStatus::Ok => json!("ok"),
                             crate::metrics::custom::MetricStatus::Error { message } => json!({
                                 "error": "error",
                                 "message": message
                             }),
-                            crate::metrics::custom::MetricStatus::Disabled => "disabled",
+                            crate::metrics::custom::MetricStatus::Disabled => json!("disabled"),
                         }
                     })
                 });
@@ -65,17 +64,17 @@ pub async fn custom_metrics_handler(State(state): State<ApiState>) -> Result<Jso
                     "name": config.name,
                     "description": config.description,
                     "metric_type": match config.metric_type {
-                        crate::metrics::custom::CustomMetricType::Integer => "integer",
-                        crate::metrics::custom::CustomMetricType::Float => "float",
-                        crate::metrics::custom::CustomMetricType::Boolean => "boolean",
-                        crate::metrics::custom::CustomMetricType::String => "string",
+                        crate::metrics::custom::CustomMetricType::Integer => json!("integer"),
+                        crate::metrics::custom::CustomMetricType::Float => json!("float"),
+                        crate::metrics::custom::CustomMetricType::Boolean => json!("boolean"),
+                        crate::metrics::custom::CustomMetricType::String => json!("string"),
                     },
                     "source": match config.source {
                         crate::metrics::custom::CustomMetricSource::File { path, format } => json!({
                             "type": "file",
                             "path": path,
                             "format": match format {
-                                crate::metrics::custom::FileMetricFormat::PlainNumber => "plain_number",
+                                crate::metrics::custom::FileMetricFormat::PlainNumber => json!("plain_number"),
                                 crate::metrics::custom::FileMetricFormat::Json { path: json_path } => json!({
                                     "format": "json",
                                     "path": json_path
@@ -91,7 +90,7 @@ pub async fn custom_metrics_handler(State(state): State<ApiState>) -> Result<Jso
                             "command": command,
                             "args": args,
                             "format": match format {
-                                crate::metrics::custom::CommandMetricFormat::PlainNumber => "plain_number",
+                                crate::metrics::custom::CommandMetricFormat::PlainNumber => json!("plain_number"),
                                 crate::metrics::custom::CommandMetricFormat::Json { path } => json!({
                                     "format": "json",
                                     "path": path
@@ -167,14 +166,14 @@ pub async fn custom_metric_by_id_handler(
 
     match &state.custom_metrics_manager {
         Some(manager) => {
-            let config = manager.get_metric_config(&metric_id).map_err(|e| {
+            let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
                 tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
 
             match config {
                 Some(config) => {
-                    let value = manager.get_metric_value(&metric_id).map_err(|e| {
+                    let value = manager.get_metric_value(&metric_id).await.map_err(|e| {
                         tracing::error!("Failed to get custom metric value for '{}': {}", metric_id, e);
                         StatusCode::INTERNAL_SERVER_ERROR
                     })?;
@@ -189,12 +188,12 @@ pub async fn custom_metric_by_id_handler(
                             },
                             "timestamp": value.timestamp,
                             "status": match value.status {
-                                crate::metrics::custom::MetricStatus::Ok => "ok",
+                                crate::metrics::custom::MetricStatus::Ok => json!("ok"),
                                 crate::metrics::custom::MetricStatus::Error { message } => json!({
                                     "error": "error",
                                     "message": message
                                 }),
-                                crate::metrics::custom::MetricStatus::Disabled => "disabled",
+                                crate::metrics::custom::MetricStatus::Disabled => json!("disabled"),
                             }
                         })
                     });
@@ -206,17 +205,17 @@ pub async fn custom_metric_by_id_handler(
                             "name": config.name,
                             "description": config.description,
                             "metric_type": match config.metric_type {
-                                crate::metrics::custom::CustomMetricType::Integer => "integer",
-                                crate::metrics::custom::CustomMetricType::Float => "float",
-                                crate::metrics::custom::CustomMetricType::Boolean => "boolean",
-                                crate::metrics::custom::CustomMetricType::String => "string",
+                                crate::metrics::custom::CustomMetricType::Integer => json!("integer"),
+                                crate::metrics::custom::CustomMetricType::Float => json!("float"),
+                                crate::metrics::custom::CustomMetricType::Boolean => json!("boolean"),
+                                crate::metrics::custom::CustomMetricType::String => json!("string"),
                             },
                             "source": match config.source {
                                 crate::metrics::custom::CustomMetricSource::File { path, format } => json!({
                                     "type": "file",
                                     "path": path,
                                     "format": match format {
-                                        crate::metrics::custom::FileMetricFormat::PlainNumber => "plain_number",
+                                        crate::metrics::custom::FileMetricFormat::PlainNumber => json!("plain_number"),
                                         crate::metrics::custom::FileMetricFormat::Json { path: json_path } => json!({
                                             "format": "json",
                                             "path": json_path
@@ -232,7 +231,7 @@ pub async fn custom_metric_by_id_handler(
                                     "command": command,
                                     "args": args,
                                     "format": match format {
-                                        crate::metrics::custom::CommandMetricFormat::PlainNumber => "plain_number",
+                                        crate::metrics::custom::CommandMetricFormat::PlainNumber => json!("plain_number"),
                                         crate::metrics::custom::CommandMetricFormat::Json { path } => json!({
                                             "format": "json",
                                             "path": path
@@ -307,7 +306,7 @@ pub async fn custom_metric_update_handler(
     match &state.custom_metrics_manager {
         Some(manager) => {
             // Проверяем, что метрика существует
-            let config = manager.get_metric_config(&metric_id).map_err(|e| {
+            let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
                 tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -320,7 +319,7 @@ pub async fn custom_metric_update_handler(
                     match result {
                         Ok(_) => {
                             // Получаем обновленное значение
-                            let value = manager.get_metric_value(&metric_id).map_err(|e| {
+                            let value = manager.get_metric_value(&metric_id).await.map_err(|e| {
                                 tracing::error!("Failed to get updated custom metric value for '{}': {}", metric_id, e);
                                 StatusCode::INTERNAL_SERVER_ERROR
                             })?;
@@ -335,12 +334,12 @@ pub async fn custom_metric_update_handler(
                                     },
                                     "timestamp": value.timestamp,
                                     "status": match value.status {
-                                        crate::metrics::custom::MetricStatus::Ok => "ok",
+                                        crate::metrics::custom::MetricStatus::Ok => json!("ok"),
                                         crate::metrics::custom::MetricStatus::Error { message } => json!({
                                             "error": "error",
                                             "message": message
                                         }),
-                                        crate::metrics::custom::MetricStatus::Disabled => "disabled",
+                                        crate::metrics::custom::MetricStatus::Disabled => json!("disabled"),
                                     }
                                 })
                             });
@@ -408,7 +407,7 @@ pub async fn custom_metric_add_handler(
                     config.id = metric_id.clone();
 
                     // Добавляем метрику
-                    let result = manager.add_metric(config);
+                    let result = manager.add_metric(config).await;
 
                     match result {
                         Ok(_) => Ok(Json(json!({
@@ -462,7 +461,7 @@ pub async fn custom_metric_remove_handler(
     match &state.custom_metrics_manager {
         Some(manager) => {
             // Удаляем метрику
-            let result = manager.remove_metric(&metric_id);
+            let result = manager.remove_metric(&metric_id).await;
 
             match result {
                 Ok(_) => Ok(Json(json!({
@@ -510,7 +509,7 @@ pub async fn custom_metric_enable_handler(
     match &state.custom_metrics_manager {
         Some(manager) => {
             // Получаем текущую конфигурацию
-            let config = manager.get_metric_config(&metric_id).map_err(|e| {
+            let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
                 tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -520,14 +519,14 @@ pub async fn custom_metric_enable_handler(
                     config.enabled = true;
                     
                     // Удаляем старую метрику и добавляем новую с обновленной конфигурацией
-                    if let Err(e) = manager.remove_metric(&metric_id) {
+                    if let Err(e) = manager.remove_metric(&metric_id).await {
                         return Ok(Json(json!({
                             "status": "error",
                             "message": format!("Failed to remove old metric config for '{}': {}", metric_id, e)
                         })));
                     }
                     
-                    if let Err(e) = manager.add_metric(config) {
+                    if let Err(e) = manager.add_metric(config).await {
                         return Ok(Json(json!({
                             "status": "error",
                             "message": format!("Failed to add updated metric config for '{}': {}", metric_id, e)
@@ -580,7 +579,7 @@ pub async fn custom_metric_disable_handler(
     match &state.custom_metrics_manager {
         Some(manager) => {
             // Получаем текущую конфигурацию
-            let config = manager.get_metric_config(&metric_id).map_err(|e| {
+            let config = manager.get_metric_config(&metric_id).await.map_err(|e| {
                 tracing::error!("Failed to get custom metric config for '{}': {}", metric_id, e);
                 StatusCode::INTERNAL_SERVER_ERROR
             })?;
@@ -590,14 +589,14 @@ pub async fn custom_metric_disable_handler(
                     config.enabled = false;
                     
                     // Удаляем старую метрику и добавляем новую с обновленной конфигурацией
-                    if let Err(e) = manager.remove_metric(&metric_id) {
+                    if let Err(e) = manager.remove_metric(&metric_id).await {
                         return Ok(Json(json!({
                             "status": "error",
                             "message": format!("Failed to remove old metric config for '{}': {}", metric_id, e)
                         })));
                     }
                     
-                    if let Err(e) = manager.add_metric(config) {
+                    if let Err(e) = manager.add_metric(config).await {
                         return Ok(Json(json!({
                             "status": "error",
                             "message": format!("Failed to add updated metric config for '{}': {}", metric_id, e)

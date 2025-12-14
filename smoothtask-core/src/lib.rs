@@ -37,7 +37,7 @@ use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
 use crate::metrics::system::{
-    collect_system_metrics, CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics,
+    collect_system_metrics, CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics,
     PowerMetrics, PressureMetrics, ProcPaths, SystemMetrics, TemperatureMetrics,
 };
 use crate::metrics::windows::{
@@ -622,7 +622,7 @@ pub async fn run_daemon(
         // Загружаем пользовательские метрики из конфигурации, если они есть
         if let Some(custom_metrics_config) = initial_config.custom_metrics.as_ref() {
             for metric_config in custom_metrics_config {
-                if let Err(e) = manager.add_metric(metric_config.clone()) {
+                if let Err(e) = manager.add_metric(metric_config.clone()).await {
                     warn!("Failed to add custom metric '{}': {}", metric_config.id, e);
                 } else {
                     info!("Added custom metric: {} ({})", metric_config.name, metric_config.id);
@@ -631,11 +631,11 @@ pub async fn run_daemon(
         }
         
         // Запускаем цикл обновления метрик
-        manager.start_update_loop();
+        manager.start_update_loop().await;
         
         info!(
             "Custom metrics manager initialized with {} metrics",
-            manager.get_all_metrics_config().unwrap_or_default().len()
+            manager.get_all_metrics_config().await.unwrap_or_default().len()
         );
         Arc::new(manager)
     };
@@ -838,6 +838,7 @@ pub async fn run_daemon(
         pressure: PressureMetrics::default(),
         temperature: TemperatureMetrics::default(),
         power: PowerMetrics::default(),
+        hardware: HardwareMetrics::default(),
         network: NetworkMetrics::default(),
         disk: DiskMetrics::default(),
         gpu: None,
@@ -976,6 +977,8 @@ pub async fn run_daemon(
                                 config_guard.logging.log_max_rotated_files,
                                 config_guard.logging.log_compression_enabled,
                                 config_guard.logging.log_rotation_interval_sec,
+                                config_guard.logging.log_max_age_sec,
+                                config_guard.logging.log_max_total_size_bytes,
                             );
                             info!("Application log rotator configuration updated");
                         }
@@ -1336,7 +1339,7 @@ pub async fn run_daemon(
     latency_probe.stop();
 
     // Останавливаем менеджер пользовательских метрик
-    custom_metrics_manager.stop_update_loop();
+    custom_metrics_manager.stop_update_loop().await;
     info!("Custom metrics manager stopped");
 
     // Останавливаем API сервер перед завершением

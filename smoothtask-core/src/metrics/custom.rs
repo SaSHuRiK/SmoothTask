@@ -8,7 +8,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::fs;
 
@@ -173,10 +174,8 @@ impl CustomMetricsManager {
     }
 
     /// Добавляет новую пользовательскую метрику.
-    pub fn add_metric(&self, config: CustomMetricConfig) -> Result<()> {
-        let mut configs = self.metrics_config.write().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать конфигурации метрик: {}", e)
-        })?;
+    pub async fn add_metric(&self, config: CustomMetricConfig) -> Result<()> {
+        let mut configs = self.metrics_config.write().await;
 
         if configs.contains_key(&config.id) {
             return Err(anyhow::anyhow!(
@@ -185,15 +184,14 @@ impl CustomMetricsManager {
             ));
         }
 
+        let config_id = config.id.clone();
         configs.insert(config.id.clone(), config);
         
         // Инициализируем значение метрики
-        let mut values = self.metrics_values.write().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать значения метрик: {}", e)
-        })?;
+        let mut values = self.metrics_values.write().await;
 
         values.insert(
-            config.id,
+            config_id,
             CustomMetricValueWithTimestamp {
                 value: CustomMetricValue::String("N/A".to_string()),
                 timestamp: SystemTime::now()
@@ -208,10 +206,8 @@ impl CustomMetricsManager {
     }
 
     /// Удаляет пользовательскую метрику.
-    pub fn remove_metric(&self, metric_id: &str) -> Result<()> {
-        let mut configs = self.metrics_config.write().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать конфигурации метрик: {}", e)
-        })?;
+    pub async fn remove_metric(&self, metric_id: &str) -> Result<()> {
+        let mut configs = self.metrics_config.write().await;
 
         if !configs.contains_key(metric_id) {
             return Err(anyhow::anyhow!(
@@ -222,9 +218,7 @@ impl CustomMetricsManager {
 
         configs.remove(metric_id);
         
-        let mut values = self.metrics_values.write().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать значения метрик: {}", e)
-        })?;
+        let mut values = self.metrics_values.write().await;
 
         values.remove(metric_id);
 
@@ -232,46 +226,36 @@ impl CustomMetricsManager {
     }
 
     /// Возвращает конфигурацию метрики.
-    pub fn get_metric_config(&self, metric_id: &str) -> Result<Option<CustomMetricConfig>> {
-        let configs = self.metrics_config.read().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать конфигурации метрик: {}", e)
-        })?;
+    pub async fn get_metric_config(&self, metric_id: &str) -> Result<Option<CustomMetricConfig>> {
+        let configs = self.metrics_config.read().await;
 
         Ok(configs.get(metric_id).cloned())
     }
 
     /// Возвращает текущее значение метрики.
-    pub fn get_metric_value(&self, metric_id: &str) -> Result<Option<CustomMetricValueWithTimestamp>> {
-        let values = self.metrics_values.read().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать значения метрик: {}", e)
-        })?;
+    pub async fn get_metric_value(&self, metric_id: &str) -> Result<Option<CustomMetricValueWithTimestamp>> {
+        let values = self.metrics_values.read().await;
 
         Ok(values.get(metric_id).cloned())
     }
 
     /// Возвращает все конфигурации метрик.
-    pub fn get_all_metrics_config(&self) -> Result<HashMap<String, CustomMetricConfig>> {
-        let configs = self.metrics_config.read().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать конфигурации метрик: {}", e)
-        })?;
+    pub async fn get_all_metrics_config(&self) -> Result<HashMap<String, CustomMetricConfig>> {
+        let configs = self.metrics_config.read().await;
 
         Ok(configs.clone())
     }
 
     /// Возвращает все текущие значения метрик.
-    pub fn get_all_metrics_values(&self) -> Result<HashMap<String, CustomMetricValueWithTimestamp>> {
-        let values = self.metrics_values.read().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать значения метрик: {}", e)
-        })?;
+    pub async fn get_all_metrics_values(&self) -> Result<HashMap<String, CustomMetricValueWithTimestamp>> {
+        let values = self.metrics_values.read().await;
 
         Ok(values.clone())
     }
 
     /// Обновляет значение метрики.
     pub async fn update_metric_value(&self, metric_id: &str) -> Result<()> {
-        let configs = self.metrics_config.read().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать конфигурации метрик: {}", e)
-        })?;
+        let configs = self.metrics_config.read().await;
 
         let config = match configs.get(metric_id) {
             Some(cfg) => cfg,
@@ -282,9 +266,7 @@ impl CustomMetricsManager {
         };
 
         if !config.enabled {
-            let mut values = self.metrics_values.write().map_err(|e| {
-                anyhow::anyhow!("Не удалось заблокировать значения метрик: {}", e)
-            })?;
+            let mut values = self.metrics_values.write().await;
 
             if let Some(value) = values.get_mut(metric_id) {
                 value.status = MetricStatus::Disabled;
@@ -308,9 +290,7 @@ impl CustomMetricsManager {
             }
         };
 
-        let mut values = self.metrics_values.write().map_err(|e| {
-            anyhow::anyhow!("Не удалось заблокировать значения метрик: {}", e)
-        })?;
+        let mut values = self.metrics_values.write().await;
 
         match value_result {
             Ok(value) => {
@@ -649,8 +629,8 @@ impl CustomMetricsManager {
     }
 
     /// Запускает цикл обновления метрик.
-    pub fn start_update_loop(&self) {
-        let mut running = self.running.write().unwrap();
+    pub async fn start_update_loop(&self) {
+        let mut running = self.running.write().await;
         if *running {
             return;
         }
@@ -662,7 +642,7 @@ impl CustomMetricsManager {
         tokio::spawn(async move {
             loop {
                 let running = {
-                    let r = manager.running.read().unwrap();
+                    let r = manager.running.read().await;
                     *r
                 };
 
@@ -671,7 +651,7 @@ impl CustomMetricsManager {
                 }
 
                 let configs = {
-                    let c = manager.metrics_config.read().unwrap();
+                    let c = manager.metrics_config.read().await;
                     c.clone()
                 };
 
@@ -694,14 +674,14 @@ impl CustomMetricsManager {
     }
 
     /// Останавливает цикл обновления метрик.
-    pub fn stop_update_loop(&self) {
-        let mut running = self.running.write().unwrap();
+    pub async fn stop_update_loop(&self) {
+        let mut running = self.running.write().await;
         *running = false;
     }
 
     /// Возвращает статус работы менеджера.
-    pub fn is_running(&self) -> bool {
-        let running = self.running.read().unwrap();
+    pub async fn is_running(&self) -> bool {
+        let running = self.running.read().await;
         *running
     }
 }
