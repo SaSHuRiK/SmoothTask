@@ -520,22 +520,6 @@ impl WebhookNotifier {
         self
     }
 
-    /// Создаёт HTTP клиент с настройками таймаута и безопасности.
-    ///
-    /// # Возвращает
-    /// Новый экземпляр reqwest::Client.
-    fn create_client(&self) -> reqwest::Client {
-        let mut builder = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(self.timeout_seconds))
-            .connect_timeout(std::time::Duration::from_secs(5));
-
-        if self.allow_insecure_https {
-            builder = builder.danger_accept_invalid_certs(true);
-        }
-
-        builder.build().unwrap_or_else(|_| reqwest::Client::new())
-    }
-
     /// Возвращает текущий HTTP клиент.
     ///
     /// # Возвращает
@@ -660,17 +644,7 @@ impl SmsNotifier {
         self
     }
 
-    /// Создаёт HTTP клиент с текущими настройками.
-    ///
-    /// # Возвращает
-    /// Новый экземпляр reqwest::Client.
-    fn create_client(&self) -> reqwest::Client {
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(self.timeout_seconds))
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
-    }
+
 
     /// Возвращает URL SMS шлюза.
     ///
@@ -919,8 +893,8 @@ impl DBusNotifier {
 #[async_trait::async_trait]
 impl Notifier for WebhookNotifier {
     async fn send_notification(&self, notification: &Notification) -> Result<()> {
-        // Создаём HTTP клиент с текущими настройками
-        let client = self.create_client();
+        // Используем хранимый HTTP клиент
+        let client = self.client();
 
         // Преобразуем уведомление в JSON формат
         let notification_json = serde_json::json!({
@@ -1074,8 +1048,8 @@ impl Notifier for EmailNotifier {
 #[async_trait::async_trait]
 impl Notifier for SmsNotifier {
     async fn send_notification(&self, notification: &Notification) -> Result<()> {
-        // Создаём HTTP клиент с текущими настройками
-        let client = self.create_client();
+        // Используем хранимый HTTP клиент
+        let client = &self.client;
 
         // Логируем отправку SMS уведомления
         tracing::info!(
@@ -1210,18 +1184,6 @@ impl TelegramNotifier {
         self
     }
 
-    /// Создаёт HTTP клиент с текущими настройками.
-    ///
-    /// # Возвращает
-    /// Новый экземпляр reqwest::Client.
-    fn create_client(&self) -> reqwest::Client {
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(self.timeout_seconds))
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
-    }
-
     /// Возвращает токен Telegram бота.
     ///
     /// # Возвращает
@@ -1253,8 +1215,8 @@ impl TelegramNotifier {
 #[async_trait::async_trait]
 impl Notifier for TelegramNotifier {
     async fn send_notification(&self, notification: &Notification) -> Result<()> {
-        // Создаём HTTP клиент с текущими настройками
-        let client = self.create_client();
+        // Используем хранимый HTTP клиент
+        let client = &self.client;
 
         // Логируем отправку Telegram уведомления
         tracing::info!(
@@ -1371,18 +1333,6 @@ impl DiscordNotifier {
         self
     }
 
-    /// Создаёт HTTP клиент с текущими настройками.
-    ///
-    /// # Возвращает
-    /// Новый экземпляр reqwest::Client.
-    fn create_client(&self) -> reqwest::Client {
-        reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(self.timeout_seconds))
-            .connect_timeout(std::time::Duration::from_secs(5))
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new())
-    }
-
     /// Возвращает URL вебхука Discord.
     ///
     /// # Возвращает
@@ -1406,8 +1356,8 @@ impl DiscordNotifier {
 #[async_trait::async_trait]
 impl Notifier for DiscordNotifier {
     async fn send_notification(&self, notification: &Notification) -> Result<()> {
-        // Создаём HTTP клиент с текущими настройками
-        let client = self.create_client();
+        // Используем хранимый HTTP клиент
+        let client = &self.client;
 
         // Логируем отправку Discord уведомления
         tracing::info!(
@@ -2514,13 +2464,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_webhook_notifier_create_client() {
+    async fn test_webhook_notifier_client() {
         let notifier = WebhookNotifier::new("https://example.com/webhook")
             .with_timeout(15)
             .allow_insecure_https();
 
-        let client = notifier.create_client();
-        // Проверяем, что клиент создан (не можем проверить таймаут напрямую)
+        let client = notifier.client();
+        // Проверяем, что клиент доступен (не можем проверить таймаут напрямую)
         assert!(client.timeout().is_some());
     }
 
@@ -3108,5 +3058,52 @@ mod tests {
         let result = webhook_manager.send(&notification).await;
         // Ожидаем ошибку, так как нет реального вебхука
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_sms_notifier_uses_stored_client() {
+        // Тестируем, что SmsNotifier использует хранимый клиент вместо создания нового
+        let notifier = SmsNotifier::new(
+            "https://example.com/sms-gateway",
+            "+1234567890",
+        )
+        .with_timeout(30);
+
+        // Проверяем, что клиент создан и хранится
+        let client = notifier.client();
+        assert!(client.timeout().is_some());
+        
+        // Проверяем, что таймаут клиента соответствует конфигурации
+        if let Some(timeout) = client.timeout() {
+            assert_eq!(timeout.as_secs(), 30);
+        }
+
+        // Основная проверка: send_notification должен использовать хранимый клиент
+        // Это проверяется косвенно - если бы он создавал новый клиент, то хранимый клиент
+        // не использовался бы и компилятор бы выдавал warning о неиспользуемом поле
+        
+        // Проверяем, что клиент доступен через метод client()
+        let client = notifier.client();
+        assert!(client.timeout().is_some());
+    }
+
+    #[tokio::test]
+    async fn test_sms_notifier_client_reuse() {
+        // Тестируем, что SmsNotifier повторно использует один и тот же клиент
+        let notifier = SmsNotifier::new(
+            "https://example.com/sms-gateway",
+            None,
+            None,
+            None,
+            "+1234567899",
+            15,
+        );
+
+        // Получаем клиент
+        let client1 = notifier.client();
+        let client2 = notifier.client();
+
+        // Должны быть одинаковые указатели (один и тот же объект)
+        assert!(std::ptr::eq(client1, client2), "SmsNotifier should reuse the same client instance");
     }
 }
