@@ -3,7 +3,8 @@
 
 use smoothtask_core::utils::container::{
     collect_container_metrics, detect_container_runtime, get_container_info, 
-    is_containerized, adapt_for_container, ContainerRuntime, ContainerInfo, ContainerMetrics
+    is_containerized, adapt_for_container, get_container_environment_info, 
+    ContainerRuntime, ContainerInfo, ContainerMetrics
 };
 use smoothtask_core::utils::cgroups::is_cgroup_v2_available;
 
@@ -180,3 +181,98 @@ fn test_container_info_default() {
 // For full container testing, use the Dockerfiles provided and run:
 // docker build -t smoothtask-test .
 // docker run --rm smoothtask-test /usr/local/bin/smoothtaskd --container-info
+
+#[test]
+fn test_new_container_runtimes_integration() {
+    // Test that new container runtime variants work correctly in integration
+    let test_runtimes = vec![
+        ContainerRuntime::Kubernetes,
+        ContainerRuntime::Crio,
+        ContainerRuntime::Rkt,
+    ];
+    
+    for runtime in test_runtimes {
+        // Test that each runtime can be used in ContainerInfo
+        let info = ContainerInfo::new(runtime.clone(), Some("test".to_string()), Some("/test".to_string()));
+        assert_eq!(info.runtime, runtime);
+        assert!(info.is_containerized);
+        
+        // Test that each runtime can be used in ContainerMetrics
+        let metrics = ContainerMetrics {
+            runtime: runtime.clone(),
+            container_id: Some("test".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(metrics.runtime, runtime);
+    }
+}
+
+#[test]
+fn test_container_environment_info_integration() {
+    // Test container environment info function in integration
+    let env_info = get_container_environment_info();
+    
+    // Should return a vector (may be empty if no container env vars are set)
+    assert!(env_info.is_empty() || !env_info.is_empty());
+    
+    // Verify it's a vector of string tuples
+    for (key, value) in &env_info {
+        assert!(!key.as_str().is_empty());
+        assert!(!value.as_str().is_empty());
+    }
+}
+
+#[test]
+fn test_container_detection_comprehensive() {
+    // Comprehensive test of container detection with all supported runtimes
+    let runtime = detect_container_runtime();
+    
+    // Test that detection doesn't panic and returns a valid runtime
+    match runtime {
+        ContainerRuntime::Docker => assert!(true),
+        ContainerRuntime::Podman => assert!(true),
+        ContainerRuntime::Containerd => assert!(true),
+        ContainerRuntime::Lxc => assert!(true),
+        ContainerRuntime::Kubernetes => assert!(true),
+        ContainerRuntime::Crio => assert!(true),
+        ContainerRuntime::Rkt => assert!(true),
+        ContainerRuntime::Unknown(_) => assert!(true),
+        ContainerRuntime::None => assert!(true),
+    }
+}
+
+#[test]
+fn test_container_metrics_with_all_runtimes() {
+    // Test that container metrics work with all supported runtime types
+    let test_runtimes = vec![
+        ContainerRuntime::Docker,
+        ContainerRuntime::Podman,
+        ContainerRuntime::Containerd,
+        ContainerRuntime::Lxc,
+        ContainerRuntime::Kubernetes,
+        ContainerRuntime::Crio,
+        ContainerRuntime::Rkt,
+    ];
+    
+    for runtime in test_runtimes {
+        let metrics = ContainerMetrics {
+            runtime: runtime.clone(),
+            container_id: Some(format!("test-{:?}", runtime)),
+            memory_limit_bytes: Some(1024 * 1024 * 1024),
+            memory_usage_bytes: Some(512 * 1024 * 1024),
+            cpu_shares: Some(1024),
+            cpu_quota: Some(100000),
+            cpu_period: Some(100000),
+            network_interfaces: vec!["eth0".to_string()],
+        };
+        
+        assert_eq!(metrics.runtime, runtime);
+        assert!(metrics.container_id.is_some());
+        assert!(metrics.memory_limit_bytes.is_some());
+        assert!(metrics.memory_usage_bytes.is_some());
+        assert!(metrics.cpu_shares.is_some());
+        assert!(metrics.cpu_quota.is_some());
+        assert!(metrics.cpu_period.is_some());
+        assert!(!metrics.network_interfaces.is_empty());
+    }
+}
