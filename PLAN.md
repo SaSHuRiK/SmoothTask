@@ -11,6 +11,42 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
+- [x] ST-831: Fix compilation warnings and clean up unused imports
+  - Тип: Rust / core / cleanup
+  - Примечания: Remove unused imports and fix warnings in the codebase
+  - Приоритет: Высокий
+  - Оценка времени: ~30 минут
+  - Время выполнения: ~30 минут
+  - Критерии готовности:
+    - [x] Remove unused imports from config_struct.rs
+    - [x] Remove unused imports from health modules
+    - [x] Remove unused imports from metrics modules
+    - [x] Fix static_mut_refs warnings
+    - [x] Fix unreachable code in config watcher
+    - [x] Fix unused mutable variables
+    - [x] Fix unused variables
+    - [x] Verify all tests still pass
+  - Ожидаемые результаты: Clean codebase with minimal warnings
+  - Результаты: Reduced warnings from 31 to 2 (only unused doc comments for lazy_static macros remain)
+
+- [x] ST-832: Add comprehensive documentation for new features
+  - Тип: Documentation
+  - Примечания: Add detailed documentation for GPU metrics, hysteresis, and caching
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - [x] Document GPU metrics collection API
+    - [x] Document hysteresis mechanism in policy engine
+    - [x] Document caching system usage
+    - [x] Update API documentation
+  - Ожидаемые результаты: Complete and up-to-date documentation
+  - Результаты:
+    - Created comprehensive CACHING_SYSTEM.md documentation
+    - Created detailed HYSTERESIS_MECHANISM.md documentation
+    - Updated existing API.md with new endpoints and features
+    - Added examples, diagrams, and best practices
+
 ## 2. Бэклог
 
 - [ ] ST-824: Implement PipeWire audio monitoring for XRUN detection and audio stream analysis
@@ -166,6 +202,20 @@
   - Тип: Rust / core / metrics / optimization
   - Примечания: Advanced caching system to minimize filesystem I/O operations
   - Результаты: Comprehensive LRU-based caching with memory management and intelligent invalidation
+
+- [x] ST-831: Fix compilation warnings and clean up unused imports
+  - Тип: Rust / core / cleanup
+  - Примечания: Remove unused imports and fix warnings in the codebase
+  - Результаты: Reduced warnings from 31 to 2 (only unused doc comments for lazy_static macros remain)
+
+- [x] ST-832: Add comprehensive documentation for new features
+  - Тип: Documentation
+  - Примечания: Add detailed documentation for GPU metrics, hysteresis, and caching
+  - Результаты:
+    - Created comprehensive CACHING_SYSTEM.md documentation
+    - Created detailed HYSTERESIS_MECHANISM.md documentation
+    - Updated existing API.md with new endpoints and features
+    - Added examples, diagrams, and best practices
 
 - [x] ST-830: Add comprehensive integration tests for new features
   - Тип: Testing / integration
