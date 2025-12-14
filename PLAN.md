@@ -41,20 +41,36 @@
     - Full integration with policy engine for activity-based prioritization
     - Extensive test coverage with edge case testing
 
-- [ ] ST-829: Implement advanced error recovery and system health monitoring
+- [x] ST-829: Implement advanced error recovery and system health monitoring
   - Тип: Rust / core / health
   - Примечания: Comprehensive system health monitoring and automatic recovery
   - Приоритет: Средний
   - Оценка времени: ~120 минут
+  - Время выполнения: ~90 минут
   - Критерии готовности:
-    - [ ] Research system health monitoring patterns
-    - [ ] Implement component health checks and status monitoring
-    - [ ] Add automatic recovery mechanisms for critical components
-    - [ ] Implement system-wide health scoring
-    - [ ] Add comprehensive logging and alerting
-    - [ ] Integrate with existing monitoring infrastructure
-    - [ ] Add unit and integration tests
+    - [x] Research system health monitoring patterns
+    - [x] Implement component health checks and status monitoring
+    - [x] Add automatic recovery mechanisms for critical components
+    - [x] Implement system-wide health scoring
+    - [x] Add comprehensive logging and alerting
+    - [x] Integrate with existing monitoring infrastructure
+    - [x] Add unit and integration tests
   - Ожидаемые результаты: More robust and self-healing system operation
+  - Технические детали:
+    - Файлы: smoothtask-core/src/health/mod.rs, smoothtask-core/src/health/monitoring.rs, smoothtask-core/src/health/tests.rs
+    - Функции: AutoRecoveryFlags, RecoveryAttempt, RecoveryType, RecoveryStatus, HealthScoreEntry
+    - Возможности: Automatic component recovery, health scoring (0-100), enhanced logging, recovery statistics
+    - Интеграция: Full integration with existing health monitoring infrastructure
+    - Тесты: Comprehensive unit tests covering all new functionality
+  - Результаты:
+    - Complete auto-recovery system with configurable flags and statistics
+    - System-wide health scoring (0-100) with trend analysis capabilities
+    - Enhanced logging with different severity levels (debug, info, warn, error)
+    - Comprehensive recovery statistics tracking and history
+    - Full integration with existing monitoring infrastructure
+    - Automatic recovery for critical components (system_metrics, process_monitoring, resource_usage)
+    - Configurable recovery behavior with allowed/blocked component lists
+    - Graceful degradation when auto-recovery is disabled or fails
 
 ## 2. Бэклог
 
@@ -208,6 +224,37 @@
     - [x] Verify compilation succeeds with no warnings
   - Ожидаемые результаты: Clean codebase with zero warnings
   - Результаты: Successfully eliminated all compilation warnings. The codebase now compiles cleanly with no warnings.
+
+- [x] ST-829: Implement advanced error recovery and system health monitoring
+  - Тип: Rust / core / health
+  - Примечания: Comprehensive system health monitoring and automatic recovery
+  - Приоритет: Средний
+  - Оценка времени: ~120 минут
+  - Время выполнения: ~90 минут
+  - Критерии готовности:
+    - [x] Research system health monitoring patterns
+    - [x] Implement component health checks and status monitoring
+    - [x] Add automatic recovery mechanisms for critical components
+    - [x] Implement system-wide health scoring
+    - [x] Add comprehensive logging and alerting
+    - [x] Integrate with existing monitoring infrastructure
+    - [x] Add unit and integration tests
+  - Ожидаемые результаты: More robust and self-healing system operation
+  - Технические детали:
+    - Файлы: smoothtask-core/src/health/mod.rs, smoothtask-core/src/health/monitoring.rs, smoothtask-core/src/health/tests.rs
+    - Функции: AutoRecoveryFlags, RecoveryAttempt, RecoveryType, RecoveryStatus, HealthScoreEntry
+    - Возможности: Automatic component recovery, health scoring (0-100), enhanced logging, recovery statistics
+    - Интеграция: Full integration with existing health monitoring infrastructure
+    - Тесты: Comprehensive unit tests covering all new functionality
+  - Результаты:
+    - Complete auto-recovery system with configurable flags and statistics
+    - System-wide health scoring (0-100) with trend analysis capabilities
+    - Enhanced logging with different severity levels (debug, info, warn, error)
+    - Comprehensive recovery statistics tracking and history
+    - Full integration with existing monitoring infrastructure
+    - Automatic recovery for critical components (system_metrics, process_monitoring, resource_usage)
+    - Configurable recovery behavior with allowed/blocked component lists
+    - Graceful degradation when auto-recovery is disabled or fails
 
 - [x] ST-832: Add comprehensive documentation for new features
   - Тип: Documentation

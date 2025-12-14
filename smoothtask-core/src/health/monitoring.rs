@@ -129,6 +129,25 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                                 timestamp: Utc::now(),
                             };
                             
+                            // Логируем изменение состояния
+                            match state.current_health.overall_status {
+                                HealthStatus::Critical => {
+                                    error!("Health status changed to CRITICAL: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                }
+                                HealthStatus::Degraded => {
+                                    warn!("Health status changed to DEGRADED: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                }
+                                HealthStatus::Warning => {
+                                    warn!("Health status changed to WARNING: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                }
+                                HealthStatus::Healthy => {
+                                    info!("Health status changed to HEALTHY: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                }
+                                HealthStatus::Unknown => {
+                                    warn!("Health status changed to UNKNOWN: {:?} -> {:?}", old_status, state.current_health.overall_status);
+                                }
+                            }
+                            
                             // Уведомляем обработчики
                             for handler in event_handlers.read().await.iter() {
                                 if let Err(e) = handler.handle_health_event(event.clone()).await {
@@ -155,6 +174,9 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                                 issue: issue.clone(),
                                 timestamp: Utc::now(),
                             };
+                            
+                            // Логируем критическое состояние
+                            error!("CRITICAL HEALTH ISSUE DETECTED: {}", issue.description);
                             
                             // Уведомляем обработчики
                             for handler in event_handlers.read().await.iter() {

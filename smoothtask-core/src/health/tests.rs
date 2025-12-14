@@ -158,4 +158,114 @@ mod tests {
         // Проверяем, что уведомление было отправлено
         // В реальной реализации здесь можно проверить логи
     }
+    
+    #[tokio::test]
+    async fn test_health_score_calculation() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+        
+        // Получаем текущее состояние здоровья
+        let health_status = health_monitor.check_health().await.unwrap();
+        
+        // Проверяем, что балл здоровья рассчитан
+        assert!(health_status.health_score >= 0.0);
+        assert!(health_status.health_score <= 100.0);
+        
+        // Проверяем, что история баллов здоровья не пуста
+        assert!(!health_status.health_score_history.is_empty());
+    }
+    
+    #[tokio::test]
+    async fn test_auto_recovery_flags() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+        
+        // Получаем текущие флаги автоматического восстановления
+        let health_status = health_monitor.get_health_status().await.unwrap();
+        
+        // Проверяем, что флаги автоматического восстановления установлены по умолчанию
+        assert!(health_status.auto_recovery_flags.auto_recovery_enabled);
+        assert!(health_status.auto_recovery_flags.component_auto_recovery_enabled);
+        assert!(health_status.auto_recovery_flags.resource_auto_recovery_enabled);
+        assert!(!health_status.auto_recovery_flags.config_auto_recovery_enabled);
+    }
+    
+    #[tokio::test]
+    async fn test_recovery_stats() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+        
+        // Получаем статистику восстановления
+        let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
+        
+        // Проверяем, что статистика инициализирована
+        assert_eq!(recovery_stats.total_recovery_attempts, 0);
+        assert_eq!(recovery_stats.successful_recoveries, 0);
+        assert_eq!(recovery_stats.failed_recoveries, 0);
+        assert!(recovery_stats.recovery_history.is_empty());
+    }
+    
+    #[tokio::test]
+    async fn test_update_auto_recovery_flags() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+        
+        // Создаем новые флаги автоматического восстановления
+        let mut new_flags = AutoRecoveryFlags::default();
+        new_flags.auto_recovery_enabled = false;
+        new_flags.component_auto_recovery_enabled = false;
+        
+        // Обновляем флаги
+        health_monitor.update_auto_recovery_flags(new_flags.clone()).await.unwrap();
+        
+        // Проверяем, что флаги обновлены
+        let health_status = health_monitor.get_health_status().await.unwrap();
+        assert!(!health_status.auto_recovery_flags.auto_recovery_enabled);
+        assert!(!health_status.auto_recovery_flags.component_auto_recovery_enabled);
+    }
+    
+    #[tokio::test]
+    async fn test_clear_recovery_stats() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+        
+        // Очищаем статистику восстановления
+        health_monitor.clear_recovery_stats().await.unwrap();
+        
+        // Проверяем, что статистика очищена
+        let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
+        assert_eq!(recovery_stats.total_recovery_attempts, 0);
+        assert_eq!(recovery_stats.successful_recoveries, 0);
+        assert_eq!(recovery_stats.failed_recoveries, 0);
+        assert!(recovery_stats.recovery_history.is_empty());
+    }
+    
+    #[tokio::test]
+    async fn test_component_recovery_simulation() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+        
+        // Создаем проблему с компонентом
+        let issue = HealthIssue {
+            issue_id: "test-recovery-issue".to_string(),
+            timestamp: Utc::now(),
+            issue_type: HealthIssueType::ComponentFailure,
+            severity: HealthIssueSeverity::Critical,
+            component: Some("system_metrics".to_string()),
+            description: "System metrics component failed".to_string(),
+            error_details: Some("Component not responding".to_string()),
+            status: HealthIssueStatus::Open,
+            resolved_time: None,
+        };
+        
+        // Добавляем проблему
+        health_monitor.add_health_issue(issue).await.unwrap();
+        
+        // Выполняем проверку здоровья (это должно запустить автоматическое восстановление)
+        let health_status = health_monitor.check_health().await.unwrap();
+        
+        // Проверяем, что автоматическое восстановление было выполнено
+        let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
+        assert!(recovery_stats.total_recovery_attempts > 0);
+    }
 }
