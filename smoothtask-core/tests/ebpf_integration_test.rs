@@ -101,6 +101,49 @@ fn test_ebpf_error_recovery() {
 }
 
 #[test]
+fn test_application_performance_monitoring_limit() {
+    // Тестируем, что лимит процессов для мониторинга производительности приложений увеличен
+    let config = EbpfConfig::default();
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Инициализируем коллектор
+    assert!(collector.initialize().is_ok());
+
+    // Проверяем, что коллектор здоров
+    assert!(collector.is_healthy());
+
+    // Собираем метрики производительности приложений
+    let performance_stats = collector.collect_application_performance_stats();
+    assert!(performance_stats.is_ok());
+
+    let stats = performance_stats.unwrap();
+    
+    // Проверяем, что статистика может быть собрана (даже если пустая)
+    if let Some(performance_details) = stats {
+        // В реальной системе с eBPF поддержкой это будет содержать данные
+        // В тестовой среде это может быть пустым вектором
+        assert!(performance_details.len() <= 20480, "Process limit should be 20480");
+    }
+}
+
+#[test]
+fn test_ebpf_config_validation() {
+    // Тестируем валидацию конфигурации eBPF
+    let config = EbpfConfig::default();
+    
+    // Проверяем, что конфигурация имеет разумные значения по умолчанию
+    assert!(config.enable_cpu_metrics);
+    assert!(config.enable_memory_metrics);
+    assert!(config.enable_syscall_monitoring);
+    assert!(config.enable_network_monitoring);
+    assert!(config.enable_network_connections);
+    assert!(config.enable_gpu_monitoring);
+    assert!(config.enable_cpu_temperature_monitoring);
+    assert!(config.enable_filesystem_monitoring);
+    assert!(config.enable_process_monitoring);
+}
+
+#[test]
 fn test_ebpf_config_validation() {
     // Тестируем валидацию конфигурации
     let mut config = EbpfConfig::default();

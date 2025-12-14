@@ -11,7 +11,7 @@
 #include <bpf/bpf_core_read.h>
 
 // Максимальное количество отслеживаемых процессов
-#define MAX_APPLICATIONS 10240
+#define MAX_APPLICATIONS 20480
 
 // Структура для хранения статистики производительности приложения
 struct application_performance_stats {

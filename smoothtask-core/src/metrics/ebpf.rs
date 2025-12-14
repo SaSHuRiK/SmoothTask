@@ -4666,7 +4666,7 @@ impl EbpfMetricsCollector {
 
         for map in &self.application_performance_maps {
             // Используем функцию итерации по ключам для получения всех записей производительности
-            match iterate_ebpf_map_keys::<ApplicationPerformanceStat>(map, 10240) {
+            match iterate_ebpf_map_keys::<ApplicationPerformanceStat>(map, 20480) {
                 Ok(stats) => {
                     for stat in stats {
                         // Вычисляем проценты
