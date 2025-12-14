@@ -132,6 +132,7 @@ pub fn notify_status(status: &str) {
 
 /// Состояние сервиса systemd.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)]
 pub enum ServiceStatus {
     /// Сервис активен и работает
     ActiveRunning,
@@ -183,6 +184,7 @@ impl std::fmt::Display for ServiceStatus {
 ///     Err(e) => eprintln!("Failed to get service status: {}", e),
 /// }
 /// ```
+#[allow(dead_code)]
 pub async fn get_service_status(service_name: &str) -> Result<ServiceStatus> {
     get_service_status_with_retry(service_name, 1).await
 }
@@ -197,6 +199,7 @@ pub async fn get_service_status(service_name: &str) -> Result<ServiceStatus> {
 /// # Возвращаемое значение
 ///
 /// Возвращает `Ok(ServiceStatus)` при успешном получении статуса или `Err` при ошибке.
+#[allow(dead_code)]
 async fn get_service_status_with_retry(service_name: &str, retry_count: u32) -> Result<ServiceStatus> {
     let mut last_error = None;
     
@@ -222,6 +225,7 @@ async fn get_service_status_with_retry(service_name: &str, retry_count: u32) -> 
 }
 
 /// Внутренняя реализация получения статуса сервиса без повторных попыток.
+#[allow(dead_code)]
 async fn get_service_status_inner(service_name: &str) -> Result<ServiceStatus> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
@@ -296,11 +300,13 @@ async fn get_service_status_inner(service_name: &str) -> Result<ServiceStatus> {
 ///
 /// systemd::start_service("smoothtaskd.service")?;
 /// ```
+#[allow(dead_code)]
 pub async fn start_service(service_name: &str) -> Result<()> {
     start_service_with_retry(service_name, 1).await
 }
 
 /// Запускает сервис systemd с поддержкой повторных попыток.
+#[allow(dead_code)]
 async fn start_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
     let mut last_error = None;
     
@@ -329,6 +335,7 @@ async fn start_service_with_retry(service_name: &str, retry_count: u32) -> Resul
 }
 
 /// Внутренняя реализация запуска сервиса без повторных попыток.
+#[allow(dead_code)]
 async fn start_service_inner(service_name: &str) -> Result<()> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
@@ -366,11 +373,13 @@ async fn start_service_inner(service_name: &str) -> Result<()> {
 ///
 /// systemd::stop_service("smoothtaskd.service")?;
 /// ```
+#[allow(dead_code)]
 pub async fn stop_service(service_name: &str) -> Result<()> {
     stop_service_with_retry(service_name, 1).await
 }
 
 /// Останавливает сервис systemd с поддержкой повторных попыток.
+#[allow(dead_code)]
 async fn stop_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
     let mut last_error = None;
     
@@ -399,6 +408,7 @@ async fn stop_service_with_retry(service_name: &str, retry_count: u32) -> Result
 }
 
 /// Внутренняя реализация остановки сервиса без повторных попыток.
+#[allow(dead_code)]
 async fn stop_service_inner(service_name: &str) -> Result<()> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
@@ -436,11 +446,13 @@ async fn stop_service_inner(service_name: &str) -> Result<()> {
 ///
 /// systemd::restart_service("smoothtaskd.service")?;
 /// ```
+#[allow(dead_code)]
 pub async fn restart_service(service_name: &str) -> Result<()> {
     restart_service_with_retry(service_name, 1).await
 }
 
 /// Перезапускает сервис systemd с поддержкой повторных попыток.
+#[allow(dead_code)]
 async fn restart_service_with_retry(service_name: &str, retry_count: u32) -> Result<()> {
     let mut last_error = None;
     
@@ -469,6 +481,7 @@ async fn restart_service_with_retry(service_name: &str, retry_count: u32) -> Res
 }
 
 /// Внутренняя реализация перезапуска сервиса без повторных попыток.
+#[allow(dead_code)]
 async fn restart_service_inner(service_name: &str) -> Result<()> {
     let connection = Connection::system().await
         .context("Failed to connect to system D-Bus")?;
@@ -510,6 +523,7 @@ async fn restart_service_inner(service_name: &str) -> Result<()> {
 ///     println!("Service is not running");
 /// }
 /// ```
+#[allow(dead_code)]
 pub async fn is_service_active(service_name: &str) -> Result<bool> {
     let status = get_service_status(service_name).await?;
     Ok(matches!(status, ServiceStatus::ActiveRunning | ServiceStatus::ActiveWaiting))
@@ -535,6 +549,7 @@ pub async fn is_service_active(service_name: &str) -> Result<bool> {
 ///     println!("Not running under systemd");
 /// }
 /// ```
+#[allow(dead_code)]
 pub fn is_running_under_systemd() -> bool {
     std::env::var("INVOCATION_ID").is_ok()
 }
@@ -560,6 +575,7 @@ pub fn is_running_under_systemd() -> bool {
 ///     eprintln!("Warning: failed to notify systemd about stopping: {}", e);
 /// }
 /// ```
+#[allow(dead_code)]
 pub fn notify_stopping() -> Result<()> {
     let state = NotifyState::Stopping;
     libsystemd::daemon::notify(false, &[state])

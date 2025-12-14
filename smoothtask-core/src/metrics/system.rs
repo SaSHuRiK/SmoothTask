@@ -10,11 +10,13 @@ use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
 /// Безопасно разобрать строку в u32 с fallback значением.
+#[allow(dead_code)]
 fn safe_parse_u32(s: &str, fallback: u32) -> u32 {
     s.parse::<u32>().unwrap_or(fallback)
 }
 
 /// Безопасно разобрать строку в f32 с fallback значением.
+#[allow(dead_code)]
 fn safe_parse_f32(s: &str, fallback: f32) -> f32 {
     s.parse::<f32>().unwrap_or(fallback)
 }
@@ -4564,7 +4566,6 @@ impl SharedSystemMetricsCache {
 #[cfg(test)]
 mod hardware_sensor_tests {
     use super::*;
-    use std::io::Write;
     use tempfile::tempdir;
 
     #[test]

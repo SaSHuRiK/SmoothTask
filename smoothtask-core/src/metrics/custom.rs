@@ -706,7 +706,7 @@ impl Default for CustomMetricsManager {
 mod tests {
     use super::*;
     use std::io::Write;
-    use tempfile::{NamedTempFile, TempDir};
+    use tempfile::TempDir;
 
     #[tokio::test]
     async fn test_custom_metric_creation() {

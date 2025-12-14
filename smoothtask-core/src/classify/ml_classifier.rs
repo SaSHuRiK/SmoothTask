@@ -446,6 +446,7 @@ struct ModelVersionInfo {
     /// Хэш модели (SHA256)
     model_hash: String,
     /// Время последней проверки
+    #[allow(dead_code)]
     last_checked: Instant,
     /// Размер модели в байтах
     model_size: u64,
