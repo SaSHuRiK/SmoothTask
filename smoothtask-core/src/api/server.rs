@@ -1129,6 +1129,243 @@ async fn version_handler() -> Json<Value> {
     }))
 }
 
+/// Обработчик для endpoint `/metrics`.
+///
+/// Возвращает метрики в формате Prometheus.
+async fn prometheus_metrics_handler(State(state): State<ApiState>) -> Result<String, StatusCode> {
+    let mut metrics = String::new();
+    
+    // Добавляем метрики версии
+    metrics.push_str(&format!(
+        "# HELP smoothtask_version SmoothTask daemon version\n"
+    ));
+    metrics.push_str(&format!(
+        "# TYPE smoothtask_version gauge\n"
+    ));
+    metrics.push_str(&format!(
+        "smoothtask_version{{version=\"{}\"}} 1\n",
+        DAEMON_VERSION
+    ));
+    
+    // Добавляем метрики производительности API
+    let perf_metrics = state.performance_metrics.read().await;
+    metrics.push_str(&format!(
+        "# HELP smoothtask_api_requests_total Total number of API requests\n"
+    ));
+    metrics.push_str(&format!(
+        "# TYPE smoothtask_api_requests_total counter\n"
+    ));
+    metrics.push_str(&format!(
+        "smoothtask_api_requests_total {}\n",
+        perf_metrics.total_requests
+    ));
+    
+    metrics.push_str(&format!(
+        "# HELP smoothtask_api_cache_hits Total number of API cache hits\n"
+    ));
+    metrics.push_str(&format!(
+        "# TYPE smoothtask_api_cache_hits counter\n"
+    ));
+    metrics.push_str(&format!(
+        "smoothtask_api_cache_hits {}\n",
+        perf_metrics.cache_hits
+    ));
+    
+    metrics.push_str(&format!(
+        "# HELP smoothtask_api_cache_misses Total number of API cache misses\n"
+    ));
+    metrics.push_str(&format!(
+        "# TYPE smoothtask_api_cache_misses counter\n"
+    ));
+    metrics.push_str(&format!(
+        "smoothtask_api_cache_misses {}\n",
+        perf_metrics.cache_misses
+    ));
+    
+    metrics.push_str(&format!(
+        "# HELP smoothtask_api_processing_time_us_total Total API processing time in microseconds\n"
+    ));
+    metrics.push_str(&format!(
+        "# TYPE smoothtask_api_processing_time_us_total counter\n"
+    ));
+    metrics.push_str(&format!(
+        "smoothtask_api_processing_time_us_total {}\n",
+        perf_metrics.total_processing_time_us
+    ));
+    
+    // Добавляем системные метрики если доступны
+    if let Some(system_metrics_arc) = &state.system_metrics {
+        let system_metrics = system_metrics_arc.read().await;
+        
+        // Память метрики
+        metrics.push_str(&format!(
+            "# HELP smoothtask_system_memory_total_kb Total system memory in kilobytes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_system_memory_total_kb gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_system_memory_total_kb {}\n",
+            system_metrics.memory.mem_total_kb
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_system_memory_available_kb Available system memory in kilobytes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_system_memory_available_kb gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_system_memory_available_kb {}\n",
+            system_metrics.memory.mem_available_kb
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_system_memory_free_kb Free system memory in kilobytes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_system_memory_free_kb gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_system_memory_free_kb {}\n",
+            system_metrics.memory.mem_free_kb
+        ));
+        
+        // PSI метрики
+        metrics.push_str(&format!(
+            "# HELP smoothtask_system_psi_cpu_some_avg10 CPU PSI some average 10s\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_system_psi_cpu_some_avg10 gauge\n"
+        ));
+        if let Some(psi) = &system_metrics.pressure.cpu.some {
+            metrics.push_str(&format!(
+                "smoothtask_system_psi_cpu_some_avg10 {}\n",
+                psi.avg10
+            ));
+        }
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_system_psi_memory_some_avg10 Memory PSI some average 10s\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_system_psi_memory_some_avg10 gauge\n"
+        ));
+        if let Some(psi) = &system_metrics.pressure.memory.some {
+            metrics.push_str(&format!(
+                "smoothtask_system_psi_memory_some_avg10 {}\n",
+                psi.avg10
+            ));
+        }
+    }
+    
+    // Добавляем метрики процессов если доступны
+    if let Some(processes_arc) = &state.processes {
+        let processes = processes_arc.read().await;
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_processes_total Total number of processes\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_processes_total gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_processes_total {}\n",
+            processes.len()
+        ));
+        
+        // Добавляем метрики по классам процессов (используем teacher_priority_class)
+        let mut class_counts = std::collections::HashMap::new();
+        for process in processes.iter() {
+            if let Some(class_name) = &process.teacher_priority_class {
+                *class_counts.entry(class_name.to_string()).or_insert(0) += 1;
+            }
+        }
+        
+        for (class_name, count) in class_counts {
+            metrics.push_str(&format!(
+                "# HELP smoothtask_processes_by_class{{class=\"{}\"}} Number of processes by priority class\n",
+                class_name
+            ));
+            metrics.push_str(&format!(
+                "# TYPE smoothtask_processes_by_class{{class=\"{}\"}} gauge\n",
+                class_name
+            ));
+            metrics.push_str(&format!(
+                "smoothtask_processes_by_class{{class=\"{}\"}} {}\n",
+                class_name, count
+            ));
+        }
+    }
+    
+    // Добавляем метрики групп приложений если доступны
+    if let Some(app_groups_arc) = &state.app_groups {
+        let app_groups = app_groups_arc.read().await;
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_app_groups_total Total number of application groups\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_app_groups_total gauge\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_app_groups_total {}\n",
+            app_groups.len()
+        ));
+    }
+    
+    // Добавляем метрики демона если доступны
+    if let Some(daemon_stats_arc) = &state.daemon_stats {
+        let daemon_stats = daemon_stats_arc.read().await;
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_daemon_total_iterations Total number of daemon iterations\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_daemon_total_iterations counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_daemon_total_iterations {}\n",
+            daemon_stats.total_iterations
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_daemon_successful_iterations Successful daemon iterations\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_daemon_successful_iterations counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_daemon_successful_iterations {}\n",
+            daemon_stats.successful_iterations
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_daemon_error_iterations Error daemon iterations\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_daemon_error_iterations counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_daemon_error_iterations {}\n",
+            daemon_stats.error_iterations
+        ));
+        
+        metrics.push_str(&format!(
+            "# HELP smoothtask_daemon_total_duration_ms Total daemon execution time in milliseconds\n"
+        ));
+        metrics.push_str(&format!(
+            "# TYPE smoothtask_daemon_total_duration_ms counter\n"
+        ));
+        metrics.push_str(&format!(
+            "smoothtask_daemon_total_duration_ms {}\n",
+            daemon_stats.total_duration_ms
+        ));
+    }
+    
+    Ok(metrics)
+}
+
 /// Обработчик для endpoint `/api/endpoints`.
 ///
 /// Возвращает список всех доступных endpoints API.
@@ -1155,6 +1392,11 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/endpoints",
                 "method": "GET",
                 "description": "Получение списка всех доступных endpoints"
+            },
+            {
+                "path": "/metrics",
+                "method": "GET",
+                "description": "Получение метрик в формате Prometheus для мониторинга"
             },
             {
                 "path": "/api/stats",
@@ -2174,6 +2416,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/gpu/update-temp-power", get(gpu_update_temp_power_handler))
         .route("/api/version", get(version_handler))
         .route("/api/endpoints", get(endpoints_handler))
+        .route("/metrics", get(prometheus_metrics_handler))
         .route("/api/stats", get(stats_handler))
         .route("/api/metrics", get(metrics_handler))
         .route("/api/responsiveness", get(responsiveness_handler))
@@ -8336,6 +8579,45 @@ use crate::metrics::ebpf::EbpfMetrics;
         let json = result.unwrap();
         assert_eq!(json["status"], "ok", "Status should be ok");
         assert_eq!(json["message"], "GPU temperature and power metrics updated successfully");
+    }
+
+    #[tokio::test]
+    async fn test_prometheus_metrics_handler() {
+        // Тест проверяет обработчик prometheus_metrics_handler
+        use crate::DaemonStats;
+        use std::time::Duration;
+        
+        // Создаём тестовое состояние API
+        let state = ApiStateBuilder::new()
+            .with_daemon_stats(Some(Arc::new(RwLock::new(DaemonStats::new()))))
+            .with_system_metrics(Some(Arc::new(RwLock::new(SystemMetrics::default()))))
+            .with_processes(Some(Arc::new(RwLock::new(Vec::new()))))
+            .with_app_groups(Some(Arc::new(RwLock::new(Vec::new()))))
+            .build();
+        
+        let result = prometheus_metrics_handler(State(state)).await;
+        assert!(result.is_ok(), "Prometheus metrics handler should succeed");
+        
+        let metrics = result.unwrap();
+        
+        // Проверяем, что метрики содержат ожидаемые компоненты
+        assert!(metrics.contains("smoothtask_version"), "Should contain version metric");
+        assert!(metrics.contains("smoothtask_api_requests_total"), "Should contain API requests metric");
+        assert!(metrics.contains("smoothtask_system_cpu_usage_percentage"), "Should contain CPU usage metric");
+        assert!(metrics.contains("smoothtask_system_memory_total_bytes"), "Should contain memory metric");
+        assert!(metrics.contains("smoothtask_processes_total"), "Should contain processes metric");
+        assert!(metrics.contains("smoothtask_app_groups_total"), "Should contain app groups metric");
+        assert!(metrics.contains("smoothtask_daemon_uptime_seconds"), "Should contain daemon uptime metric");
+        
+        // Проверяем формат Prometheus
+        assert!(metrics.contains("# HELP"), "Should contain HELP comments");
+        assert!(metrics.contains("# TYPE"), "Should contain TYPE declarations");
+        
+        // Проверяем, что метрики не пустые
+        assert!(!metrics.is_empty(), "Metrics should not be empty");
+        
+        // Проверяем, что метрики содержат числовые значения
+        assert!(metrics.lines().any(|line| line.contains(" 1") || line.contains(" 0")), "Should contain numeric values");
     }
 
 

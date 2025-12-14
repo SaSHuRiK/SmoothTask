@@ -1,0 +1,52 @@
+# SmoothTask Minimal Production Dockerfile
+# This Dockerfile creates a minimal production image with only the essential
+# dependencies for running SmoothTask daemon.
+
+FROM rust:1.75-slim as builder
+
+# Install build dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    pkg-config \
+    libssl-dev \
+    libsystemd-dev \
+    libdbus-1-dev \
+    libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Clone and build SmoothTask
+WORKDIR /app
+COPY . .
+RUN cargo build --release --bin smoothtaskd --no-default-features
+
+# Create final minimal image
+FROM debian:bookworm-slim
+
+# Install minimal runtime dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    libsystemd0 \
+    libdbus-1-3 \
+    libudev1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy built binary
+COPY --from=builder /app/target/release/smoothtaskd /usr/local/bin/smoothtaskd
+
+# Create config directory
+RUN mkdir -p /etc/smoothtask
+
+# Set up permissions
+RUN chmod +x /usr/local/bin/smoothtaskd
+
+# Create a non-root user for running the daemon
+RUN useradd --system --no-create-home --shell /bin/false smoothtask
+
+USER smoothtask
+
+# Default command
+CMD ["smoothtaskd", "--help"]

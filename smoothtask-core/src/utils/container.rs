@@ -8,6 +8,8 @@ use std::path::Path;
 use std::env;
 use tracing::{debug, info};
 
+use super::cgroups::is_cgroup_v2_available;
+
 /// Container runtime types that SmoothTask can detect
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ContainerRuntime {
@@ -151,7 +153,7 @@ impl Default for ContainerMetrics {
     }
 }
 
-/// Collect container-specific metrics
+/// Collect container-specific metrics with support for both cgroup v1 and v2
 pub fn collect_container_metrics() -> ContainerMetrics {
     if !is_containerized() {
         return ContainerMetrics::default();
@@ -164,45 +166,95 @@ pub fn collect_container_metrics() -> ContainerMetrics {
         ..Default::default()
     };
 
-    // Read memory limits from cgroup
-    if let Some(cgroup_path) = &container_info.cgroup_path {
-        let memory_limit_path = format!("/sys/fs/cgroup/memory{}/memory.limit_in_bytes", cgroup_path);
-        let memory_usage_path = format!("/sys/fs/cgroup/memory{}/memory.usage_in_bytes", cgroup_path);
-        
-        if let Ok(limit_content) = fs::read_to_string(&memory_limit_path) {
-            if let Ok(limit) = limit_content.trim().parse::<u64>() {
-                metrics.memory_limit_bytes = Some(limit);
-            }
-        }
+    // Check if cgroup v2 is available
+    let cgroup_v2_available = is_cgroup_v2_available();
 
-        if let Ok(usage_content) = fs::read_to_string(&memory_usage_path) {
-            if let Ok(usage) = usage_content.trim().parse::<u64>() {
-                metrics.memory_usage_bytes = Some(usage);
+    // Read memory limits from cgroup (support both v1 and v2)
+    if let Some(cgroup_path) = &container_info.cgroup_path {
+        if cgroup_v2_available {
+            // cgroup v2 paths
+            let memory_limit_path = format!("/sys/fs/cgroup{}/memory.max", cgroup_path);
+            let memory_usage_path = format!("/sys/fs/cgroup{}/memory.current", cgroup_path);
+            
+            if let Ok(limit_content) = fs::read_to_string(&memory_limit_path) {
+                if let Ok(limit) = limit_content.trim().parse::<u64>() {
+                    metrics.memory_limit_bytes = Some(limit);
+                }
+            }
+
+            if let Ok(usage_content) = fs::read_to_string(&memory_usage_path) {
+                if let Ok(usage) = usage_content.trim().parse::<u64>() {
+                    metrics.memory_usage_bytes = Some(usage);
+                }
+            }
+        } else {
+            // cgroup v1 paths (fallback)
+            let memory_limit_path = format!("/sys/fs/cgroup/memory{}/memory.limit_in_bytes", cgroup_path);
+            let memory_usage_path = format!("/sys/fs/cgroup/memory{}/memory.usage_in_bytes", cgroup_path);
+            
+            if let Ok(limit_content) = fs::read_to_string(&memory_limit_path) {
+                if let Ok(limit) = limit_content.trim().parse::<u64>() {
+                    metrics.memory_limit_bytes = Some(limit);
+                }
+            }
+
+            if let Ok(usage_content) = fs::read_to_string(&memory_usage_path) {
+                if let Ok(usage) = usage_content.trim().parse::<u64>() {
+                    metrics.memory_usage_bytes = Some(usage);
+                }
             }
         }
     }
 
-    // Read CPU constraints from cgroup
+    // Read CPU constraints from cgroup (support both v1 and v2)
     if let Some(cgroup_path) = &container_info.cgroup_path {
-        let cpu_shares_path = format!("/sys/fs/cgroup/cpu{}/cpu.shares", cgroup_path);
-        let cpu_quota_path = format!("/sys/fs/cgroup/cpu{}/cpu.cfs_quota_us", cgroup_path);
-        let cpu_period_path = format!("/sys/fs/cgroup/cpu{}/cpu.cfs_period_us", cgroup_path);
-        
-        if let Ok(shares_content) = fs::read_to_string(&cpu_shares_path) {
-            if let Ok(shares) = shares_content.trim().parse::<u64>() {
-                metrics.cpu_shares = Some(shares);
+        if cgroup_v2_available {
+            // cgroup v2 paths
+            let cpu_weight_path = format!("/sys/fs/cgroup{}/cpu.weight", cgroup_path);
+            let cpu_max_path = format!("/sys/fs/cgroup{}/cpu.max", cgroup_path);
+            
+            // Try to read CPU weight (replaces cpu.shares in v2)
+            if let Ok(weight_content) = fs::read_to_string(&cpu_weight_path) {
+                if let Ok(weight) = weight_content.trim().parse::<u64>() {
+                    metrics.cpu_shares = Some(weight);
+                }
             }
-        }
 
-        if let Ok(quota_content) = fs::read_to_string(&cpu_quota_path) {
-            if let Ok(quota) = quota_content.trim().parse::<i64>() {
-                metrics.cpu_quota = Some(quota);
+            // Try to read CPU max (replaces cpu.cfs_quota_us and cpu.cfs_period_us in v2)
+            if let Ok(max_content) = fs::read_to_string(&cpu_max_path) {
+                // Format is "max period", e.g., "100000 100000" for 1 CPU
+                let parts: Vec<&str> = max_content.trim().split_whitespace().collect();
+                if parts.len() >= 2 {
+                    if let Ok(quota) = parts[0].parse::<i64>() {
+                        metrics.cpu_quota = Some(quota);
+                    }
+                    if let Ok(period) = parts[1].parse::<u64>() {
+                        metrics.cpu_period = Some(period);
+                    }
+                }
             }
-        }
+        } else {
+            // cgroup v1 paths (fallback)
+            let cpu_shares_path = format!("/sys/fs/cgroup/cpu{}/cpu.shares", cgroup_path);
+            let cpu_quota_path = format!("/sys/fs/cgroup/cpu{}/cpu.cfs_quota_us", cgroup_path);
+            let cpu_period_path = format!("/sys/fs/cgroup/cpu{}/cpu.cfs_period_us", cgroup_path);
+            
+            if let Ok(shares_content) = fs::read_to_string(&cpu_shares_path) {
+                if let Ok(shares) = shares_content.trim().parse::<u64>() {
+                    metrics.cpu_shares = Some(shares);
+                }
+            }
 
-        if let Ok(period_content) = fs::read_to_string(&cpu_period_path) {
-            if let Ok(period) = period_content.trim().parse::<u64>() {
-                metrics.cpu_period = Some(period);
+            if let Ok(quota_content) = fs::read_to_string(&cpu_quota_path) {
+                if let Ok(quota) = quota_content.trim().parse::<i64>() {
+                    metrics.cpu_quota = Some(quota);
+                }
+            }
+
+            if let Ok(period_content) = fs::read_to_string(&cpu_period_path) {
+                if let Ok(period) = period_content.trim().parse::<u64>() {
+                    metrics.cpu_period = Some(period);
+                }
             }
         }
     }
@@ -258,7 +310,6 @@ pub fn adapt_for_container() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::env;
     
     #[test]
     fn test_container_detection_no_container() {
@@ -321,5 +372,53 @@ mod tests {
         // Should return false when not in container
         let result = adapt_for_container();
         assert!(!result);
+    }
+
+    #[test]
+    fn test_cgroup_v2_detection_integration() {
+        // Test that cgroup v2 detection works in the container context
+        let v2_available = is_cgroup_v2_available();
+        // This test just verifies the function can be called without panicking
+        // The actual availability depends on the system configuration
+        assert!(v2_available || !v2_available); // Always true, just testing it doesn't panic
+    }
+
+    #[test]
+    fn test_container_metrics_structure() {
+        // Test that ContainerMetrics structure is properly defined
+        let metrics = ContainerMetrics {
+            runtime: ContainerRuntime::Docker,
+            container_id: Some("test-container".to_string()),
+            memory_limit_bytes: Some(1024 * 1024 * 1024), // 1GB
+            memory_usage_bytes: Some(512 * 1024 * 1024),  // 512MB
+            cpu_shares: Some(1024),
+            cpu_quota: Some(100000),
+            cpu_period: Some(100000),
+            network_interfaces: vec!["eth0".to_string(), "veth1".to_string()],
+        };
+
+        assert_eq!(metrics.runtime, ContainerRuntime::Docker);
+        assert_eq!(metrics.container_id, Some("test-container".to_string()));
+        assert_eq!(metrics.memory_limit_bytes, Some(1024 * 1024 * 1024));
+        assert_eq!(metrics.memory_usage_bytes, Some(512 * 1024 * 1024));
+        assert_eq!(metrics.cpu_shares, Some(1024));
+        assert_eq!(metrics.cpu_quota, Some(100000));
+        assert_eq!(metrics.cpu_period, Some(100000));
+        assert_eq!(metrics.network_interfaces.len(), 2);
+    }
+
+    #[test]
+    fn test_container_info_with_cgroup_path() {
+        // Test ContainerInfo creation with cgroup path
+        let info = ContainerInfo::new(
+            ContainerRuntime::Podman,
+            Some("podman-container-123".to_string()),
+            Some("/podman/container-123".to_string())
+        );
+
+        assert_eq!(info.runtime, ContainerRuntime::Podman);
+        assert!(info.is_containerized);
+        assert_eq!(info.container_id, Some("podman-container-123".to_string()));
+        assert_eq!(info.cgroup_path, Some("/podman/container-123".to_string()));
     }
 }

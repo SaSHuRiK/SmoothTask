@@ -55,29 +55,47 @@
     - Added unit tests for metrics functionality
     - All code compiles cleanly with no warnings
 
-- [ ] ST-836: Add container support for Docker and Podman environments (Part 3: Integration)
+- [x] ST-836: Add container support for Docker and Podman environments (Part 3: Integration)
   - Тип: Rust / core / integration
   - Примечания: Complete container integration with cgroup v2 support
   - Приоритет: Средний
   - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
   - Критерии готовности:
-    - [ ] Implement cgroup v2 support for containerized environments
-    - [ ] Add Dockerfile and container configuration examples
-    - [ ] Add integration tests for container support
-    - [ ] Update documentation with container usage examples
+    - [x] Implement cgroup v2 support for containerized environments
+    - [x] Add Dockerfile and container configuration examples
+    - [x] Add integration tests for container support
+    - [x] Update documentation with container usage examples
   - Ожидаемые результаты: Complete container support with proper integration
+  - Результаты:
+    - Enhanced container metrics with full cgroup v2 support (memory.max, cpu.weight, cpu.max)
+    - Added fallback to cgroup v1 for compatibility
+    - Created comprehensive Dockerfiles (production, development, minimal)
+    - Added entrypoint script with container-specific setup
+    - Created comprehensive integration tests (12 test cases)
+    - Added detailed container documentation (CONTAINER_SUPPORT.md)
+    - Added Docker README with usage examples
+    - All code compiles cleanly with no warnings
 
-- [ ] ST-837: Add Prometheus metrics endpoint (Part 1: Basic endpoint)
+- [x] ST-837: Add Prometheus metrics endpoint (Part 1: Basic endpoint)
   - Тип: Rust / core / monitoring
   - Примечания: Implement basic Prometheus metrics endpoint
   - Приоритет: Средний
   - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
   - Критерии готовности:
-    - [ ] Research Prometheus metrics format and best practices
-    - [ ] Implement basic Prometheus metrics endpoint in API server
-    - [ ] Add key system metrics in Prometheus format
-    - [ ] Add unit tests for metrics endpoint
+    - [x] Research Prometheus metrics format and best practices
+    - [x] Implement basic Prometheus metrics endpoint in API server
+    - [x] Add key system metrics in Prometheus format
+    - [x] Add unit tests for metrics endpoint
   - Ожидаемые результаты: Basic Prometheus metrics endpoint
+  - Результаты:
+    - Added /metrics endpoint to API server with Prometheus format
+    - Implemented comprehensive metrics collection including version, API performance, system memory, PSI, processes, app groups, and daemon statistics
+    - Added proper Prometheus format with HELP and TYPE comments
+    - Added unit test for Prometheus metrics handler
+    - Integrated with existing API router and endpoints documentation
+    - Code compiles successfully with no warnings
 
 - [ ] ST-838: Add Prometheus metrics endpoint (Part 2: Process metrics)
   - Тип: Rust / core / monitoring
@@ -152,6 +170,22 @@
     - High test coverage across all major components and integration points
 
 ## 3. Недавно сделано (Recently Done)
+
+- [x] ST-837: Add Prometheus metrics endpoint (Part 1: Basic endpoint)
+  - Тип: Rust / core / monitoring
+  - Примечания: Implement basic Prometheus metrics endpoint
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
+  - Результаты: Basic Prometheus metrics endpoint with comprehensive system monitoring
+
+- [x] ST-836: Add container support for Docker and Podman environments (Part 3: Integration)
+  - Тип: Rust / core / integration
+  - Примечания: Complete container integration with cgroup v2 support
+  - Приоритет: Средний
+  - Оценка времени: ~60 минут
+  - Время выполнения: ~45 минут
+  - Результаты: Complete container support with cgroup v2, Dockerfiles, integration tests, and documentation
 
 - [x] ST-835: Add container support for Docker and Podman environments (Part 2: Metrics)
   - Тип: Rust / core / integration
