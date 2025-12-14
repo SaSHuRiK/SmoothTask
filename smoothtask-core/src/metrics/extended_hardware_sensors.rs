@@ -26,6 +26,8 @@ pub struct ExtendedHardwareSensors {
     pub pcie_devices: Vec<(String, f32)>, // PCIe устройства (имя, скорость в Гбит/с)
     pub usb4_devices: Vec<(String, f32)>, // USB4 устройства (имя, скорость в Гбит/с)
     pub nvme_devices: Vec<(String, f32)>, // NVMe устройства (имя, скорость в Гбит/с)
+    pub thunderbolt5_devices: Vec<(String, f32)>, // Thunderbolt 5 устройства (имя, скорость в Гбит/с)
+    pub pcie6_devices: Vec<(String, f32)>, // PCIe 6.0 устройства (имя, скорость в Гбит/с)
 }
 
 /// Конфигурация расширенного мониторинга сенсоров
@@ -45,6 +47,8 @@ pub struct ExtendedHardwareSensorsConfig {
     pub enable_pcie_monitoring: bool,
     pub enable_usb4_monitoring: bool,
     pub enable_nvme_monitoring: bool,
+    pub enable_thunderbolt5_monitoring: bool,
+    pub enable_pcie6_monitoring: bool,
 }
 
 impl Default for ExtendedHardwareSensorsConfig {
@@ -64,6 +68,8 @@ impl Default for ExtendedHardwareSensorsConfig {
             enable_pcie_monitoring: true,
             enable_usb4_monitoring: true,
             enable_nvme_monitoring: true,
+            enable_thunderbolt5_monitoring: true,
+            enable_pcie6_monitoring: true,
         }
     }
 }
@@ -166,6 +172,20 @@ impl ExtendedHardwareSensorsMonitor {
             sensors.pcie_devices.len(),
             sensors.usb4_devices.len(),
             sensors.nvme_devices.len()
+        );
+
+        // Собираем метрики с новых типов устройств (Thunderbolt 5 и PCIe 6.0)
+        self.collect_thunderbolt5_metrics(&mut sensors)?;
+        self.collect_pcie6_metrics(&mut sensors)?;
+
+        info!(
+            "Extended hardware devices collection completed: {} Thunderbolt devices, {} PCIe devices, {} USB4 devices, {} NVMe devices, {} Thunderbolt 5 devices, {} PCIe 6.0 devices",
+            sensors.thunderbolt_devices.len(),
+            sensors.pcie_devices.len(),
+            sensors.usb4_devices.len(),
+            sensors.nvme_devices.len(),
+            sensors.thunderbolt5_devices.len(),
+            sensors.pcie6_devices.len()
         );
 
         Ok(sensors)
@@ -1128,6 +1148,161 @@ impl ExtendedHardwareSensorsMonitor {
 
         Ok(())
     }
+
+    /// Собрать метрики с Thunderbolt 5 устройств
+    fn collect_thunderbolt5_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        if !self.config.enable_thunderbolt5_monitoring {
+            debug!("Thunderbolt 5 monitoring is disabled");
+            return Ok(());
+        }
+
+        // Пробуем найти Thunderbolt 5 устройства в /sys/bus/thunderbolt/devices/
+        let thunderbolt_dir = Path::new("/sys/bus/thunderbolt/devices");
+        debug!(
+            "Scanning for Thunderbolt 5 devices at: {}",
+            thunderbolt_dir.display()
+        );
+
+        if !thunderbolt_dir.exists() {
+            debug!("Thunderbolt directory not found at: {}", thunderbolt_dir.display());
+            return Ok(());
+        }
+
+        match fs::read_dir(thunderbolt_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let device_path = entry.path();
+                            let device_name = entry.file_name();
+                            let device_name_str = device_name.to_string_lossy();
+
+                            // Пробуем получить информацию о скорости устройства
+                            let speed_file = device_path.join("link_speed");
+                            if speed_file.exists() {
+                                match fs::read_to_string(&speed_file) {
+                                    Ok(speed_content) => {
+                                        match speed_content.trim().parse::<f32>() {
+                                            Ok(speed_gbps) => {
+                                                // Thunderbolt 5 устройства обычно работают на скоростях 80 или 120 Гбит/с
+                                                if speed_gbps >= 80.0 {
+                                                    sensors.thunderbolt5_devices.push((
+                                                        device_name_str.to_string(),
+                                                        speed_gbps,
+                                                    ));
+                                                    debug!(
+                                                        "Successfully read Thunderbolt 5 device: {} at {} Gbps",
+                                                        device_name_str, speed_gbps
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to parse Thunderbolt 5 speed from {}: {}",
+                                                    speed_file.display(), e
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to read Thunderbolt 5 speed from {}: {}",
+                                            speed_file.display(), e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to read Thunderbolt 5 device entry: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read Thunderbolt 5 directory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Собрать метрики с PCIe 6.0 устройств
+    fn collect_pcie6_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        if !self.config.enable_pcie6_monitoring {
+            debug!("PCIe 6.0 monitoring is disabled");
+            return Ok(());
+        }
+
+        // Пробуем найти PCIe 6.0 устройства в /sys/bus/pci/devices/
+        let pci_dir = Path::new("/sys/bus/pci/devices");
+        debug!("Scanning for PCIe 6.0 devices at: {}", pci_dir.display());
+
+        if !pci_dir.exists() {
+            debug!("PCI directory not found at: {}", pci_dir.display());
+            return Ok(());
+        }
+
+        match fs::read_dir(pci_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let device_path = entry.path();
+                            let device_name = entry.file_name();
+                            let device_name_str = device_name.to_string_lossy();
+
+                            // Пробуем получить информацию о скорости устройства
+                            let speed_file = device_path.join("max_link_speed");
+                            if speed_file.exists() {
+                                match fs::read_to_string(&speed_file) {
+                                    Ok(speed_content) => {
+                                        // Конвертируем скорость из кода в Гбит/с
+                                        let speed_code = speed_content.trim();
+                                        let speed_gbps = match speed_code {
+                                            "64.0 GT/s" => 64.0,
+                                            _ => {
+                                                warn!(
+                                                    "Unknown PCIe 6.0 speed code: {}",
+                                                    speed_code
+                                                );
+                                                0.0
+                                            }
+                                        };
+
+                                        if speed_gbps > 0.0 {
+                                            sensors.pcie6_devices.push((
+                                                device_name_str.to_string(),
+                                                speed_gbps,
+                                            ));
+                                            debug!(
+                                                "Successfully read PCIe 6.0 device: {} at {} Gbps",
+                                                device_name_str, speed_gbps
+                                            );
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to read PCIe 6.0 speed from {}: {}",
+                                            speed_file.display(), e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to read PCIe 6.0 device entry: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read PCI 6.0 directory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Тесты для расширенного мониторинга аппаратных сенсоров
@@ -1381,5 +1556,31 @@ mod tests {
         assert!(sensors.pcie_devices.len() >= 0);
         assert!(sensors.usb4_devices.len() >= 0);
         assert!(sensors.nvme_devices.len() >= 0);
+        assert!(sensors.thunderbolt5_devices.len() >= 0);
+        assert!(sensors.pcie6_devices.len() >= 0);
+    }
+
+    #[test]
+    fn test_thunderbolt5_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_thunderbolt5_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_thunderbolt5_metrics(&mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.thunderbolt5_devices.len(), 0);
+    }
+
+    #[test]
+    fn test_pcie6_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_pcie6_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_pcie6_metrics(&mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.pcie6_devices.len(), 0);
     }
 }

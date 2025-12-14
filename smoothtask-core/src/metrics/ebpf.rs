@@ -535,6 +535,26 @@ pub struct ApplicationPerformanceStat {
     pub total_time_ns: u64,
     /// Время последнего обновления в наносекундах
     pub last_update_ns: u64,
+    /// Количество промахов кэша
+    pub cache_misses: u64,
+    /// Количество попаданий в кэш
+    pub cache_hits: u64,
+    /// Количество промахов ветвлений
+    pub branch_misses: u64,
+    /// Количество успешных ветвлений
+    pub branch_hits: u64,
+    /// Количество page faults
+    pub page_faults: u64,
+    /// Количество переключений контекста
+    pub context_switches: u64,
+    /// Количество системных вызовов
+    pub system_calls: u64,
+    /// Количество прерываний
+    pub interrupts: u64,
+    /// Количество выделений памяти
+    pub memory_allocations: u64,
+    /// Количество освобождений памяти
+    pub memory_frees: u64,
     /// Имя процесса
     pub name: String,
     /// Процент времени выполнения
@@ -4724,6 +4744,16 @@ impl EbpfMetricsCollector {
                             other_wait_time_ns: stat.other_wait_time_ns,
                             total_time_ns: total_time,
                             last_update_ns: stat.last_update_ns,
+                            cache_misses: stat.cache_misses,
+                            cache_hits: stat.cache_hits,
+                            branch_misses: stat.branch_misses,
+                            branch_hits: stat.branch_hits,
+                            page_faults: stat.page_faults,
+                            context_switches: stat.context_switches,
+                            system_calls: stat.system_calls,
+                            interrupts: stat.interrupts,
+                            memory_allocations: stat.memory_allocations,
+                            memory_frees: stat.memory_frees,
                             name: stat.name.clone(),
                             execution_percent,
                             wait_percent,

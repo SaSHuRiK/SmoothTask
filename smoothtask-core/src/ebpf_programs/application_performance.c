@@ -28,6 +28,16 @@ struct application_performance_stats {
     __u64 other_wait_time_ns;     // Время ожидания других ресурсов
     __u64 total_time_ns;          // Общее время выполнения
     __u64 last_update_ns;         // Время последнего обновления
+    __u64 cache_misses;           // Количество промахов кэша
+    __u64 cache_hits;             // Количество попаданий в кэш
+    __u64 branch_misses;          // Количество промахов ветвлений
+    __u64 branch_hits;            // Количество успешных ветвлений
+    __u64 page_faults;            // Количество page faults
+    __u64 context_switches;       // Количество переключений контекста
+    __u64 system_calls;           // Количество системных вызовов
+    __u64 interrupts;             // Количество прерываний
+    __u64 memory_allocations;     // Количество выделений памяти
+    __u64 memory_frees;           // Количество освобождений памяти
     char comm[16];                // Имя процесса
 };
 
@@ -63,6 +73,16 @@ int trace_process_exec(struct trace_event_raw_sched_process_exec *ctx)
     stats.other_wait_time_ns = 0;
     stats.total_time_ns = 0;
     stats.last_update_ns = current_time;
+    stats.cache_misses = 0;
+    stats.cache_hits = 0;
+    stats.branch_misses = 0;
+    stats.branch_hits = 0;
+    stats.page_faults = 0;
+    stats.context_switches = 0;
+    stats.system_calls = 0;
+    stats.interrupts = 0;
+    stats.memory_allocations = 0;
+    stats.memory_frees = 0;
 
     bpf_get_current_comm(&stats.comm, sizeof(stats.comm));
 
@@ -237,6 +257,122 @@ int trace_mmap_enter(struct trace_event_raw_sys_enter *ctx)
         __u64 memory_wait_increase = 150000; // 150 мкс ожидания памяти (пример)
         stats->memory_wait_time_ns += memory_wait_increase;
         stats->total_time_ns += memory_wait_increase;
+        stats->last_update_ns = current_time;
+    }
+
+    return 0;
+}
+
+// Прикрепляемся к точке трассировки exceptions/page_fault_user
+// для отслеживания page faults
+SEC("tracepoint/exceptions/page_fault_user")
+int trace_page_fault_user(struct trace_event_raw_page_fault_user *ctx)
+{
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 current_time = bpf_ktime_get_ns();
+
+    // Обновляем статистику page faults
+    struct application_performance_stats *stats = bpf_map_lookup_elem(&application_performance_map, &pid);
+    if (stats) {
+        stats->page_faults += 1;
+        stats->last_update_ns = current_time;
+    }
+
+    return 0;
+}
+
+// Прикрепляемся к точке трассировки sched/sched_switch
+// для отслеживания переключений контекста
+SEC("tracepoint/sched/sched_switch")
+int trace_context_switch(struct trace_event_raw_sched_switch *ctx)
+{
+    __u32 prev_pid = ctx->prev_pid;
+    __u32 next_pid = ctx->next_pid;
+    __u64 current_time = bpf_ktime_get_ns();
+
+    // Обновляем статистику переключений контекста для предыдущего процесса
+    struct application_performance_stats *prev_stats = bpf_map_lookup_elem(&application_performance_map, &prev_pid);
+    if (prev_stats) {
+        prev_stats->context_switches += 1;
+        prev_stats->last_update_ns = current_time;
+    }
+
+    // Обновляем статистику переключений контекста для нового процесса
+    struct application_performance_stats *next_stats = bpf_map_lookup_elem(&application_performance_map, &next_pid);
+    if (next_stats) {
+        next_stats->context_switches += 1;
+        next_stats->last_update_ns = current_time;
+    }
+
+    return 0;
+}
+
+// Прикрепляемся к точке трассировки syscalls/sys_enter
+// для отслеживания системных вызовов
+SEC("tracepoint/syscalls/sys_enter")
+int trace_syscall_enter(struct trace_event_raw_sys_enter *ctx)
+{
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 current_time = bpf_ktime_get_ns();
+
+    // Обновляем статистику системных вызовов
+    struct application_performance_stats *stats = bpf_map_lookup_elem(&application_performance_map, &pid);
+    if (stats) {
+        stats->system_calls += 1;
+        stats->last_update_ns = current_time;
+    }
+
+    return 0;
+}
+
+// Прикрепляемся к точке трассировки irq/irq_handler_entry
+// для отслеживания прерываний
+SEC("tracepoint/irq/irq_handler_entry")
+int trace_irq_handler_entry(struct trace_event_raw_irq_handler_entry *ctx)
+{
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 current_time = bpf_ktime_get_ns();
+
+    // Обновляем статистику прерываний
+    struct application_performance_stats *stats = bpf_map_lookup_elem(&application_performance_map, &pid);
+    if (stats) {
+        stats->interrupts += 1;
+        stats->last_update_ns = current_time;
+    }
+
+    return 0;
+}
+
+// Прикрепляемся к точке трассировки kmem/kmalloc
+// для отслеживания выделений памяти
+SEC("tracepoint/kmem/kmalloc")
+int trace_kmalloc(struct trace_event_raw_kmalloc *ctx)
+{
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 current_time = bpf_ktime_get_ns();
+
+    // Обновляем статистику выделений памяти
+    struct application_performance_stats *stats = bpf_map_lookup_elem(&application_performance_map, &pid);
+    if (stats) {
+        stats->memory_allocations += 1;
+        stats->last_update_ns = current_time;
+    }
+
+    return 0;
+}
+
+// Прикрепляемся к точке трассировки kmem/kfree
+// для отслеживания освобождений памяти
+SEC("tracepoint/kmem/kfree")
+int trace_kfree(struct trace_event_raw_kfree *ctx)
+{
+    __u32 pid = bpf_get_current_pid_tgid() >> 32;
+    __u64 current_time = bpf_ktime_get_ns();
+
+    // Обновляем статистику освобождений памяти
+    struct application_performance_stats *stats = bpf_map_lookup_elem(&application_performance_map, &pid);
+    if (stats) {
+        stats->memory_frees += 1;
         stats->last_update_ns = current_time;
     }
 
