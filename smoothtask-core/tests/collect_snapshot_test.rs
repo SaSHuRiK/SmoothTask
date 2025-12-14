@@ -44,6 +44,37 @@ impl AudioIntrospector for FailingAudioIntrospector {
     }
 }
 
+/// Создаёт тестовые ProcPaths для использования в тестах.
+fn create_test_proc_paths() -> ProcPaths {
+    ProcPaths::default()
+}
+
+/// Создаёт тестовые AudioMetrics для использования в тестах.
+fn create_test_audio_metrics() -> AudioMetrics {
+    AudioMetrics {
+        xrun_count: 0,
+        xruns: vec![],
+        clients: vec![],
+        health_status: AudioHealthStatus::Healthy,
+        period_start: SystemTime::now(),
+        period_end: SystemTime::now(),
+    }
+}
+
+/// Создаёт тестовые AudioClientInfo для использования в тестах.
+fn create_test_audio_clients() -> Vec<AudioClientInfo> {
+    vec![
+        AudioClientInfo {
+            pid: 1234,
+            buffer_size_samples: Some(1024),
+            sample_rate_hz: Some(44100),
+            volume_level: Some(0.8),
+            latency_ms: Some(10),
+            client_name: Some("test_client".to_string()),
+        },
+    ]
+}
+
 /// Создаёт Thresholds с разумными значениями по умолчанию для тестов.
 fn create_test_thresholds() -> Thresholds {
     Thresholds {
@@ -564,8 +595,6 @@ async fn test_x11_introspector_error_handling_in_integration() {
         assert!(!process.is_focused_window);
         assert!(process.window_state.is_none());
     }
-}
-
 }
 
 /// Тест проверяет, что collect_snapshot корректно обновляет информацию об аудио-клиентах в процессах.
