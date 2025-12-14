@@ -843,6 +843,9 @@ pub async fn run_daemon(
         disk: DiskMetrics::default(),
         gpu: None,
         ebpf: None,
+        system_calls: crate::metrics::system::SystemCallMetrics::default(),
+        inode: crate::metrics::system::InodeMetrics::default(),
+        swap: crate::metrics::system::SwapMetrics::default(),
     }));
     let processes_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::ProcessRecord>>> =
         Arc::new(tokio::sync::RwLock::new(Vec::new()));
