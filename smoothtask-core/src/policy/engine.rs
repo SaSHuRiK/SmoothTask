@@ -636,6 +636,9 @@ mod tests {
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -691,6 +694,9 @@ mod tests {
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,

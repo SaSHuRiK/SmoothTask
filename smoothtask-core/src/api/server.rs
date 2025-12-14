@@ -4599,7 +4599,7 @@ mod tests {
     #[test]
     fn test_api_state_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
             PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
@@ -4633,6 +4633,7 @@ mod tests {
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
+            hardware: HardwareMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
@@ -4649,7 +4650,7 @@ mod tests {
     fn test_api_state_with_all() {
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
             PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
@@ -4683,6 +4684,7 @@ mod tests {
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
+            hardware: HardwareMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
@@ -4771,7 +4773,7 @@ mod tests {
     #[tokio::test]
     async fn test_metrics_handler_with_metrics() {
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
             PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
@@ -4805,6 +4807,7 @@ mod tests {
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
+            hardware: HardwareMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
@@ -4827,7 +4830,7 @@ mod tests {
     #[test]
     fn test_api_server_with_system_metrics() {
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
             PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let addr: SocketAddr = "127.0.0.1:8082".parse().unwrap();
@@ -4862,6 +4865,7 @@ mod tests {
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
+            hardware: HardwareMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,
@@ -5077,6 +5081,9 @@ mod tests {
                 log_max_rotated_files: 5,
                 log_compression_enabled: true,
                 log_rotation_interval_sec: 0,
+                log_max_age_sec: 0,
+                log_max_total_size_bytes: 0,
+                log_cleanup_interval_sec: 3600,
             },
             cache_intervals: CacheIntervals {
                 system_metrics_cache_interval: 3,
@@ -5093,6 +5100,7 @@ mod tests {
                 model_path: "/tmp/model.onnx".to_string(),
                 model_type: ModelType::Onnx,
             },
+            custom_metrics: None,
             ml_classifier: MLClassifierConfig {
                 enabled: false,
                 model_path: "/tmp/classifier.onnx".to_string(),
@@ -5989,7 +5997,7 @@ apps:
         let addr: SocketAddr = "127.0.0.1:8084".parse().unwrap();
         let stats = Arc::new(RwLock::new(crate::DaemonStats::new()));
         use crate::metrics::system::{
-            CpuTimes, DiskMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
+            CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo, NetworkMetrics, PowerMetrics,
             PressureMetrics, SystemMetrics, TemperatureMetrics,
         };
         let metrics = SystemMetrics {
@@ -6023,6 +6031,7 @@ apps:
             temperature: TemperatureMetrics::default(),
             power: PowerMetrics::default(),
             network: NetworkMetrics::default(),
+            hardware: HardwareMetrics::default(),
             disk: DiskMetrics::default(),
             gpu: None,
             ebpf: None,

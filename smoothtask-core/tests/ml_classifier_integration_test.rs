@@ -324,23 +324,39 @@ fn test_ml_classifier_feature_extraction_comprehensive() {
     // Тестируем извлечение фич
     let features = classifier.process_to_features(&process);
 
-    // Проверяем, что все фичи извлечены правильно
-    assert_eq!(features.len(), 16); // 8 числовых + 8 булевых
+    // Проверяем, что все фичи извлечены правильно (расширенный набор)
+    assert_eq!(features.len(), 26); // 10 числовых + 16 булевых/интерактивных
 
     // Проверяем числовые фичи
     assert_eq!(features[0], 0.8); // cpu_share_1s
     assert_eq!(features[1], 0.6); // cpu_share_10s
-    assert_eq!(features[2], 10.0); // io_read_bytes в MB
-    assert_eq!(features[3], 5.0); // io_write_bytes в MB
-    assert_eq!(features[4], 500.0); // rss_mb
-    assert_eq!(features[5], 200.0); // swap_mb
-    assert_eq!(features[6], 10000.0); // voluntary_ctx
-    assert_eq!(features[7], 5000.0); // involuntary_ctx
+    assert_eq!(features[2], 80.0); // cpu_share_1s %
+    assert_eq!(features[3], 60.0); // cpu_share_10s %
+    assert_eq!(features[4], 10.0); // io_read_bytes в MB
+    assert_eq!(features[5], 5.0); // io_write_bytes в MB
+    assert_eq!(features[6], 15.0); // total IO
+    assert_eq!(features[7], 500.0); // rss_mb
+    assert_eq!(features[8], 200.0); // swap_mb
+    assert_eq!(features[9], 700.0 * 1024.0); // total memory KB
+    assert_eq!(features[10], 10000.0); // voluntary_ctx
+    assert_eq!(features[11], 5000.0); // involuntary_ctx
+    assert_eq!(features[12], (10000.0 + 5000.0) / 100.0); // ctx/sec
+    assert_eq!(features[13], 100.0); // uptime_sec
+    assert_eq!(features[14], 100.0 / 3600.0); // uptime_hours
+
+    // Проверяем логарифмические фичи (должны быть положительными)
+    assert!(features[15] > 0.0); // log CPU
+    assert!(features[16] > 0.0); // log memory
 
     // Проверяем булевые фичи (должны быть 1.0)
-    for i in 8..16 {
+    for i in 17..23 {
         assert_eq!(features[i], 1.0);
     }
+
+    // Проверяем расширенные булевые фичи
+    assert_eq!(features[23], 0.0); // локальный TTY (has_tty но env_ssh=true)
+    assert_eq!(features[24], 1.0); // фокусированное GUI
+    assert_eq!(features[25], 1.0); // интерактивный процесс
 }
 
 #[test]
@@ -395,6 +411,221 @@ apps:
     for tag in expected_tags {
         assert!(actual_tags.contains(&tag), "Expected tag {} not found", tag);
     }
+}
+
+#[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+fn test_ml_classifier_high_confidence_override() {
+    let temp_dir = tempdir().expect("temp dir");
+    let patterns_dir = temp_dir.path();
+
+    create_test_pattern_file(
+        patterns_dir,
+        "terminals.yml",
+        r#"
+category: terminal
+apps:
+  - name: "gnome-terminal"
+    label: "GNOME Terminal"
+    exe_patterns: ["gnome-terminal"]
+    tags: ["terminal", "interactive"]
+"#,
+    );
+
+    let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+    let config = MLClassifierConfig {
+        enabled: true,
+        model_path: "test.json".to_string(),
+        confidence_threshold: 0.7,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
+    };
+
+    let classifier = create_ml_classifier(config);
+    assert!(classifier.is_ok());
+    let classifier = classifier.unwrap();
+
+    let mut process = create_test_process();
+    process.exe = Some("gnome-terminal".to_string());
+    process.is_audio_client = true; // Это даст высокую уверенность в audio типе
+    process.has_active_stream = true;
+
+    classify_process(&mut process, &db, Some(&*classifier), None);
+
+    // При высокой уверенности ML (> 0.8) должен переопределить паттерн
+    assert_eq!(process.process_type, Some("audio".to_string()));
+    assert!(process.tags.contains(&"audio".to_string()));
+    assert!(process.tags.contains(&"realtime".to_string()));
+}
+
+#[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+fn test_ml_classifier_medium_confidence_with_patterns() {
+    let temp_dir = tempdir().expect("temp dir");
+    let patterns_dir = temp_dir.path();
+
+    create_test_pattern_file(
+        patterns_dir,
+        "browsers.yml",
+        r#"
+category: browser
+apps:
+  - name: "firefox"
+    label: "Mozilla Firefox"
+    exe_patterns: ["firefox"]
+    tags: ["browser", "gui"]
+"#,
+    );
+
+    let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+    let config = MLClassifierConfig {
+        enabled: true,
+        model_path: "test.json".to_string(),
+        confidence_threshold: 0.7,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
+    };
+
+    let classifier = create_ml_classifier(config);
+    assert!(classifier.is_ok());
+    let classifier = classifier.unwrap();
+
+    let mut process = create_test_process();
+    process.exe = Some("firefox".to_string());
+    process.has_gui_window = true; // Средняя уверенность ML
+
+    classify_process(&mut process, &db, Some(&*classifier), None);
+
+    // При средней уверенности ML и наличии паттернов, паттерн должен доминировать
+    assert_eq!(process.process_type, Some("browser".to_string()));
+    assert!(process.tags.contains(&"browser".to_string()));
+    assert!(process.tags.contains(&"gui".to_string()));
+}
+
+#[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+fn test_ml_classifier_low_confidence_with_patterns() {
+    let temp_dir = tempdir().expect("temp dir");
+    let patterns_dir = tempdir.path();
+
+    create_test_pattern_file(
+        patterns_dir,
+        "games.yml",
+        r#"
+category: game
+apps:
+  - name: "game-app"
+    label: "Game Application"
+    exe_patterns: ["game-app"]
+    tags: ["game", "interactive"]
+"#,
+    );
+
+    let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+    let config = MLClassifierConfig {
+        enabled: true,
+        model_path: "test.json".to_string(),
+        confidence_threshold: 0.7,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
+    };
+
+    let classifier = create_ml_classifier(config);
+    assert!(classifier.is_ok());
+    let classifier = classifier.unwrap();
+
+    let mut process = create_test_process();
+    process.exe = Some("game-app".to_string());
+    // Низкая уверенность ML (процесс без особых признаков)
+
+    classify_process(&mut process, &db, Some(&*classifier), None);
+
+    // При низкой уверенности ML и наличии паттернов, паттерн должен доминировать
+    assert_eq!(process.process_type, Some("game".to_string()));
+    assert!(process.tags.contains(&"game".to_string()));
+    assert!(process.tags.contains(&"interactive".to_string()));
+}
+
+#[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+fn test_ml_classifier_no_patterns_medium_confidence() {
+    let temp_dir = tempdir().expect("temp dir");
+    let patterns_dir = tempdir.path();
+
+    // Не создаем паттерны для этого теста
+
+    let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+    let config = MLClassifierConfig {
+        enabled: true,
+        model_path: "test.json".to_string(),
+        confidence_threshold: 0.7,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
+    };
+
+    let classifier = create_ml_classifier(config);
+    assert!(classifier.is_ok());
+    let classifier = classifier.unwrap();
+
+    let mut process = create_test_process();
+    process.exe = Some("unknown-app".to_string());
+    process.has_gui_window = true; // Средняя уверенность ML
+
+    classify_process(&mut process, &db, Some(&*classifier), None);
+
+    // При отсутствии паттернов и средней уверенности ML, ML должен быть использован
+    assert_eq!(process.process_type, Some("gui".to_string()));
+    assert!(process.tags.contains(&"gui".to_string()));
+    assert!(process.tags.contains(&"interactive".to_string()));
+}
+
+#[test]
+#[cfg(any(feature = "catboost", feature = "onnx"))]
+fn test_ml_classifier_priority_tags() {
+    let temp_dir = tempdir().expect("temp dir");
+    let patterns_dir = tempdir.path();
+
+    create_test_pattern_file(
+        patterns_dir,
+        "audio.yml",
+        r#"
+category: audio
+apps:
+  - name: "audacity"
+    label: "Audacity"
+    exe_patterns: ["audacity"]
+    tags: ["audio", "multimedia"]
+"#,
+    );
+
+    let db = PatternDatabase::load(patterns_dir).expect("load patterns");
+
+    let config = MLClassifierConfig {
+        enabled: true,
+        model_path: "test.json".to_string(),
+        confidence_threshold: 0.7,
+        model_type: smoothtask_core::config::config_struct::ModelType::Catboost,
+    };
+
+    let classifier = create_ml_classifier(config);
+    assert!(classifier.is_ok());
+    let classifier = classifier.unwrap();
+
+    let mut process = create_test_process();
+    process.exe = Some("audacity".to_string());
+    process.is_audio_client = true;
+    process.has_active_stream = true;
+    process.is_focused_window = true;
+
+    classify_process(&mut process, &db, Some(&*classifier), None);
+
+    // Проверяем, что приоритетные теги от ML добавлены
+    assert_eq!(process.process_type, Some("audio".to_string()));
+    assert!(process.tags.contains(&"audio".to_string()));
+    assert!(process.tags.contains(&"multimedia".to_string()));
+    assert!(process.tags.contains(&"realtime".to_string())); // Приоритетный тег от ML
+    assert!(process.tags.contains(&"focused".to_string())); // Приоритетный тег от ML
+    assert!(process.tags.contains(&"interactive".to_string())); // Приоритетный тег от ML
 }
 
 #[test]

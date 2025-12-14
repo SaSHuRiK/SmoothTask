@@ -616,7 +616,7 @@ mod tests {
 
     #[test]
     fn test_needs_rotation_by_size() {
-        let rotator = LogRotator::new(1000, 5, true, 0); // Ротация по размеру, 1000 байт
+        let rotator = LogRotator::new(1000, 5, true, 0, 0, 0); // Ротация по размеру, 1000 байт
 
         // Файл меньше лимита - ротация не нужна
         assert!(!rotator
@@ -640,15 +640,15 @@ mod tests {
         // так как тесты должны быть быстрыми и детерминированными
 
         // Тестируем, что ротация по времени включена
-        let rotator = LogRotator::new(0, 5, true, 60);
+        let rotator = LogRotator::new(0, 5, true, 60, 0, 0);
         assert_eq!(rotator.rotation_interval_sec, 60);
 
         // Тестируем, что ротация по времени отключена, когда интервал = 0
-        let rotator_disabled = LogRotator::new(0, 5, true, 0);
+        let rotator_disabled = LogRotator::new(0, 5, true, 0, 0, 0);
         assert_eq!(rotator_disabled.rotation_interval_sec, 0);
 
         // Тестируем, что ротация по размеру работает независимо от времени
-        let rotator_size_only = LogRotator::new(100, 5, false, 0);
+        let rotator_size_only = LogRotator::new(100, 5, false, 0, 0, 0);
         assert!(rotator_size_only
             .needs_rotation(Path::new("/tmp/test.log"), 150)
             .unwrap());
@@ -659,7 +659,7 @@ mod tests {
 
     #[test]
     fn test_rotation_disabled() {
-        let rotator = LogRotator::new(0, 0, false, 0); // Все отключено
+        let rotator = LogRotator::new(0, 0, false, 0, 0, 0); // Все отключено
 
         // Ротация не нужна в любом случае
         assert!(!rotator
@@ -679,7 +679,7 @@ mod tests {
         }
         drop(file);
 
-        let mut rotator = LogRotator::new(100, 3, false, 0); // Ротация по размеру (100 байт), сжатие отключено
+        let mut rotator = LogRotator::new(100, 3, false, 0, 0, 0); // Ротация по размеру (100 байт), сжатие отключено
 
         // Выполняем ротацию
         rotator
@@ -737,7 +737,7 @@ mod tests {
         }
         drop(file);
 
-        let mut rotator = LogRotator::new(100, 3, true, 0); // Ротация по размеру (100 байт), сжатие включено
+        let mut rotator = LogRotator::new(100, 3, true, 0, 0, 0); // Ротация по размеру (100 байт), сжатие включено
 
         // Выполняем ротацию
         rotator
@@ -771,7 +771,7 @@ mod tests {
         writeln!(file, "Test log entry").expect("write to log");
         drop(file);
 
-        let mut rotator = LogRotator::new(100, 2, false, 0); // Максимум 2 ротированных файла
+        let mut rotator = LogRotator::new(100, 2, false, 0, 0, 0); // Максимум 2 ротированных файла
 
         // Выполняем несколько ротаций
         for i in 0..5 {
@@ -861,7 +861,7 @@ mod tests {
         writeln!(file, "Test log entry").expect("write to log");
         drop(file);
 
-        let mut rotator = LogRotator::new(100, 3, false, 0);
+        let mut rotator = LogRotator::new(100, 3, false, 0, 0, 0);
 
         // Тестируем ротацию с несуществующим файлом (должно завершиться успешно)
         let non_existent_path = temp_dir.path().join("non_existent.log");

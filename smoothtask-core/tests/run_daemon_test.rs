@@ -42,6 +42,9 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             log_max_rotated_files: 5,
             log_compression_enabled: true,
             log_rotation_interval_sec: 0,
+            log_max_age_sec: 0,
+            log_max_total_size_bytes: 0,
+            log_cleanup_interval_sec: 3600,
         },
         paths: Paths {
                 log_file_path: "smoothtask.log".to_string(),
@@ -64,6 +67,7 @@ fn create_test_config(patterns_dir: &str, snapshot_db_path: String) -> Config {
             model_path: "models/ranker.onnx".to_string(),
             model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
+        custom_metrics: None,
         ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
         pattern_auto_update:
             smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),

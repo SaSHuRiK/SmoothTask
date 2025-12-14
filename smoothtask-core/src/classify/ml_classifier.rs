@@ -10,13 +10,25 @@ use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 #[cfg(feature = "catboost")]
 use catboost::CatBoostClassifier;
 
 #[cfg(feature = "onnx")]
 use ort::Session;
+
+use std::fs::File;
+use std::io::Read;
+use sha2::{Sha256, Digest};
+use std::sync::Mutex;
+use lazy_static::lazy_static;
+
+lazy_static! {
+    /// Глобальный кэш фич для оптимизации производительности ML-классификации.
+    /// Используется всеми экземплярами ML-классификаторов.
+    static ref GLOBAL_FEATURE_CACHE: FeatureCache = FeatureCache::new(1024);
+}
 
 /// Метрики производительности ML-модели.
 #[derive(Debug, Clone, Default)]
@@ -368,6 +380,8 @@ pub struct CatBoostMLClassifier {
     model: CatBoostModel,
     /// Метрики производительности
     performance_metrics: MLPerformanceMetrics,
+    /// Информация о версии и хэше модели
+    model_version: Option<ModelVersionInfo>,
 }
 
 /// Внутреннее представление модели CatBoost
@@ -381,6 +395,103 @@ enum CatBoostModel {
     Onnx(Arc<Session>),
     /// Заглушка (используется когда CatBoost/ONNX отключены)
     Stub,
+}
+
+/// Кэш для хранения предварительно вычисленных фич процессов.
+/// Используется для оптимизации производительности при многократной классификации одних и тех же процессов.
+struct FeatureCache {
+    /// Кэш фич: PID -> Vec<f32>
+    cache: Mutex<lru::LruCache<u32, Vec<f32>>>,
+}
+
+impl FeatureCache {
+    /// Создать новый кэш фич.
+    fn new(capacity: usize) -> Self {
+        Self {
+            cache: Mutex::new(lru::LruCache::new(std::num::NonZeroUsize::new(capacity).unwrap())),
+        }
+    }
+    
+    /// Получить фичи из кэша или вычислить и сохранить.
+    fn get_or_compute<F>(&self, pid: u32, compute_fn: F) -> Vec<f32>
+    where
+        F: FnOnce() -> Vec<f32>,
+    {
+        let mut cache = self.cache.lock().unwrap();
+        if let Some(features) = cache.get(&pid) {
+            return features.clone();
+        }
+        
+        let features = compute_fn();
+        cache.put(pid, features.clone());
+        features
+    }
+    
+    /// Очистить кэш.
+    fn clear(&self) {
+        let mut cache = self.cache.lock().unwrap();
+        cache.clear();
+    }
+    
+    /// Установить новую емкость кэша.
+    fn set_capacity(&self, capacity: usize) {
+        let mut cache = self.cache.lock().unwrap();
+        *cache = lru::LruCache::new(std::num::NonZeroUsize::new(capacity).unwrap());
+    }
+}
+
+/// Информация о версии и хэше модели
+#[derive(Debug, Clone)]
+struct ModelVersionInfo {
+    /// Хэш модели (SHA256)
+    model_hash: String,
+    /// Время последней проверки
+    last_checked: Instant,
+    /// Размер модели в байтах
+    model_size: u64,
+}
+
+impl ModelVersionInfo {
+    /// Создать новую информацию о версии модели
+    fn new(model_path: &Path) -> Result<Self> {
+        let mut file = File::open(model_path)
+            .with_context(|| format!("Не удалось открыть файл модели для хэширования: {:?}", model_path))?;
+        
+        let metadata = file.metadata()
+            .with_context(|| format!("Не удалось получить метаданные модели: {:?}", model_path))?;
+        
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)
+            .with_context(|| format!("Не удалось прочитать файл модели для хэширования: {:?}", model_path))?;
+        
+        // Вычисляем SHA256 хэш
+        let mut hasher = Sha256::new();
+        hasher.update(&buffer);
+        let hash_result = hasher.finalize();
+        let model_hash = format!("{:x}", hash_result);
+        
+        Ok(Self {
+            model_hash,
+            last_checked: Instant::now(),
+            model_size: metadata.len(),
+        })
+    }
+    
+    /// Проверяет, изменилась ли модель
+    fn has_changed(&self, model_path: &Path) -> Result<bool> {
+        let current_info = Self::new(model_path)?;
+        Ok(current_info.model_hash != self.model_hash || current_info.model_size != self.model_size)
+    }
+    
+    /// Возвращает хэш модели
+    fn hash(&self) -> &str {
+        &self.model_hash
+    }
+    
+    /// Возвращает размер модели
+    fn size(&self) -> u64 {
+        self.model_size
+    }
 }
 
 impl CatBoostMLClassifier {
@@ -399,18 +510,32 @@ impl CatBoostMLClassifier {
             config
         );
 
-        let model = if config.enabled {
-            Self::load_model(&config).with_context(|| {
+        let (model, model_version) = if config.enabled {
+            let model = Self::load_model(&config).with_context(|| {
                 format!("Не удалось загрузить модель из {:?}", config.model_path)
-            })?
+            })?;
+            
+            // Создаем информацию о версии модели
+            let model_path = Path::new(&config.model_path);
+            let version_info = ModelVersionInfo::new(model_path)
+                .with_context(|| format!("Не удалось создать информацию о версии модели: {:?}", model_path))?;
+            
+            info!(
+                "Модель загружена успешно. Хэш: {}, Размер: {} байт",
+                version_info.hash(),
+                version_info.size()
+            );
+            
+            (model, Some(version_info))
         } else {
             info!("ML-классификатор отключен в конфигурации, используется заглушка");
-            CatBoostModel::Stub
+            (CatBoostModel::Stub, None)
         };
 
         Ok(Self {
             model,
             performance_metrics: MLPerformanceMetrics::new(),
+            model_version,
         })
     }
 
@@ -523,6 +648,168 @@ impl CatBoostMLClassifier {
         Ok(CatBoostModel::Onnx(Arc::new(session)))
     }
 
+    /// Проверяет, изменилась ли модель на диске.
+    ///
+    /// # Аргументы
+    ///
+    /// * `model_path` - путь к файлу модели для проверки
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если модель изменилась, `false` в противном случае.
+    ///
+    /// # Ошибки
+    ///
+    /// Возвращает ошибку, если не удалось прочитать информацию о модели.
+    pub fn has_model_changed(&self, model_path: &Path) -> Result<bool> {
+        if let Some(version_info) = &self.model_version {
+            version_info.has_changed(model_path)
+        } else {
+            // Если нет информации о версии, считаем что модель не изменилась
+            Ok(false)
+        }
+    }
+    
+    /// Возвращает хэш текущей модели.
+    ///
+    /// # Возвращает
+    ///
+    /// Опциональный хэш модели (None, если модель не загружена).
+    pub fn model_hash(&self) -> Option<&str> {
+        self.model_version.as_ref().map(|v| v.hash())
+    }
+    
+    /// Возвращает размер текущей модели.
+    ///
+    /// # Возвращает
+    ///
+    /// Опциональный размер модели в байтах (None, если модель не загружена).
+    pub fn model_size(&self) -> Option<u64> {
+        self.model_version.as_ref().map(|v| v.size())
+    }
+    
+    /// Перезагружает модель, если она изменилась на диске.
+    ///
+    /// # Аргументы
+    ///
+    /// * `config` - текущая конфигурация ML-классификатора
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если модель была перезагружена, `false` в противном случае.
+    ///
+    /// # Ошибки
+    ///
+    /// Возвращает ошибку, если не удалось перезагрузить модель.
+    pub fn reload_model_if_changed(&mut self, config: &MLClassifierConfig) -> Result<bool> {
+        if !config.enabled {
+            return Ok(false);
+        }
+        
+        let model_path = Path::new(&config.model_path);
+        if !model_path.exists() {
+            warn!("Файл модели не существует для перезагрузки: {:?}", model_path);
+            return Ok(false);
+        }
+        
+        // Проверяем, изменилась ли модель
+        if !self.has_model_changed(model_path)? {
+            debug!("Модель не изменилась, перезагрузка не требуется");
+            return Ok(false);
+        }
+        
+        info!("Обнаружены изменения в модели, выполняется перезагрузка...");
+        
+        // Сохраняем старую модель для fallback
+        let old_model = std::mem::replace(&mut self.model, CatBoostModel::Stub);
+        let old_version = self.model_version.take();
+        
+        // Пробуем загрузить новую модель
+        match Self::load_model(config) {
+            Ok(new_model) => {
+                // Создаем новую информацию о версии
+                let new_version = ModelVersionInfo::new(model_path)
+                    .with_context(|| format!("Не удалось создать информацию о версии новой модели: {:?}", model_path))?;
+                
+                info!(
+                    "Модель успешно перезагружена. Новый хэш: {}, Размер: {} байт",
+                    new_version.hash(),
+                    new_version.size()
+                );
+                
+                self.model = new_model;
+                self.model_version = Some(new_version);
+                Ok(true)
+            }
+            Err(e) => {
+                error!("Ошибка при перезагрузке модели: {}. Выполняется откат к старой модели", e);
+                
+                // Восстанавливаем старую модель
+                self.model = old_model;
+                self.model_version = old_version;
+                
+                Err(e)
+            }
+        }
+    }
+    
+    /// Выполняет классификацию с автоматическим fallback при ошибках.
+    ///
+    /// # Аргументы
+    ///
+    /// * `process` - процесс для классификации
+    /// * `fallback_classifier` - резервный классификатор для использования при ошибках
+    ///
+    /// # Возвращает
+    ///
+    /// Результат классификации (основной или резервный).
+    pub fn classify_with_fallback(&mut self, process: &ProcessRecord, fallback_classifier: &mut dyn MLClassifier) -> MLClassificationResult {
+        // Пробуем основную классификацию
+        let result = self.classify(process);
+        
+        // Если уверенность слишком низкая или это неизвестный тип, используем fallback
+        if result.confidence < 0.3 || result.process_type.as_deref() == Some("unknown") {
+            debug!("Низкая уверенность ML-классификации ({}), используем fallback", result.confidence);
+            return fallback_classifier.classify(process);
+        }
+        
+        result
+    }
+    
+    /// Очищает кэш фич.
+    ///
+    /// # Примечание
+    ///
+    /// Следует вызывать при изменении конфигурации классификатора или при обнаружении
+    /// значительных изменений в системе.
+    pub fn clear_feature_cache() {
+        GLOBAL_FEATURE_CACHE.clear();
+    }
+    
+    /// Устанавливает новую емкость кэша фич.
+    ///
+    /// # Аргументы
+    ///
+    /// * `capacity` - новая емкость кэша
+    ///
+    /// # Примечание
+    ///
+    /// Емкость кэша влияет на баланс между использованием памяти и производительностью.
+    /// Рекомендуемые значения: 512-2048 для большинства систем.
+    pub fn set_feature_cache_capacity(capacity: usize) {
+        GLOBAL_FEATURE_CACHE.set_capacity(capacity);
+    }
+    
+    /// Возвращает текущую емкость кэша фич.
+    ///
+    /// # Возвращает
+    ///
+    /// Текущая емкость кэша.
+    pub fn feature_cache_capacity() -> usize {
+        let cache = GLOBAL_FEATURE_CACHE.cache.lock().unwrap();
+        cache.cap().get()
+    }
+
     /// Преобразовать процесс в фичи для ML-модели.
     ///
     /// # Аргументы
@@ -536,31 +823,65 @@ impl CatBoostMLClassifier {
     /// # Примечание
     ///
     /// Этот метод используется внутренне в `classify_with_catboost` и `classify_with_onnx`.
+    /// Включает расширенные фичи для более точной классификации.
+    /// Использует кэширование для оптимизации производительности.
     #[allow(dead_code)]
     fn process_to_features(&self, process: &ProcessRecord) -> Vec<f32> {
-        let mut features = Vec::new();
+        // Используем кэширование для оптимизации производительности
+        GLOBAL_FEATURE_CACHE.get_or_compute(process.pid as u32, || {
+            let mut features = Vec::new();
 
-        // Числовые фичи
-        features.push(process.cpu_share_1s.unwrap_or(0.0) as f32);
-        features.push(process.cpu_share_10s.unwrap_or(0.0) as f32);
-        features.push(process.io_read_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
-        features.push(process.io_write_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
-        features.push(process.rss_mb.unwrap_or(0) as f32);
-        features.push(process.swap_mb.unwrap_or(0) as f32);
-        features.push(process.voluntary_ctx.unwrap_or(0) as f32);
-        features.push(process.involuntary_ctx.unwrap_or(0) as f32);
-
-        // Булевые фичи (0/1)
-        features.push(if process.has_tty { 1.0 } else { 0.0 });
-        features.push(if process.has_gui_window { 1.0 } else { 0.0 });
-        features.push(if process.is_focused_window { 1.0 } else { 0.0 });
-        features.push(if process.env_has_display { 1.0 } else { 0.0 });
-        features.push(if process.env_has_wayland { 1.0 } else { 0.0 });
-        features.push(if process.env_ssh { 1.0 } else { 0.0 });
-        features.push(if process.is_audio_client { 1.0 } else { 0.0 });
-        features.push(if process.has_active_stream { 1.0 } else { 0.0 });
-
-        features
+            // Числовые фичи
+            features.push(process.cpu_share_1s.unwrap_or(0.0) as f32);
+            features.push(process.cpu_share_10s.unwrap_or(0.0) as f32);
+            
+            // Расширенные CPU фичи
+            features.push((process.cpu_share_1s.unwrap_or(0.0) * 100.0) as f32); // CPU %
+            features.push((process.cpu_share_10s.unwrap_or(0.0) * 100.0) as f32); // CPU %
+            
+            // IO фичи
+            features.push(process.io_read_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
+            features.push(process.io_write_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
+            features.push(process.io_read_bytes.unwrap_or(0) as f32 + process.io_write_bytes.unwrap_or(0) as f32); // Total IO
+            
+            // Память фичи
+            features.push(process.rss_mb.unwrap_or(0) as f32);
+            features.push(process.swap_mb.unwrap_or(0) as f32);
+            features.push((process.rss_mb.unwrap_or(0) as f32 + process.swap_mb.unwrap_or(0) as f32) * 1024.0); // Total memory KB
+            
+            // Контекстные переключения
+            features.push(process.voluntary_ctx.unwrap_or(0) as f32);
+            features.push(process.involuntary_ctx.unwrap_or(0) as f32);
+            features.push((process.voluntary_ctx.unwrap_or(0) as f32 + process.involuntary_ctx.unwrap_or(0) as f32) / process.uptime_sec.max(1) as f32); // ctx/sec
+            
+            // Расширенные фичи
+            features.push(process.uptime_sec as f32); // Время работы процесса
+            features.push(process.uptime_sec as f32 / 3600.0); // Время работы в часах
+            
+            // Нормализованные фичи
+            features.push((process.cpu_share_1s.unwrap_or(0.0) as f32).ln_1p()); // Log CPU
+            features.push((process.rss_mb.unwrap_or(0) as f32).ln_1p()); // Log memory
+            
+            // Булевые фичи (0/1)
+            features.push(if process.has_tty { 1.0 } else { 0.0 });
+            features.push(if process.has_gui_window { 1.0 } else { 0.0 });
+            features.push(if process.is_focused_window { 1.0 } else { 0.0 });
+            features.push(if process.env_has_display { 1.0 } else { 0.0 });
+            features.push(if process.env_has_wayland { 1.0 } else { 0.0 });
+            features.push(if process.env_ssh { 1.0 } else { 0.0 });
+            features.push(if process.is_audio_client { 1.0 } else { 0.0 });
+            features.push(if process.has_active_stream { 1.0 } else { 0.0 });
+            
+            // Расширенные булевые фичи
+            features.push(if process.has_tty && !process.env_ssh { 1.0 } else { 0.0 }); // Локальный TTY
+            features.push(if process.has_gui_window && process.is_focused_window { 1.0 } else { 0.0 }); // Фокусированное GUI
+            
+            // Интерактивные фичи
+            features.push(if process.has_gui_window || process.has_tty { 1.0 } else { 0.0 }); // Интерактивный процесс
+            features.push(if process.is_audio_client || process.has_active_stream { 1.0 } else { 0.0 }); // Аудио активность
+            
+            features
+        })
     }
 }
 
@@ -1167,26 +1488,43 @@ mod tests {
         process.env_ssh = true;
         process.is_audio_client = true;
         process.has_active_stream = true;
+        process.uptime_sec = 3600; // 1 час
 
         let features = classifier.process_to_features(&process);
 
-        // Проверяем, что фичи извлечены правильно
-        assert_eq!(features.len(), 16); // 8 числовых + 8 булевых
+        // Проверяем, что фичи извлечены правильно (расширенный набор)
+        assert_eq!(features.len(), 26); // 10 числовых + 16 булевых/интерактивных
 
-        // Проверяем числовые фичи
+        // Проверяем основные числовые фичи
         assert_eq!(features[0], 0.25); // cpu_share_1s
         assert_eq!(features[1], 0.5); // cpu_share_10s
-        assert_eq!(features[2], 2.0); // io_read_bytes в MB
-        assert_eq!(features[3], 1.0); // io_write_bytes в MB
-        assert_eq!(features[4], 100.0); // rss_mb
-        assert_eq!(features[5], 50.0); // swap_mb
-        assert_eq!(features[6], 1000.0); // voluntary_ctx
-        assert_eq!(features[7], 500.0); // involuntary_ctx
+        assert_eq!(features[2], 25.0); // cpu_share_1s %
+        assert_eq!(features[3], 50.0); // cpu_share_10s %
+        assert_eq!(features[4], 2.0); // io_read_bytes в MB
+        assert_eq!(features[5], 1.0); // io_write_bytes в MB
+        assert_eq!(features[6], 3.0); // total IO
+        assert_eq!(features[7], 100.0); // rss_mb
+        assert_eq!(features[8], 50.0); // swap_mb
+        assert_eq!(features[9], 150.0 * 1024.0); // total memory KB
+        assert_eq!(features[10], 1000.0); // voluntary_ctx
+        assert_eq!(features[11], 500.0); // involuntary_ctx
+        assert_eq!(features[12], (1000.0 + 500.0) / 3600.0); // ctx/sec
+        assert_eq!(features[13], 3600.0); // uptime_sec
+        assert_eq!(features[14], 1.0); // uptime_hours
+        
+        // Проверяем логарифмические фичи (приблизительно)
+        assert!(features[15] > 0.0); // log CPU
+        assert!(features[16] > 0.0); // log memory
 
         // Проверяем булевые фичи (должны быть 1.0)
-        for feature in &features[8..16] {
-            assert_eq!(*feature, 1.0);
+        for i in 17..23 {
+            assert_eq!(features[i], 1.0);
         }
+
+        // Проверяем расширенные булевые фичи
+        assert_eq!(features[23], 0.0); // локальный TTY (has_tty но env_ssh=true)
+        assert_eq!(features[24], 1.0); // фокусированное GUI
+        assert_eq!(features[25], 1.0); // интерактивный процесс
     }
 
     #[test]
@@ -1205,16 +1543,20 @@ mod tests {
 
         let features = classifier.process_to_features(&process);
 
-        // Проверяем, что фичи извлечены правильно
-        assert_eq!(features.len(), 16);
+        // Проверяем, что фичи извлечены правильно (расширенный набор)
+        assert_eq!(features.len(), 26);
 
         // Проверяем числовые фичи (должны быть 0.0)
-        for feature in &features[0..8] {
+        for feature in &features[0..15] {
             assert_eq!(*feature, 0.0);
         }
 
+        // Проверяем логарифмические фичи (должны быть 0.0 для ln(0))
+        assert_eq!(features[15], 0.0); // log CPU
+        assert_eq!(features[16], 0.0); // log memory
+
         // Проверяем булевые фичи (должны быть 0.0)
-        for feature in &features[8..16] {
+        for feature in &features[17..26] {
             assert_eq!(*feature, 0.0);
         }
     }
@@ -1229,5 +1571,390 @@ mod tests {
         assert_eq!(default_config.model_path, "models/process_classifier.json");
         assert_eq!(default_config.confidence_threshold, 0.7);
         assert!(matches!(default_config.model_type, ModelType::Catboost));
+    }
+
+    #[test]
+    fn test_model_version_info_creation() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Создаем временный файл модели
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{{\"test_model\": true}}").unwrap();
+        let model_path = temp_file.path();
+
+        // Создаем информацию о версии
+        let version_info = ModelVersionInfo::new(model_path).unwrap();
+
+        // Проверяем, что информация создана правильно
+        assert!(!version_info.model_hash.is_empty());
+        assert!(version_info.model_hash.len() == 64); // SHA256 хэш
+        assert!(version_info.model_size > 0);
+        assert!(version_info.last_checked.elapsed().as_secs() < 1);
+    }
+
+    #[test]
+    fn test_model_version_info_change_detection() {
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Создаем временный файл модели
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let model_path = temp_file.path();
+
+        // Пишем начальное содержимое
+        writeln!(temp_file, "{{\"version\": 1}}").unwrap();
+        
+        // Создаем информацию о версии
+        let version_info = ModelVersionInfo::new(model_path).unwrap();
+        let original_hash = version_info.model_hash.clone();
+        let original_size = version_info.model_size;
+
+        // Проверяем, что изменения не обнаружены для того же файла
+        assert!(!version_info.has_changed(model_path).unwrap());
+
+        // Меняем содержимое файла
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .truncate(true)
+            .open(model_path)
+            .unwrap();
+        writeln!(file, "{{\"version\": 2, \"updated\": true}}").unwrap();
+        drop(file);
+
+        // Проверяем, что изменения обнаружены
+        assert!(version_info.has_changed(model_path).unwrap());
+
+        // Создаем новую информацию о версии
+        let new_version_info = ModelVersionInfo::new(model_path).unwrap();
+        assert_ne!(new_version_info.model_hash, original_hash);
+        assert_ne!(new_version_info.model_size, original_size);
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_model_versioning() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Создаем временный файл модели
+        let mut temp_file = NamedTempFile::new().unwrap();
+        writeln!(temp_file, "{{\"test_model\": true}}").unwrap();
+        let model_path = temp_file.path().to_str().unwrap().to_string();
+
+        let config = MLClassifierConfig {
+            enabled: true,
+            model_path: model_path.clone(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        // Создаем классификатор (используем заглушку, так как это не валидная CatBoost модель)
+        let classifier_result = CatBoostMLClassifier::new(config);
+        
+        // Должно быть ошибка загрузки модели, но мы можем протестировать методы версии
+        assert!(classifier_result.is_err());
+        
+        // Тестируем с отключенным классификатором
+        let config_disabled = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config_disabled).unwrap();
+        
+        // Проверяем, что версия не установлена для отключенного классификатора
+        assert!(classifier.model_hash().is_none());
+        assert!(classifier.model_size().is_none());
+        assert!(!classifier.has_model_changed(Path::new("test.json")).unwrap());
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_model_hash_methods() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        
+        // Проверяем методы доступа к информации о модели
+        assert!(classifier.model_hash().is_none());
+        assert!(classifier.model_size().is_none());
+        
+        // Проверяем, что метод has_model_changed работает
+        let result = classifier.has_model_changed(Path::new("nonexistent.json"));
+        // Должно быть Ok(false), так как нет информации о версии
+        assert!(result.is_ok());
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_fallback_mechanism() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let mut main_classifier = CatBoostMLClassifier::new(config.clone()).unwrap();
+        let mut fallback_classifier = StubMLClassifier::new();
+        
+        let mut process = create_test_process();
+        process.has_gui_window = true; // Это даст высокую уверенность в StubMLClassifier
+        
+        // Тестируем classify_with_fallback
+        let result = main_classifier.classify_with_fallback(&process, &mut fallback_classifier);
+        
+        // Должны получить результат от fallback классификатора
+        assert_eq!(result.process_type, Some("gui".to_string()));
+        assert!(result.confidence > 0.7);
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_reload_mechanism() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Создаем временный файл модели
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let model_path = temp_file.path();
+        
+        // Пишем начальное содержимое (невалидная модель, но это нормально для теста)
+        writeln!(temp_file, "{{\"version\": 1}}").unwrap();
+        let model_path_str = model_path.to_str().unwrap().to_string();
+
+        let config = MLClassifierConfig {
+            enabled: true,
+            model_path: model_path_str.clone(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        // Создаем классификатор (должно быть ошибка загрузки)
+        let mut classifier = CatBoostMLClassifier::new(config.clone()).unwrap_err();
+        
+        // Тестируем с отключенным классификатором
+        let config_disabled = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let mut classifier = CatBoostMLClassifier::new(config_disabled).unwrap();
+        
+        // Проверяем, что перезагрузка не выполняется для отключенного классификатора
+        let reload_result = classifier.reload_model_if_changed(&config_disabled);
+        assert!(reload_result.is_ok());
+        assert!(!reload_result.unwrap());
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_error_recovery() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let mut classifier = CatBoostMLClassifier::new(config).unwrap();
+        let mut fallback_classifier = StubMLClassifier::new();
+        
+        let process = create_test_process(); // Процесс без особых признаков
+        
+        // Тестируем classify_with_fallback с низкой уверенностью
+        let result = classifier.classify_with_fallback(&process, &mut fallback_classifier);
+        
+        // Должны получить результат от fallback классификатора
+        assert_eq!(result.process_type, Some("unknown".to_string()));
+        assert!(result.confidence < 0.5); // Низкая уверенность от fallback
+    }
+
+    #[test]
+    fn test_catboost_ml_classifier_model_reload_with_version() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+        use tempfile::NamedTempFile;
+        use std::io::Write;
+
+        // Создаем временный файл модели
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let model_path = temp_file.path();
+        
+        // Пишем начальное содержимое
+        writeln!(temp_file, "{{\"version\": 1}}").unwrap();
+        let model_path_str = model_path.to_str().unwrap().to_string();
+
+        // Создаем классификатор с отключенной моделью
+        let config_disabled = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let mut classifier = CatBoostMLClassifier::new(config_disabled).unwrap();
+        
+        // Проверяем, что перезагрузка работает для несуществующего файла
+        let config = MLClassifierConfig {
+            enabled: true,
+            model_path: "/nonexistent/model.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let reload_result = classifier.reload_model_if_changed(&config);
+        assert!(reload_result.is_ok());
+        assert!(!reload_result.unwrap()); // Не должно быть перезагрузки
+    }
+
+    #[test]
+    fn test_feature_cache_operations() {
+        // Проверяем начальную емкость кэша
+        let initial_capacity = CatBoostMLClassifier::feature_cache_capacity();
+        assert_eq!(initial_capacity, 1024);
+        
+        // Устанавливаем новую емкость
+        CatBoostMLClassifier::set_feature_cache_capacity(512);
+        let new_capacity = CatBoostMLClassifier::feature_cache_capacity();
+        assert_eq!(new_capacity, 512);
+        
+        // Очищаем кэш
+        CatBoostMLClassifier::clear_feature_cache();
+        
+        // Восстанавливаем исходную емкость
+        CatBoostMLClassifier::set_feature_cache_capacity(1024);
+    }
+
+    #[test]
+    fn test_feature_cache_performance() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        
+        // Создаем тестовый процесс
+        let mut process = create_test_process();
+        process.pid = 12345; // Уникальный PID для теста
+        process.has_gui_window = true;
+        process.cpu_share_10s = Some(0.5);
+        
+        // Первое извлечение фич (должно вычислить и кэшировать)
+        let start_time1 = Instant::now();
+        let features1 = classifier.process_to_features(&process);
+        let duration1 = start_time1.elapsed();
+        
+        // Второе извлечение фич (должно использовать кэш)
+        let start_time2 = Instant::now();
+        let features2 = classifier.process_to_features(&process);
+        let duration2 = start_time2.elapsed();
+        
+        // Проверяем, что результаты одинаковые
+        assert_eq!(features1, features2);
+        
+        // Второе извлечение должно быть быстрее (или равно) первому
+        assert!(duration2 <= duration1);
+        
+        // Проверяем, что фичи извлечены правильно
+        assert_eq!(features1.len(), 26);
+        assert!(features1[1] > 0.0); // cpu_share_10s
+    }
+
+    #[test]
+    fn test_feature_cache_different_processes() {
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        
+        // Создаем два разных процесса
+        let mut process1 = create_test_process();
+        process1.pid = 1000;
+        process1.has_gui_window = true;
+        
+        let mut process2 = create_test_process();
+        process2.pid = 2000;
+        process2.is_audio_client = true;
+        
+        // Извлекаем фичи для обоих процессов
+        let features1 = classifier.process_to_features(&process1);
+        let features2 = classifier.process_to_features(&process2);
+        
+        // Фичи должны быть разными
+        assert_ne!(features1, features2);
+        
+        // Проверяем, что фичи извлечены правильно
+        assert_eq!(features1.len(), 26);
+        assert_eq!(features2.len(), 26);
+        
+        // GUI процесс должен иметь соответствующие фичи
+        assert_eq!(features1[18], 1.0); // has_gui_window
+        
+        // Аудио процесс должен иметь соответствующие фичи
+        assert_eq!(features2[22], 1.0); // is_audio_client
+    }
+
+    #[test]
+    fn test_feature_cache_cache_hit_miss() {
+        // Очищаем кэш перед тестом
+        CatBoostMLClassifier::clear_feature_cache();
+        
+        use crate::config::config_struct::{MLClassifierConfig, ModelType};
+
+        let config = MLClassifierConfig {
+            enabled: false,
+            model_path: "test.json".to_string(),
+            confidence_threshold: 0.7,
+            model_type: ModelType::Catboost,
+        };
+
+        let classifier = CatBoostMLClassifier::new(config).unwrap();
+        
+        let mut process = create_test_process();
+        process.pid = 99999; // Уникальный PID
+        process.cpu_share_1s = Some(0.25);
+        
+        // Первое извлечение - cache miss
+        let features1 = classifier.process_to_features(&process);
+        
+        // Второе извлечение - cache hit
+        let features2 = classifier.process_to_features(&process);
+        
+        // Результаты должны быть одинаковыми
+        assert_eq!(features1, features2);
+        
+        // Очищаем кэш
+        CatBoostMLClassifier::clear_feature_cache();
+        
+        // Третье извлечение - cache miss снова
+        let features3 = classifier.process_to_features(&process);
+        
+        // Результаты должны быть одинаковыми
+        assert_eq!(features1, features3);
     }
 }

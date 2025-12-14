@@ -1238,30 +1238,65 @@ pub fn classify_process(
             process.pid, ml_result.process_type, ml_result.confidence, ml_result.tags
         );
 
-        // Объединяем результаты паттерн-классификации и ML-классификации
+        // Улучшенная логика интеграции ML и паттерн-классификации
         if let Some(ml_type) = ml_result.process_type {
-            // Если ML уверен в предсказании, используем его тип
-            if ml_result.confidence > 0.7 {
+            // Определяем стратегию интеграции на основе уверенности и типа
+            let ml_confidence = ml_result.confidence;
+            
+            // Стратегия 1: Высокая уверенность ML (> 0.8) - всегда используем ML
+            if ml_confidence > 0.8 {
                 if let Some(ref pattern_type) = process_type {
                     if pattern_type != &ml_type {
                         info!(
-                            "ML-классификатор переопределил тип процесса PID {}: {} -> {}",
-                            process.pid, pattern_type, ml_type
+                            "ML-классификатор с высокой уверенностью ({:.2}) переопределил тип процесса PID {}: {} -> {}",
+                            ml_confidence, process.pid, pattern_type, ml_type
                         );
                     }
                 }
                 process_type = Some(ml_type);
-            } else {
-                debug!(
-                    "ML-классификатор предложил тип {} с низкой уверенностью ({:.2})",
-                    ml_type, ml_result.confidence
-                );
+            }
+            // Стратегия 2: Средняя уверенность ML (0.5-0.8) - используем ML только если нет паттернов
+            else if ml_confidence > 0.5 {
+                if matches.is_empty() {
+                    debug!(
+                        "ML-классификатор со средней уверенностью ({:.2}) использовался (нет паттернов): {}",
+                        ml_confidence, ml_type
+                    );
+                    process_type = Some(ml_type);
+                } else {
+                    debug!(
+                        "ML-классификатор со средней уверенностью ({:.2}) проигнорирован (есть паттерны): {}",
+                        ml_confidence, ml_type
+                    );
+                }
+            }
+            // Стратегия 3: Низкая уверенность ML (< 0.5) - используем только если нет паттернов
+            else {
+                if matches.is_empty() {
+                    debug!(
+                        "ML-классификатор с низкой уверенностью ({:.2}) использовался (нет паттернов): {}",
+                        ml_confidence, ml_type
+                    );
+                    process_type = Some(ml_type);
+                } else {
+                    debug!(
+                        "ML-классификатор с низкой уверенностью ({:.2}) проигнорирован (есть паттерны): {}",
+                        ml_confidence, ml_type
+                    );
+                }
             }
         }
 
-        // Добавляем теги из ML-классификации
+        // Улучшенное объединение тегов с учетом приоритетов
         for tag in ml_result.tags {
-            all_tags.insert(tag);
+            // Некоторые теги от ML имеют более высокий приоритет
+            if tag == "realtime" || tag == "interactive" || tag == "focused" {
+                all_tags.insert(tag);
+            }
+            // Остальные теги добавляем только если их нет
+            else if !all_tags.contains(&tag) {
+                all_tags.insert(tag);
+            }
         }
     }
 

@@ -80,6 +80,9 @@ fn test_config_includes_cache_intervals() {
             log_max_rotated_files: 5,
             log_compression_enabled: true,
             log_rotation_interval_sec: 0,
+            log_max_age_sec: 0,
+            log_max_total_size_bytes: 0,
+            log_cleanup_interval_sec: 3600,
         },
         paths: Paths {
                 log_file_path: "smoothtask.log".to_string(),
@@ -103,6 +106,7 @@ fn test_config_includes_cache_intervals() {
             model_path: "models/ranker.onnx".to_string(),
             model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
+        custom_metrics: None,
         ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
         pattern_auto_update:
             smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
@@ -160,6 +164,7 @@ fn test_system_metrics_caching_logic() {
                 pressure: smoothtask_core::metrics::system::PressureMetrics::default(),
                 temperature: smoothtask_core::metrics::system::TemperatureMetrics::default(),
                 power: smoothtask_core::metrics::system::PowerMetrics::default(),
+                hardware: smoothtask_core::metrics::system::HardwareMetrics::default(),
                 network: NetworkMetrics::default(),
                 disk: DiskMetrics::default(),
                 gpu: None,  // GPU metrics are optional
@@ -440,6 +445,9 @@ fn test_cache_configuration_integration() {
             log_max_rotated_files: 5,
             log_compression_enabled: true,
             log_rotation_interval_sec: 0,
+            log_max_age_sec: 0,
+            log_max_total_size_bytes: 0,
+            log_cleanup_interval_sec: 3600,
         },
         paths: Paths {
                 log_file_path: "smoothtask.log".to_string(),
@@ -464,6 +472,7 @@ fn test_cache_configuration_integration() {
             model_path: "models/ranker.onnx".to_string(),
             model_type: smoothtask_core::config::config_struct::ModelType::Onnx,
         },
+        custom_metrics: None,
         ml_classifier: smoothtask_core::config::config_struct::MLClassifierConfig::default(),
         pattern_auto_update:
             smoothtask_core::config::config_struct::PatternAutoUpdateConfig::default(),
