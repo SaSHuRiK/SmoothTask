@@ -2017,6 +2017,7 @@ impl Default for Config {
             ml_classifier: MLClassifierConfig::default(),
             pattern_auto_update: PatternAutoUpdateConfig::default(),
             ebpf: EbpfConfig::default(),
+            custom_metrics: default_custom_metrics(),
         }
     }
 }

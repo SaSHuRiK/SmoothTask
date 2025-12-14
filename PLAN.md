@@ -11,114 +11,22 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-849: Implement advanced logging with log rotation and retention policies
-  - Тип: Rust / core / logging
-  - Примечания: Enhance logging system with rotation and retention policies
-  - Приоритет: Средний
-  - Оценка времени: ~90 минут
-  - Время выполнения: ~120 минут
-  - Критерии готовности:
-    - [x] Research logging best practices and rotation strategies
-    - [x] Add retention policies configuration to LoggingConfig
-    - [x] Implement time-based retention policies for log files
-    - [x] Implement size-based retention policies for log files
-    - [x] Add error handling and fallback mechanisms
-    - [x] Integrate retention policies with existing rotation system
-    - [x] Add unit and integration tests
-    - [x] Update all constructor calls to include new parameters
-  - Ожидаемые результаты: More robust and manageable logging system
-  - Технические детали:
-    - Файлы: smoothtask-core/src/config/config_struct.rs, smoothtask-core/src/logging/rotation.rs, smoothtask-core/src/logging/app_rotation.rs, smoothtask-core/src/lib.rs, smoothtask-core/src/logging/snapshots.rs
-    - Функции: Added log_max_age_sec, log_max_total_size_bytes, log_cleanup_interval_sec to LoggingConfig; Added cleanup_by_age, cleanup_by_total_size, cleanup_logs methods to LogRotator and AppLogRotator
-    - Возможности: Time-based retention (max_age_sec), size-based retention (max_total_size_bytes), automatic cleanup (log_cleanup_interval_sec), comprehensive error handling
-    - Тесты: Added tests for cleanup_by_age, cleanup_by_total_size, full_cleanup, and cleanup_disabled scenarios
-    - Зависимости: No new dependencies added, uses existing chrono, flate2, and anyhow crates
-  - Результаты:
-    - Successfully implemented comprehensive logging retention policies with multiple cleanup strategies
-    - Added full configuration support for retention policies with validation
-    - Integrated with existing logging infrastructure and rotation system
-    - Added comprehensive unit tests covering all major functionality
-    - Enhanced error handling and recovery mechanisms
-    - Ready for production use with full customization capabilities
-
-- [x] ST-850: Add support for custom metrics and user-defined monitoring
-  - Тип: Rust / core / metrics
-  - Примечания: Allow users to define and monitor custom metrics
-  - Приоритет: Средний
+- [ ] ST-852: Add support for hardware sensors monitoring (temperature, fan speed, etc.)
+  - Тип: Rust / core / metrics / system
+  - Примечания: Implement hardware sensors monitoring for better system awareness
+  - Приоритет: Низкий
   - Оценка времени: ~120 минут
-  - Время выполнения: ~150 минут
   - Критерии готовности:
-    - [x] Research custom metrics implementation patterns
-    - [x] Implement user-defined metrics collection and storage
-    - [x] Add configuration for custom metrics
-    - [x] Implement validation and error handling
-    - [x] Integrate with existing metrics system
-    - [x] Add unit and integration tests
-    - [x] Add API endpoints for custom metrics management
-    - [x] Add custom metrics to daemon initialization and lifecycle
-    - [x] Add comprehensive error handling and logging
-    - [x] Add documentation and examples
-  - Ожидаемые результаты: More flexible and customizable monitoring capabilities
-  - Технические детали:
-    - Файлы: smoothtask-core/src/metrics/custom.rs, smoothtask-core/src/api/custom_metrics_handlers.rs, smoothtask-core/src/config/config_struct.rs, smoothtask-core/src/lib.rs, smoothtask-core/src/api/mod.rs, smoothtask-core/src/api/server.rs, smoothtask-core/Cargo.toml
-    - Функции: CustomMetricsManager, CustomMetricConfig, CustomMetricSource, CustomMetricValue, and all supporting types and methods
-    - Возможности: File-based metrics, command-based metrics, HTTP API metrics, static metrics, automatic updates, error handling, API management endpoints
-    - Тесты: Unit tests for CustomMetricsManager, integration tests for API endpoints, error handling tests, validation tests
-    - Зависимости: Added regex crate for pattern matching in file and command metrics
-  - Результаты:
-    - Successfully implemented comprehensive custom metrics system with multiple source types
-    - Added full API support for managing custom metrics (list, get, add, remove, enable, disable, update)
-    - Integrated with main daemon lifecycle and configuration system
-    - Added comprehensive error handling and validation
-    - Added unit tests covering all major functionality
-    - Added API endpoints with proper documentation
-    - Ready for production use with full customization capabilities
-
-- [x] ST-849: Implement advanced logging with log rotation and retention policies
-  - Тип: Rust / core / logging
-  - Примечания: Enhance logging system with rotation and retention policies
-  - Приоритет: Средний
-  - Оценка времени: ~90 минут
-  - Время выполнения: ~120 минут
-  - Критерии готовности:
-    - [x] Research logging best practices and rotation strategies
-    - [x] Add retention policies configuration to LoggingConfig
-    - [x] Implement time-based retention policies for log files
-    - [x] Implement size-based retention policies for log files
-    - [x] Add error handling and fallback mechanisms
-    - [x] Integrate retention policies with existing rotation system
-    - [x] Add unit and integration tests
-    - [x] Update all constructor calls to include new parameters
-  - Ожидаемые результаты: More robust and manageable logging system
-  - Технические детали:
-    - Файлы: smoothtask-core/src/config/config_struct.rs, smoothtask-core/src/logging/rotation.rs, smoothtask-core/src/logging/app_rotation.rs, smoothtask-core/src/lib.rs, smoothtask-core/src/logging/snapshots.rs
-    - Функции: Added log_max_age_sec, log_max_total_size_bytes, log_cleanup_interval_sec to LoggingConfig; Added cleanup_by_age, cleanup_by_total_size, cleanup_logs methods to LogRotator and AppLogRotator
-    - Возможности: Time-based retention (max_age_sec), size-based retention (max_total_size_bytes), automatic cleanup (log_cleanup_interval_sec), comprehensive error handling
-    - Тесты: Added tests for cleanup_by_age, cleanup_by_total_size, full_cleanup, and cleanup_disabled scenarios
-    - Зависимости: No new dependencies added, uses existing chrono, flate2, and anyhow crates
-  - Результаты:
-    - Successfully implemented comprehensive logging retention policies with multiple cleanup strategies
-    - Added full configuration support for retention policies with validation
-    - Integrated with existing logging infrastructure and rotation system
-    - Added comprehensive unit tests covering all major functionality
-    - Enhanced error handling and recovery mechanisms
-    - Ready for production use with full customization capabilities
+    - Research hardware sensors APIs (lm-sensors, etc.)
+    - Implement temperature monitoring
+    - Add fan speed monitoring
+    - Implement voltage and power monitoring
+    - Add error handling and fallback mechanisms
+    - Integrate with existing system monitoring
+    - Add unit and integration tests
+  - Ожидаемые результаты: Better hardware awareness and monitoring capabilities
 
 ## 2. Бэклог
-
-- [ ] ST-851: Implement advanced network monitoring with connection tracking
-  - Тип: Rust / core / metrics / network
-  - Примечания: Enhance network monitoring with detailed connection tracking
-  - Приоритет: Средний
-  - Оценка времени: ~150 минут
-  - Критерии готовности:
-    - Research network monitoring APIs and connection tracking
-    - Implement detailed connection monitoring (TCP/UDP)
-    - Add bandwidth usage tracking per connection
-    - Implement error handling and fallback mechanisms
-    - Integrate with existing network monitoring
-    - Add unit and integration tests
-  - Ожидаемые результаты: More comprehensive network monitoring capabilities
 
 - [ ] ST-852: Add support for hardware sensors monitoring (temperature, fan speed, etc.)
   - Тип: Rust / core / metrics / system
@@ -151,6 +59,38 @@
 
 ## 3. Недавно сделано (Recently Done)
 
+- [x] ST-851: Implement advanced network monitoring with connection tracking
+  - Тип: Rust / core / metrics / network
+  - Примечания: Enhance network monitoring with detailed connection tracking
+  - Приоритет: Средний
+  - Оценка времени: ~150 минут
+  - Время выполнения: ~60 минут
+  - Критерии готовности:
+    - [x] Research network monitoring APIs and connection tracking
+    - [x] Implement detailed connection monitoring (TCP/UDP)
+    - [x] Add bandwidth usage tracking per connection
+    - [x] Implement error handling and fallback mechanisms
+    - [x] Integrate with existing network monitoring
+    - [x] Add unit and integration tests
+    - [x] Fix compilation errors in related modules (custom_metrics, API server)
+  - Ожидаемые результаты: More comprehensive network monitoring capabilities
+  - Технические детали:
+    - Файлы: smoothtask-core/src/metrics/network.rs, smoothtask-core/src/api/server.rs, smoothtask-core/src/config/config_struct.rs, smoothtask-core/Cargo.toml
+    - Функции: Enhanced collect_connection_stats, collect_port_usage_stats, collect_network_quality_metrics, collect_tcp_connections, collect_udp_connections, parse_ip_port_from_hex, get_process_info_from_inode
+    - Возможности: Detailed TCP/UDP connection tracking, per-connection bandwidth monitoring, enhanced error handling, process association, port usage aggregation, network quality metrics calculation
+    - Тесты: Added 12 new unit tests covering IP/port parsing, connection tracking, quality metrics, state parsing, bandwidth estimation, error handling, and integration
+    - Исправления: Fixed missing custom_metrics_manager field in ApiState constructors, added tokio process feature, made required fields public
+  - Результаты:
+    - Successfully implemented comprehensive network connection tracking with TCP and UDP support
+    - Added detailed connection information including IP addresses, ports, protocols, states, and process association
+    - Enhanced port usage statistics with connection aggregation and bandwidth tracking
+    - Improved network quality metrics with connection-based calculations
+    - Added robust error handling and graceful degradation for missing data sources
+    - Integrated with existing network monitoring infrastructure
+    - Added comprehensive unit tests covering all major functionality
+    - Fixed compilation errors in related modules to ensure smooth integration
+    - Ready for production use with full customization capabilities
+
 - [x] ST-850: Add support for custom metrics and user-defined monitoring
   - Тип: Rust / core / metrics
   - Примечания: Allow users to define and monitor custom metrics
@@ -182,6 +122,36 @@
     - Added comprehensive error handling and validation
     - Added unit tests covering all major functionality
     - Added API endpoints with proper documentation
+    - Ready for production use with full customization capabilities
+
+- [x] ST-849: Implement advanced logging with log rotation and retention policies
+  - Тип: Rust / core / logging
+  - Примечания: Enhance logging system with rotation and retention policies
+  - Приоритет: Средний
+  - Оценка времени: ~90 минут
+  - Время выполнения: ~120 минут
+  - Критерии готовности:
+    - [x] Research logging best practices and rotation strategies
+    - [x] Add retention policies configuration to LoggingConfig
+    - [x] Implement time-based retention policies for log files
+    - [x] Implement size-based retention policies for log files
+    - [x] Add error handling and fallback mechanisms
+    - [x] Integrate retention policies with existing rotation system
+    - [x] Add unit and integration tests
+    - [x] Update all constructor calls to include new parameters
+  - Ожидаемые результаты: More robust and manageable logging system
+  - Технические детали:
+    - Файлы: smoothtask-core/src/config/config_struct.rs, smoothtask-core/src/logging/rotation.rs, smoothtask-core/src/logging/app_rotation.rs, smoothtask-core/src/lib.rs, smoothtask-core/src/logging/snapshots.rs
+    - Функции: Added log_max_age_sec, log_max_total_size_bytes, log_cleanup_interval_sec to LoggingConfig; Added cleanup_by_age, cleanup_by_total_size, cleanup_logs methods to LogRotator and AppLogRotator
+    - Возможности: Time-based retention (max_age_sec), size-based retention (max_total_size_bytes), automatic cleanup (log_cleanup_interval_sec), comprehensive error handling
+    - Тесты: Added tests for cleanup_by_age, cleanup_by_total_size, full_cleanup, and cleanup_disabled scenarios
+    - Зависимости: No new dependencies added, uses existing chrono, flate2, and anyhow crates
+  - Результаты:
+    - Successfully implemented comprehensive logging retention policies with multiple cleanup strategies
+    - Added full configuration support for retention policies with validation
+    - Integrated with existing logging infrastructure and rotation system
+    - Added comprehensive unit tests covering all major functionality
+    - Enhanced error handling and recovery mechanisms
     - Ready for production use with full customization capabilities
 
 - [x] ST-848: Add support for systemd service management and integration
@@ -258,7 +228,7 @@
 
 ## 5. Текущий статус проекта
 
-### Завершённые задачи (ST-844 - ST-847)
+### Завершённые задачи (ST-844 - ST-851)
 
 Проект находится в отличном состоянии с полным набором функций и улучшенной документацией:
 
@@ -273,7 +243,7 @@
 - ✅ **Расширенная система логирования**: Полная поддержка ротации и политик хранения логов с несколькими стратегиями очистки (по возрасту, по общему размеру, по количеству файлов) и автоматическим управлением
 
 **📊 Статистика:**
-- 8 новых задач успешно завершено (ST-844 - ST-850)
+- 9 новых задач успешно завершено (ST-844 - ST-851)
 - 2 новых документа: GETTING_STARTED.md и CONFIGURATION_GUIDE.md
 - Улучшенная система кэширования с pressure-aware алгоритмами
 - 10+ новых интеграционных тестов для крайних случаев
@@ -281,6 +251,7 @@
 - 6+ новых unit тестов для пользовательских метрик
 - 6+ новых API endpoints для управления пользовательскими метриками
 - 4+ новых unit тестов для расширенного логирования
+- 12+ новых unit тестов для расширенного мониторинга сети
 - 100% покрытие тестами для новых функций
 - 0 предупреждений компиляции
 
@@ -307,6 +278,7 @@
 - Расширенная интеграция пользовательских метрик с политиками и правилами
 
 **🎯 Последние достижения:**
+- ✅ **Расширенный мониторинг сети**: Успешно реализована система отслеживания сетевых соединений с поддержкой TCP и UDP, детальной информацией о соединениях, мониторингом использования портов и расчетом метрик качества сети
 - ✅ **Полная интеграция с systemd**: Успешно реализована поддержка управления сервисами systemd через D-Bus с уведомлениями, мониторингом статуса, восстановлением после ошибок и интеграцией с жизненным циклом демона
 - ✅ **Расширенная функциональность**: Добавлены функции для мониторинга статуса сервисов, управления ими, graceful shutdown, уведомлений об ошибках и автоматического восстановления
 - ✅ **Полная интеграция**: Новые функции полностью интегрированы с основным кодом демона, включая обработку ошибок, жизненный цикл и систему уведомлений

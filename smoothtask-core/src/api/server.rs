@@ -23,6 +23,7 @@ use tracing::{error, info, trace};
 // Health module imports
 use crate::health::{create_diagnostic_analyzer, HealthIssueSeverity, HealthMonitorTrait};
 use crate::health::diagnostics::DiagnosticAnalyzer;
+use crate::api::custom_metrics_handlers::{custom_metrics_handler, custom_metric_by_id_handler, custom_metric_update_handler, custom_metric_add_handler, custom_metric_remove_handler, custom_metric_enable_handler, custom_metric_disable_handler};
 
 /// Состояние API сервера.
 #[derive(Clone)]
@@ -55,9 +56,9 @@ pub struct ApiState {
     /// Хранилище логов для предоставления через API (опционально)
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
     /// Менеджер пользовательских метрик для предоставления через API (опционально)
-    custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
+    pub custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
     /// Метрики производительности API
-    performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,
+    pub performance_metrics: Arc<RwLock<ApiPerformanceMetrics>>,
     /// Коллектор метрик для сбора данных о сетевых соединениях (опционально)
     metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
     /// Последние eBPF метрики (опционально)
@@ -297,9 +298,9 @@ pub struct ApiStateBuilder {
     health_monitor: Option<Arc<crate::health::HealthMonitorImpl>>,
     cache: Option<Arc<RwLock<ApiCache>>>,
     log_storage: Option<Arc<crate::logging::log_storage::SharedLogStorage>>,
-    custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
-    performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
-    metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
+    pub custom_metrics_manager: Option<Arc<crate::metrics::custom::CustomMetricsManager>>,
+    pub performance_metrics: Option<Arc<RwLock<ApiPerformanceMetrics>>>,
+    pub metrics_collector: Option<Arc<crate::metrics::ebpf::EbpfMetricsCollector>>,
     metrics: Option<Arc<RwLock<crate::metrics::system::SystemMetrics>>>,
 }
 
@@ -737,8 +738,10 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -757,8 +760,10 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -779,8 +784,10 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -804,8 +811,10 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -830,8 +839,10 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -859,8 +870,10 @@ impl ApiState {
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -7204,8 +7217,10 @@ max_candidates: 200
             config_path: None,
             pattern_database: None,
             notification_manager: None,
-            health_monitor: None,cache: None,
+            health_monitor: None,
+            cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
@@ -7249,6 +7264,7 @@ max_candidates: 200
             health_monitor: None,
             cache: None,
             log_storage: None,
+            custom_metrics_manager: None,
             performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
             metrics_collector: None,
             metrics: None,
