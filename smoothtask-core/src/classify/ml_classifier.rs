@@ -408,7 +408,7 @@ struct FeatureCache {
 
 /// Статистика кэша
 #[derive(Debug, Clone, Default)]
-struct CacheStats {
+pub struct CacheStats {
     /// Общее количество запросов к кэшу
     total_requests: u64,
     /// Количество хитов кэша
@@ -442,11 +442,13 @@ impl CacheStats {
     }
     
     /// Зарегистрировать удаление элемента
+    #[allow(dead_code)]
     fn record_eviction(&mut self) {
         self.total_evictions += 1;
     }
     
     /// Зарегистрировать сэкономленное время
+    #[allow(dead_code)]
     fn record_time_saved(&mut self, time_saved_us: u128) {
         self.total_time_saved_us += time_saved_us;
     }
@@ -555,7 +557,7 @@ impl FeatureCache {
             // Увеличиваем емкость кэша при низком давлении памяти
             let new_capacity = (current_capacity as f32 * 1.3) as usize;
             if new_capacity > current_capacity {
-                let mut stats = self.stats.lock().unwrap();
+                let _stats = self.stats.lock().unwrap();
                 *cache = lru::LruCache::new(std::num::NonZeroUsize::new(new_capacity).unwrap());
                 info!("Увеличена емкость кэша до {} из-за низкого давления памяти ({:.1}%)", new_capacity, memory_pressure * 100.0);
             }

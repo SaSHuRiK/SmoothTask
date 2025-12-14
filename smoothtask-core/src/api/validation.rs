@@ -655,7 +655,6 @@ pub fn create_rate_limit_error_response(
 ///
 /// * `error` - Ошибка anyhow
 /// * `context` - Контекст ошибки
-/// * `status_code` - Код статуса HTTP
 /// * `perf_metrics` - Метрики производительности для обновления (опционально)
 ///
 /// # Возвращает
@@ -664,7 +663,7 @@ pub fn create_rate_limit_error_response(
 pub fn handle_api_error_with_metrics(
     error: anyhow::Error,
     context: &str,
-    status_code: StatusCode,
+    _status_code: StatusCode,
     perf_metrics: Option<&mut ApiPerformanceMetrics>,
 ) -> Result<Json<Value>, StatusCode> {
     error!("API error in {}: {}", context, error);
