@@ -173,6 +173,18 @@ pub struct ContainerMetrics {
     pub cpu_quota: Option<i64>,
     pub cpu_period: Option<u64>,
     pub network_interfaces: Vec<String>,
+    // Additional container metrics
+    pub network_rx_bytes: Option<u64>,
+    pub network_tx_bytes: Option<u64>,
+    pub network_rx_packets: Option<u64>,
+    pub network_tx_packets: Option<u64>,
+    pub disk_read_bytes: Option<u64>,
+    pub disk_write_bytes: Option<u64>,
+    pub disk_read_ops: Option<u64>,
+    pub disk_write_ops: Option<u64>,
+    pub cpu_usage_ns: Option<u64>,
+    pub cpu_throttled_time_ns: Option<u64>,
+    pub cpu_throttled_periods: Option<u64>,
 }
 
 impl Default for ContainerMetrics {
@@ -186,6 +198,18 @@ impl Default for ContainerMetrics {
             cpu_quota: None,
             cpu_period: None,
             network_interfaces: Vec::new(),
+            // Additional metrics defaults
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            disk_read_bytes: None,
+            disk_write_bytes: None,
+            disk_read_ops: None,
+            disk_write_ops: None,
+            cpu_usage_ns: None,
+            cpu_throttled_time_ns: None,
+            cpu_throttled_periods: None,
         }
     }
 }
@@ -362,7 +386,182 @@ pub fn collect_container_metrics() -> ContainerMetrics {
         Err(e) => debug!("Failed to read network interfaces: {}", e),
     }
 
+    // Collect network metrics for container interfaces
+    let network_interfaces = metrics.network_interfaces.clone();
+    collect_container_network_metrics(&network_interfaces, &mut metrics);
+    
+    // Collect disk metrics for container
+    collect_container_disk_metrics(&mut metrics);
+    
+    // Collect additional CPU metrics for container
+    collect_container_cpu_metrics(&container_info, &mut metrics);
+
     metrics
+}
+
+/// Collect network metrics for container interfaces
+fn collect_container_network_metrics(interfaces: &[String], metrics: &mut ContainerMetrics) {
+    let mut total_rx_bytes = 0u64;
+    let mut total_tx_bytes = 0u64;
+    let mut total_rx_packets = 0u64;
+    let mut total_tx_packets = 0u64;
+    
+    for interface in interfaces {
+        let stats_path = format!("/sys/class/net/{}/statistics", interface);
+        
+        // Read network statistics
+        let rx_bytes_path = format!("{}/rx_bytes", stats_path);
+        let tx_bytes_path = format!("{}/tx_bytes", stats_path);
+        let rx_packets_path = format!("{}/rx_packets", stats_path);
+        let tx_packets_path = format!("{}/tx_packets", stats_path);
+        
+        // Accumulate network metrics
+        if let Ok(rx_bytes_content) = fs::read_to_string(&rx_bytes_path) {
+            if let Ok(rx_bytes) = rx_bytes_content.trim().parse::<u64>() {
+                total_rx_bytes = total_rx_bytes.saturating_add(rx_bytes);
+            }
+        }
+        
+        if let Ok(tx_bytes_content) = fs::read_to_string(&tx_bytes_path) {
+            if let Ok(tx_bytes) = tx_bytes_content.trim().parse::<u64>() {
+                total_tx_bytes = total_tx_bytes.saturating_add(tx_bytes);
+            }
+        }
+        
+        if let Ok(rx_packets_content) = fs::read_to_string(&rx_packets_path) {
+            if let Ok(rx_packets) = rx_packets_content.trim().parse::<u64>() {
+                total_rx_packets = total_rx_packets.saturating_add(rx_packets);
+            }
+        }
+        
+        if let Ok(tx_packets_content) = fs::read_to_string(&tx_packets_path) {
+            if let Ok(tx_packets) = tx_packets_content.trim().parse::<u64>() {
+                total_tx_packets = total_tx_packets.saturating_add(tx_packets);
+            }
+        }
+    }
+    
+    metrics.network_rx_bytes = Some(total_rx_bytes);
+    metrics.network_tx_bytes = Some(total_tx_bytes);
+    metrics.network_rx_packets = Some(total_rx_packets);
+    metrics.network_tx_packets = Some(total_tx_packets);
+}
+
+/// Collect disk metrics for container
+fn collect_container_disk_metrics(metrics: &mut ContainerMetrics) {
+    // Read disk statistics from /proc/diskstats
+    if let Ok(diskstats) = fs::read_to_string("/proc/diskstats") {
+        let mut total_read_bytes = 0u64;
+        let mut total_write_bytes = 0u64;
+        let mut total_read_ops = 0u64;
+        let mut total_write_ops = 0u64;
+        
+        for line in diskstats.lines() {
+            // Parse diskstats line: major minor device read_ops read_sectors write_ops write_sectors ...
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 10 {
+                // Skip loop devices and other virtual devices
+                if !parts[2].starts_with("loop") && !parts[2].starts_with("ram") && !parts[2].starts_with("sr") {
+                    if let Ok(read_sectors) = parts[5].parse::<u64>() {
+                        total_read_bytes = total_read_bytes.saturating_add(read_sectors * 512);
+                    }
+                    if let Ok(write_sectors) = parts[9].parse::<u64>() {
+                        total_write_bytes = total_write_bytes.saturating_add(write_sectors * 512);
+                    }
+                    if let Ok(read_ops) = parts[3].parse::<u64>() {
+                        total_read_ops = total_read_ops.saturating_add(read_ops);
+                    }
+                    if let Ok(write_ops) = parts[7].parse::<u64>() {
+                        total_write_ops = total_write_ops.saturating_add(write_ops);
+                    }
+                }
+            }
+        }
+        
+        metrics.disk_read_bytes = Some(total_read_bytes);
+        metrics.disk_write_bytes = Some(total_write_bytes);
+        metrics.disk_read_ops = Some(total_read_ops);
+        metrics.disk_write_ops = Some(total_write_ops);
+    }
+}
+
+/// Collect additional CPU metrics for container
+fn collect_container_cpu_metrics(container_info: &ContainerInfo, metrics: &mut ContainerMetrics) {
+    if let Some(cgroup_path) = &container_info.cgroup_path {
+        let cgroup_v2_available = is_cgroup_v2_available();
+        
+        if cgroup_v2_available {
+            // cgroup v2 CPU metrics
+            let cpu_stat_path = format!("/sys/fs/cgroup{}/cpu.stat", cgroup_path);
+            
+            if let Ok(cpu_stat) = fs::read_to_string(&cpu_stat_path) {
+                for line in cpu_stat.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        match parts[0] {
+                            "usage_usec" => {
+                                if let Ok(usage_usec) = parts[1].parse::<u64>() {
+                                    metrics.cpu_usage_ns = Some(usage_usec * 1000); // Convert to nanoseconds
+                                }
+                            }
+                            "throttled_usec" => {
+                                if let Ok(throttled_usec) = parts[1].parse::<u64>() {
+                                    metrics.cpu_throttled_time_ns = Some(throttled_usec * 1000);
+                                }
+                            }
+                            "nr_throttled" => {
+                                if let Ok(nr_throttled) = parts[1].parse::<u64>() {
+                                    metrics.cpu_throttled_periods = Some(nr_throttled);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        } else {
+            // cgroup v1 CPU metrics
+            let cpuacct_stat_path = format!("/sys/fs/cgroup/cpuacct{}/cpuacct.stat", cgroup_path);
+            let cpu_stat_path = format!("/sys/fs/cgroup/cpu{}/cpu.stat", cgroup_path);
+            
+            // Read CPU usage from cpuacct.stat
+            if let Ok(cpuacct_stat) = fs::read_to_string(&cpuacct_stat_path) {
+                for line in cpuacct_stat.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 && parts[0] == "user" {
+                        if let Ok(user_usage) = parts[1].parse::<u64>() {
+                            // This is in USER_HZ units, typically 100ths of a second
+                            // Convert to nanoseconds: multiply by 10,000,000
+                            metrics.cpu_usage_ns = Some(user_usage * 10_000_000);
+                        }
+                    }
+                }
+            }
+            
+            // Read CPU throttling from cpu.stat
+            if let Ok(cpu_stat) = fs::read_to_string(&cpu_stat_path) {
+                for line in cpu_stat.lines() {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        match parts[0] {
+                            "nr_throttled" => {
+                                if let Ok(nr_throttled) = parts[1].parse::<u64>() {
+                                    metrics.cpu_throttled_periods = Some(nr_throttled);
+                                }
+                            }
+                            "throttled_time" => {
+                                if let Ok(throttled_time) = parts[1].parse::<u64>() {
+                                    // This is in nanoseconds already
+                                    metrics.cpu_throttled_time_ns = Some(throttled_time);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Get container-specific environment variables for debugging and monitoring
@@ -429,6 +628,41 @@ pub fn adapt_for_container() -> bool {
     }
     if !metrics.network_interfaces.is_empty() {
         info!("Container network interfaces: {:?}", metrics.network_interfaces);
+    }
+    
+    // Log additional container metrics
+    if metrics.network_rx_bytes.is_some() {
+        info!("Container network RX bytes: {}", metrics.network_rx_bytes.unwrap());
+    }
+    if metrics.network_tx_bytes.is_some() {
+        info!("Container network TX bytes: {}", metrics.network_tx_bytes.unwrap());
+    }
+    if metrics.network_rx_packets.is_some() {
+        info!("Container network RX packets: {}", metrics.network_rx_packets.unwrap());
+    }
+    if metrics.network_tx_packets.is_some() {
+        info!("Container network TX packets: {}", metrics.network_tx_packets.unwrap());
+    }
+    if metrics.disk_read_bytes.is_some() {
+        info!("Container disk read bytes: {}", metrics.disk_read_bytes.unwrap());
+    }
+    if metrics.disk_write_bytes.is_some() {
+        info!("Container disk write bytes: {}", metrics.disk_write_bytes.unwrap());
+    }
+    if metrics.disk_read_ops.is_some() {
+        info!("Container disk read operations: {}", metrics.disk_read_ops.unwrap());
+    }
+    if metrics.disk_write_ops.is_some() {
+        info!("Container disk write operations: {}", metrics.disk_write_ops.unwrap());
+    }
+    if metrics.cpu_usage_ns.is_some() {
+        info!("Container CPU usage: {} ns", metrics.cpu_usage_ns.unwrap());
+    }
+    if metrics.cpu_throttled_time_ns.is_some() {
+        info!("Container CPU throttled time: {} ns", metrics.cpu_throttled_time_ns.unwrap());
+    }
+    if metrics.cpu_throttled_periods.is_some() {
+        info!("Container CPU throttled periods: {}", metrics.cpu_throttled_periods.unwrap());
     }
 
     // Log container environment variables for debugging
@@ -533,6 +767,17 @@ mod tests {
             cpu_quota: Some(100000),
             cpu_period: Some(100000),
             network_interfaces: vec!["eth0".to_string(), "veth1".to_string()],
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            disk_read_bytes: None,
+            disk_write_bytes: None,
+            disk_read_ops: None,
+            disk_write_ops: None,
+            cpu_usage_ns: None,
+            cpu_throttled_time_ns: None,
+            cpu_throttled_periods: None,
         };
 
         assert_eq!(metrics.runtime, ContainerRuntime::Docker);
@@ -618,6 +863,17 @@ mod tests {
             cpu_quota: Some(200000),
             cpu_period: Some(100000),
             network_interfaces: vec!["eth0".to_string(), "veth1".to_string(), "flannel.1".to_string()],
+            network_rx_bytes: None,
+            network_tx_bytes: None,
+            network_rx_packets: None,
+            network_tx_packets: None,
+            disk_read_bytes: None,
+            disk_write_bytes: None,
+            disk_read_ops: None,
+            disk_write_ops: None,
+            cpu_usage_ns: None,
+            cpu_throttled_time_ns: None,
+            cpu_throttled_periods: None,
         };
 
         assert_eq!(metrics.runtime, ContainerRuntime::Kubernetes);
@@ -694,5 +950,157 @@ mod tests {
         assert!(metrics.cpu_quota.is_none() || metrics.cpu_quota.is_some());
         assert!(metrics.cpu_period.is_none() || metrics.cpu_period.is_some());
         assert!(metrics.network_interfaces.is_empty() || !metrics.network_interfaces.is_empty());
+    }
+
+    #[test]
+    fn test_container_metrics_with_additional_fields() {
+        // Test that new container metrics fields are properly initialized
+        let metrics = ContainerMetrics::default();
+        
+        // All new fields should be None by default
+        assert!(metrics.network_rx_bytes.is_none());
+        assert!(metrics.network_tx_bytes.is_none());
+        assert!(metrics.network_rx_packets.is_none());
+        assert!(metrics.network_tx_packets.is_none());
+        assert!(metrics.disk_read_bytes.is_none());
+        assert!(metrics.disk_write_bytes.is_none());
+        assert!(metrics.disk_read_ops.is_none());
+        assert!(metrics.disk_write_ops.is_none());
+        assert!(metrics.cpu_usage_ns.is_none());
+        assert!(metrics.cpu_throttled_time_ns.is_none());
+        assert!(metrics.cpu_throttled_periods.is_none());
+    }
+
+    #[test]
+    fn test_container_metrics_with_values() {
+        // Test that container metrics can hold values
+        let metrics = ContainerMetrics {
+            runtime: ContainerRuntime::Docker,
+            container_id: Some("test-container".to_string()),
+            memory_limit_bytes: Some(1024 * 1024 * 1024),
+            memory_usage_bytes: Some(512 * 1024 * 1024),
+            cpu_shares: Some(1024),
+            cpu_quota: Some(100000),
+            cpu_period: Some(100000),
+            network_interfaces: vec!["eth0".to_string()],
+            // New fields with values
+            network_rx_bytes: Some(1000000),
+            network_tx_bytes: Some(2000000),
+            network_rx_packets: Some(1000),
+            network_tx_packets: Some(2000),
+            disk_read_bytes: Some(5000000),
+            disk_write_bytes: Some(3000000),
+            disk_read_ops: Some(500),
+            disk_write_ops: Some(300),
+            cpu_usage_ns: Some(1000000000),
+            cpu_throttled_time_ns: Some(1000000),
+            cpu_throttled_periods: Some(10),
+        };
+        
+        // Verify all fields have correct values
+        assert_eq!(metrics.network_rx_bytes, Some(1000000));
+        assert_eq!(metrics.network_tx_bytes, Some(2000000));
+        assert_eq!(metrics.network_rx_packets, Some(1000));
+        assert_eq!(metrics.network_tx_packets, Some(2000));
+        assert_eq!(metrics.disk_read_bytes, Some(5000000));
+        assert_eq!(metrics.disk_write_bytes, Some(3000000));
+        assert_eq!(metrics.disk_read_ops, Some(500));
+        assert_eq!(metrics.disk_write_ops, Some(300));
+        assert_eq!(metrics.cpu_usage_ns, Some(1000000000));
+        assert_eq!(metrics.cpu_throttled_time_ns, Some(1000000));
+        assert_eq!(metrics.cpu_throttled_periods, Some(10));
+    }
+
+    #[test]
+    fn test_container_network_metrics_function() {
+        // Test that network metrics function works without panicking
+        let mut metrics = ContainerMetrics::default();
+        let interfaces: Vec<String> = vec![];
+        
+        // This should not panic even with empty interfaces
+        collect_container_network_metrics(&interfaces, &mut metrics);
+        
+        // Metrics should still be None (no interfaces to read from)
+        assert!(metrics.network_rx_bytes.is_none());
+        assert!(metrics.network_tx_bytes.is_none());
+        assert!(metrics.network_rx_packets.is_none());
+        assert!(metrics.network_tx_packets.is_none());
+    }
+
+    #[test]
+    fn test_container_disk_metrics_function() {
+        // Test that disk metrics function works without panicking
+        let mut metrics = ContainerMetrics::default();
+        
+        // This should not panic even if /proc/diskstats doesn't exist or can't be read
+        collect_container_disk_metrics(&mut metrics);
+        
+        // Metrics may be None or Some depending on system
+        assert!(metrics.disk_read_bytes.is_none() || metrics.disk_read_bytes.is_some());
+        assert!(metrics.disk_write_bytes.is_none() || metrics.disk_write_bytes.is_some());
+        assert!(metrics.disk_read_ops.is_none() || metrics.disk_read_ops.is_some());
+        assert!(metrics.disk_write_ops.is_none() || metrics.disk_write_ops.is_some());
+    }
+
+    #[test]
+    fn test_container_cpu_metrics_function() {
+        // Test that CPU metrics function works without panicking
+        let container_info = ContainerInfo::new(ContainerRuntime::None, None, None);
+        let mut metrics = ContainerMetrics::default();
+        
+        // This should not panic even if not in container
+        collect_container_cpu_metrics(&container_info, &mut metrics);
+        
+        // Metrics should be None (not in container)
+        assert!(metrics.cpu_usage_ns.is_none());
+        assert!(metrics.cpu_throttled_time_ns.is_none());
+        assert!(metrics.cpu_throttled_periods.is_none());
+    }
+
+    #[test]
+    fn test_container_metrics_comprehensive() {
+        // Test comprehensive container metrics structure
+        let metrics = ContainerMetrics {
+            runtime: ContainerRuntime::Kubernetes,
+            container_id: Some("k8s-pod-123".to_string()),
+            memory_limit_bytes: Some(2 * 1024 * 1024 * 1024),
+            memory_usage_bytes: Some(1 * 1024 * 1024 * 1024),
+            cpu_shares: Some(2048),
+            cpu_quota: Some(200000),
+            cpu_period: Some(100000),
+            network_interfaces: vec!["eth0".to_string(), "veth1".to_string()],
+            network_rx_bytes: Some(5000000),
+            network_tx_bytes: Some(3000000),
+            network_rx_packets: Some(5000),
+            network_tx_packets: Some(3000),
+            disk_read_bytes: Some(10000000),
+            disk_write_bytes: Some(8000000),
+            disk_read_ops: Some(1000),
+            disk_write_ops: Some(800),
+            cpu_usage_ns: Some(5000000000),
+            cpu_throttled_time_ns: Some(10000000),
+            cpu_throttled_periods: Some(50),
+        };
+        
+        // Verify all fields are correctly set
+        assert_eq!(metrics.runtime, ContainerRuntime::Kubernetes);
+        assert_eq!(metrics.container_id, Some("k8s-pod-123".to_string()));
+        assert_eq!(metrics.memory_limit_bytes, Some(2 * 1024 * 1024 * 1024));
+        assert_eq!(metrics.memory_usage_bytes, Some(1 * 1024 * 1024 * 1024));
+        assert_eq!(metrics.cpu_shares, Some(2048));
+        assert_eq!(metrics.cpu_quota, Some(200000));
+        assert_eq!(metrics.cpu_period, Some(100000));
+        assert_eq!(metrics.network_interfaces.len(), 2);
+        assert_eq!(metrics.network_rx_bytes, Some(5000000));
+        assert_eq!(metrics.network_tx_bytes, Some(3000000));
+        assert_eq!(metrics.network_rx_packets, Some(5000));
+        assert_eq!(metrics.network_tx_packets, Some(3000));
+        assert_eq!(metrics.disk_read_bytes, Some(10000000));
+        assert_eq!(metrics.disk_write_bytes, Some(8000000));
+        assert_eq!(metrics.disk_read_ops, Some(1000));
+        assert_eq!(metrics.disk_write_ops, Some(800));
+        assert_eq!(metrics.cpu_usage_ns, Some(5000000000));
+        assert_eq!(metrics.cpu_throttled_time_ns, Some(10000000));
+        assert_eq!(metrics.cpu_throttled_periods, Some(50));
     }
 }

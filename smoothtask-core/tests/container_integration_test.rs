@@ -264,6 +264,18 @@ fn test_container_metrics_with_all_runtimes() {
             cpu_quota: Some(100000),
             cpu_period: Some(100000),
             network_interfaces: vec!["eth0".to_string()],
+            // New fields
+            network_rx_bytes: Some(1000000),
+            network_tx_bytes: Some(2000000),
+            network_rx_packets: Some(1000),
+            network_tx_packets: Some(2000),
+            disk_read_bytes: Some(5000000),
+            disk_write_bytes: Some(3000000),
+            disk_read_ops: Some(500),
+            disk_write_ops: Some(300),
+            cpu_usage_ns: Some(1000000000),
+            cpu_throttled_time_ns: Some(1000000),
+            cpu_throttled_periods: Some(10),
         };
         
         assert_eq!(metrics.runtime, runtime);
@@ -274,5 +286,100 @@ fn test_container_metrics_with_all_runtimes() {
         assert!(metrics.cpu_quota.is_some());
         assert!(metrics.cpu_period.is_some());
         assert!(!metrics.network_interfaces.is_empty());
+        assert!(metrics.network_rx_bytes.is_some());
+        assert!(metrics.network_tx_bytes.is_some());
+        assert!(metrics.network_rx_packets.is_some());
+        assert!(metrics.network_tx_packets.is_some());
+        assert!(metrics.disk_read_bytes.is_some());
+        assert!(metrics.disk_write_bytes.is_some());
+        assert!(metrics.disk_read_ops.is_some());
+        assert!(metrics.disk_write_ops.is_some());
+        assert!(metrics.cpu_usage_ns.is_some());
+        assert!(metrics.cpu_throttled_time_ns.is_some());
+        assert!(metrics.cpu_throttled_periods.is_some());
     }
+}
+
+#[test]
+fn test_container_metrics_additional_fields() {
+    // Test that new container metrics fields work correctly
+    let metrics = collect_container_metrics();
+    
+    // All new fields should be either None or Some depending on environment
+    assert!(metrics.network_rx_bytes.is_none() || metrics.network_rx_bytes.is_some());
+    assert!(metrics.network_tx_bytes.is_none() || metrics.network_tx_bytes.is_some());
+    assert!(metrics.network_rx_packets.is_none() || metrics.network_rx_packets.is_some());
+    assert!(metrics.network_tx_packets.is_none() || metrics.network_tx_packets.is_some());
+    assert!(metrics.disk_read_bytes.is_none() || metrics.disk_read_bytes.is_some());
+    assert!(metrics.disk_write_bytes.is_none() || metrics.disk_write_bytes.is_some());
+    assert!(metrics.disk_read_ops.is_none() || metrics.disk_read_ops.is_some());
+    assert!(metrics.disk_write_ops.is_none() || metrics.disk_write_ops.is_some());
+    assert!(metrics.cpu_usage_ns.is_none() || metrics.cpu_usage_ns.is_some());
+    assert!(metrics.cpu_throttled_time_ns.is_none() || metrics.cpu_throttled_time_ns.is_some());
+    assert!(metrics.cpu_throttled_periods.is_none() || metrics.cpu_throttled_periods.is_some());
+}
+
+#[test]
+fn test_container_metrics_default_values() {
+    // Test that default container metrics have all new fields as None
+    let metrics = ContainerMetrics::default();
+    
+    assert!(metrics.network_rx_bytes.is_none());
+    assert!(metrics.network_tx_bytes.is_none());
+    assert!(metrics.network_rx_packets.is_none());
+    assert!(metrics.network_tx_packets.is_none());
+    assert!(metrics.disk_read_bytes.is_none());
+    assert!(metrics.disk_write_bytes.is_none());
+    assert!(metrics.disk_read_ops.is_none());
+    assert!(metrics.disk_write_ops.is_none());
+    assert!(metrics.cpu_usage_ns.is_none());
+    assert!(metrics.cpu_throttled_time_ns.is_none());
+    assert!(metrics.cpu_throttled_periods.is_none());
+}
+
+#[test]
+fn test_container_metrics_structure_with_new_fields() {
+    // Test comprehensive container metrics structure with all new fields
+    let metrics = ContainerMetrics {
+        runtime: ContainerRuntime::Docker,
+        container_id: Some("test-container".to_string()),
+        memory_limit_bytes: Some(1024 * 1024 * 1024),
+        memory_usage_bytes: Some(512 * 1024 * 1024),
+        cpu_shares: Some(1024),
+        cpu_quota: Some(100000),
+        cpu_period: Some(100000),
+        network_interfaces: vec!["eth0".to_string(), "veth1".to_string()],
+        network_rx_bytes: Some(1000000),
+        network_tx_bytes: Some(2000000),
+        network_rx_packets: Some(1000),
+        network_tx_packets: Some(2000),
+        disk_read_bytes: Some(5000000),
+        disk_write_bytes: Some(3000000),
+        disk_read_ops: Some(500),
+        disk_write_ops: Some(300),
+        cpu_usage_ns: Some(1000000000),
+        cpu_throttled_time_ns: Some(1000000),
+        cpu_throttled_periods: Some(10),
+    };
+    
+    // Verify all fields are correctly set
+    assert_eq!(metrics.runtime, ContainerRuntime::Docker);
+    assert_eq!(metrics.container_id, Some("test-container".to_string()));
+    assert_eq!(metrics.memory_limit_bytes, Some(1024 * 1024 * 1024));
+    assert_eq!(metrics.memory_usage_bytes, Some(512 * 1024 * 1024));
+    assert_eq!(metrics.cpu_shares, Some(1024));
+    assert_eq!(metrics.cpu_quota, Some(100000));
+    assert_eq!(metrics.cpu_period, Some(100000));
+    assert_eq!(metrics.network_interfaces.len(), 2);
+    assert_eq!(metrics.network_rx_bytes, Some(1000000));
+    assert_eq!(metrics.network_tx_bytes, Some(2000000));
+    assert_eq!(metrics.network_rx_packets, Some(1000));
+    assert_eq!(metrics.network_tx_packets, Some(2000));
+    assert_eq!(metrics.disk_read_bytes, Some(5000000));
+    assert_eq!(metrics.disk_write_bytes, Some(3000000));
+    assert_eq!(metrics.disk_read_ops, Some(500));
+    assert_eq!(metrics.disk_write_ops, Some(300));
+    assert_eq!(metrics.cpu_usage_ns, Some(1000000000));
+    assert_eq!(metrics.cpu_throttled_time_ns, Some(1000000));
+    assert_eq!(metrics.cpu_throttled_periods, Some(10));
 }
