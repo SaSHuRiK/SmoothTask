@@ -237,6 +237,20 @@ fn benchmark_config_serialization(c: &mut Criterion) {
     });
 }
 
+/// Бенчмарк для измерения производительности сбора температуры CPU
+///
+/// Этот бенчмарк тестирует производительность функции collect_cpu_temperature,
+/// которая собирает температуру CPU из системных файлов.
+fn benchmark_cpu_temperature_collection(c: &mut Criterion) {
+    c.bench_function("cpu_temperature_collection", |b| {
+        b.iter(|| {
+            let _result = smoothtask_core::metrics::system::collect_cpu_temperature();
+        })
+    });
+}
+
+
+
 criterion_group! {
     name = performance_profiling_benchmarks;
     config = Criterion::default()
@@ -254,7 +268,8 @@ criterion_group! {
         benchmark_parallel_processing,
         benchmark_process_cache_operations,
         benchmark_config_creation,
-        benchmark_config_serialization
+        benchmark_config_serialization,
+        benchmark_cpu_temperature_collection
 }
 
 criterion_main!(performance_profiling_benchmarks);

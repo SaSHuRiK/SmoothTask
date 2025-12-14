@@ -82,6 +82,8 @@ pub struct GpuTemperature {
     pub memory_c: Option<f32>,
 }
 
+
+
 /// GPU power metrics
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
 pub struct GpuPower {

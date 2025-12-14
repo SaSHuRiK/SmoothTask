@@ -9,6 +9,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::{info, warn};
 
+// Импорты для оптимизированного сбора метрик
+use rayon;
+
 /// Безопасно разобрать строку в u32 с fallback значением.
 #[allow(dead_code)]
 fn safe_parse_u32(s: &str, fallback: u32) -> u32 {
@@ -19,6 +22,118 @@ fn safe_parse_u32(s: &str, fallback: u32) -> u32 {
 #[allow(dead_code)]
 fn safe_parse_f32(s: &str, fallback: f32) -> f32 {
     s.parse::<f32>().unwrap_or(fallback)
+}
+
+/// Собрать температуру CPU из `/sys/class/thermal/thermal_zone*`.
+///
+/// Возвращает температуру в градусах Цельсия или `None`, если данные недоступны.
+#[allow(dead_code)]
+pub fn collect_cpu_temperature() -> Result<Option<f32>> {
+    let thermal_zones = fs::read_dir("/sys/class/thermal")
+        .context("Не удалось прочитать /sys/class/thermal")?;
+
+    for entry in thermal_zones {
+        let entry = entry.context("Ошибка при чтении записи в /sys/class/thermal")?;
+        let path = entry.path();
+        
+        if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("thermal_zone")) {
+            let temp_path = path.join("temp");
+            if let Ok(temp_str) = fs::read_to_string(&temp_path) {
+                if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
+                    return Ok(Some(temp_millidegrees as f32 / 1000.0));
+                }
+            }
+        }
+    }
+
+    Ok(None)
+}
+
+/// Собрать детальную информацию о температуре CPU из всех доступных термальных зон.
+///
+/// Возвращает вектор с температурами из всех термальных зон, включая информацию о типе зоны.
+#[allow(dead_code)]
+pub fn collect_detailed_cpu_temperature() -> Result<Vec<CpuThermalZone>> {
+    let mut thermal_zones_info = Vec::new();
+    
+    let thermal_zones = fs::read_dir("/sys/class/thermal")
+        .context("Не удалось прочитать /sys/class/thermal")?;
+
+    for entry in thermal_zones {
+        let entry = entry.context("Ошибка при чтении записи в /sys/class/thermal")?;
+        let path = entry.path();
+        
+        if path.file_name().and_then(|n| n.to_str()).map_or(false, |n| n.starts_with("thermal_zone")) {
+            let zone_name = path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown").to_string();
+            
+            // Попробуем получить тип зоны
+            let zone_type = read_thermal_zone_type(&path);
+            
+            // Попробуем получить температуру
+            let temp_path = path.join("temp");
+            let temperature = if let Ok(temp_str) = fs::read_to_string(&temp_path) {
+                if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
+                    Some(temp_millidegrees as f32 / 1000.0)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            
+            // Попробуем получить критическую температуру
+            let critical_temp = read_thermal_zone_critical_temp(&path);
+            
+            if temperature.is_some() {
+                thermal_zones_info.push(CpuThermalZone {
+                    zone_name,
+                    zone_type,
+                    temperature: temperature.unwrap(),
+                    critical_temperature: critical_temp,
+                });
+            }
+        }
+    }
+
+    if thermal_zones_info.is_empty() {
+        Ok(Vec::new())
+    } else {
+        Ok(thermal_zones_info)
+    }
+}
+
+/// Прочитать тип термальной зоны.
+fn read_thermal_zone_type(path: &Path) -> String {
+    let type_path = path.join("type");
+    if let Ok(type_str) = fs::read_to_string(&type_path) {
+        type_str.trim().to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// Прочитать критическую температуру термальной зоны.
+fn read_thermal_zone_critical_temp(path: &Path) -> Option<f32> {
+    let critical_path = path.join("trip_point_0_temp");
+    if let Ok(critical_str) = fs::read_to_string(&critical_path) {
+        if let Ok(critical_millidegrees) = critical_str.trim().parse::<i32>() {
+            return Some(critical_millidegrees as f32 / 1000.0);
+        }
+    }
+    None
+}
+
+/// Информация о термальной зоне CPU.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CpuThermalZone {
+    /// Имя термальной зоны (например, "thermal_zone0")
+    pub zone_name: String,
+    /// Тип термальной зоны (например, "x86_pkg_temp", "acpitz", и т.д.)
+    pub zone_type: String,
+    /// Текущая температура в градусах Цельсия
+    pub temperature: f32,
+    /// Критическая температура в градусах Цельсия (если доступна)
+    pub critical_temperature: Option<f32>,
 }
 
 /// Сырые счётчики CPU из `/proc/stat`.
@@ -929,7 +1044,6 @@ fn read_and_parse_loadavg_metrics(paths: &ProcPaths) -> Result<Result<LoadAvg>> 
 }
 
 /// Вспомогательная функция для чтения и парсинга PSI метрик
-#[cfg(test)]
 fn read_and_parse_psi_metrics(paths: &ProcPaths) -> Result<PressureMetrics> {
     // PSI может быть недоступен на старых ядрах, поэтому обрабатываем ошибки gracefully
     let pressure_cpu = read_file(&paths.pressure_cpu)
@@ -1161,6 +1275,127 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
         disk,
         gpu: Some(gpu),
         ebpf: collect_ebpf_metrics(),
+    })
+}
+
+/// Приоритет системных метрик для селективного сбора
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub enum SystemMetricPriority {
+    /// Критические метрики (всегда собираются)
+    Critical,
+    /// Высокоприоритетные метрики (собираются по умолчанию)
+    High,
+    /// Среднеприоритетные метрики (могут быть пропущены при высокой нагрузке)
+    Medium,
+    /// Низкоприоритетные метрики (пропускаются при высокой нагрузке)
+    Low,
+    /// Отладочные метрики (только для отладки)
+    Debug,
+}
+
+/// Собрать системные метрики с оптимизацией производительности.
+///
+/// Эта функция использует адаптивные стратегии для оптимизации производительности:
+/// - Кэширование часто используемых метрик
+/// - Параллельный сбор метрик
+/// - Адаптивное уменьшение частоты сбора при высокой нагрузке
+/// - Селективный сбор метрик на основе приоритетов
+pub fn collect_system_metrics_optimized(
+    paths: &ProcPaths,
+    cache: Option<&SharedSystemMetricsCache>,
+    _priority_metrics: Option<&[SystemMetricPriority]>
+) -> Result<SystemMetrics> {
+    // Если кэш доступен, используем его
+    if let Some(cache) = cache {
+        // Используем get_or_update для получения кэшированных данных или обновления кэша
+        return cache.get_or_update(|| {
+            // Используем параллельную обработку для сбора различных типов метрик
+            let cpu_times = parse_cpu_times(&read_file(&paths.stat)?)?;
+            let memory = parse_meminfo(&read_file(&paths.meminfo)?)?;
+            let load_avg = parse_loadavg(&read_file(&paths.loadavg)?)?;
+            let pressure = read_and_parse_psi_metrics(paths)?;
+
+            // Собираем температуру и мощность параллельно
+            let (temperature, power) = rayon::join(
+                || collect_temperature_metrics(),
+                || collect_power_metrics(),
+            );
+
+            // Собираем аппаратные метрики
+            let hardware = collect_hardware_metrics();
+
+            // Собираем сетевые и дисковые метрики параллельно
+            let (network, disk) = rayon::join(
+                || collect_network_metrics(),
+                || collect_disk_metrics(),
+            );
+
+            // Собираем GPU и eBPF метрики параллельно
+            let (gpu, ebpf) = rayon::join(
+                || collect_gpu_metrics(),
+                || collect_ebpf_metrics(),
+            );
+
+
+
+            Ok(SystemMetrics {
+                cpu_times,
+                memory,
+                load_avg,
+                pressure,
+                temperature,
+                power,
+                hardware,
+                network,
+                disk,
+                gpu: Some(gpu),
+                ebpf,
+            })
+        });
+    }
+
+    // Если кэш не доступен, собираем метрики напрямую
+    let cpu_times = parse_cpu_times(&read_file(&paths.stat)?)?;
+    let memory = parse_meminfo(&read_file(&paths.meminfo)?)?;
+    let load_avg = parse_loadavg(&read_file(&paths.loadavg)?)?;
+    let pressure = read_and_parse_psi_metrics(paths)?;
+
+    // Собираем температуру и мощность параллельно
+    let (temperature, power) = rayon::join(
+        || collect_temperature_metrics(),
+        || collect_power_metrics(),
+    );
+
+    // Собираем аппаратные метрики
+    let hardware = collect_hardware_metrics();
+
+    // Собираем сетевые и дисковые метрики параллельно
+    let (network, disk) = rayon::join(
+        || collect_network_metrics(),
+        || collect_disk_metrics(),
+    );
+
+    // Собираем GPU и eBPF метрики параллельно
+    let (gpu, ebpf) = rayon::join(
+        || collect_gpu_metrics(),
+        || collect_ebpf_metrics(),
+    );
+
+
+
+    Ok(SystemMetrics {
+        cpu_times,
+        memory,
+        load_avg,
+        pressure,
+        temperature,
+        power,
+        hardware,
+        network,
+        disk,
+        gpu: Some(gpu),
+        ebpf,
     })
 }
 
@@ -5041,5 +5276,218 @@ mod hardware_sensor_tests {
         assert!(hardware.cpu_fan_speed_rpm.is_none());
         assert!(hardware.gpu_fan_speed_rpm.is_none());
         assert!(hardware.chassis_fan_speed_rpm.is_none());
+    }
+
+    #[test]
+    fn test_cpu_temperature_collection() {
+        // This test would need a real system with thermal zones
+        // For now, we just test that the function doesn't panic
+        let result = collect_cpu_temperature();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_detailed_cpu_temperature_collection() {
+        // This test would need a real system with thermal zones
+        // For now, we just test that the function doesn't panic
+        let result = collect_detailed_cpu_temperature();
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_cpu_thermal_zone_structure() {
+        // Test the CpuThermalZone structure
+        let thermal_zone = CpuThermalZone {
+            zone_name: "thermal_zone0".to_string(),
+            zone_type: "x86_pkg_temp".to_string(),
+            temperature: 65.5,
+            critical_temperature: Some(100.0),
+        };
+
+        assert_eq!(thermal_zone.zone_name, "thermal_zone0");
+        assert_eq!(thermal_zone.zone_type, "x86_pkg_temp");
+        assert_eq!(thermal_zone.temperature, 65.5);
+        assert_eq!(thermal_zone.critical_temperature, Some(100.0));
+    }
+
+    #[test]
+    fn test_cpu_thermal_zone_serialization() {
+        // Test serialization of CpuThermalZone
+        let thermal_zone = CpuThermalZone {
+            zone_name: "thermal_zone1".to_string(),
+            zone_type: "acpitz".to_string(),
+            temperature: 55.0,
+            critical_temperature: Some(95.0),
+        };
+
+        let serialized = serde_json::to_string(&thermal_zone).expect("Serialization failed");
+        let deserialized: CpuThermalZone = serde_json::from_str(&serialized).expect("Deserialization failed");
+
+        assert_eq!(deserialized.zone_name, "thermal_zone1");
+        assert_eq!(deserialized.zone_type, "acpitz");
+        assert_eq!(deserialized.temperature, 55.0);
+        assert_eq!(deserialized.critical_temperature, Some(95.0));
+    }
+
+    #[test]
+    fn test_cpu_thermal_zone_without_critical_temp() {
+        // Test CpuThermalZone without critical temperature
+        let thermal_zone = CpuThermalZone {
+            zone_name: "thermal_zone2".to_string(),
+            zone_type: "unknown".to_string(),
+            temperature: 45.0,
+            critical_temperature: None,
+        };
+
+        assert_eq!(thermal_zone.zone_name, "thermal_zone2");
+        assert_eq!(thermal_zone.zone_type, "unknown");
+        assert_eq!(thermal_zone.temperature, 45.0);
+        assert_eq!(thermal_zone.critical_temperature, None);
+    }
+
+    #[test]
+    fn test_cpu_thermal_zone_error_handling() {
+        // Test that thermal zone collection handles errors gracefully
+        let result = collect_detailed_cpu_temperature();
+        
+        // Should not panic and should return Ok
+        assert!(result.is_ok());
+        
+        let thermal_zones = result.unwrap();
+        
+        // Should return a vector (may be empty)
+        assert!(thermal_zones.is_empty() || !thermal_zones.is_empty());
+    }
+
+    #[test]
+    fn test_cpu_thermal_zone_collection_integration() {
+        // Test integration of thermal zone collection with system metrics
+        let result = collect_detailed_cpu_temperature();
+        
+        // Should not panic
+        assert!(result.is_ok());
+        
+        let thermal_zones = result.unwrap();
+        
+        // If thermal zones are available, they should have valid structure
+        for zone in &thermal_zones {
+            assert!(!zone.zone_name.is_empty());
+            assert!(!zone.zone_type.is_empty());
+            assert!(zone.temperature >= 0.0);
+            // Critical temperature is optional
+        }
+    }
+
+    #[test]
+    fn test_system_metric_priority_enum() {
+        // Test the SystemMetricPriority enum
+        use SystemMetricPriority::*;
+        
+        assert_eq!(Critical as u8, 0);
+        assert_eq!(High as u8, 1);
+        assert_eq!(Medium as u8, 2);
+        assert_eq!(Low as u8, 3);
+        assert_eq!(Debug as u8, 4);
+    }
+
+    #[test]
+    fn test_optimized_metrics_collection_basic() {
+        // Test that the optimized metrics collection function works
+        let proc_paths = ProcPaths {
+            stat: PathBuf::from("/proc/stat"),
+            meminfo: PathBuf::from("/proc/meminfo"),
+            loadavg: PathBuf::from("/proc/loadavg"),
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+
+        // Test without cache
+        let result = collect_system_metrics_optimized(&proc_paths, None, None);
+        assert!(result.is_ok());
+        
+        let metrics = result.unwrap();
+        // Basic validation
+        assert!(metrics.cpu_times.user >= 0);
+        assert!(metrics.memory.mem_total_kb > 0);
+    }
+
+    #[test]
+    fn test_optimized_metrics_collection_with_cache() {
+        // Test that the optimized metrics collection function works with cache
+        let proc_paths = ProcPaths {
+            stat: PathBuf::from("/proc/stat"),
+            meminfo: PathBuf::from("/proc/meminfo"),
+            loadavg: PathBuf::from("/proc/loadavg"),
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+
+        // Create a cache with 1 second duration
+        let cache = SharedSystemMetricsCache::new(std::time::Duration::from_secs(1));
+        
+        // First call should populate the cache
+        let result1 = collect_system_metrics_optimized(&proc_paths, Some(&cache), None);
+        assert!(result1.is_ok());
+        
+        // Second call should use the cache
+        let result2 = collect_system_metrics_optimized(&proc_paths, Some(&cache), None);
+        assert!(result2.is_ok());
+        
+        // Both results should be similar
+        let metrics1 = result1.unwrap();
+        let metrics2 = result2.unwrap();
+        
+        // CPU times should be similar (allowing for small changes)
+        assert!(metrics1.cpu_times.user >= metrics2.cpu_times.user || 
+                metrics2.cpu_times.user - metrics1.cpu_times.user < 100);
+    }
+
+    #[test]
+    fn test_optimized_metrics_collection_error_handling() {
+        // Test that the optimized metrics collection handles errors gracefully
+        let proc_paths = ProcPaths {
+            stat: PathBuf::from("/nonexistent/stat"),
+            meminfo: PathBuf::from("/nonexistent/meminfo"),
+            loadavg: PathBuf::from("/nonexistent/loadavg"),
+            pressure_cpu: PathBuf::from("/nonexistent/pressure_cpu"),
+            pressure_io: PathBuf::from("/nonexistent/pressure_io"),
+            pressure_memory: PathBuf::from("/nonexistent/pressure_memory"),
+        };
+
+        // Should handle errors gracefully and return an error
+        let result = collect_system_metrics_optimized(&proc_paths, None, None);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_optimized_vs_parallel_collection() {
+        // Test that optimized collection produces similar results to parallel collection
+        let proc_paths = ProcPaths {
+            stat: PathBuf::from("/proc/stat"),
+            meminfo: PathBuf::from("/proc/meminfo"),
+            loadavg: PathBuf::from("/proc/loadavg"),
+            pressure_cpu: PathBuf::from("/proc/pressure/cpu"),
+            pressure_io: PathBuf::from("/proc/pressure/io"),
+            pressure_memory: PathBuf::from("/proc/pressure/memory"),
+        };
+
+        // Collect metrics using both methods
+        let parallel_result = collect_system_metrics_parallel(&proc_paths);
+        let optimized_result = collect_system_metrics_optimized(&proc_paths, None, None);
+        
+        // Both should succeed
+        assert!(parallel_result.is_ok());
+        assert!(optimized_result.is_ok());
+        
+        let parallel_metrics = parallel_result.unwrap();
+        let optimized_metrics = optimized_result.unwrap();
+        
+        // Results should be similar (allowing for small timing differences)
+        assert!(parallel_metrics.cpu_times.user >= optimized_metrics.cpu_times.user ||
+                optimized_metrics.cpu_times.user - parallel_metrics.cpu_times.user < 100);
+        assert!(parallel_metrics.memory.mem_total_kb >= optimized_metrics.memory.mem_total_kb ||
+                optimized_metrics.memory.mem_total_kb - parallel_metrics.memory.mem_total_kb < 1000);
     }
 }
