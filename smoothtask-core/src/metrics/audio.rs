@@ -106,7 +106,7 @@ pub struct XrunInfo {
 }
 
 /// Информация об аудио-клиенте.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AudioClientInfo {
     /// PID процесса-клиента.
     pub pid: u32,
@@ -114,6 +114,12 @@ pub struct AudioClientInfo {
     pub buffer_size_samples: Option<u32>,
     /// Частота дискретизации в Гц (если известна).
     pub sample_rate_hz: Option<u32>,
+    /// Уровень громкости (0.0 - 1.0, если известен).
+    pub volume_level: Option<f32>,
+    /// Задержка в миллисекундах (если известна).
+    pub latency_ms: Option<u32>,
+    /// Название клиента/приложения (если известно).
+    pub client_name: Option<String>,
 }
 
 /// Агрегированные метрики аудио-стека за период.
@@ -125,6 +131,8 @@ pub struct AudioMetrics {
     pub xruns: Vec<XrunInfo>,
     /// Список активных аудио-клиентов.
     pub clients: Vec<AudioClientInfo>,
+    /// Состояние здоровья аудио подсистемы.
+    pub health_status: AudioHealthStatus,
     /// Время начала периода сбора метрик.
     pub period_start: SystemTime,
     /// Время конца периода сбора метрик.
@@ -171,6 +179,7 @@ impl AudioMetrics {
             xrun_count: 0,
             xruns: Vec::new(),
             clients: Vec::new(),
+            health_status: AudioHealthStatus::Healthy,
             period_start,
             period_end,
         }
@@ -445,7 +454,13 @@ impl AudioIntrospector for EnhancedAudioIntrospector {
                 self.last_metrics = Some((SystemTime::now(), metrics.clone()));
                 self.error_count = 0; // Сбрасываем счетчик ошибок при успехе
                 self.last_successful_metrics = Some(metrics.clone()); // Сохраняем последние успешные метрики
-                Ok(metrics.clone())
+                
+                // Обновляем состояние здоровья
+                let health_status = self.get_audio_health_status();
+                let mut metrics_with_health = metrics.clone();
+                metrics_with_health.health_status = health_status;
+                
+                Ok(metrics_with_health)
             }
             Err(e) => {
                 // Произошла ошибка, обновляем счетчик ошибок
@@ -469,10 +484,14 @@ impl AudioIntrospector for EnhancedAudioIntrospector {
                     
                     // Возвращаем последние успешные метрики или пустые метрики (graceful degradation)
                     if let Some(last_successful) = &self.last_successful_metrics {
-                        Ok(last_successful.clone())
+                        let mut metrics_with_health = last_successful.clone();
+                        metrics_with_health.health_status = AudioHealthStatus::Critical; // В режиме graceful degradation
+                        Ok(metrics_with_health)
                     } else {
                         let now = SystemTime::now();
-                        Ok(AudioMetrics::empty(now, now))
+                        let mut metrics = AudioMetrics::empty(now, now);
+                        metrics.health_status = AudioHealthStatus::Critical; // В режиме graceful degradation
+                        Ok(metrics)
                     }
                 } else {
                     // Пробрасываем ошибку, если лимит не превышен
@@ -540,6 +559,35 @@ pub fn create_enhanced_audio_introspector() -> EnhancedAudioIntrospector {
         std::time::Duration::from_millis(500),
         3
     )
+}
+
+/// Состояние здоровья аудио подсистемы.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum AudioHealthStatus {
+    /// Аудио подсистема работает нормально.
+    Healthy,
+    /// Аудио подсистема работает с проблемами, но функциональность сохранена.
+    Degraded,
+    /// Аудио подсистема в критическом состоянии, работает в режиме graceful degradation.
+    Critical,
+}
+
+impl EnhancedAudioIntrospector {
+    /// Получить текущее состояние здоровья аудио подсистемы.
+    pub fn get_audio_health_status(&self) -> AudioHealthStatus {
+        if self.error_count >= self.max_error_count {
+            AudioHealthStatus::Critical
+        } else if self.error_count > 0 {
+            AudioHealthStatus::Degraded
+        } else {
+            AudioHealthStatus::Healthy
+        }
+    }
+    
+    /// Обновить состояние здоровья на основе текущих ошибок.
+    pub fn update_health_status(&mut self) -> AudioHealthStatus {
+        self.get_audio_health_status()
+    }
 }
 
 /// Параллельный аудио-интроспектор с поддержкой многопоточного сбора данных.
@@ -878,6 +926,9 @@ mod tests {
             pid,
             buffer_size_samples: Some(1024),
             sample_rate_hz: Some(48000),
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
         }
     }
 
@@ -1040,6 +1091,9 @@ mod tests {
             pid: 1234,
             buffer_size_samples: Some(1024),
             sample_rate_hz: Some(48000),
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
         }];
 
         let introspector_with_clients =
@@ -1174,11 +1228,17 @@ mod tests {
             pid: 42,
             buffer_size_samples: Some(1024),
             sample_rate_hz: Some(48000),
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
         };
         let client2 = AudioClientInfo {
             pid: 42,
             buffer_size_samples: Some(2048),
             sample_rate_hz: Some(44100),
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
         };
         metrics.clients = vec![client1.clone(), client2];
         // find_client должен вернуть первый клиент с PID 42
@@ -1373,6 +1433,9 @@ mod tests {
             pid: 1234,
             buffer_size_samples: Some(1024),
             sample_rate_hz: Some(48000),
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
         }];
         
         let static_introspector = StaticAudioIntrospector::new(
@@ -1684,6 +1747,9 @@ mod tests {
             pid: 1234,
             buffer_size_samples: Some(1024),
             sample_rate_hz: Some(48000),
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
         }];
         
         let static_introspector = StaticAudioIntrospector::new(
@@ -1939,5 +2005,77 @@ mod tests {
         if let Ok(metrics) = metrics {
             assert!(metrics.validate_period());
         }
+    }
+    
+    #[test]
+    fn test_audio_health_status_enum() {
+        // Тест проверяет, что AudioHealthStatus корректно определен
+        use super::AudioHealthStatus::*;
+        
+        // Проверяем все варианты перечисления
+        assert_eq!(Healthy as u8, 0);
+        assert_eq!(Degraded as u8, 1);
+        assert_eq!(Critical as u8, 2);
+    }
+    
+    #[test]
+    fn test_audio_metrics_health_status() {
+        // Тест проверяет, что AudioMetrics содержит поле health_status
+        let now = SystemTime::now();
+        let metrics = AudioMetrics::empty(now, now);
+        
+        // По умолчанию состояние должно быть Healthy
+        assert_eq!(metrics.health_status, AudioHealthStatus::Healthy);
+        
+        // Проверяем, что поле можно изменить
+        let mut metrics_with_status = metrics;
+        metrics_with_status.health_status = AudioHealthStatus::Degraded;
+        assert_eq!(metrics_with_status.health_status, AudioHealthStatus::Degraded);
+    }
+    
+    #[test]
+    fn test_enhanced_audio_introspector_health_monitoring() {
+        // Тест проверяет функциональность мониторинга здоровья
+        let mut introspector = EnhancedAudioIntrospector::new(Duration::from_millis(100), 2);
+        
+        // Изначально состояние должно быть Healthy
+        assert_eq!(introspector.get_audio_health_status(), AudioHealthStatus::Healthy);
+        
+        // После ошибок состояние должно измениться
+        introspector.error_count = 1;
+        assert_eq!(introspector.get_audio_health_status(), AudioHealthStatus::Degraded);
+        
+        introspector.error_count = 2;
+        assert_eq!(introspector.get_audio_health_status(), AudioHealthStatus::Critical);
+        
+        // Проверяем, что update_health_status работает
+        assert_eq!(introspector.update_health_status(), AudioHealthStatus::Critical);
+    }
+    
+    #[test]
+    fn test_audio_health_status_serialization() {
+        // Тест проверяет, что AudioHealthStatus можно сериализовать/десериализовать
+        use super::AudioHealthStatus::*;
+        
+        let metrics = AudioMetrics {
+            xrun_count: 0,
+            xruns: Vec::new(),
+            clients: Vec::new(),
+            health_status: Degraded,
+            period_start: SystemTime::now(),
+            period_end: SystemTime::now(),
+        };
+        
+        // Проверяем, что метрики можно сериализовать
+        let json = serde_json::to_string(&metrics);
+        assert!(json.is_ok());
+        
+        // Проверяем, что можно десериализовать обратно
+        let json_str = json.unwrap();
+        let deserialized: Result<AudioMetrics, _> = serde_json::from_str(&json_str);
+        assert!(deserialized.is_ok());
+        
+        let deserialized_metrics = deserialized.unwrap();
+        assert_eq!(deserialized_metrics.health_status, Degraded);
     }
 }

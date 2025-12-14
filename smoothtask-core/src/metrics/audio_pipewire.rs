@@ -4,7 +4,7 @@
 //! для получения метрик аудио-стека без прямой зависимости от PipeWire API.
 //! Это простой подход, который работает через вызов команды `pw-dump` и парсинг JSON.
 
-use crate::metrics::audio::{AudioClientInfo, AudioIntrospector, AudioMetrics, XrunInfo};
+use crate::metrics::audio::{AudioClientInfo, AudioHealthStatus, AudioIntrospector, AudioMetrics, XrunInfo};
 use anyhow::{anyhow, Context, Result};
 use serde_json::{Map, Value};
 use std::collections::HashMap;
@@ -43,6 +43,9 @@ pub fn parse_pw_dump_clients(json: &str) -> Result<Vec<AudioClientInfo>> {
                 pid,
                 buffer_size_samples: None,
                 sample_rate_hz: None,
+                volume_level: None,
+                latency_ms: None,
+                client_name: None,
             });
 
             let buffer_size_samples = entry
@@ -56,6 +59,9 @@ pub fn parse_pw_dump_clients(json: &str) -> Result<Vec<AudioClientInfo>> {
                     pid,
                     buffer_size_samples,
                     sample_rate_hz,
+                    volume_level: parse_volume_level(props),
+                    latency_ms: parse_latency_ms(props),
+                    client_name: parse_client_name(props),
                 },
             );
         }
@@ -175,6 +181,76 @@ fn parse_u32(value: &Value) -> Option<u32> {
     value.as_str().and_then(|s| s.trim().parse::<u32>().ok())
 }
 
+fn parse_volume_level(props: &Map<String, Value>) -> Option<f32> {
+    // Ищем уровень громкости в различных форматах
+    for key in [
+        "audio.volume",
+        "volume",
+        "node.volume",
+        "application.volume",
+        "pipewire.volume",
+    ] {
+        if let Some(value) = props.get(key) {
+            if let Some(vol) = parse_f32(value) {
+                // Нормализуем значение в диапазон 0.0 - 1.0
+                return Some(vol.clamp(0.0, 1.0));
+            }
+        }
+    }
+    None
+}
+
+fn parse_latency_ms(props: &Map<String, Value>) -> Option<u32> {
+    // Ищем задержку в различных форматах
+    for key in [
+        "audio.latency",
+        "latency",
+        "node.latency",
+        "application.latency",
+        "pipewire.latency",
+        "node.latency.ms",
+        "audio.latency.ms",
+    ] {
+        if let Some(value) = props.get(key) {
+            if let Some(latency) = parse_u32(value) {
+                return Some(latency);
+            }
+            // Также поддерживаем значения в секундах (умножаем на 1000)
+            if let Some(latency_sec) = parse_f32(value) {
+                return Some((latency_sec * 1000.0) as u32);
+            }
+        }
+    }
+    None
+}
+
+fn parse_client_name(props: &Map<String, Value>) -> Option<String> {
+    // Ищем название клиента в различных форматах
+    for key in [
+        "application.name",
+        "node.name",
+        "client.name",
+        "pipewire.client.name",
+        "application.process.name",
+        "node.description",
+        "application.description",
+    ] {
+        if let Some(value) = props.get(key) {
+            if let Some(name) = value.as_str() {
+                return Some(name.trim().to_string());
+            }
+        }
+    }
+    None
+}
+
+fn parse_f32(value: &Value) -> Option<f32> {
+    if let Some(n) = value.as_f64() {
+        return Some(n as f32);
+    }
+    value.as_str().and_then(|s| s.trim().parse::<f32>().ok())
+}
+
 /// Парсит строку частоты дискретизации из JSON значения.
 ///
 /// Извлекает числовое значение из строки, которая может содержать формат "rate/period".
@@ -268,6 +344,42 @@ mod tests {
             pid,
             buffer_size_samples: buffer,
             sample_rate_hz: rate,
+            volume_level: None,
+            latency_ms: None,
+            client_name: None,
+        }
+    }
+
+    fn client_with_volume(pid: u32, volume: f32) -> AudioClientInfo {
+        AudioClientInfo {
+            pid,
+            buffer_size_samples: None,
+            sample_rate_hz: None,
+            volume_level: Some(volume),
+            latency_ms: None,
+            client_name: None,
+        }
+    }
+
+    fn client_with_latency(pid: u32, latency: u32) -> AudioClientInfo {
+        AudioClientInfo {
+            pid,
+            buffer_size_samples: None,
+            sample_rate_hz: None,
+            volume_level: None,
+            latency_ms: Some(latency),
+            client_name: None,
+        }
+    }
+
+    fn client_with_name(pid: u32, name: &str) -> AudioClientInfo {
+        AudioClientInfo {
+            pid,
+            buffer_size_samples: None,
+            sample_rate_hz: None,
+            volume_level: None,
+            latency_ms: None,
+            client_name: Some(name.to_string()),
         }
     }
 
@@ -655,6 +767,7 @@ impl AudioIntrospector for PipeWireIntrospector {
             xrun_count,
             xruns,
             clients,
+            health_status: AudioHealthStatus::Healthy,
             period_start,
             period_end,
         })
@@ -1139,5 +1252,179 @@ mod pipewire_introspector_tests {
         // Проверяем, что check_pipewire_available возвращает Result
         let result = introspector.check_pipewire_available();
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_parse_volume_level() {
+        // Тест проверяет парсинг уровня громкости
+        use serde_json::{json, Map};
+
+        let mut props = Map::new();
+        
+        // Тест 1: volume в диапазоне 0.0-1.0
+        props.insert("audio.volume".to_string(), json!(0.75));
+        assert_eq!(parse_volume_level(&props), Some(0.75));
+        
+        // Тест 2: volume вне диапазона (должен быть нормализован)
+        props.clear();
+        props.insert("volume".to_string(), json!(1.5));
+        assert_eq!(parse_volume_level(&props), Some(1.0));
+        
+        // Тест 3: volume в строковом формате
+        props.clear();
+        props.insert("node.volume".to_string(), json!("0.5"));
+        assert_eq!(parse_volume_level(&props), Some(0.5));
+        
+        // Тест 4: отсутствие volume
+        props.clear();
+        assert_eq!(parse_volume_level(&props), None);
+    }
+
+    #[test]
+    fn test_parse_latency_ms() {
+        // Тест проверяет парсинг задержки
+        use serde_json::{json, Map};
+
+        let mut props = Map::new();
+        
+        // Тест 1: latency в миллисекундах
+        props.insert("audio.latency".to_string(), json!(50));
+        assert_eq!(parse_latency_ms(&props), Some(50));
+        
+        // Тест 2: latency в секундах (должен быть конвертирован)
+        props.clear();
+        props.insert("latency".to_string(), json!(0.1));
+        assert_eq!(parse_latency_ms(&props), Some(100));
+        
+        // Тест 3: latency в строковом формате
+        props.clear();
+        props.insert("node.latency.ms".to_string(), json!("25"));
+        assert_eq!(parse_latency_ms(&props), Some(25));
+        
+        // Тест 4: отсутствие latency
+        props.clear();
+        assert_eq!(parse_latency_ms(&props), None);
+    }
+
+    #[test]
+    fn test_parse_client_name() {
+        // Тест проверяет парсинг названия клиента
+        use serde_json::{json, Map};
+
+        let mut props = Map::new();
+        
+        // Тест 1: простое название
+        props.insert("application.name".to_string(), json!("Firefox"));
+        assert_eq!(parse_client_name(&props), Some("Firefox".to_string()));
+        
+        // Тест 2: название с пробелами
+        props.clear();
+        props.insert("node.name".to_string(), json!("  Chrome Audio  "));
+        assert_eq!(parse_client_name(&props), Some("Chrome Audio".to_string()));
+        
+        // Тест 3: отсутствие названия
+        props.clear();
+        assert_eq!(parse_client_name(&props), None);
+    }
+
+    #[test]
+    fn test_parse_f32() {
+        // Тест проверяет парсинг f32 значений
+        use serde_json::json;
+        
+        // Тест 1: число
+        assert_eq!(parse_f32(&json!(0.75)), Some(0.75));
+        
+        // Тест 2: строка
+        assert_eq!(parse_f32(&json!("0.5")), Some(0.5));
+        
+        // Тест 3: строка с пробелами
+        assert_eq!(parse_f32(&json!("  0.25  ")), Some(0.25));
+        
+        // Тест 4: некорректное значение
+        assert_eq!(parse_f32(&json!("abc")), None);
+    }
+
+    #[test]
+    fn test_audio_client_info_with_new_fields() {
+        // Тест проверяет создание клиентов с новыми полями
+        
+        // Тест 1: клиент с громкостью
+        let client = AudioClientInfo {
+            pid: 1234,
+            buffer_size_samples: None,
+            sample_rate_hz: None,
+            volume_level: Some(0.8),
+            latency_ms: None,
+            client_name: None,
+        };
+        assert_eq!(client.pid, 1234);
+        assert_eq!(client.volume_level, Some(0.8));
+        assert_eq!(client.latency_ms, None);
+        assert_eq!(client.client_name, None);
+        
+        // Тест 2: клиент с задержкой
+        let client = AudioClientInfo {
+            pid: 5678,
+            buffer_size_samples: None,
+            sample_rate_hz: None,
+            volume_level: None,
+            latency_ms: Some(100),
+            client_name: None,
+        };
+        assert_eq!(client.pid, 5678);
+        assert_eq!(client.volume_level, None);
+        assert_eq!(client.latency_ms, Some(100));
+        assert_eq!(client.client_name, None);
+        
+        // Тест 3: клиент с названием
+        let client = AudioClientInfo {
+            pid: 9999,
+            buffer_size_samples: None,
+            sample_rate_hz: None,
+            volume_level: None,
+            latency_ms: None,
+            client_name: Some("Test App".to_string()),
+        };
+        assert_eq!(client.pid, 9999);
+        assert_eq!(client.volume_level, None);
+        assert_eq!(client.latency_ms, None);
+        assert_eq!(client.client_name, Some("Test App".to_string()));
+    }
+
+    #[test]
+    fn test_audio_client_info_equality() {
+        // Тест проверяет, что AudioClientInfo корректно реализует PartialEq
+        
+        let client1 = AudioClientInfo {
+            pid: 1234,
+            buffer_size_samples: Some(1024),
+            sample_rate_hz: Some(48000),
+            volume_level: Some(0.75),
+            latency_ms: Some(50),
+            client_name: Some("Test".to_string()),
+        };
+        
+        let client2 = AudioClientInfo {
+            pid: 1234,
+            buffer_size_samples: Some(1024),
+            sample_rate_hz: Some(48000),
+            volume_level: Some(0.75),
+            latency_ms: Some(50),
+            client_name: Some("Test".to_string()),
+        };
+        
+        assert_eq!(client1, client2);
+        
+        let client3 = AudioClientInfo {
+            pid: 1234,
+            buffer_size_samples: Some(1024),
+            sample_rate_hz: Some(48000),
+            volume_level: Some(0.8), // Разное значение
+            latency_ms: Some(50),
+            client_name: Some("Test".to_string()),
+        };
+        
+        assert_ne!(client1, client3);
     }
 }
