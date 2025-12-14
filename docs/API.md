@@ -2269,6 +2269,130 @@ curl http://127.0.0.1:8080/api/config
 
 ---
 
+### POST /api/config
+
+Обновление текущей конфигурации демона (динамическое изменение параметров без перезагрузки).
+
+**Запрос:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{
+    "polling_interval_ms": 1500,
+    "max_candidates": 200,
+    "dry_run_default": true,
+    "policy_mode": "hybrid",
+    "enable_snapshot_logging": false
+  }'
+```
+
+**Ответ (если конфигурация успешно обновлена):**
+```json
+{
+  "status": "success",
+  "message": "Configuration updated successfully",
+  "config": {
+    "polling_interval_ms": 1500,
+    "max_candidates": 200,
+    "dry_run_default": true,
+    "policy_mode": "hybrid",
+    "enable_snapshot_logging": false,
+    "thresholds": {
+      "psi_cpu_some_high": 0.6,
+      "psi_io_some_high": 0.4,
+      "user_idle_timeout_sec": 120,
+      "interactive_build_grace_sec": 10,
+      "noisy_neighbour_cpu_share": 0.7,
+      "crit_interactive_percentile": 0.9,
+      "interactive_percentile": 0.6,
+      "normal_percentile": 0.3,
+      "background_percentile": 0.1,
+      "sched_latency_p99_threshold_ms": 20.0,
+      "ui_loop_p95_threshold_ms": 16.67
+    },
+    "paths": {
+      "snapshot_db_path": "/var/lib/smoothtask/snapshots.db",
+      "patterns_dir": "/etc/smoothtask/patterns",
+      "api_listen_addr": "127.0.0.1:8080"
+    },
+    "notifications": {
+      "enabled": false,
+      "backend": "stub",
+      "app_name": "SmoothTask",
+      "min_level": "warning"
+    },
+    "ml_ranker": {
+      "enabled": true,
+      "model_path": "/etc/smoothtask/models/ranker.onnx",
+      "use_categorical_features": false
+    }
+  }
+}
+```
+
+**Ответ (если конфигурация недоступна):**
+```json
+{
+  "status": "error",
+  "message": "Config not available (daemon may not be running or config not set)"
+}
+```
+
+**Ответ (если payload невалиден):**
+```json
+{
+  "status": "error",
+  "error": "invalid_input",
+  "message": "Invalid configuration payload",
+  "details": {
+    "type": "validation",
+    "suggestion": "Check field types and values. polling_interval_ms: 100-60000, max_candidates: 10-1000, dry_run_default: boolean, policy_mode: rules-only|hybrid, enable_snapshot_logging: boolean"
+  }
+}
+```
+
+**Параметры запроса (JSON):**
+- `polling_interval_ms` (u64, опционально) - интервал опроса системы в миллисекундах (100-60000)
+- `max_candidates` (usize, опционально) - максимальное количество кандидатов для обработки (10-1000)
+- `dry_run_default` (bool, опционально) - режим dry-run по умолчанию
+- `policy_mode` (string, опционально) - режим работы Policy Engine ("rules-only" или "hybrid")
+- `enable_snapshot_logging` (bool, опционально) - флаг включения логирования снапшотов
+
+**Примечания:**
+- Все параметры опциональны - можно обновлять только нужные поля
+- При частичном обновлении остальные параметры остаются без изменений
+- После успешного обновления кэш конфигурации очищается
+- Изменения применяются немедленно без перезагрузки демона
+
+**Примеры использования:**
+
+**Частичное обновление (только интервал опроса):**
+```bash
+curl -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"polling_interval_ms": 2000}'
+```
+
+**Обновление режима политики:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"policy_mode": "hybrid"}'
+```
+
+**Включение логирования снапшотов:**
+```bash
+curl -X POST http://127.0.0.1:8080/api/config \
+  -H "Content-Type: application/json" \
+  -d '{"enable_snapshot_logging": true}'
+```
+
+**Статус коды:**
+- `200 OK` - конфигурация успешно обновлена
+- `400 Bad Request` - невалидный payload (некорректные типы данных или значения вне допустимого диапазона)
+
+---
+
 ### POST /api/config/reload
 
 Перезагрузка конфигурации демона из файла.
