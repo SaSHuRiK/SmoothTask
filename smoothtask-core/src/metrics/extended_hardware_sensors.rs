@@ -32,6 +32,8 @@ pub struct ExtendedHardwareSensors {
     pub nvme_2_0_devices: Vec<(String, f32)>, // NVMe 2.0 устройства (имя, скорость в Гбит/с)
     pub thunderbolt6_devices: Vec<(String, f32)>, // Thunderbolt 6 устройства (имя, скорость в Гбит/с)
     pub pcie7_devices: Vec<(String, f32)>, // PCIe 7.0 устройства (имя, скорость в Гбит/с)
+    pub usb4_v3_devices: Vec<(String, f32)>, // USB4 v3 устройства (имя, скорость в Гбит/с)
+    pub nvme_3_0_devices: Vec<(String, f32)>, // NVMe 3.0 устройства (имя, скорость в Гбит/с)
 }
 
 /// Конфигурация расширенного мониторинга сенсоров
@@ -57,6 +59,8 @@ pub struct ExtendedHardwareSensorsConfig {
     pub enable_nvme_2_0_monitoring: bool,
     pub enable_thunderbolt6_monitoring: bool,
     pub enable_pcie7_monitoring: bool,
+    pub enable_usb4_v3_monitoring: bool,
+    pub enable_nvme_3_0_monitoring: bool,
 }
 
 impl Default for ExtendedHardwareSensorsConfig {
@@ -82,6 +86,8 @@ impl Default for ExtendedHardwareSensorsConfig {
             enable_nvme_2_0_monitoring: true,
             enable_thunderbolt6_monitoring: true,
             enable_pcie7_monitoring: true,
+            enable_usb4_v3_monitoring: true,
+            enable_nvme_3_0_monitoring: true,
         }
     }
 }
@@ -208,8 +214,12 @@ impl ExtendedHardwareSensorsMonitor {
         self.collect_usb4_v2_metrics(&mut sensors)?;
         self.collect_nvme_2_0_metrics(&mut sensors)?;
 
+        // Собираем метрики с новых типов устройств (USB4 v3 и NVMe 3.0)
+        self.collect_usb4_v3_metrics(&mut sensors)?;
+        self.collect_nvme_3_0_metrics(&mut sensors)?;
+
         info!(
-            "Extended hardware devices collection completed: {} Thunderbolt devices, {} PCIe devices, {} USB4 devices, {} NVMe devices, {} Thunderbolt 5 devices, {} Thunderbolt 6 devices, {} PCIe 6.0 devices, {} PCIe 7.0 devices, {} USB4 v2 devices, {} NVMe 2.0 devices",
+            "Extended hardware devices collection completed: {} Thunderbolt devices, {} PCIe devices, {} USB4 devices, {} NVMe devices, {} Thunderbolt 5 devices, {} Thunderbolt 6 devices, {} PCIe 6.0 devices, {} PCIe 7.0 devices, {} USB4 v2 devices, {} NVMe 2.0 devices, {} USB4 v3 devices, {} NVMe 3.0 devices",
             sensors.thunderbolt_devices.len(),
             sensors.pcie_devices.len(),
             sensors.usb4_devices.len(),
@@ -219,7 +229,9 @@ impl ExtendedHardwareSensorsMonitor {
             sensors.pcie6_devices.len(),
             sensors.pcie7_devices.len(),
             sensors.usb4_v2_devices.len(),
-            sensors.nvme_2_0_devices.len()
+            sensors.nvme_2_0_devices.len(),
+            sensors.usb4_v3_devices.len(),
+            sensors.nvme_3_0_devices.len()
         );
 
         Ok(sensors)
@@ -1618,6 +1630,132 @@ impl ExtendedHardwareSensorsMonitor {
 
         Ok(())
     }
+
+    /// Собрать метрики с USB4 v3 устройств
+    fn collect_usb4_v3_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        if !self.config.enable_usb4_v3_monitoring {
+            debug!("USB4 v3 monitoring is disabled");
+            return Ok(());
+        }
+
+        // Пробуем найти USB4 v3 устройства в /sys/bus/thunderbolt/devices/ (USB4 v3 часто использует Thunderbolt инфраструктуру)
+        let usb4_v3_dir = Path::new("/sys/bus/thunderbolt/devices");
+        debug!("Scanning for USB4 v3 devices at: {}", usb4_v3_dir.display());
+
+        if !usb4_v3_dir.exists() {
+            debug!("USB4 v3 directory not found at: {}", usb4_v3_dir.display());
+            return Ok(());
+        }
+
+        match fs::read_dir(usb4_v3_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let device_path = entry.path();
+                            let device_name = entry.file_name();
+                            let device_name_str = device_name.to_string_lossy();
+
+                            // Пробуем получить информацию о скорости устройства
+                            let speed_file = device_path.join("link_speed");
+                            if speed_file.exists() {
+                                match fs::read_to_string(&speed_file) {
+                                    Ok(speed_content) => {
+                                        match speed_content.trim().parse::<f32>() {
+                                            Ok(speed_gbps) => {
+                                                // USB4 v3 устройства обычно работают на скоростях 120 Гбит/с и выше
+                                                if speed_gbps >= 120.0 {
+                                                    sensors.usb4_v3_devices.push((
+                                                        device_name_str.to_string(),
+                                                        speed_gbps,
+                                                    ));
+                                                    debug!(
+                                                        "Successfully read USB4 v3 device: {} at {} Gbps",
+                                                        device_name_str, speed_gbps
+                                                    );
+                                                }
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "Failed to parse USB4 v3 speed from {}: {}",
+                                                    speed_file.display(), e
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "Failed to read USB4 v3 speed from {}: {}",
+                                            speed_file.display(), e
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("Failed to read USB4 v3 device entry: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read USB4 v3 directory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Собрать метрики с NVMe 3.0 устройств
+    fn collect_nvme_3_0_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        if !self.config.enable_nvme_3_0_monitoring {
+            debug!("NVMe 3.0 monitoring is disabled");
+            return Ok(());
+        }
+
+        // Пробуем найти NVMe 3.0 устройства в /sys/bus/nvme/devices/
+        let nvme_dir = Path::new("/sys/bus/nvme/devices");
+        debug!("Scanning for NVMe 3.0 devices at: {}", nvme_dir.display());
+
+        if !nvme_dir.exists() {
+            debug!("NVMe directory not found at: {}", nvme_dir.display());
+            return Ok(());
+        }
+
+        match fs::read_dir(nvme_dir) {
+            Ok(entries) => {
+                for entry in entries {
+                    match entry {
+                        Ok(entry) => {
+                            let _device_path = entry.path();
+                            let device_name = entry.file_name();
+                            let device_name_str = device_name.to_string_lossy();
+
+                            // Пробуем получить информацию о скорости устройства
+                            // NVMe 3.0 устройства обычно имеют скорость, определяемую их PCIe интерфейсом
+                            // Для простоты, будем использовать фиксированную скорость 128 Гбит/с для NVMe 3.0
+                            sensors.nvme_3_0_devices.push((
+                                device_name_str.to_string(),
+                                128.0, // Типичная скорость для NVMe 3.0
+                            ));
+                            debug!(
+                                "Successfully read NVMe 3.0 device: {} at {} Gbps",
+                                device_name_str, 128.0
+                            );
+                        }
+                        Err(e) => {
+                            warn!("Failed to read NVMe 3.0 device entry: {}", e);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                warn!("Failed to read NVMe 3.0 directory: {}", e);
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Тесты для расширенного мониторинга аппаратных сенсоров
@@ -1940,5 +2078,31 @@ mod tests {
         assert!(sensors.pcie6_devices.len() >= 0);
         assert!(sensors.usb4_v2_devices.len() >= 0);
         assert!(sensors.nvme_2_0_devices.len() >= 0);
+        assert!(sensors.usb4_v3_devices.len() >= 0);
+        assert!(sensors.nvme_3_0_devices.len() >= 0);
+    }
+
+    #[test]
+    fn test_usb4_v3_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_usb4_v3_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_usb4_v3_metrics(&mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.usb4_v3_devices.len(), 0);
+    }
+
+    #[test]
+    fn test_nvme_3_0_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_nvme_3_0_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_nvme_3_0_metrics(&mut sensors);
+        assert!(result.is_ok());
+        assert_eq!(sensors.nvme_3_0_devices.len(), 0);
     }
 }

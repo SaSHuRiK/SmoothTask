@@ -36,6 +36,7 @@ pub mod amdgpu_wrapper;
 pub mod app_performance;
 pub mod audio;
 pub mod audio_pipewire;
+pub mod batch_processor;
 pub mod cache;
 pub mod custom;
 pub mod ebpf;

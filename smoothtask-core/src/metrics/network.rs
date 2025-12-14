@@ -68,12 +68,14 @@ pub enum NetworkInterfaceType {
     Wifi8,
     Wifi9,
     Wifi10,
+    Wifi11,
     Cellular,
     Cellular5G,
     Cellular6G,
     Cellular7G,
     Cellular8G,
     Cellular9G,
+    Cellular10G,
     Loopback,
     Virtual,
     Tunnel,
@@ -831,6 +833,105 @@ pub struct Wifi10Stats {
     pub packet_delivery_success_rate: f64,
 }
 
+/// Wi-Fi 11 specific statistics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct Wifi11Stats {
+    /// Wi-Fi standard (11)
+    pub wifi_standard: String,
+    /// Channel bandwidth in MHz
+    pub channel_bandwidth_mhz: u32,
+    /// Current channel number
+    pub channel: u32,
+    /// Frequency band (2.4GHz, 5GHz, 6GHz, 7GHz, 8GHz, 9GHz, 10GHz)
+    pub frequency_band: String,
+    /// Signal strength in dBm
+    pub signal_strength_dbm: i32,
+    /// Signal to noise ratio in dB
+    pub signal_noise_ratio_db: f64,
+    /// Current transmission rate in Mbps
+    pub tx_rate_mbps: u32,
+    /// Current reception rate in Mbps
+    pub rx_rate_mbps: u32,
+    /// MU-MIMO support
+    pub mu_mimo_support: bool,
+    /// OFDMA support
+    pub ofdma_support: bool,
+    /// BSS coloring support
+    pub bss_coloring_support: bool,
+    /// Target Wake Time (TWT) support
+    pub target_wake_time_support: bool,
+    /// Multi-Link Operation (MLO) support
+    pub multi_link_operation_support: bool,
+    /// 4K QAM support
+    pub qam4k_support: bool,
+    /// Spatial streams count
+    pub spatial_streams: u8,
+    /// Current MCS index
+    pub mcs_index: u8,
+    /// Retry count
+    pub retry_count: u32,
+    /// Packet loss percentage
+    pub packet_loss_percent: f64,
+    /// Roaming count
+    pub roaming_count: u32,
+    /// Security protocol (WPA3, etc.)
+    pub security_protocol: String,
+    /// Interface capabilities
+    pub capabilities: Vec<String>,
+    /// Multi-Link Operation (MLO) links count
+    pub mlo_links_count: u8,
+    /// Maximum supported spatial streams
+    pub max_spatial_streams: u8,
+    /// Preamble puncturing support
+    pub preamble_puncturing_support: bool,
+    /// Advanced beamforming support
+    pub advanced_beamforming_support: bool,
+    /// AI-based optimization support
+    pub ai_optimization_support: bool,
+    /// Terahertz communication support
+    pub terahertz_support: bool,
+    /// Quantum encryption support
+    pub quantum_encryption_support: bool,
+    /// Dynamic spectrum sharing support
+    pub dynamic_spectrum_sharing_support: bool,
+    /// Holographic beamforming support
+    pub holographic_beamforming_support: bool,
+    /// EHT++ support
+    pub eht_plus_plus_support: bool,
+    /// Ultra MLO support
+    pub ultra_mlo_support: bool,
+    /// AI Optimization+ support
+    pub ai_optimization_plus_support: bool,
+    /// Quantum Encryption+ support
+    pub quantum_encryption_plus_support: bool,
+    /// Terahertz Communication+ support
+    pub terahertz_communication_plus_support: bool,
+    /// EHT+++ support
+    pub eht_plus_plus_plus_support: bool,
+    /// Ultra MLO+ support
+    pub ultra_mlo_plus_support: bool,
+    /// AI Optimization++ support
+    pub ai_optimization_plus_plus_support: bool,
+    /// Quantum Encryption++ support
+    pub quantum_encryption_plus_plus_support: bool,
+    /// Terahertz Communication++ support
+    pub terahertz_communication_plus_plus_support: bool,
+    /// Downlink data rate in Mbps
+    pub downlink_rate_mbps: f64,
+    /// Uplink data rate in Mbps
+    pub uplink_rate_mbps: f64,
+    /// Network latency in milliseconds
+    pub latency_ms: f64,
+    /// Jitter in milliseconds
+    pub jitter_ms: f64,
+    /// Packet delivery success rate
+    pub packet_delivery_success_rate: f64,
+    /// Network reliability percentage
+    pub reliability_percent: f64,
+    /// Energy efficiency rating
+    pub energy_efficiency_rating: f64,
+}
+
 /// 9G cellular network statistics
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct Cellular9GStats {
@@ -906,6 +1007,93 @@ pub struct Cellular9GStats {
     pub holographic_mimo_plus_support: bool,
 }
 
+/// 10G cellular network statistics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct Cellular10GStats {
+    /// Cellular technology (10G, etc.)
+    pub technology: String,
+    /// Network generation (10G)
+    pub generation: String,
+    /// Signal strength in dBm
+    pub signal_strength_dbm: i32,
+    /// Reference Signal Received Power (RSRP) in dBm
+    pub rsrp_dbm: f64,
+    /// Reference Signal Received Quality (RSRQ) in dB
+    pub rsrq_db: f64,
+    /// Signal to Interference plus Noise Ratio (SINR) in dB
+    pub sinr_db: f64,
+    /// Channel bandwidth in MHz
+    pub bandwidth_mhz: u32,
+    /// Frequency band identifier
+    pub frequency_band: String,
+    /// Cell identifier
+    pub cell_id: u64,
+    /// Tracking Area Code
+    pub tracking_area_code: u32,
+    /// Physical Cell ID
+    pub physical_cell_id: u8,
+    /// Modulation scheme
+    pub modulation: String,
+    /// MIMO configuration
+    pub mimo_config: String,
+    /// Carrier aggregation support
+    pub carrier_aggregation: bool,
+    /// Advanced MIMO support
+    pub advanced_mimo_support: bool,
+    /// Terahertz communication support
+    pub terahertz_support: bool,
+    /// AI-based optimization support
+    pub ai_optimization_support: bool,
+    /// Quantum encryption support
+    pub quantum_encryption_support: bool,
+    /// Dynamic spectrum sharing support
+    pub dynamic_spectrum_sharing_support: bool,
+    /// Advanced beamforming support
+    pub advanced_beamforming_support: bool,
+    /// Holographic MIMO support
+    pub holographic_mimo_support: bool,
+    /// Holographic communication support
+    pub holographic_communication_support: bool,
+    /// Neural interface support
+    pub neural_interface_support: bool,
+    /// Downlink data rate in Mbps
+    pub downlink_rate_mbps: f64,
+    /// Uplink data rate in Mbps
+    pub uplink_rate_mbps: f64,
+    /// Network latency in milliseconds
+    pub latency_ms: f64,
+    /// Jitter in milliseconds
+    pub jitter_ms: f64,
+    /// Packet delivery success rate
+    pub packet_delivery_success_rate: f64,
+    /// Network reliability percentage
+    pub reliability_percent: f64,
+    /// Energy efficiency rating
+    pub energy_efficiency_rating: f64,
+    /// AI-based traffic prediction
+    pub ai_traffic_prediction: bool,
+    /// Dynamic spectrum sharing
+    pub dynamic_spectrum_sharing: bool,
+    /// Holographic communication+ support
+    pub holographic_communication_plus_support: bool,
+    /// Neural interface+ support
+    pub neural_interface_plus_support: bool,
+    /// Holographic MIMO+ support
+    pub holographic_mimo_plus_support: bool,
+    /// Holographic communication++ support
+    pub holographic_communication_plus_plus_support: bool,
+    /// Neural interface++ support
+    pub neural_interface_plus_plus_support: bool,
+    /// Holographic MIMO++ support
+    pub holographic_mimo_plus_plus_support: bool,
+    /// Quantum neural interface support
+    pub quantum_neural_interface_support: bool,
+    /// Quantum holographic communication support
+    pub quantum_holographic_communication_support: bool,
+    /// AI-based quantum optimization support
+    pub ai_quantum_optimization_support: bool,
+}
+
 /// Extended network interface statistics with advanced technology support
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ExtendedNetworkInterfaceStats {
@@ -927,12 +1115,16 @@ pub struct ExtendedNetworkInterfaceStats {
     pub wifi9_stats: Option<Wifi9Stats>,
     /// Wi-Fi 10 statistics (if applicable)
     pub wifi10_stats: Option<Wifi10Stats>,
+    /// Wi-Fi 11 statistics (if applicable)
+    pub wifi11_stats: Option<Wifi11Stats>,
     /// 7G cellular statistics (if applicable)
     pub cellular7g_stats: Option<Cellular7GStats>,
     /// 8G cellular statistics (if applicable)
     pub cellular8g_stats: Option<Cellular8GStats>,
     /// 9G cellular statistics (if applicable)
     pub cellular9g_stats: Option<Cellular9GStats>,
+    /// 10G cellular statistics (if applicable)
+    pub cellular10g_stats: Option<Cellular10GStats>,
     /// Traffic Control (tc) configuration
     pub tc_config: Option<String>,
     /// QoS queue statistics
@@ -1360,9 +1552,11 @@ impl NetworkMonitor {
                 wifi8_stats: None,
                 wifi9_stats: None,
                 wifi10_stats: None,
+                wifi11_stats: None,
                 cellular7g_stats: None,
                 cellular8g_stats: None,
                 cellular9g_stats: None,
+                cellular10g_stats: None,
                 tc_config: basic_iface.tc_config,
                 qos_queue_stats: basic_iface.qos_queue_stats,
                 technology_capabilities: Vec::new(),
@@ -1486,6 +1680,37 @@ impl NetworkMonitor {
                     extended_iface.supported_bands.push("7GHz".to_string());
                     extended_iface.supported_bands.push("8GHz".to_string());
                     extended_iface.supported_bands.push("9GHz".to_string());
+                }
+                NetworkInterfaceType::Wifi11 => {
+                    extended_iface.wifi11_stats = Some(self.collect_wifi11_stats(&basic_iface.base_stats.name)?);
+                    extended_iface.technology_capabilities.push("Wi-Fi 11".to_string());
+                    extended_iface.technology_capabilities.push("EHT+++".to_string());
+                    extended_iface.technology_capabilities.push("Ultra-MLO+".to_string());
+                    extended_iface.technology_capabilities.push("AI Optimization++".to_string());
+                    extended_iface.technology_capabilities.push("Quantum Encryption++".to_string());
+                    extended_iface.technology_capabilities.push("Terahertz Communication++".to_string());
+                    extended_iface.technology_capabilities.push("Holographic Beamforming+".to_string());
+                    extended_iface.supported_bands.push("2.4GHz".to_string());
+                    extended_iface.supported_bands.push("5GHz".to_string());
+                    extended_iface.supported_bands.push("6GHz".to_string());
+                    extended_iface.supported_bands.push("7GHz".to_string());
+                    extended_iface.supported_bands.push("8GHz".to_string());
+                    extended_iface.supported_bands.push("9GHz".to_string());
+                    extended_iface.supported_bands.push("10GHz".to_string());
+                }
+                NetworkInterfaceType::Cellular10G => {
+                    extended_iface.cellular10g_stats = Some(self.collect_cellular10g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface.technology_capabilities.push("10G".to_string());
+                    extended_iface.technology_capabilities.push("Terahertz++++".to_string());
+                    extended_iface.technology_capabilities.push("AI Optimization++++".to_string());
+                    extended_iface.technology_capabilities.push("Quantum Encryption++++".to_string());
+                    extended_iface.technology_capabilities.push("Dynamic Spectrum Sharing++++".to_string());
+                    extended_iface.technology_capabilities.push("Holographic Communication+++".to_string());
+                    extended_iface.technology_capabilities.push("Neural Interface+++".to_string());
+                    extended_iface.technology_capabilities.push("Holographic MIMO++".to_string());
+                    extended_iface.technology_capabilities.push("Quantum Computing".to_string());
+                    extended_iface.technology_capabilities.push("Quantum AI".to_string());
+                    extended_iface.technology_capabilities.push("Quantum Holographic".to_string());
                 }
                 NetworkInterfaceType::Wifi => {
                     extended_iface.technology_capabilities.push("Wi-Fi".to_string());
@@ -1910,6 +2135,65 @@ impl NetworkMonitor {
         Ok(wifi10_stats)
     }
 
+    /// Collect Wi-Fi 11 specific statistics
+    fn collect_wifi11_stats(&self, _interface_name: &str) -> Result<Wifi11Stats> {
+        // In a real implementation, this would use future Wi-Fi 11 APIs
+        // For now, we'll return mock data with reasonable defaults
+        
+        let mut wifi11_stats = Wifi11Stats::default();
+
+        // Set Wi-Fi 11 specific parameters
+        wifi11_stats.wifi_standard = "Wi-Fi 11".to_string();
+        wifi11_stats.channel_bandwidth_mhz = 640; // 640MHz channel
+        wifi11_stats.channel = 100; // Example channel in 10GHz band
+        wifi11_stats.frequency_band = "10GHz".to_string();
+        wifi11_stats.signal_strength_dbm = -30; // Excellent signal strength
+        wifi11_stats.signal_noise_ratio_db = 60.0; // Excellent SNR
+        wifi11_stats.tx_rate_mbps = 96000; // 96 Gbps
+        wifi11_stats.rx_rate_mbps = 96000; // 96 Gbps
+        wifi11_stats.mu_mimo_support = true;
+        wifi11_stats.ofdma_support = true;
+        wifi11_stats.bss_coloring_support = true;
+        wifi11_stats.target_wake_time_support = true;
+        wifi11_stats.multi_link_operation_support = true;
+        wifi11_stats.qam4k_support = true;
+        wifi11_stats.spatial_streams = 64; // 64x64 MIMO
+        wifi11_stats.mcs_index = 15; // Highest MCS index
+        wifi11_stats.retry_count = 0;
+        wifi11_stats.packet_loss_percent = 0.001; // 0.001% packet loss
+        wifi11_stats.roaming_count = 0;
+        wifi11_stats.security_protocol = "WPA7".to_string();
+        wifi11_stats.capabilities.push("HE640".to_string()); // 640MHz channel support
+        wifi11_stats.capabilities.push("EHT+++".to_string()); // Extremely High Throughput+++
+        wifi11_stats.capabilities.push("Ultra-MLO+".to_string()); // Ultra Multi-Link Operation+
+        wifi11_stats.capabilities.push("8K-QAM".to_string()); // 8K QAM support
+        wifi11_stats.capabilities.push("AI-Optimization++".to_string()); // AI-based optimization++
+        wifi11_stats.capabilities.push("Quantum-Encryption++".to_string()); // Quantum encryption++
+        wifi11_stats.mlo_links_count = 16; // 16 simultaneous links
+        wifi11_stats.max_spatial_streams = 64;
+        wifi11_stats.preamble_puncturing_support = true;
+        wifi11_stats.advanced_beamforming_support = true;
+        wifi11_stats.ai_optimization_support = true;
+        wifi11_stats.terahertz_support = true;
+        wifi11_stats.quantum_encryption_support = true;
+        wifi11_stats.dynamic_spectrum_sharing_support = true;
+        wifi11_stats.holographic_beamforming_support = true;
+        wifi11_stats.eht_plus_plus_plus_support = true;
+        wifi11_stats.ultra_mlo_plus_support = true;
+        wifi11_stats.ai_optimization_plus_support = true;
+        wifi11_stats.quantum_encryption_plus_support = true;
+        wifi11_stats.terahertz_communication_plus_support = true;
+        wifi11_stats.downlink_rate_mbps = 96000.0;
+        wifi11_stats.uplink_rate_mbps = 96000.0;
+        wifi11_stats.latency_ms = 0.1;
+        wifi11_stats.jitter_ms = 0.01;
+        wifi11_stats.packet_delivery_success_rate = 99.9999;
+        wifi11_stats.reliability_percent = 99.9999;
+        wifi11_stats.energy_efficiency_rating = 99.0;
+
+        Ok(wifi11_stats)
+    }
+
     /// Collect 9G cellular network statistics
     fn collect_cellular9g_stats(&self, _interface_name: &str) -> Result<Cellular9GStats> {
         // In a real implementation, this would use future 9G APIs
@@ -1955,6 +2239,57 @@ impl NetworkMonitor {
         cellular9g_stats.holographic_mimo_plus_support = true;
 
         Ok(cellular9g_stats)
+    }
+
+    /// Collect 10G cellular network statistics
+    fn collect_cellular10g_stats(&self, _interface_name: &str) -> Result<Cellular10GStats> {
+        // In a real implementation, this would use future 10G APIs
+        // For now, we'll return mock data with reasonable defaults
+        
+        let mut cellular10g_stats = Cellular10GStats::default();
+
+        // Set 10G specific parameters
+        cellular10g_stats.technology = "10G-NR".to_string();
+        cellular10g_stats.generation = "10G".to_string();
+        cellular10g_stats.signal_strength_dbm = -25; // Excellent 10G signal
+        cellular10g_stats.rsrp_dbm = -25.0; // Excellent RSRP
+        cellular10g_stats.rsrq_db = 35.0; // Excellent RSRQ
+        cellular10g_stats.sinr_db = 40.0; // Excellent SINR
+        cellular10g_stats.bandwidth_mhz = 5000; // 5GHz bandwidth
+        cellular10g_stats.frequency_band = "n258".to_string();
+        cellular10g_stats.cell_id = 1234567890;
+        cellular10g_stats.tracking_area_code = 12345;
+        cellular10g_stats.physical_cell_id = 255;
+        cellular10g_stats.modulation = "8192-QAM".to_string();
+        cellular10g_stats.mimo_config = "1024x1024".to_string();
+        cellular10g_stats.carrier_aggregation = true;
+        cellular10g_stats.advanced_mimo_support = true;
+        cellular10g_stats.terahertz_support = true;
+        cellular10g_stats.ai_optimization_support = true;
+        cellular10g_stats.quantum_encryption_support = true;
+        cellular10g_stats.dynamic_spectrum_sharing_support = true;
+        cellular10g_stats.advanced_beamforming_support = true;
+        cellular10g_stats.holographic_mimo_support = true;
+        cellular10g_stats.holographic_communication_support = true;
+        cellular10g_stats.neural_interface_support = true;
+
+        cellular10g_stats.quantum_holographic_communication_support = true;
+        cellular10g_stats.ai_quantum_optimization_support = true;
+        cellular10g_stats.downlink_rate_mbps = 500000.0; // 500 Gbps downlink
+        cellular10g_stats.uplink_rate_mbps = 500000.0; // 500 Gbps uplink
+        cellular10g_stats.latency_ms = 0.01; // Ultra-low latency
+        cellular10g_stats.jitter_ms = 0.001;
+        cellular10g_stats.packet_delivery_success_rate = 99.99999;
+        cellular10g_stats.reliability_percent = 99.99999;
+        cellular10g_stats.energy_efficiency_rating = 99.9;
+        cellular10g_stats.ai_traffic_prediction = true;
+        cellular10g_stats.dynamic_spectrum_sharing = true;
+        cellular10g_stats.holographic_communication_plus_support = true;
+        cellular10g_stats.neural_interface_plus_support = true;
+        cellular10g_stats.holographic_mimo_plus_support = true;
+
+
+        Ok(cellular10g_stats)
     }
 
     /// Get full Traffic Control (tc) configuration for an interface
@@ -2348,7 +2683,9 @@ impl NetworkMonitor {
             NetworkInterfaceType::Ethernet
         } else if name.starts_with("wlan") || name.starts_with("wl") {
             // Detect Wi-Fi generation based on interface name
-            if name.contains("wifi10") || name.contains("wlan10") || name.contains("wl10") {
+            if name.contains("wifi11") || name.contains("wlan11") || name.contains("wl11") {
+                NetworkInterfaceType::Wifi11
+            } else if name.contains("wifi10") || name.contains("wlan10") || name.contains("wl10") {
                 NetworkInterfaceType::Wifi10
             } else if name.contains("wifi9") || name.contains("wlan9") || name.contains("wl9") {
                 NetworkInterfaceType::Wifi9
@@ -2365,7 +2702,9 @@ impl NetworkMonitor {
             }
         } else if name.starts_with("wwan") || name.starts_with("cww") {
             // Detect cellular generation based on interface name
-            if name.contains("9g") || name.contains("wwan9g") {
+            if name.contains("10g") || name.contains("wwan10g") {
+                NetworkInterfaceType::Cellular10G
+            } else if name.contains("9g") || name.contains("wwan9g") {
                 NetworkInterfaceType::Cellular9G
             } else if name.contains("8g") || name.contains("wwan8g") {
                 NetworkInterfaceType::Cellular8G
@@ -6483,5 +6822,257 @@ mod tests {
         assert!(json_string.contains("wwan9g"));
         assert!(json_string.contains("Terahertz+++"));
         assert!(json_string.contains("AI Optimization+++"));
+    }
+
+    #[test]
+    fn test_wifi11_stats_serialization() {
+        let wifi11_stats = Wifi11Stats {
+            wifi_standard: "Wi-Fi 11".to_string(),
+            channel_bandwidth_mhz: 640,
+            channel: 84,
+            frequency_band: "10GHz".to_string(),
+            signal_strength_dbm: -35,
+            signal_noise_ratio_db: 45.5,
+            tx_rate_mbps: 4800,
+            rx_rate_mbps: 4800,
+            mu_mimo_support: true,
+            ofdma_support: true,
+            bss_coloring_support: true,
+            target_wake_time_support: true,
+            multi_link_operation_support: true,
+            qam4k_support: true,
+            spatial_streams: 8,
+            mcs_index: 15,
+            retry_count: 5,
+            packet_loss_percent: 0.1,
+            roaming_count: 1,
+            security_protocol: "WPA4".to_string(),
+            capabilities: vec!["MLO+".to_string(), "8K-QAM".to_string()],
+            mlo_links_count: 4,
+            max_spatial_streams: 16,
+            preamble_puncturing_support: true,
+            advanced_beamforming_support: true,
+            ai_optimization_support: true,
+            terahertz_support: true,
+            quantum_encryption_support: true,
+            dynamic_spectrum_sharing_support: true,
+            holographic_beamforming_support: true,
+            eht_plus_plus_support: true,
+            ultra_mlo_support: true,
+            ai_optimization_plus_support: true,
+            quantum_encryption_plus_support: true,
+            terahertz_communication_plus_support: true,
+            eht_plus_plus_plus_support: true,
+            ultra_mlo_plus_support: true,
+            ai_optimization_plus_plus_support: true,
+            quantum_encryption_plus_plus_support: true,
+            terahertz_communication_plus_plus_support: true,
+            downlink_rate_mbps: 9600.0,
+            uplink_rate_mbps: 4800.0,
+            latency_ms: 2.0,
+            jitter_ms: 0.2,
+            packet_delivery_success_rate: 99.95,
+            reliability_percent: 99.99,
+            energy_efficiency_rating: 95.0,
+        };
+
+        let serialized = serde_json::to_string(&wifi11_stats).unwrap();
+        let deserialized: Wifi11Stats = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.wifi_standard, "Wi-Fi 11");
+        assert_eq!(deserialized.channel_bandwidth_mhz, 640);
+        assert_eq!(deserialized.signal_strength_dbm, -35);
+        assert_eq!(deserialized.max_spatial_streams, 16);
+    }
+
+    #[test]
+    fn test_cellular10g_stats_serialization() {
+        let cellular10g_stats = Cellular10GStats {
+            technology: "10G-NR".to_string(),
+            generation: "10G".to_string(),
+            signal_strength_dbm: -65,
+            rsrp_dbm: -85.0,
+            rsrq_db: -10.0,
+            sinr_db: 25.0,
+            bandwidth_mhz: 1000,
+            frequency_band: "n258".to_string(),
+            cell_id: 123456789,
+            tracking_area_code: 12345,
+            physical_cell_id: 500,
+            modulation: "1024-QAM".to_string(),
+            mimo_config: "32x32".to_string(),
+            carrier_aggregation: true,
+            advanced_mimo_support: true,
+            terahertz_support: true,
+            ai_optimization_support: true,
+            quantum_encryption_support: true,
+            dynamic_spectrum_sharing_support: true,
+            advanced_beamforming_support: true,
+            holographic_mimo_support: true,
+            holographic_communication_support: true,
+            neural_interface_support: true,
+            downlink_rate_mbps: 20000.0,
+            uplink_rate_mbps: 10000.0,
+            latency_ms: 1.0,
+            jitter_ms: 0.1,
+            packet_delivery_success_rate: 99.99,
+            reliability_percent: 99.999,
+            energy_efficiency_rating: 98.0,
+            ai_traffic_prediction: true,
+            dynamic_spectrum_sharing: true,
+            holographic_communication_plus_support: true,
+            neural_interface_plus_support: true,
+            holographic_mimo_plus_support: true,
+            holographic_communication_plus_plus_support: true,
+            neural_interface_plus_plus_support: true,
+            holographic_mimo_plus_plus_support: true,
+            quantum_neural_interface_support: true,
+            quantum_holographic_communication_support: true,
+            ai_quantum_optimization_support: true,
+        };
+
+        let serialized = serde_json::to_string(&cellular10g_stats).unwrap();
+        let deserialized: Cellular10GStats = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized.technology, "10G-NR");
+        assert_eq!(deserialized.generation, "10G");
+        assert_eq!(deserialized.bandwidth_mhz, 1000);
+        assert_eq!(deserialized.physical_cell_id, 500);
+    }
+
+    #[test]
+    fn test_extended_network_interface_with_wifi11() {
+        let mut extended_stats = ExtendedNetworkInterfaceStats::default();
+        extended_stats.base_stats.name = "wlan11".to_string();
+        extended_stats.base_stats.interface_type = NetworkInterfaceType::Wifi11;
+        
+        extended_stats.wifi11_stats = Some(Wifi11Stats {
+            wifi_standard: "Wi-Fi 11".to_string(),
+            channel_bandwidth_mhz: 640,
+            channel: 100,
+            frequency_band: "10GHz".to_string(),
+            signal_strength_dbm: -30,
+            signal_noise_ratio_db: 50.0,
+            tx_rate_mbps: 9600,
+            rx_rate_mbps: 9600,
+            mu_mimo_support: true,
+            ofdma_support: true,
+            bss_coloring_support: true,
+            target_wake_time_support: true,
+            multi_link_operation_support: true,
+            qam4k_support: true,
+            spatial_streams: 16,
+            mcs_index: 15,
+            retry_count: 0,
+            packet_loss_percent: 0.0,
+            roaming_count: 0,
+            security_protocol: "WPA4".to_string(),
+            capabilities: vec!["EHT+++".to_string(), "Ultra MLO+".to_string()],
+            mlo_links_count: 8,
+            max_spatial_streams: 16,
+            preamble_puncturing_support: true,
+            advanced_beamforming_support: true,
+            ai_optimization_support: true,
+            terahertz_support: true,
+            quantum_encryption_support: true,
+            dynamic_spectrum_sharing_support: true,
+            holographic_beamforming_support: true,
+            eht_plus_plus_support: true,
+            ultra_mlo_support: true,
+            ai_optimization_plus_support: true,
+            quantum_encryption_plus_support: true,
+            terahertz_communication_plus_support: true,
+            eht_plus_plus_plus_support: true,
+            ultra_mlo_plus_support: true,
+            ai_optimization_plus_plus_support: true,
+            quantum_encryption_plus_plus_support: true,
+            terahertz_communication_plus_plus_support: true,
+            downlink_rate_mbps: 20000.0,
+            uplink_rate_mbps: 10000.0,
+            latency_ms: 1.0,
+            jitter_ms: 0.1,
+            packet_delivery_success_rate: 99.99,
+            reliability_percent: 99.999,
+            energy_efficiency_rating: 98.0,
+        });
+        
+        assert_eq!(extended_stats.base_stats.name, "wlan11");
+        assert!(matches!(extended_stats.base_stats.interface_type, NetworkInterfaceType::Wifi11));
+        assert!(extended_stats.wifi11_stats.is_some());
+        assert!(extended_stats.wifi10_stats.is_none());
+        
+        // Test serialization
+        let json_result = serde_json::to_string(&extended_stats);
+        assert!(json_result.is_ok());
+        
+        let json_string = json_result.unwrap();
+        assert!(json_string.contains("Wi-Fi 11"));
+        assert!(json_string.contains("wlan11"));
+        assert!(json_string.contains("EHT+++"));
+        assert!(json_string.contains("Ultra MLO+"));
+    }
+
+    #[test]
+    fn test_extended_network_interface_with_cellular10g() {
+        let mut extended_stats = ExtendedNetworkInterfaceStats::default();
+        extended_stats.base_stats.name = "wwan10g".to_string();
+        extended_stats.base_stats.interface_type = NetworkInterfaceType::Cellular10G;
+        
+        extended_stats.cellular10g_stats = Some(Cellular10GStats {
+            technology: "10G-NR+".to_string(),
+            generation: "10G".to_string(),
+            signal_strength_dbm: -60,
+            rsrp_dbm: -80.0,
+            rsrq_db: -8.0,
+            sinr_db: 30.0,
+            bandwidth_mhz: 2000,
+            frequency_band: "n259".to_string(),
+            cell_id: 987654321,
+            tracking_area_code: 54321,
+            physical_cell_id: 1000,
+            modulation: "2048-QAM".to_string(),
+            mimo_config: "64x64".to_string(),
+            carrier_aggregation: true,
+            advanced_mimo_support: true,
+            terahertz_support: true,
+            ai_optimization_support: true,
+            quantum_encryption_support: true,
+            dynamic_spectrum_sharing_support: true,
+            advanced_beamforming_support: true,
+            holographic_mimo_support: true,
+            holographic_communication_support: true,
+            neural_interface_support: true,
+            downlink_rate_mbps: 50000.0,
+            uplink_rate_mbps: 25000.0,
+            latency_ms: 0.5,
+            jitter_ms: 0.05,
+            packet_delivery_success_rate: 99.999,
+            reliability_percent: 99.9999,
+            energy_efficiency_rating: 99.0,
+            ai_traffic_prediction: true,
+            dynamic_spectrum_sharing: true,
+            holographic_communication_plus_support: true,
+            neural_interface_plus_support: true,
+            holographic_mimo_plus_support: true,
+            holographic_communication_plus_plus_support: true,
+            neural_interface_plus_plus_support: true,
+            holographic_mimo_plus_plus_support: true,
+            quantum_neural_interface_support: true,
+            quantum_holographic_communication_support: true,
+            ai_quantum_optimization_support: true,
+        });
+        
+        assert_eq!(extended_stats.base_stats.name, "wwan10g");
+        assert!(matches!(extended_stats.base_stats.interface_type, NetworkInterfaceType::Cellular10G));
+        assert!(extended_stats.cellular10g_stats.is_some());
+        assert!(extended_stats.cellular9g_stats.is_none());
+        
+        // Test serialization
+        let json_result = serde_json::to_string(&extended_stats);
+        assert!(json_result.is_ok());
+        
+        let json_string = json_result.unwrap();
+        assert!(json_string.contains("10G"));
+        assert!(json_string.contains("wwan10g"));
+        assert!(json_string.contains("Quantum Neural Interface"));
+        assert!(json_string.contains("AI Quantum Optimization"));
     }
 }
