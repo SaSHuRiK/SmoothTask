@@ -5490,6 +5490,449 @@ perf top -p $(pgrep smoothtaskd)
 3. **Фичи**: Реализация новых функций и улучшений
 4. **Баги**: Исправление ошибок и улучшение стабильности
 
+## Примеры использования API
+
+Этот раздел содержит практические примеры использования SmoothTask Control API на различных языках программирования.
+
+### Примеры на Python
+
+#### Получение системных метрик
+
+```python
+import requests
+import json
+
+def get_system_metrics(api_url="http://localhost:8080/api/system"):
+    """
+    Получает системные метрики через SmoothTask API
+    
+    Args:
+        api_url: URL API сервера SmoothTask
+        
+    Returns:
+        dict: Системные метрики в формате JSON
+    """
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        
+        metrics = response.json()
+        print("System Metrics:")
+        print(json.dumps(metrics, indent=2))
+        
+        # Пример обработки данных
+        cpu_usage = metrics.get('cpu', {}).get('usage', {})
+        memory = metrics.get('memory', {})
+        
+        print(f"\nCPU Usage: User={cpu_usage.get('user', 0):.1f}%, System={cpu_usage.get('system', 0):.1f}%")
+        print(f"Memory: Total={memory.get('total_bytes', 0) / 1024 / 1024:.1f} MB, Used={memory.get('used_bytes', 0) / 1024 / 1024:.1f} MB")
+        
+        return metrics
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching system metrics: {e}")
+        return None
+
+# Использование
+if __name__ == "__main__":
+    get_system_metrics()
+```
+
+#### Получение информации о процессах
+
+```python
+import requests
+import json
+
+def get_processes(api_url="http://localhost:8080/api/processes"):
+    """
+    Получает информацию о процессах через SmoothTask API
+    
+    Args:
+        api_url: URL API сервера SmoothTask
+        
+    Returns:
+        list: Список процессов в формате JSON
+    """
+    try:
+        response = requests.get(api_url)
+        response.raise_for_status()
+        
+        processes = response.json()
+        print(f"Total processes: {len(processes)}")
+        
+        # Пример фильтрации процессов по использованию CPU
+        high_cpu_processes = [p for p in processes if p.get('cpu_usage_percent', 0) > 10.0]
+        print(f"High CPU processes (>10%): {len(high_cpu_processes)}")
+        
+        for process in high_cpu_processes[:5]:  # Показать топ-5
+            print(f"  PID {process.get('pid', 0)}: {process.get('name', 'unknown')} - {process.get('cpu_usage_percent', 0):.1f}% CPU")
+        
+        return processes
+        
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching processes: {e}")
+        return None
+
+# Использование
+if __name__ == "__main__":
+    get_processes()
+```
+
+#### Получение информации о конкретном процессе
+
+```python
+import requests
+import json
+
+def get_process_by_pid(pid, api_url="http://localhost:8080/api/processes"):
+    """
+    Получает информацию о конкретном процессе по PID
+    
+    Args:
+        pid: ID процесса
+        api_url: URL API сервера SmoothTask
+        
+    Returns:
+        dict: Информация о процессе в формате JSON
+    """
+    try:
+        url = f"{api_url}/{pid}"
+        response = requests.get(url)
+        response.raise_for_status()
+        
+        process = response.json()
+        print(f"Process {pid} details:")
+        print(json.dumps(process, indent=2))
+        
+        # Пример обработки данных
+        print(f"\nProcess: {process.get('name', 'unknown')}")
+        print(f"CPU: {process.get('cpu_usage_percent', 0):.1f}%")
+        print(f"Memory: {process.get('memory_usage_bytes', 0) / 1024 / 1024:.1f} MB")
+        print(f"Status: {process.get('status', 'unknown')}")
+        
+        return process
+        
+    except requests.exceptions.HTTPError as e:
+        if response.status_code == 404:
+            print(f"Process {pid} not found")
+        else:
+            print(f"Error fetching process {pid}: {e}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching process {pid}: {e}")
+        return None
+
+# Использование
+if __name__ == "__main__":
+    # Пример: получить информацию о процессе с PID 1 (обычно systemd)
+    get_process_by_pid(1)
+```
+
+### Примеры на Bash (curl)
+
+#### Получение системных метрик
+
+```bash
+#!/bin/bash
+
+# Получение системных метрик
+API_URL="http://localhost:8080/api/system"
+
+response=$(curl -s "$API_URL")
+
+if [ $? -eq 0 ]; then
+    echo "System Metrics:"
+    echo "$response" | jq .
+    
+    # Извлечение конкретных метрик
+    cpu_user=$(echo "$response" | jq -r '.cpu.usage.user')
+    cpu_system=$(echo "$response" | jq -r '.cpu.usage.system')
+    memory_total=$(echo "$response" | jq -r '.memory.total_bytes')
+    memory_used=$(echo "$response" | jq -r '.memory.used_bytes')
+    
+    echo -e "\nCPU Usage: User=${cpu_user}%, System=${cpu_system}%"
+    echo "Memory: Total=$(echo "scale=2; $memory_total/1024/1024" | bc) MB, Used=$(echo "scale=2; $memory_used/1024/1024" | bc) MB"
+else
+    echo "Error: Failed to fetch system metrics"
+    exit 1
+fi
+```
+
+#### Получение информации о процессах
+
+```bash
+#!/bin/bash
+
+# Получение информации о процессах
+API_URL="http://localhost:8080/api/processes"
+
+response=$(curl -s "$API_URL")
+
+if [ $? -eq 0 ]; then
+    echo "Processes:"
+    echo "$response" | jq -r '.[] | "PID \(.pid): \(.name) - \(.cpu_usage_percent)% CPU, \(.memory_usage_bytes/1024/1024 | floor) MB"' | head -10
+    
+    # Фильтрация процессов с высоким использованием CPU
+    echo -e "\nHigh CPU processes (>10%):"
+    echo "$response" | jq -r '.[] | select(.cpu_usage_percent > 10) | "PID \(.pid): \(.name) - \(.cpu_usage_percent)% CPU"'
+else
+    echo "Error: Failed to fetch processes"
+    exit 1
+fi
+```
+
+#### Получение информации о конкретном процессе
+
+```bash
+#!/bin/bash
+
+# Получение информации о конкретном процессе
+API_URL="http://localhost:8080/api/processes"
+PID=${1:-1}  # По умолчанию PID 1 (systemd)
+
+response=$(curl -s "${API_URL}/${PID}")
+
+if [ $? -eq 0 ]; then
+    echo "Process $PID details:"
+    echo "$response" | jq .
+    
+    # Извлечение конкретной информации
+    name=$(echo "$response" | jq -r '.name')
+    cpu=$(echo "$response" | jq -r '.cpu_usage_percent')
+    memory=$(echo "$response" | jq -r '.memory_usage_bytes')
+    status=$(echo "$response" | jq -r '.status')
+    
+    echo -e "\nProcess: $name"
+    echo "CPU: ${cpu}%"
+    echo "Memory: $(echo "scale=2; $memory/1024/1024" | bc) MB"
+    echo "Status: $status"
+else
+    echo "Error: Failed to fetch process $PID"
+    exit 1
+fi
+```
+
+### Примеры на Rust
+
+#### Получение системных метрик
+
+```rust
+use reqwest::blocking::get;
+use serde_json::Value;
+use std::error::Error;
+
+fn get_system_metrics(api_url: &str) -> Result<(), Box<dyn Error>> {
+    // Получение системных метрик
+    let response = get(api_url)?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API request failed with status: {}", response.status()).into());
+    }
+    
+    let metrics: Value = response.json()?;
+    println!("System Metrics:");
+    println!("{}", serde_json::to_string_pretty(&metrics)?);
+    
+    // Пример обработки данных
+    if let Some(cpu_usage) = metrics["cpu"]["usage"].as_object() {
+        let user_usage = cpu_usage.get("user").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        let system_usage = cpu_usage.get("system").and_then(|v| v.as_f64()).unwrap_or(0.0);
+        println!("\nCPU Usage: User = {:.1}%, System = {:.1}%", user_usage, system_usage);
+    }
+    
+    if let Some(memory) = metrics["memory"].as_object() {
+        let total_bytes = memory.get("total_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+        let used_bytes = memory.get("used_bytes").and_then(|v| v.as_u64()).unwrap_or(0);
+        println!("Memory: Total = {:.1} MB, Used = {:.1} MB",
+                 total_bytes as f64 / 1024.0 / 1024.0,
+                 used_bytes as f64 / 1024.0 / 1024.0);
+    }
+    
+    Ok(())
+}
+
+fn main() {
+    let api_url = "http://localhost:8080/api/system";
+    if let Err(e) = get_system_metrics(api_url) {
+        eprintln!("Error: {}", e);
+    }
+}
+```
+
+#### Получение информации о процессах
+
+```rust
+use reqwest::blocking::get;
+use serde_json::Value;
+use std::error::Error;
+
+fn get_processes(api_url: &str) -> Result<(), Box<dyn Error>> {
+    // Получение информации о процессах
+    let response = get(api_url)?;
+    
+    if !response.status().is_success() {
+        return Err(format!("API request failed with status: {}", response.status()).into());
+    }
+    
+    let processes: Value = response.json()?;
+    
+    if let Some(process_list) = processes.as_array() {
+        println!("Total processes: {}", process_list.len());
+        
+        // Фильтрация процессов с высоким использованием CPU
+        let high_cpu_processes: Vec<_> = process_list.iter()
+            .filter(|p| p["cpu_usage_percent"].as_f64().unwrap_or(0.0) > 10.0)
+            .collect();
+        
+        println!("High CPU processes (>10%): {}", high_cpu_processes.len());
+        
+        // Показать топ-5 процессов
+        for process in high_cpu_processes.iter().take(5) {
+            let pid = process["pid"].as_u64().unwrap_or(0);
+            let name = process["name"].as_str().unwrap_or("unknown");
+            let cpu_usage = process["cpu_usage_percent"].as_f64().unwrap_or(0.0);
+            println!("  PID {}: {} - {:.1}% CPU", pid, name, cpu_usage);
+        }
+    }
+    
+    Ok(())
+}
+
+fn main() {
+    let api_url = "http://localhost:8080/api/processes";
+    if let Err(e) = get_processes(api_url) {
+        eprintln!("Error: {}", e);
+    }
+}
+```
+
+### Примеры обработки ошибок
+
+#### Обработка ошибок на Python
+
+```python
+import requests
+import json
+
+def handle_api_errors():
+    """
+    Демонстрирует обработку различных типов ошибок API
+    """
+    api_url = "http://localhost:8080/api/processes"
+    
+    # Пример 1: Несуществующий процесс
+    invalid_pid = 999999
+    url = f"{api_url}/{invalid_pid}"
+    
+    try:
+        response = requests.get(url)
+        response.raise_for_status()  # Это вызовет исключение для 4xx/5xx статусов
+        
+    except requests.exceptions.HTTPError as e:
+        if response.status_code == 404:
+            error_data = response.json()
+            print(f"Process {invalid_pid} not found:")
+            print(json.dumps(error_data, indent=2))
+            print(f"Suggestion: {error_data.get('details', {}).get('suggestion', 'Check PID and try again')}")
+        else:
+            print(f"HTTP Error: {e}")
+    
+    # Пример 2: Некорректный PID
+    try:
+        url = f"{api_url}/-1"  # Недопустимый PID
+        response = requests.get(url)
+        response.raise_for_status()
+        
+    except requests.exceptions.HTTPError as e:
+        if response.status_code == 400:
+            error_data = response.json()
+            print(f"Invalid PID error:")
+            print(json.dumps(error_data, indent=2))
+            print(f"Error type: {error_data.get('error', 'unknown')}")
+        else:
+            print(f"HTTP Error: {e}")
+    
+    # Пример 3: Обработка сетевых ошибок
+    try:
+        url = "http://nonexistent-host:8080/api/system"
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        
+    except requests.exceptions.ConnectionError:
+        print("Connection Error: Unable to connect to API server")
+        print("Suggestion: Check if SmoothTask daemon is running and API is enabled")
+    except requests.exceptions.Timeout:
+        print("Timeout Error: API request timed out")
+        print("Suggestion: Check server load or increase timeout")
+    except requests.exceptions.RequestException as e:
+        print(f"Request Error: {e}")
+        print("Suggestion: Check network connectivity and API server status")
+
+if __name__ == "__main__":
+    handle_api_errors()
+```
+
+#### Обработка ошибок на Bash
+
+```bash
+#!/bin/bash
+
+# Функция для обработки ошибок API
+handle_api_error() {
+    local status_code=$1
+    local response=$2
+    
+    case $status_code in
+        400)
+            echo "Bad Request: Invalid parameters"
+            echo "$response" | jq -r '.message'
+            echo "Suggestion: "$(echo "$response" | jq -r '.details.suggestion')
+            ;;
+        404)
+            echo "Not Found: Resource doesn't exist"
+            echo "$response" | jq -r '.message'
+            echo "Available resources: "$(echo "$response" | jq -r '.details.available_resources // "unknown"')
+            ;;
+        500)
+            echo "Server Error: Internal server error"
+            echo "$response" | jq -r '.message'
+            echo "Suggestion: Check server logs and restart if necessary"
+            ;;
+        *)
+            echo "Unexpected error with status code: $status_code"
+            echo "$response" | jq -r '.message // "No error message"'
+            ;;
+    esac
+}
+
+# Пример использования
+API_URL="http://localhost:8080/api/processes"
+INVALID_PID=999999
+
+response=$(curl -s -w "%{http_code}" "${API_URL}/${INVALID_PID}")
+status_code=${response: -3}  # Последние 3 символа - это статус код
+response_body=${response%???}  # Все кроме последних 3 символов
+
+if [ "$status_code" != "200" ]; then
+    echo "API request failed with status code: $status_code"
+    handle_api_error "$status_code" "$response_body"
+    exit 1
+fi
+
+echo "Success: $response_body" | jq .
+```
+
+### Лучшие практики работы с API
+
+1. **Кэширование**: Используйте кэширование для часто запрашиваемых данных
+2. **Обработка ошибок**: Всегда обрабатывайте HTTP ошибки и предоставляйте пользователю понятные сообщения
+3. **Таймауты**: Устанавливайте разумные таймауты для API запросов
+4. **Пейджинг**: Для больших наборов данных используйте пейджинг (если поддерживается)
+5. **Логирование**: Логируйте API запросы и ответы для отладки
+6. **Безопасность**: Используйте HTTPS и аутентификацию для защиты API
+7. **Валидация**: Проверяйте входные данные перед отправкой на сервер
+
 ## Заключение
 
 SmoothTask Control API предоставляет мощный и гибкий интерфейс для мониторинга и управления системой. С помощью этого API вы можете интегрировать SmoothTask с существующими системами мониторинга, создавать кастомные дашборды и автоматизировать управление системными ресурсами.

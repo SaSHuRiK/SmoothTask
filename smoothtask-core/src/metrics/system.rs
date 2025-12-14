@@ -307,6 +307,14 @@ pub struct HardwareMetrics {
     pub fan_speeds_rpm: Vec<f32>,
     /// Напряжения в вольтах
     pub voltages_v: HashMap<String, f32>,
+    /// Токи в амперах
+    pub currents_a: HashMap<String, f32>,
+    /// Мощность в ваттах
+    pub power_w: HashMap<String, f32>,
+    /// Энергия в джоулях
+    pub energy_j: HashMap<String, f32>,
+    /// Влажность в процентах
+    pub humidity_percent: HashMap<String, f32>,
     /// Текущая скорость вращения CPU вентилятора (если доступно)
     pub cpu_fan_speed_rpm: Option<f32>,
     /// Текущая скорость вращения GPU вентилятора (если доступно)
@@ -1890,6 +1898,246 @@ fn collect_hardware_metrics() -> HardwareMetrics {
                                                             }
                                                         }
                                                     }
+                                                    // Обрабатываем токи
+                                                    else if file_name.starts_with("curr") && file_name.ends_with("_input") {
+                                                        tracing::debug!(
+                                                            "Found current sensor file: {}",
+                                                            file_path.display()
+                                                        );
+                                                         
+                                                        match fs::read_to_string(&file_path) {
+                                                            Ok(current_content) => {
+                                                                match current_content.trim().parse::<u32>() {
+                                                                    Ok(current_microamperes) => {
+                                                                        // Конвертируем микроамперы в амперы
+                                                                        let current_a = current_microamperes as f32 / 1_000_000.0;
+                                                                         
+                                                                        // Извлекаем имя тока из имени файла
+                                                                        let current_name = file_name
+                                                                            .trim_end_matches("_input")
+                                                                            .trim_start_matches("curr");
+                                                                         
+                                                                        // Пробуем получить более описательное имя из файла name
+                                                                        let name_file = path.join("name");
+                                                                        let current_label = if name_file.exists() {
+                                                                            match fs::read_to_string(&name_file) {
+                                                                                Ok(name_content) => {
+                                                                                    let name = name_content.trim().to_string();
+                                                                                    if name.is_empty() {
+                                                                                        format!("current_{}", current_name)
+                                                                                    } else {
+                                                                                        name
+                                                                                    }
+                                                                                }
+                                                                                Err(_) => format!("current_{}", current_name)
+                                                                            }
+                                                                        } else {
+                                                                            format!("current_{}", current_name)
+                                                                        };
+                                                                         
+                                                                        hardware.currents_a.insert(current_label.clone(), current_a);
+                                                                        tracing::debug!(
+                                                                            "Successfully read current: {} A from {} ({})",
+                                                                            current_a, file_path.display(), current_label
+                                                                        );
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::warn!(
+                                                                            "Failed to parse current value from {}: {}",
+                                                                            file_path.display(), e
+                                                                        );
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::warn!(
+                                                                    "Failed to read current from {}: {}",
+                                                                    file_path.display(), e
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    // Обрабатываем мощность
+                                                    else if file_name.starts_with("power") && file_name.ends_with("_input") {
+                                                        tracing::debug!(
+                                                            "Found power sensor file: {}",
+                                                            file_path.display()
+                                                        );
+                                                         
+                                                        match fs::read_to_string(&file_path) {
+                                                            Ok(power_content) => {
+                                                                match power_content.trim().parse::<u32>() {
+                                                                    Ok(power_microwatts) => {
+                                                                        // Конвертируем микроватты в ватты
+                                                                        let power_w = power_microwatts as f32 / 1_000_000.0;
+                                                                         
+                                                                        // Извлекаем имя мощности из имени файла
+                                                                        let power_name = file_name
+                                                                            .trim_end_matches("_input")
+                                                                            .trim_start_matches("power");
+                                                                         
+                                                                        // Пробуем получить более описательное имя из файла name
+                                                                        let name_file = path.join("name");
+                                                                        let power_label = if name_file.exists() {
+                                                                            match fs::read_to_string(&name_file) {
+                                                                                Ok(name_content) => {
+                                                                                    let name = name_content.trim().to_string();
+                                                                                    if name.is_empty() {
+                                                                                        format!("power_{}", power_name)
+                                                                                    } else {
+                                                                                        name
+                                                                                    }
+                                                                                }
+                                                                                Err(_) => format!("power_{}", power_name)
+                                                                            }
+                                                                        } else {
+                                                                            format!("power_{}", power_name)
+                                                                        };
+                                                                         
+                                                                        hardware.power_w.insert(power_label.clone(), power_w);
+                                                                        tracing::debug!(
+                                                                            "Successfully read power: {} W from {} ({})",
+                                                                            power_w, file_path.display(), power_label
+                                                                        );
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::warn!(
+                                                                            "Failed to parse power value from {}: {}",
+                                                                            file_path.display(), e
+                                                                        );
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::warn!(
+                                                                    "Failed to read power from {}: {}",
+                                                                    file_path.display(), e
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    // Обрабатываем энергию
+                                                    else if file_name.starts_with("energy") && file_name.ends_with("_input") {
+                                                        tracing::debug!(
+                                                            "Found energy sensor file: {}",
+                                                            file_path.display()
+                                                        );
+                                                         
+                                                        match fs::read_to_string(&file_path) {
+                                                            Ok(energy_content) => {
+                                                                match energy_content.trim().parse::<u32>() {
+                                                                    Ok(energy_microjoules) => {
+                                                                        // Конвертируем микроджоули в джоули
+                                                                        let energy_j = energy_microjoules as f32 / 1_000_000.0;
+                                                                         
+                                                                        // Извлекаем имя энергии из имени файла
+                                                                        let energy_name = file_name
+                                                                            .trim_end_matches("_input")
+                                                                            .trim_start_matches("energy");
+                                                                         
+                                                                        // Пробуем получить более описательное имя из файла name
+                                                                        let name_file = path.join("name");
+                                                                        let energy_label = if name_file.exists() {
+                                                                            match fs::read_to_string(&name_file) {
+                                                                                Ok(name_content) => {
+                                                                                    let name = name_content.trim().to_string();
+                                                                                    if name.is_empty() {
+                                                                                        format!("energy_{}", energy_name)
+                                                                                    } else {
+                                                                                        name
+                                                                                    }
+                                                                                }
+                                                                                Err(_) => format!("energy_{}", energy_name)
+                                                                            }
+                                                                        } else {
+                                                                            format!("energy_{}", energy_name)
+                                                                        };
+                                                                         
+                                                                        hardware.energy_j.insert(energy_label.clone(), energy_j);
+                                                                        tracing::debug!(
+                                                                            "Successfully read energy: {} J from {} ({})",
+                                                                            energy_j, file_path.display(), energy_label
+                                                                        );
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::warn!(
+                                                                            "Failed to parse energy value from {}: {}",
+                                                                            file_path.display(), e
+                                                                        );
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::warn!(
+                                                                    "Failed to read energy from {}: {}",
+                                                                    file_path.display(), e
+                                                                );
+                                                            }
+                                                        }
+                                                    }
+                                                    // Обрабатываем влажность
+                                                    else if file_name.starts_with("humidity") && file_name.ends_with("_input") {
+                                                        tracing::debug!(
+                                                            "Found humidity sensor file: {}",
+                                                            file_path.display()
+                                                        );
+                                                         
+                                                        match fs::read_to_string(&file_path) {
+                                                            Ok(humidity_content) => {
+                                                                match humidity_content.trim().parse::<u32>() {
+                                                                    Ok(humidity_millipercent) => {
+                                                                        // Конвертируем миллипроценты в проценты
+                                                                        let humidity_percent = humidity_millipercent as f32 / 1000.0;
+                                                                         
+                                                                        // Извлекаем имя влажности из имени файла
+                                                                        let humidity_name = file_name
+                                                                            .trim_end_matches("_input")
+                                                                            .trim_start_matches("humidity");
+                                                                         
+                                                                        // Пробуем получить более описательное имя из файла name
+                                                                        let name_file = path.join("name");
+                                                                        let humidity_label = if name_file.exists() {
+                                                                            match fs::read_to_string(&name_file) {
+                                                                                Ok(name_content) => {
+                                                                                    let name = name_content.trim().to_string();
+                                                                                    if name.is_empty() {
+                                                                                        format!("humidity_{}", humidity_name)
+                                                                                    } else {
+                                                                                        name
+                                                                                    }
+                                                                                }
+                                                                                Err(_) => format!("humidity_{}", humidity_name)
+                                                                            }
+                                                                        } else {
+                                                                            format!("humidity_{}", humidity_name)
+                                                                        };
+                                                                         
+                                                                        hardware.humidity_percent.insert(humidity_label.clone(), humidity_percent);
+                                                                        tracing::debug!(
+                                                                            "Successfully read humidity: {}% from {} ({})",
+                                                                            humidity_percent, file_path.display(), humidity_label
+                                                                        );
+                                                                    }
+                                                                    Err(e) => {
+                                                                        tracing::warn!(
+                                                                            "Failed to parse humidity value from {}: {}",
+                                                                            file_path.display(), e
+                                                                        );
+                                                                        continue;
+                                                                    }
+                                                                }
+                                                            }
+                                                            Err(e) => {
+                                                                tracing::warn!(
+                                                                    "Failed to read humidity from {}: {}",
+                                                                    file_path.display(), e
+                                                                );
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                                 Err(e) => {
                                                     tracing::warn!(
@@ -1930,15 +2178,21 @@ fn collect_hardware_metrics() -> HardwareMetrics {
     }
     
     // Логируем результаты
-    if hardware.fan_speeds_rpm.is_empty() && hardware.voltages_v.is_empty() {
+    if hardware.fan_speeds_rpm.is_empty() && hardware.voltages_v.is_empty() && 
+       hardware.currents_a.is_empty() && hardware.power_w.is_empty() && 
+       hardware.energy_j.is_empty() && hardware.humidity_percent.is_empty() {
         tracing::warn!(
             "No hardware sensor metrics available - hwmon interfaces not found or accessible. Check if hardware sensors are properly configured and accessible."
         );
     } else {
         tracing::info!(
-            "Hardware sensor metrics collection completed: {} fan speeds, {} voltages",
+            "Hardware sensor metrics collection completed: {} fan speeds, {} voltages, {} currents, {} power sensors, {} energy sensors, {} humidity sensors",
             hardware.fan_speeds_rpm.len(),
-            hardware.voltages_v.len()
+            hardware.voltages_v.len(),
+            hardware.currents_a.len(),
+            hardware.power_w.len(),
+            hardware.energy_j.len(),
+            hardware.humidity_percent.len()
         );
     }
     
@@ -4610,6 +4864,22 @@ mod hardware_sensor_tests {
         let in2_file = hwmon_device_dir.join("in2_input");
         std::fs::write(&in2_file, "3300000").expect("Failed to write in2_input"); // 3.3V
         
+        // Создаем mock файлы для токов
+        let curr1_file = hwmon_device_dir.join("curr1_input");
+        std::fs::write(&curr1_file, "500000").expect("Failed to write curr1_input"); // 0.5A
+        
+        // Создаем mock файлы для мощности
+        let power1_file = hwmon_device_dir.join("power1_input");
+        std::fs::write(&power1_file, "60000000").expect("Failed to write power1_input"); // 60W
+        
+        // Создаем mock файлы для энергии
+        let energy1_file = hwmon_device_dir.join("energy1_input");
+        std::fs::write(&energy1_file, "1000000").expect("Failed to write energy1_input"); // 1J
+        
+        // Создаем mock файлы для влажности
+        let humidity1_file = hwmon_device_dir.join("humidity1_input");
+        std::fs::write(&humidity1_file, "45000").expect("Failed to write humidity1_input"); // 45%
+        
         // Создаем mock файл name для устройства
         let name_file = hwmon_device_dir.join("name");
         std::fs::write(&name_file, "test_sensor").expect("Failed to write name file");
@@ -4645,6 +4915,10 @@ mod hardware_sensor_tests {
         
         assert!(hardware.fan_speeds_rpm.is_empty());
         assert!(hardware.voltages_v.is_empty());
+        assert!(hardware.currents_a.is_empty());
+        assert!(hardware.power_w.is_empty());
+        assert!(hardware.energy_j.is_empty());
+        assert!(hardware.humidity_percent.is_empty());
         assert!(hardware.cpu_fan_speed_rpm.is_none());
         assert!(hardware.gpu_fan_speed_rpm.is_none());
         assert!(hardware.chassis_fan_speed_rpm.is_none());
@@ -4659,6 +4933,10 @@ mod hardware_sensor_tests {
         hardware.fan_speeds_rpm.push(1200.0);
         hardware.fan_speeds_rpm.push(1500.0);
         hardware.voltages_v.insert("vcore".to_string(), 1.2);
+        hardware.currents_a.insert("cpu_current".to_string(), 0.5);
+        hardware.power_w.insert("cpu_power".to_string(), 60.0);
+        hardware.energy_j.insert("cpu_energy".to_string(), 1.0);
+        hardware.humidity_percent.insert("ambient_humidity".to_string(), 45.0);
         hardware.cpu_fan_speed_rpm = Some(1200.0);
         
         // Проверяем значения
@@ -4667,6 +4945,14 @@ mod hardware_sensor_tests {
         assert_eq!(hardware.fan_speeds_rpm[1], 1500.0);
         assert_eq!(hardware.voltages_v.len(), 1);
         assert_eq!(hardware.voltages_v.get("vcore"), Some(&1.2));
+        assert_eq!(hardware.currents_a.len(), 1);
+        assert_eq!(hardware.currents_a.get("cpu_current"), Some(&0.5));
+        assert_eq!(hardware.power_w.len(), 1);
+        assert_eq!(hardware.power_w.get("cpu_power"), Some(&60.0));
+        assert_eq!(hardware.energy_j.len(), 1);
+        assert_eq!(hardware.energy_j.get("cpu_energy"), Some(&1.0));
+        assert_eq!(hardware.humidity_percent.len(), 1);
+        assert_eq!(hardware.humidity_percent.get("ambient_humidity"), Some(&45.0));
         assert_eq!(hardware.cpu_fan_speed_rpm, Some(1200.0));
         assert!(hardware.gpu_fan_speed_rpm.is_none());
         assert!(hardware.chassis_fan_speed_rpm.is_none());
@@ -4680,6 +4966,13 @@ mod hardware_sensor_tests {
         hardware.fan_speeds_rpm.push(1500.0);
         hardware.voltages_v.insert("vcore".to_string(), 1.2);
         hardware.voltages_v.insert("vdd".to_string(), 3.3);
+        hardware.currents_a.insert("cpu_current".to_string(), 0.5);
+        hardware.currents_a.insert("gpu_current".to_string(), 0.8);
+        hardware.power_w.insert("cpu_power".to_string(), 60.0);
+        hardware.power_w.insert("gpu_power".to_string(), 120.0);
+        hardware.energy_j.insert("cpu_energy".to_string(), 1.0);
+        hardware.energy_j.insert("gpu_energy".to_string(), 2.0);
+        hardware.humidity_percent.insert("ambient_humidity".to_string(), 45.0);
         hardware.cpu_fan_speed_rpm = Some(1200.0);
         hardware.gpu_fan_speed_rpm = Some(1800.0);
         hardware.chassis_fan_speed_rpm = Some(1000.0);
@@ -4697,6 +4990,17 @@ mod hardware_sensor_tests {
         assert_eq!(deserialized.voltages_v.len(), 2);
         assert_eq!(deserialized.voltages_v.get("vcore"), Some(&1.2));
         assert_eq!(deserialized.voltages_v.get("vdd"), Some(&3.3));
+        assert_eq!(deserialized.currents_a.len(), 2);
+        assert_eq!(deserialized.currents_a.get("cpu_current"), Some(&0.5));
+        assert_eq!(deserialized.currents_a.get("gpu_current"), Some(&0.8));
+        assert_eq!(deserialized.power_w.len(), 2);
+        assert_eq!(deserialized.power_w.get("cpu_power"), Some(&60.0));
+        assert_eq!(deserialized.power_w.get("gpu_power"), Some(&120.0));
+        assert_eq!(deserialized.energy_j.len(), 2);
+        assert_eq!(deserialized.energy_j.get("cpu_energy"), Some(&1.0));
+        assert_eq!(deserialized.energy_j.get("gpu_energy"), Some(&2.0));
+        assert_eq!(deserialized.humidity_percent.len(), 1);
+        assert_eq!(deserialized.humidity_percent.get("ambient_humidity"), Some(&45.0));
         assert_eq!(deserialized.cpu_fan_speed_rpm, Some(1200.0));
         assert_eq!(deserialized.gpu_fan_speed_rpm, Some(1800.0));
         assert_eq!(deserialized.chassis_fan_speed_rpm, Some(1000.0));
