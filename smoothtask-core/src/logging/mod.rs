@@ -15,6 +15,7 @@
 //! - **log_storage**: Хранилище логов приложения для предоставления через API
 
 pub mod app_rotation;
+pub mod async_logging;
 pub mod log_storage;
 pub mod rotation;
 pub mod snapshots;
@@ -124,6 +125,30 @@ pub fn get_memory_pressure_status() -> bool {
     // In a real implementation, this would query system memory metrics
     // For now, return a mock value
     false
+}
+
+/// Create a new async log rotator
+pub fn create_async_log_rotator(
+    max_size_bytes: u64,
+    max_rotated_files: u32,
+    compression_enabled: bool,
+    rotation_interval_sec: u64,
+    max_age_sec: u64,
+    max_total_size_bytes: u64,
+) -> async_logging::AsyncLogRotator {
+    async_logging::AsyncLogRotator::new(
+        max_size_bytes,
+        max_rotated_files,
+        compression_enabled,
+        rotation_interval_sec,
+        max_age_sec,
+        max_total_size_bytes,
+    )
+}
+
+/// Get log file size asynchronously
+pub async fn get_log_file_size_async(log_path: &std::path::Path) -> Result<u64, anyhow::Error> {
+    async_logging::get_log_file_size_async(log_path).await
 }
 
 #[cfg(test)]
