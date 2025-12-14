@@ -24,6 +24,8 @@
 //! - **amdgpu_wrapper**: Расширенный мониторинг AMD GPU через AMDGPU
 //! - **gpu**: Мониторинг GPU устройств и их метрик
 //! - **ebpf**: Высокопроизводительный сбор метрик через eBPF
+//! - **filesystem_monitor**: Мониторинг файловой системы в реальном времени
+//! - **extended_hardware_sensors**: Расширенный мониторинг аппаратных сенсоров
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
 
@@ -34,6 +36,8 @@ pub mod audio_pipewire;
 pub mod cache;
 pub mod custom;
 pub mod ebpf;
+pub mod extended_hardware_sensors;
+pub mod filesystem_monitor;
 pub mod process_energy;
 pub mod process_gpu;
 pub mod gpu;
