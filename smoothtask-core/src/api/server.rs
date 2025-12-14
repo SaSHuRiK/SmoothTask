@@ -1059,6 +1059,65 @@ async fn gpu_update_temp_power_handler() -> Result<Json<Value>, StatusCode> {
     })))
 }
 
+/// Обработчик для endpoint `/api/gpu/memory`.
+///
+/// Возвращает метрики использования памяти для всех GPU устройств.
+async fn gpu_memory_handler() -> Result<Json<Value>, StatusCode> {
+    let gpu_metrics = crate::metrics::gpu::collect_gpu_metrics()
+        .map_err(|e| {
+            error!("Failed to collect GPU memory metrics: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+    
+    // Преобразуем метрики в формат, подходящий для API
+    let gpu_memory_info: Vec<_> = gpu_metrics.devices.iter()
+        .map(|device| {
+            // Определяем тип GPU на основе драйвера
+            let gpu_type = device.device.driver.as_ref().map(|driver| {
+                if driver.contains("nvidia") || driver.contains("nouveau") {
+                    "nvidia"
+                } else if driver.contains("amdgpu") || driver.contains("radeon") {
+                    "amd"
+                } else if driver.contains("i915") || driver.contains("intel") {
+                    "intel"
+                } else {
+                    driver.as_str()
+                }
+            });
+            
+            // Вычисляем процент использования памяти
+            let memory_usage_percentage = if device.memory.total_bytes > 0 {
+                Some((device.memory.used_bytes as f32 / device.memory.total_bytes as f32 * 100.0) as f32)
+            } else {
+                None
+            };
+            
+            json!({
+                "gpu_id": device.device.device_id,
+                "gpu_name": device.device.name,
+                "gpu_type": gpu_type,
+                "gpu_driver": device.device.driver,
+                "total_memory_bytes": device.memory.total_bytes,
+                "used_memory_bytes": device.memory.used_bytes,
+                "free_memory_bytes": device.memory.free_bytes,
+                "memory_usage_percentage": memory_usage_percentage,
+                "timestamp": device.timestamp
+            })
+        })
+        .collect();
+    
+    Ok(Json(json!({
+        "status": "ok",
+        "gpu_memory_metrics": gpu_memory_info,
+        "total_gpus": gpu_memory_info.len(),
+        "total_memory_bytes": gpu_memory_info.iter().map(|gpu| 
+            gpu["total_memory_bytes"].as_u64().unwrap_or(0)).sum::<u64>(),
+        "total_used_memory_bytes": gpu_memory_info.iter().map(|gpu| 
+            gpu["used_memory_bytes"].as_u64().unwrap_or(0)).sum::<u64>(),
+        "timestamp": std::time::SystemTime::now()
+    })))
+}
+
 /// Обработчик для endpoint `/api/version`.
 ///
 /// Возвращает версию демона SmoothTask.
@@ -1211,9 +1270,24 @@ async fn endpoints_handler() -> Json<Value> {
                 "path": "/api/network/connections",
                 "method": "GET",
                 "description": "Получение информации о текущих сетевых соединениях через eBPF"
+            },
+            {
+                "path": "/api/gpu/temperature-power",
+                "method": "GET",
+                "description": "Получение метрик температуры и энергопотребления для всех GPU устройств"
+            },
+            {
+                "path": "/api/gpu/memory",
+                "method": "GET",
+                "description": "Получение метрик использования памяти для всех GPU устройств"
+            },
+            {
+                "path": "/api/gpu/update-temp-power",
+                "method": "GET",
+                "description": "Обновление метрик температуры и энергопотребления GPU для процессов"
             }
         ],
-        "count": 27
+        "count": 30
     }))
 }
 
@@ -2096,6 +2170,7 @@ fn create_router(state: ApiState) -> Router {
         .route("/api/health/diagnostics", get(health_diagnostics_handler))
         .route("/api/health/issues", get(health_issues_handler))
         .route("/api/gpu/temperature-power", get(gpu_temperature_power_handler))
+        .route("/api/gpu/memory", get(gpu_memory_handler))
         .route("/api/gpu/update-temp-power", get(gpu_update_temp_power_handler))
         .route("/api/version", get(version_handler))
         .route("/api/endpoints", get(endpoints_handler))
@@ -8207,6 +8282,42 @@ use crate::metrics::ebpf::EbpfMetrics;
         let json = result.unwrap();
         assert_eq!(json["status"], "ok", "Status should be ok");
         assert!(json["gpu_metrics"].is_array(), "Should contain gpu_metrics array");
+    }
+
+    #[tokio::test]
+    async fn test_gpu_update_temp_power_handler() {
+        // Тест проверяет обработчик gpu_update_temp_power_handler
+        let result = gpu_update_temp_power_handler().await;
+    }
+
+    #[tokio::test]
+    async fn test_gpu_memory_handler() {
+        // Тест проверяет обработчик gpu_memory_handler
+        let result = gpu_memory_handler().await;
+        assert!(result.is_ok(), "GPU memory handler should succeed");
+        
+        let json = result.unwrap();
+        assert_eq!(json["status"], "ok", "Status should be ok");
+        assert!(json["gpu_memory_metrics"].is_array(), "Should contain gpu_memory_metrics array");
+        assert!(json["total_gpus"].is_number(), "Should contain total_gpus count");
+        assert!(json["total_memory_bytes"].is_number(), "Should contain total_memory_bytes");
+        assert!(json["total_used_memory_bytes"].is_number(), "Should contain total_used_memory_bytes");
+        
+        // Проверяем, что метрики памяти содержат ожидаемые поля
+        let memory_metrics = json["gpu_memory_metrics"].as_array();
+        if let Some(metrics) = memory_metrics {
+            for metric in metrics {
+                assert!(metric["gpu_id"].is_null() || metric["gpu_id"].is_string(), "Each metric should have gpu_id (may be null)");
+                assert!(metric["gpu_name"].is_string(), "Each metric should have gpu_name");
+                assert!(metric["gpu_type"].is_null() || metric["gpu_type"].is_string(), "Each metric should have gpu_type (may be null)");
+                assert!(metric["gpu_driver"].is_null() || metric["gpu_driver"].is_string(), "Each metric should have gpu_driver (may be null)");
+                assert!(metric["total_memory_bytes"].is_number(), "Each metric should have total_memory_bytes");
+                assert!(metric["used_memory_bytes"].is_number(), "Each metric should have used_memory_bytes");
+                assert!(metric["free_memory_bytes"].is_number(), "Each metric should have free_memory_bytes");
+                assert!(metric["memory_usage_percentage"].is_null() || metric["memory_usage_percentage"].is_number(), "Each metric should have memory_usage_percentage (may be null)");
+                assert!(metric["timestamp"].is_string(), "Each metric should have timestamp");
+            }
+        }
     }
 
     #[tokio::test]

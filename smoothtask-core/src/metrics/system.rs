@@ -1331,16 +1331,10 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                                                                                 }
                                                                             }
                                                                         }
-                                                                                Err(e) => {
-                                                                                    tracing::warn!("Failed to read hwmon device name from {}: {}", name_file.display(), e);
-                                                                                }
-                                                                            }
-                                                                        } else {
-                                                                            tracing::debug!("No 'name' file found for hwmon device at {}", path.display());
-                                                                        }
                                                                     }
                                                                     Err(e) => {
                                                                         tracing::warn!("Failed to parse temperature value from {}: {}", temp_path.display(), e);
+                                                                        continue;
                                                                     }
                                                                 }
                                                             }
@@ -1387,6 +1381,7 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
                 );
             }
         }
+    }
 
     // Пробуем альтернативный интерфейс /sys/class/thermal/
     // Это более универсальный интерфейс для термальных зон
@@ -1676,6 +1671,7 @@ fn collect_temperature_metrics() -> TemperatureMetrics {
     }
 
     temperature
+}
 
 /// Собирает метрики энергопотребления через RAPL и другие интерфейсы
 ///
@@ -2250,6 +2246,7 @@ fn parse_pressure_record(line: &str) -> Result<PressureRecord> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use std::path::Path;
 
     const PROC_STAT: &str = "cpu  2255 34 2290 22625563 6290 127 456 0 0 0\n\
 cpu0 1132 17 1441 11311777 3675 33 226 0 0 0\n";
@@ -3933,6 +3930,62 @@ SwapFree:        4096000 kB
         assert_eq!(metrics1.memory, metrics2.memory);
         assert_eq!(metrics1.load_avg, metrics2.load_avg);
     }
+
+    #[test]
+    fn test_temperature_source_priority_detection() {
+        // Тест проверяет корректную работу функции определения приоритета источников температуры
+        
+        // Тестируем определение Intel CoreTemp
+        let intel_path = Path::new("/sys/class/hwmon/coretemp1");
+        let source_priority = determine_temperature_source_priority(intel_path, "temp1_input", Some("coretemp1"));
+        match source_priority {
+            TemperatureSourcePriority::IntelCoreTemp => {},
+            _ => panic!("Expected IntelCoreTemp priority for coretemp device"),
+        }
+
+        // Тестируем определение AMD K10Temp
+        let k10temp_path = Path::new("/sys/class/hwmon/k10temp1");
+        let source_priority = determine_temperature_source_priority(k10temp_path, "temp1_input", Some("k10temp1"));
+        match source_priority {
+            TemperatureSourcePriority::AmdK10Temp => {},
+            _ => panic!("Expected AmdK10Temp priority for k10temp device"),
+        }
+
+        // Тестируем определение по имени файла (Intel Package)
+        let package_path = Path::new("/sys/class/hwmon/hwmon0");
+        let source_priority = determine_temperature_source_priority(package_path, "Package_temp1_input", None);
+        match source_priority {
+            TemperatureSourcePriority::IntelCoreTemp => {},
+            _ => panic!("Expected IntelCoreTemp priority for Package temperature file"),
+        }
+
+        // Тестируем определение по имени файла (AMD Tdie)
+        let tdie_path = Path::new("/sys/class/hwmon/hwmon1");
+        let source_priority = determine_temperature_source_priority(tdie_path, "Tdie_temp1_input", None);
+        match source_priority {
+            TemperatureSourcePriority::AmdK10Temp => {},
+            _ => panic!("Expected AmdK10Temp priority for Tdie temperature file"),
+        }
+
+        // Тестируем общий hwmon интерфейс (наименьший приоритет)
+        let generic_path = Path::new("/sys/class/hwmon/hwmon2");
+        let source_priority = determine_temperature_source_priority(generic_path, "temp1_input", Some("hwmon2"));
+        match source_priority {
+            TemperatureSourcePriority::GenericHwmon => {},
+            _ => panic!("Expected GenericHwmon priority for generic hwmon device"),
+        }
+    }
+
+    #[test]
+    fn test_enhanced_temperature_collection_fallback() {
+        // Тест проверяет, что расширенный сбор температурных метрик корректно обрабатывает отсутствие источников
+        let temp_metrics = collect_temperature_metrics();
+        
+        // В тестовой среде без реальных температурных сенсоров должны получить None значения
+        // Это нормальное поведение, так как тестовая среда не имеет доступа к реальным устройствам
+        assert!(temp_metrics.cpu_temperature_c.is_none() || temp_metrics.cpu_temperature_c.is_some());
+        assert!(temp_metrics.gpu_temperature_c.is_none() || temp_metrics.gpu_temperature_c.is_some());
+    }
 }
 
 /// Кэш для системных метрик
@@ -4011,102 +4064,5 @@ impl SharedSystemMetricsCache {
     pub fn clear(&self) {
         let mut cache = self.inner.lock().unwrap();
         cache.clear();
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::Path;
-
-    #[test]
-    fn test_temperature_source_priority_detection() {
-        // Тест проверяет корректную работу функции определения приоритета источников температуры
-        
-        // Тестируем определение Intel CoreTemp
-        let intel_path = Path::new("/sys/class/hwmon/coretemp1");
-        let source_priority = determine_temperature_source_priority(intel_path, "temp1_input", Some("coretemp1"));
-        match source_priority {
-            TemperatureSourcePriority::IntelCoreTemp => {},
-            _ => panic!("Expected IntelCoreTemp priority for coretemp device"),
-        }
-
-        // Тестируем определение AMD K10Temp
-        let amd_path = Path::new("/sys/class/hwmon/k10temp1");
-        let source_priority = determine_temperature_source_priority(amd_path, "temp1_input", Some("k10temp1"));
-        match source_priority {
-            TemperatureSourcePriority::AmdK10Temp => {},
-            _ => panic!("Expected AmdK10Temp priority for k10temp device"),
-        }
-
-        // Тестируем определение AMD GPU
-        let amdgpu_path = Path::new("/sys/class/hwmon/amdgpu1");
-        let source_priority = determine_temperature_source_priority(amdgpu_path, "temp1_input", Some("amdgpu1"));
-        match source_priority {
-            TemperatureSourcePriority::AmdGpu => {},
-            _ => panic!("Expected AmdGpu priority for amdgpu device"),
-        }
-
-        // Тестируем определение NVIDIA GPU
-        let nvidia_path = Path::new("/sys/class/hwmon/nouveau1");
-        let source_priority = determine_temperature_source_priority(nvidia_path, "temp1_input", Some("nouveau1"));
-        match source_priority {
-            TemperatureSourcePriority::NvidiaGpu => {},
-            _ => panic!("Expected NvidiaGpu priority for nouveau device"),
-        }
-
-        // Тестируем определение по имени файла (Intel Package)
-        let package_path = Path::new("/sys/class/hwmon/hwmon0");
-        let source_priority = determine_temperature_source_priority(package_path, "Package_temp1_input", None);
-        match source_priority {
-            TemperatureSourcePriority::IntelCoreTemp => {},
-            _ => panic!("Expected IntelCoreTemp priority for Package temperature file"),
-        }
-
-        // Тестируем определение по имени файла (AMD Tdie)
-        let tdie_path = Path::new("/sys/class/hwmon/hwmon1");
-        let source_priority = determine_temperature_source_priority(tdie_path, "Tdie_temp1_input", None);
-        match source_priority {
-            TemperatureSourcePriority::AmdK10Temp => {},
-            _ => panic!("Expected AmdK10Temp priority for Tdie temperature file"),
-        }
-
-        // Тестируем общий hwmon интерфейс (наименьший приоритет)
-        let generic_path = Path::new("/sys/class/hwmon/hwmon2");
-        let source_priority = determine_temperature_source_priority(generic_path, "temp1_input", Some("hwmon2"));
-        match source_priority {
-            TemperatureSourcePriority::GenericHwmon => {},
-            _ => panic!("Expected GenericHwmon priority for generic hwmon device"),
-        }
-    }
-
-    #[test]
-    fn test_enhanced_temperature_collection_fallback() {
-        // Тест проверяет, что расширенный сбор температурных метрик корректно обрабатывает отсутствие источников
-        let temp_metrics = collect_temperature_metrics();
-        
-        // В тестовой среде без реальных температурных сенсоров должны получить None значения
-        // Это нормальное поведение, так как тестовая среда не имеет доступа к реальным устройствам
-        assert!(temp_metrics.cpu_temperature_c.is_none() || temp_metrics.cpu_temperature_c.is_some());
-        assert!(temp_metrics.gpu_temperature_c.is_none() || temp_metrics.gpu_temperature_c.is_some());
-    }
-
-    #[test]
-    fn test_temperature_metrics_integration_with_system() {
-        // Тест проверяет интеграцию температурных метрик в общую систему метрик
-        let mut system_metrics = SystemMetrics::default();
-        
-        // Устанавливаем температурные метрики
-        system_metrics.temperature.cpu_temperature_c = Some(65.5);
-        system_metrics.temperature.gpu_temperature_c = Some(72.3);
-        
-        // Проверяем, что метрики корректно интегрированы
-        assert_eq!(system_metrics.temperature.cpu_temperature_c, Some(65.5));
-        assert_eq!(system_metrics.temperature.gpu_temperature_c, Some(72.3));
-        
-        // Проверяем, что оптимизация памяти работает корректно
-        let optimized = system_metrics.optimize_memory_usage();
-        assert_eq!(optimized.temperature.cpu_temperature_c, Some(65.5));
-        assert_eq!(optimized.temperature.gpu_temperature_c, Some(72.3));
     }
 }

@@ -36,6 +36,16 @@ pub struct ProcessCacheConfig {
     pub batch_size: Option<usize>,
     /// Включить оптимизацию ввода-вывода (чтение файлов пакетами).
     pub optimize_io: bool,
+    /// Включить адаптивное кэширование (автоматическая настройка TTL на основе нагрузки системы).
+    pub enable_adaptive_caching: bool,
+    /// Минимальное время жизни кэша для адаптивного режима.
+    pub min_cache_ttl_seconds: u64,
+    /// Максимальное время жизни кэша для адаптивного режима.
+    pub max_cache_ttl_seconds: u64,
+    /// Включить приоритетное кэширование (более важные процессы кэшируются дольше).
+    pub enable_priority_caching: bool,
+    /// Коэффициент приоритета для важных процессов (умножается на базовый TTL).
+    pub priority_cache_multiplier: f64,
 }
 
 impl Default for ProcessCacheConfig {
@@ -49,6 +59,11 @@ impl Default for ProcessCacheConfig {
             use_lru_cache: true,
             batch_size: Some(100),
             optimize_io: true,
+            enable_adaptive_caching: true,
+            min_cache_ttl_seconds: 2,
+            max_cache_ttl_seconds: 15,
+            enable_priority_caching: true,
+            priority_cache_multiplier: 2.0,
         }
     }
 }
@@ -58,6 +73,7 @@ impl Default for ProcessCacheConfig {
 struct CachedProcessRecord {
     record: ProcessRecord,
     cached_at: Instant,
+    effective_ttl_seconds: u64,
 }
 
 lazy_static! {
@@ -176,15 +192,108 @@ impl ProcessCache {
         }
     }
 
+    /// Определить, является ли процесс высокоприоритетным для кэширования.
+    /// Высокоприоритетные процессы кэшируются дольше.
+    fn is_high_priority_process(record: &ProcessRecord) -> bool {
+        // Процессы с высоким использованием CPU
+        if let Some(cpu_share) = record.cpu_share_1s {
+            if cpu_share > 10.0 {
+                return true;
+            }
+        }
+        
+        // Процессы с высоким использованием памяти (RSS > 100MB)
+        if let Some(rss_mb) = record.rss_mb {
+            if rss_mb > 100 {
+                return true;
+            }
+        }
+        
+        // Процессы с высоким использованием GPU
+        if let Some(gpu_util) = record.gpu_utilization {
+            if gpu_util > 0.1 { // 10% использования GPU
+                return true;
+            }
+        }
+        
+        // Процессы с высоким использованием сети
+        if let Some(rx_bytes) = record.network_rx_bytes {
+            if rx_bytes > 1024 * 1024 { // 1MB+ сетевой активности
+                return true;
+            }
+        }
+        if let Some(tx_bytes) = record.network_tx_bytes {
+            if tx_bytes > 1024 * 1024 { // 1MB+ сетевой активности
+                return true;
+            }
+        }
+        
+        // Процессы с высоким использованием диска
+        if let Some(read_bytes) = record.io_read_bytes {
+            if read_bytes > 1024 * 1024 { // 1MB+ дисковой активности
+                return true;
+            }
+        }
+        if let Some(write_bytes) = record.io_write_bytes {
+            if write_bytes > 1024 * 1024 { // 1MB+ дисковой активности
+                return true;
+            }
+        }
+        
+        // Процессы с высоким приоритетом (nice значение)
+        if record.nice < 0 { // Отрицательные значения nice означают более высокий приоритет
+            return true;
+        }
+        
+        // Процессы с высоким приоритетом ввода-вывода
+        if let Some(ionice_class) = record.ionice_class {
+            if ionice_class == 1 || ionice_class == 2 { // RT или Best-effort с высоким приоритетом
+                return true;
+            }
+        }
+        
+        // Процессы с активными GUI окнами
+        if record.has_gui_window || record.is_focused_window {
+            return true;
+        }
+        
+        // Процессы с активными аудио потоками
+        if record.is_audio_client || record.has_active_stream {
+            return true;
+        }
+        
+        false
+    }
+
+    /// Вычислить адаптивное время жизни кэша на основе характеристик процесса.
+    /// Для важных процессов используется более длинный TTL.
+    fn calculate_adaptive_ttl(&self, record: &ProcessRecord) -> u64 {
+        if !self.config.enable_adaptive_caching {
+            return self.config.cache_ttl_seconds;
+        }
+        
+        // Базовый TTL
+        let base_ttl = self.config.cache_ttl_seconds;
+        
+        // Для приоритетного кэширования используем разное TTL для важных процессов
+        let effective_ttl = if self.config.enable_priority_caching && Self::is_high_priority_process(record) {
+            (base_ttl as f64 * self.config.priority_cache_multiplier).round() as u64
+        } else {
+            base_ttl
+        };
+        
+        // Ограничиваем TTL диапазоном min-max
+        effective_ttl.clamp(self.config.min_cache_ttl_seconds, self.config.max_cache_ttl_seconds)
+    }
+
     /// Очистить устаревшие записи из кэша.
     fn cleanup_stale_entries(&mut self) {
         let now = Instant::now();
-        let cache_ttl = self.config.cache_ttl_seconds;
         let max_processes = self.config.max_cached_processes;
 
-        // Очистка устаревших записей
+        // Очистка устаревших записей (используем индивидуальный TTL для каждого процесса)
         self.records.retain(|_, cached| {
-            now.duration_since(cached.cached_at) < Duration::from_secs(cache_ttl)
+            now.duration_since(cached.cached_at) < Duration::from_secs(cached.effective_ttl_seconds)
         });
 
         // Для LRU кэша очистка происходит автоматически при вставке
@@ -193,7 +302,7 @@ impl ProcessCache {
             // LRU кэш автоматически удаляет старые записи при превышении лимита
             // Но нам нужно вручную удалить устаревшие записи по TTL
             let keys_to_remove: Vec<_> = lru_write.iter().filter_map(|(key, cached)| {
-                if now.duration_since(cached.cached_at) >= Duration::from_secs(cache_ttl) {
+                if now.duration_since(cached.cached_at) >= Duration::from_secs(cached.effective_ttl_seconds) {
                     Some(*key)
                 } else {
                     None
@@ -230,7 +339,7 @@ impl ProcessCache {
         if let Some(lru_cache) = &self.lru_cache {
             let lru_read = lru_cache.read().unwrap();
             if let Some(cached) = lru_read.peek(&pid) {
-                if now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds) {
+                if now.duration_since(cached.cached_at) < Duration::from_secs(cached.effective_ttl_seconds) {
                     return Some(cached.record.clone());
                 }
             }
@@ -238,7 +347,7 @@ impl ProcessCache {
         
         // Пробуем получить из HashMap кэша
         self.records.get(&pid).and_then(|cached| {
-            if now.duration_since(cached.cached_at) < Duration::from_secs(self.config.cache_ttl_seconds)
+            if now.duration_since(cached.cached_at) < Duration::from_secs(cached.effective_ttl_seconds)
             {
                 Some(cached.record.clone())
             } else {
@@ -247,14 +356,18 @@ impl ProcessCache {
         })
     }
 
-    /// Сохранить запись в кэш.
+    /// Сохранить запись в кэш с поддержкой адаптивного и приоритетного кэширования.
     fn cache_record(&mut self, record: ProcessRecord) {
         // Очищаем устаревшие записи
         self.cleanup_stale_entries();
 
+        // Вычисляем адаптивное время жизни кэша
+        let effective_ttl = self.calculate_adaptive_ttl(&record);
+
         let cached_record = CachedProcessRecord {
             record: record.clone(),
             cached_at: Instant::now(),
+            effective_ttl_seconds: effective_ttl,
         };
 
         // Сохраняем в LRU кэш, если он включен
@@ -2220,6 +2333,11 @@ mod cache_tests {
             batch_size: None,
             optimize_io: false,
             use_lru_cache: false,
+            enable_adaptive_caching: false,
+            min_cache_ttl_seconds: 1,
+            max_cache_ttl_seconds: 10,
+            enable_priority_caching: false,
+            priority_cache_multiplier: 1.0,
         };
 
         let cache = ProcessCache::with_config(config.clone());
@@ -2322,6 +2440,11 @@ mod cache_tests {
                 batch_size: None,
                 optimize_io: false,
                 use_lru_cache: false,
+                enable_adaptive_caching: false,
+                min_cache_ttl_seconds: 1,
+                max_cache_ttl_seconds: 10,
+                enable_priority_caching: false,
+                priority_cache_multiplier: 1.0,
             },
         };
 
@@ -2431,6 +2554,11 @@ mod cache_tests {
             batch_size: None,
             optimize_io: false,
             use_lru_cache: false,
+            enable_adaptive_caching: false,
+            min_cache_ttl_seconds: 1,
+            max_cache_ttl_seconds: 10,
+            enable_priority_caching: false,
+            priority_cache_multiplier: 1.0,
         };
 
         cache.update_config(new_config.clone());
@@ -2514,6 +2642,140 @@ mod cache_tests {
         
         let config2 = ProcessCacheConfig::default();
         assert_eq!(config2.batch_size, Some(100));
+    }
+
+    #[test]
+    fn test_high_priority_process_detection() {
+        // Тестируем определение высокоприоритетных процессов
+        
+        // Высокоприоритетный процесс (высокое использование CPU)
+        let mut high_cpu_record = ProcessRecord::default();
+        high_cpu_record.cpu_share_1s = Some(20.0);
+        assert!(ProcessCache::is_high_priority_process(&high_cpu_record));
+        
+        // Высокоприоритетный процесс (высокое использование памяти)
+        let mut high_mem_record = ProcessRecord::default();
+        high_mem_record.rss_mb = Some(200);
+        assert!(ProcessCache::is_high_priority_process(&high_mem_record));
+        
+        // Высокоприоритетный процесс (высокий приоритет nice)
+        let mut high_nice_record = ProcessRecord::default();
+        high_nice_record.nice = -10;
+        assert!(ProcessCache::is_high_priority_process(&high_nice_record));
+        
+        // Высокоприоритетный процесс (GUI окно)
+        let mut gui_record = ProcessRecord::default();
+        gui_record.has_gui_window = true;
+        assert!(ProcessCache::is_high_priority_process(&gui_record));
+        
+        // Низкоприоритетный процесс
+        let low_priority_record = ProcessRecord::default();
+        assert!(!ProcessCache::is_high_priority_process(&low_priority_record));
+    }
+
+    #[test]
+    fn test_adaptive_ttl_calculation() {
+        // Тестируем расчет адаптивного TTL
+        let mut cache = ProcessCache::new();
+        
+        // Настраиваем конфигурацию для теста
+        let mut config = ProcessCacheConfig::default();
+        config.enable_adaptive_caching = true;
+        config.enable_priority_caching = true;
+        config.cache_ttl_seconds = 5;
+        config.priority_cache_multiplier = 2.0;
+        config.min_cache_ttl_seconds = 2;
+        config.max_cache_ttl_seconds = 15;
+        cache.config = config;
+        
+        // Высокоприоритетный процесс должен иметь более длинный TTL
+        let mut high_priority_record = ProcessRecord::default();
+        high_priority_record.cpu_share_1s = Some(20.0);
+        let high_priority_ttl = cache.calculate_adaptive_ttl(&high_priority_record);
+        assert!(high_priority_ttl > 5, "High priority process should have longer TTL");
+        
+        // Низкоприоритетный процесс должен иметь базовый TTL
+        let low_priority_record = ProcessRecord::default();
+        let low_priority_ttl = cache.calculate_adaptive_ttl(&low_priority_record);
+        assert_eq!(low_priority_ttl, 5, "Low priority process should have base TTL");
+    }
+
+    #[test]
+    fn test_cache_with_adaptive_ttl() {
+        // Тестируем кэширование с адаптивным TTL
+        let mut cache = ProcessCache::new();
+        
+        // Настраиваем конфигурацию для теста
+        let mut config = ProcessCacheConfig::default();
+        config.enable_adaptive_caching = true;
+        config.enable_priority_caching = true;
+        config.cache_ttl_seconds = 1; // Короткий TTL для теста
+        config.priority_cache_multiplier = 3.0;
+        config.min_cache_ttl_seconds = 1;
+        config.max_cache_ttl_seconds = 5;
+        cache.config = config;
+        
+        // Создаем высокоприоритетный процесс
+        let mut high_priority_record = ProcessRecord::default();
+        high_priority_record.pid = 123;
+        high_priority_record.cpu_share_1s = Some(20.0);
+        
+        // Кэшируем процесс
+        cache.cache_record(high_priority_record.clone());
+        
+        // Проверяем, что процесс кэширован
+        let cached = cache.get_cached(123);
+        assert!(cached.is_some(), "Process should be cached");
+        
+        // Ждем немного (меньше, чем базовый TTL, но больше, чем базовый TTL)
+        std::thread::sleep(Duration::from_millis(1500));
+        
+        // Процесс все еще должен быть в кэше (из-за более длинного TTL)
+        let cached_after_wait = cache.get_cached(123);
+        assert!(cached_after_wait.is_some(), "High priority process should still be cached");
+    }
+
+    #[test]
+    fn test_cache_cleanup_with_adaptive_ttl() {
+        // Тестируем очистку кэша с адаптивным TTL
+        let mut cache = ProcessCache::new();
+        
+        // Настраиваем конфигурацию для теста
+        let mut config = ProcessCacheConfig::default();
+        config.enable_adaptive_caching = true;
+        config.enable_priority_caching = true;
+        config.cache_ttl_seconds = 1; // Короткий TTL для теста
+        config.priority_cache_multiplier = 3.0;
+        config.min_cache_ttl_seconds = 1;
+        config.max_cache_ttl_seconds = 5;
+        cache.config = config;
+        
+        // Создаем высокоприоритетный процесс
+        let mut high_priority_record = ProcessRecord::default();
+        high_priority_record.pid = 123;
+        high_priority_record.cpu_share_1s = Some(20.0);
+        
+        // Создаем низкоприоритетный процесс
+        let mut low_priority_record = ProcessRecord::default();
+        low_priority_record.pid = 456;
+        
+        // Кэшируем оба процесса
+        cache.cache_record(high_priority_record.clone());
+        cache.cache_record(low_priority_record.clone());
+        
+        // Ждем немного (больше, чем базовый TTL, но меньше, чем приоритетный TTL)
+        std::thread::sleep(Duration::from_millis(1500));
+        
+        // Очищаем устаревшие записи
+        cache.cleanup_stale_entries();
+        
+        // Высокоприоритетный процесс должен остаться
+        let high_priority_cached = cache.get_cached(123);
+        assert!(high_priority_cached.is_some(), "High priority process should remain in cache");
+        
+        // Низкоприоритетный процесс должен быть удален
+        let low_priority_cached = cache.get_cached(456);
+        assert!(low_priority_cached.is_none(), "Low priority process should be removed from cache");
     }
 }
 
