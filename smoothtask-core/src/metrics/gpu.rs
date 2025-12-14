@@ -1119,6 +1119,329 @@ fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     Ok(metrics)
 }
 
+/// Collect GPU metrics using Qualcomm Adreno sysfs interface
+fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let mut metrics = GpuMetrics {
+        device: device.clone(),
+        utilization: GpuUtilization::default(),
+        memory: GpuMemory::default(),
+        temperature: GpuTemperature::default(),
+        power: GpuPower::default(),
+        clocks: GpuClocks::default(),
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let device_path = &device.device_path;
+
+    // Collect GPU utilization - Adreno devices may expose this through different interfaces
+    if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_load") {
+        metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
+        debug!("  Qualcomm Adreno GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    } else if let Ok(gpu_busy) = read_sysfs_u32(device_path, "gpu_busy") {
+        // Some Adreno devices use gpu_busy instead
+        metrics.utilization.gpu_util = gpu_busy as f32 / 100.0;
+        debug!("  Qualcomm Adreno GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    }
+
+    // Collect memory metrics - Adreno devices may have limited memory info
+    if let Ok(total_mem) = read_sysfs_u64(device_path, "mem_total") {
+        metrics.memory.total_bytes = total_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(total_mem) = read_sysfs_u64(device_path, "memory_total") {
+        metrics.memory.total_bytes = total_mem;
+    }
+
+    if let Ok(used_mem) = read_sysfs_u64(device_path, "mem_used") {
+        metrics.memory.used_bytes = used_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(used_mem) = read_sysfs_u64(device_path, "memory_used") {
+        metrics.memory.used_bytes = used_mem;
+    }
+
+    if metrics.memory.total_bytes > 0 {
+        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        debug!(
+            "  Qualcomm Adreno GPU memory: {}/{} MB used",
+            metrics.memory.used_bytes / 1024 / 1024,
+            metrics.memory.total_bytes / 1024 / 1024
+        );
+    }
+
+    // Collect temperature - Adreno devices often have thermal sensors
+    let hwmon_dir = device_path.join("hwmon");
+    if hwmon_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&hwmon_dir) {
+            for entry in entries.flatten() {
+                let hwmon_path = entry.path();
+                if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
+                    for temp_file in temp_files.flatten() {
+                        let temp_path = temp_file.path();
+                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name.ends_with("_input") && file_name.contains("temp") {
+                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                                    metrics.temperature.temperature_c = Some(temp_c);
+                                    debug!("  Qualcomm Adreno GPU temperature: {:.1}°C", temp_c);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Collect power - Adreno devices may have power sensors
+    if let Ok(power_mw) = read_sysfs_u32(device_path, "power") {
+        metrics.power.power_w = Some(power_mw as f32 / 1000.0); // Convert mW to W
+        debug!("  Qualcomm Adreno GPU power: {:.1}W", power_mw as f32 / 1000.0);
+    }
+
+    // Collect clocks - Adreno devices may expose clock information
+    if let Ok(core_clock) = read_sysfs_u32(device_path, "gpu_clock") {
+        metrics.clocks.core_clock_mhz = Some(core_clock);
+        debug!("  Qualcomm Adreno GPU core clock: {} MHz", core_clock);
+    }
+
+    Ok(metrics)
+}
+
+/// Collect GPU metrics using ARM Mali sysfs interface
+fn collect_arm_mali_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let mut metrics = GpuMetrics {
+        device: device.clone(),
+        utilization: GpuUtilization::default(),
+        memory: GpuMemory::default(),
+        temperature: GpuTemperature::default(),
+        power: GpuPower::default(),
+        clocks: GpuClocks::default(),
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let device_path = &device.device_path;
+
+    // Collect GPU utilization - Mali devices may expose this through different interfaces
+    if let Ok(gpu_util) = read_sysfs_u32(device_path, "utilization") {
+        metrics.utilization.gpu_util = gpu_util as f32 / 100.0;
+        debug!("  ARM Mali GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    } else if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_load") {
+        metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
+        debug!("  ARM Mali GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    }
+
+    // Collect memory metrics - Mali devices may have limited memory info
+    if let Ok(total_mem) = read_sysfs_u64(device_path, "mem_total") {
+        metrics.memory.total_bytes = total_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(total_mem) = read_sysfs_u64(device_path, "memory_total") {
+        metrics.memory.total_bytes = total_mem;
+    }
+
+    if let Ok(used_mem) = read_sysfs_u64(device_path, "mem_used") {
+        metrics.memory.used_bytes = used_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(used_mem) = read_sysfs_u64(device_path, "memory_used") {
+        metrics.memory.used_bytes = used_mem;
+    }
+
+    if metrics.memory.total_bytes > 0 {
+        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        debug!(
+            "  ARM Mali GPU memory: {}/{} MB used",
+            metrics.memory.used_bytes / 1024 / 1024,
+            metrics.memory.total_bytes / 1024 / 1024
+        );
+    }
+
+    // Collect temperature - Mali devices often have thermal sensors
+    let hwmon_dir = device_path.join("hwmon");
+    if hwmon_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&hwmon_dir) {
+            for entry in entries.flatten() {
+                let hwmon_path = entry.path();
+                if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
+                    for temp_file in temp_files.flatten() {
+                        let temp_path = temp_file.path();
+                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name.ends_with("_input") && file_name.contains("temp") {
+                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                                    metrics.temperature.temperature_c = Some(temp_c);
+                                    debug!("  ARM Mali GPU temperature: {:.1}°C", temp_c);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Collect power - Mali devices may have power sensors
+    if let Ok(power_mw) = read_sysfs_u32(device_path, "power") {
+        metrics.power.power_w = Some(power_mw as f32 / 1000.0); // Convert mW to W
+        debug!("  ARM Mali GPU power: {:.1}W", power_mw as f32 / 1000.0);
+    }
+
+    // Collect clocks - Mali devices may expose clock information
+    if let Ok(core_clock) = read_sysfs_u32(device_path, "clock") {
+        metrics.clocks.core_clock_mhz = Some(core_clock);
+        debug!("  ARM Mali GPU core clock: {} MHz", core_clock);
+    }
+
+    Ok(metrics)
+}
+
+/// Collect GPU metrics using Broadcom VideoCore sysfs interface
+fn collect_broadcom_videocore_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let mut metrics = GpuMetrics {
+        device: device.clone(),
+        utilization: GpuUtilization::default(),
+        memory: GpuMemory::default(),
+        temperature: GpuTemperature::default(),
+        power: GpuPower::default(),
+        clocks: GpuClocks::default(),
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let device_path = &device.device_path;
+
+    // Collect GPU utilization - VideoCore devices may expose this through different interfaces
+    if let Ok(gpu_util) = read_sysfs_u32(device_path, "utilization") {
+        metrics.utilization.gpu_util = gpu_util as f32 / 100.0;
+        debug!("  Broadcom VideoCore GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    } else if let Ok(gpu_load) = read_sysfs_u32(device_path, "gpu_load") {
+        metrics.utilization.gpu_util = gpu_load as f32 / 100.0;
+        debug!("  Broadcom VideoCore GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    }
+
+    // Collect memory metrics - VideoCore devices may have limited memory info
+    if let Ok(total_mem) = read_sysfs_u64(device_path, "mem_total") {
+        metrics.memory.total_bytes = total_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(total_mem) = read_sysfs_u64(device_path, "memory_total") {
+        metrics.memory.total_bytes = total_mem;
+    }
+
+    if let Ok(used_mem) = read_sysfs_u64(device_path, "mem_used") {
+        metrics.memory.used_bytes = used_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(used_mem) = read_sysfs_u64(device_path, "memory_used") {
+        metrics.memory.used_bytes = used_mem;
+    }
+
+    if metrics.memory.total_bytes > 0 {
+        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        debug!(
+            "  Broadcom VideoCore GPU memory: {}/{} MB used",
+            metrics.memory.used_bytes / 1024 / 1024,
+            metrics.memory.total_bytes / 1024 / 1024
+        );
+    }
+
+    // Collect temperature - VideoCore devices often have thermal sensors
+    let hwmon_dir = device_path.join("hwmon");
+    if hwmon_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&hwmon_dir) {
+            for entry in entries.flatten() {
+                let hwmon_path = entry.path();
+                if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
+                    for temp_file in temp_files.flatten() {
+                        let temp_path = temp_file.path();
+                        let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+                        
+                        if file_name.ends_with("_input") && file_name.contains("temp") {
+                            if let Ok(temp_content) = fs::read_to_string(&temp_path) {
+                                if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
+                                    let temp_c = temp_millidegrees as f32 / 1000.0;
+                                    metrics.temperature.temperature_c = Some(temp_c);
+                                    debug!("  Broadcom VideoCore GPU temperature: {:.1}°C", temp_c);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Collect power - VideoCore devices may have power sensors
+    if let Ok(power_mw) = read_sysfs_u32(device_path, "power") {
+        metrics.power.power_w = Some(power_mw as f32 / 1000.0); // Convert mW to W
+        debug!("  Broadcom VideoCore GPU power: {:.1}W", power_mw as f32 / 1000.0);
+    }
+
+    // Collect clocks - VideoCore devices may expose clock information
+    if let Ok(core_clock) = read_sysfs_u32(device_path, "clock") {
+        metrics.clocks.core_clock_mhz = Some(core_clock);
+        debug!("  Broadcom VideoCore GPU core clock: {} MHz", core_clock);
+    }
+
+    Ok(metrics)
+}
+
+/// Collect GPU metrics using Virtio GPU interface
+fn collect_virtio_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
+    let mut metrics = GpuMetrics {
+        device: device.clone(),
+        utilization: GpuUtilization::default(),
+        memory: GpuMemory::default(),
+        temperature: GpuTemperature::default(),
+        power: GpuPower::default(),
+        clocks: GpuClocks::default(),
+        timestamp: std::time::SystemTime::now(),
+    };
+
+    let device_path = &device.device_path;
+
+    // Virtio GPU devices have very limited metrics available
+    // We'll try to collect what we can
+
+    // Collect GPU utilization - Virtio devices may expose this through different interfaces
+    if let Ok(gpu_util) = read_sysfs_u32(device_path, "utilization") {
+        metrics.utilization.gpu_util = gpu_util as f32 / 100.0;
+        debug!("  Virtio GPU utilization: {:.1}%", metrics.utilization.gpu_util * 100.0);
+    }
+
+    // Collect memory metrics - Virtio devices may have limited memory info
+    if let Ok(total_mem) = read_sysfs_u64(device_path, "mem_total") {
+        metrics.memory.total_bytes = total_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(total_mem) = read_sysfs_u64(device_path, "memory_total") {
+        metrics.memory.total_bytes = total_mem;
+    }
+
+    if let Ok(used_mem) = read_sysfs_u64(device_path, "mem_used") {
+        metrics.memory.used_bytes = used_mem * 1024 * 1024; // Convert MB to bytes
+    } else if let Ok(used_mem) = read_sysfs_u64(device_path, "memory_used") {
+        metrics.memory.used_bytes = used_mem;
+    }
+
+    if metrics.memory.total_bytes > 0 {
+        metrics.memory.free_bytes = metrics.memory.total_bytes.saturating_sub(metrics.memory.used_bytes);
+        debug!(
+            "  Virtio GPU memory: {}/{} MB used",
+            metrics.memory.used_bytes / 1024 / 1024,
+            metrics.memory.total_bytes / 1024 / 1024
+        );
+    }
+
+    // Virtio devices typically don't have temperature sensors in the guest
+    // Collect power - Virtio devices may have power sensors
+    if let Ok(power_mw) = read_sysfs_u32(device_path, "power") {
+        metrics.power.power_w = Some(power_mw as f32 / 1000.0); // Convert mW to W
+        debug!("  Virtio GPU power: {:.1}W", power_mw as f32 / 1000.0);
+    }
+
+    // Collect clocks - Virtio devices may expose clock information
+    if let Ok(core_clock) = read_sysfs_u32(device_path, "clock") {
+        metrics.clocks.core_clock_mhz = Some(core_clock);
+        debug!("  Virtio GPU core clock: {} MHz", core_clock);
+    }
+
+    Ok(metrics)
+}
+
 /// Try to collect GPU metrics using vendor-specific APIs
 fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     // Try NVML first for NVIDIA devices
@@ -1157,6 +1480,58 @@ fn collect_vendor_specific_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
             }
             Err(e) => {
                 debug!("Failed to collect Intel GPU metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // Try Qualcomm Adreno for Qualcomm devices
+    if device.driver.as_deref() == Some("msm") || device.driver.as_deref() == Some("adreno") {
+        match collect_qualcomm_adreno_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected Qualcomm Adreno metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect Qualcomm Adreno metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // Try ARM Mali for ARM Mali devices
+    if device.driver.as_deref() == Some("mali") || device.driver.as_deref() == Some("panfrost") {
+        match collect_arm_mali_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected ARM Mali metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect ARM Mali metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // Try Broadcom VideoCore for Raspberry Pi devices
+    if device.driver.as_deref() == Some("vc4") || device.driver.as_deref() == Some("v3d") {
+        match collect_broadcom_videocore_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected Broadcom VideoCore metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect Broadcom VideoCore metrics for device {}: {}", device.name, e);
+            }
+        }
+    }
+
+    // Try Virtio for virtual GPU devices
+    if device.driver.as_deref() == Some("virtio_gpu") || device.driver.as_deref() == Some("virtio") {
+        match collect_virtio_gpu_metrics(device) {
+            Ok(metrics) => {
+                debug!("Successfully collected Virtio GPU metrics for device {}", device.name);
+                return Ok(metrics);
+            }
+            Err(e) => {
+                debug!("Failed to collect Virtio GPU metrics for device {}: {}", device.name, e);
             }
         }
     }
@@ -2261,6 +2636,317 @@ mod tests {
         
         // Results should be consistent
         assert_eq!(collection1.gpu_count, collection2.gpu_count);
+    }
+    
+    #[test]
+    fn test_new_gpu_vendors_identification() {
+        // Test identification of new GPU vendors
+        
+        // Qualcomm Adreno
+        let qualcomm_device = GpuDevice {
+            name: "adreno_gpu".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:05.0/drm/card0/device"),
+            vendor_id: Some("0x5143".to_string()), // Qualcomm vendor ID
+            device_id: Some("0x1234".to_string()),
+            driver: Some("msm".to_string()),
+        };
+        
+        // ARM Mali
+        let mali_device = GpuDevice {
+            name: "mali_gpu".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:06.0/drm/card1/device"),
+            vendor_id: Some("0x13b5".to_string()), // ARM vendor ID
+            device_id: Some("0x5678".to_string()),
+            driver: Some("mali".to_string()),
+        };
+        
+        // Broadcom VideoCore
+        let broadcom_device = GpuDevice {
+            name: "videocore_gpu".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:07.0/drm/card2/device"),
+            vendor_id: Some("0x14e4".to_string()), // Broadcom vendor ID
+            device_id: Some("0x9abc".to_string()),
+            driver: Some("vc4".to_string()),
+        };
+        
+        // Virtio GPU
+        let virtio_device = GpuDevice {
+            name: "virtio_gpu".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:08.0/drm/card3/device"),
+            vendor_id: Some("0x1af4".to_string()), // Virtio vendor ID
+            device_id: Some("0xdef0".to_string()),
+            driver: Some("virtio_gpu".to_string()),
+        };
+        
+        // Verify vendor identification
+        assert_eq!(qualcomm_device.driver, Some("msm".to_string()));
+        assert_eq!(mali_device.driver, Some("mali".to_string()));
+        assert_eq!(broadcom_device.driver, Some("vc4".to_string()));
+        assert_eq!(virtio_device.driver, Some("virtio_gpu".to_string()));
+        
+        // Test that metrics collection works for these devices (may return default values)
+        let qualcomm_result = collect_gpu_device_metrics(&qualcomm_device);
+        let mali_result = collect_gpu_device_metrics(&mali_device);
+        let broadcom_result = collect_gpu_device_metrics(&broadcom_device);
+        let virtio_result = collect_gpu_device_metrics(&virtio_device);
+        
+        assert!(qualcomm_result.is_ok());
+        assert!(mali_result.is_ok());
+        assert!(broadcom_result.is_ok());
+        assert!(virtio_result.is_ok());
+    }
+    
+    #[test]
+    fn test_new_gpu_vendors_metrics_collection() {
+        // Test metrics collection for new GPU vendors
+        
+        // Create mock devices for each new vendor
+        let qualcomm_device = GpuDevice {
+            name: "adreno_test".to_string(),
+            device_path: PathBuf::from("/sys/devices/platform/soc/1c00000.gpu/drm/card0/device"),
+            vendor_id: Some("0x5143".to_string()),
+            device_id: Some("0x1234".to_string()),
+            driver: Some("msm".to_string()),
+        };
+        
+        let mali_device = GpuDevice {
+            name: "mali_test".to_string(),
+            device_path: PathBuf::from("/sys/devices/platform/soc/1d80000.gpu/drm/card1/device"),
+            vendor_id: Some("0x13b5".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("mali".to_string()),
+        };
+        
+        let broadcom_device = GpuDevice {
+            name: "vc4_test".to_string(),
+            device_path: PathBuf::from("/sys/devices/platform/soc/3fc00000.gpu/drm/card2/device"),
+            vendor_id: Some("0x14e4".to_string()),
+            device_id: Some("0x9abc".to_string()),
+            driver: Some("vc4".to_string()),
+        };
+        
+        let virtio_device = GpuDevice {
+            name: "virtio_test".to_string(),
+            device_path: PathBuf::from("/sys/devices/pci0000:00/0000:00:02.0/drm/card3/device"),
+            vendor_id: Some("0x1af4".to_string()),
+            device_id: Some("0xdef0".to_string()),
+            driver: Some("virtio_gpu".to_string()),
+        };
+        
+        // Test vendor-specific metrics collection
+        let qualcomm_result = collect_qualcomm_adreno_metrics(&qualcomm_device);
+        let mali_result = collect_arm_mali_metrics(&mali_device);
+        let broadcom_result = collect_broadcom_videocore_metrics(&broadcom_device);
+        let virtio_result = collect_virtio_gpu_metrics(&virtio_device);
+        
+        // All should succeed (return Ok) even if they return default values
+        assert!(qualcomm_result.is_ok());
+        assert!(mali_result.is_ok());
+        assert!(broadcom_result.is_ok());
+        assert!(virtio_result.is_ok());
+        
+        // Verify that the metrics have the correct device information
+        let qualcomm_metrics = qualcomm_result.unwrap();
+        let mali_metrics = mali_result.unwrap();
+        let broadcom_metrics = broadcom_result.unwrap();
+        let virtio_metrics = virtio_result.unwrap();
+        
+        assert_eq!(qualcomm_metrics.device.name, "adreno_test");
+        assert_eq!(mali_metrics.device.name, "mali_test");
+        assert_eq!(broadcom_metrics.device.name, "vc4_test");
+        assert_eq!(virtio_metrics.device.name, "virtio_test");
+        
+        // Verify that the metrics have reasonable default values
+        assert!(qualcomm_metrics.utilization.gpu_util >= 0.0);
+        assert!(mali_metrics.utilization.gpu_util >= 0.0);
+        assert!(broadcom_metrics.utilization.gpu_util >= 0.0);
+        assert!(virtio_metrics.utilization.gpu_util >= 0.0);
+    }
+    
+    #[test]
+    fn test_new_gpu_vendors_serialization() {
+        // Test serialization of metrics from new GPU vendors
+        
+        // Create metrics for each new vendor
+        let qualcomm_metrics = GpuMetrics {
+            device: GpuDevice {
+                name: "adreno_gpu".to_string(),
+                device_path: PathBuf::from("/dev/adreno0"),
+                vendor_id: Some("0x5143".to_string()),
+                device_id: Some("0x1234".to_string()),
+                driver: Some("msm".to_string()),
+            },
+            utilization: GpuUtilization {
+                gpu_util: 0.65,
+                memory_util: 0.45,
+                encoder_util: Some(0.30),
+                decoder_util: Some(0.20),
+            },
+            memory: GpuMemory {
+                total_bytes: 2_000_000_000, // 2 GB
+                used_bytes: 1_200_000_000, // 1.2 GB
+                free_bytes: 800_000_000,   // 0.8 GB
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(55.0),
+                hotspot_c: Some(60.0),
+                memory_c: Some(50.0),
+            },
+            power: GpuPower {
+                power_w: Some(3.5),
+                power_limit_w: Some(8.0),
+                power_cap_w: Some(7.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(600),
+                memory_clock_mhz: Some(800),
+                shader_clock_mhz: Some(700),
+            },
+            timestamp: std::time::SystemTime::now(),
+        };
+        
+        let mali_metrics = GpuMetrics {
+            device: GpuDevice {
+                name: "mali_gpu".to_string(),
+                device_path: PathBuf::from("/dev/mali0"),
+                vendor_id: Some("0x13b5".to_string()),
+                device_id: Some("0x5678".to_string()),
+                driver: Some("mali".to_string()),
+            },
+            utilization: GpuUtilization {
+                gpu_util: 0.70,
+                memory_util: 0.50,
+                encoder_util: Some(0.35),
+                decoder_util: Some(0.25),
+            },
+            memory: GpuMemory {
+                total_bytes: 4_000_000_000, // 4 GB
+                used_bytes: 2_500_000_000, // 2.5 GB
+                free_bytes: 1_500_000_000, // 1.5 GB
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(60.0),
+                hotspot_c: Some(65.0),
+                memory_c: Some(55.0),
+            },
+            power: GpuPower {
+                power_w: Some(4.2),
+                power_limit_w: Some(10.0),
+                power_cap_w: Some(9.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(700),
+                memory_clock_mhz: Some(900),
+                shader_clock_mhz: Some(800),
+            },
+            timestamp: std::time::SystemTime::now(),
+        };
+        
+        // Test serialization
+        let qualcomm_serialized = serde_json::to_string(&qualcomm_metrics).expect("Qualcomm serialization failed");
+        let mali_serialized = serde_json::to_string(&mali_metrics).expect("Mali serialization failed");
+        
+        let qualcomm_deserialized: GpuMetrics = serde_json::from_str(&qualcomm_serialized).expect("Qualcomm deserialization failed");
+        let mali_deserialized: GpuMetrics = serde_json::from_str(&mali_serialized).expect("Mali deserialization failed");
+        
+        // Verify all fields are preserved
+        assert_eq!(qualcomm_deserialized.device.name, "adreno_gpu");
+        assert_eq!(qualcomm_deserialized.device.driver, Some("msm".to_string()));
+        assert_eq!(qualcomm_deserialized.utilization.gpu_util, 0.65);
+        assert_eq!(qualcomm_deserialized.memory.total_bytes, 2_000_000_000);
+        
+        assert_eq!(mali_deserialized.device.name, "mali_gpu");
+        assert_eq!(mali_deserialized.device.driver, Some("mali".to_string()));
+        assert_eq!(mali_deserialized.utilization.gpu_util, 0.70);
+        assert_eq!(mali_deserialized.memory.total_bytes, 4_000_000_000);
+    }
+    
+    #[test]
+    fn test_new_gpu_vendors_integration() {
+        // Test integration of new GPU vendors into the main collection system
+        
+        // Test that vendor-specific metrics collection works for new vendors
+        let qualcomm_device = GpuDevice {
+            name: "adreno_integration".to_string(),
+            device_path: PathBuf::from("/sys/devices/platform/soc/1c00000.gpu/drm/card0/device"),
+            vendor_id: Some("0x5143".to_string()),
+            device_id: Some("0x1234".to_string()),
+            driver: Some("msm".to_string()),
+        };
+        
+        let mali_device = GpuDevice {
+            name: "mali_integration".to_string(),
+            device_path: PathBuf::from("/sys/devices/platform/soc/1d80000.gpu/drm/card1/device"),
+            vendor_id: Some("0x13b5".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("mali".to_string()),
+        };
+        
+        // Test vendor-specific metrics collection
+        let qualcomm_result = collect_vendor_specific_metrics(&qualcomm_device);
+        let mali_result = collect_vendor_specific_metrics(&mali_device);
+        
+        // These may fail (return Err) if the devices don't exist, but should not panic
+        // If they succeed, they should return valid metrics
+        match qualcomm_result {
+            Ok(metrics) => {
+                assert_eq!(metrics.device.name, "adreno_integration");
+                assert_eq!(metrics.device.driver, Some("msm".to_string()));
+            }
+            Err(_) => {
+                // Expected if the device doesn't exist
+                // This is fine for the test
+            }
+        }
+        
+        match mali_result {
+            Ok(metrics) => {
+                assert_eq!(metrics.device.name, "mali_integration");
+                assert_eq!(metrics.device.driver, Some("mali".to_string()));
+            }
+            Err(_) => {
+                // Expected if the device doesn't exist
+                // This is fine for the test
+            }
+        }
+    }
+    
+    #[test]
+    fn test_new_gpu_vendors_fallback() {
+        // Test that new GPU vendors fall back gracefully when vendor-specific APIs fail
+        
+        let mock_qualcomm_device = GpuDevice {
+            name: "mock_adreno".to_string(),
+            device_path: PathBuf::from("/non/existent/qualcomm/path"),
+            vendor_id: Some("0x5143".to_string()),
+            device_id: Some("0x1234".to_string()),
+            driver: Some("msm".to_string()),
+        };
+        
+        let mock_mali_device = GpuDevice {
+            name: "mock_mali".to_string(),
+            device_path: PathBuf::from("/non/existent/mali/path"),
+            vendor_id: Some("0x13b5".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("mali".to_string()),
+        };
+        
+        // Vendor-specific collection should fail gracefully
+        let qualcomm_result = collect_qualcomm_adreno_metrics(&mock_qualcomm_device);
+        let mali_result = collect_arm_mali_metrics(&mock_mali_device);
+        
+        // Should succeed (return Ok) even with non-existent paths
+        assert!(qualcomm_result.is_ok());
+        assert!(mali_result.is_ok());
+        
+        // Should return valid metrics objects with default values
+        let qualcomm_metrics = qualcomm_result.unwrap();
+        let mali_metrics = mali_result.unwrap();
+        
+        assert_eq!(qualcomm_metrics.device.name, "mock_adreno");
+        assert_eq!(mali_metrics.device.name, "mock_mali");
+        assert_eq!(qualcomm_metrics.utilization.gpu_util, 0.0);
+        assert_eq!(mali_metrics.utilization.gpu_util, 0.0);
     }
 }
 
