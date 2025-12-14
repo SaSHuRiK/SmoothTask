@@ -218,6 +218,75 @@ pub struct NetworkQualityMetrics {
     pub stability_score: f64,
 }
 
+/// Network QoS (Quality of Service) metrics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct NetworkQoSMetrics {
+    /// QoS class identifier (if available)
+    pub qos_class: Option<String>,
+    /// Traffic Control (tc) queue discipline
+    pub tc_qdisc: Option<String>,
+    /// Traffic Control classes
+    pub tc_classes: Vec<String>,
+    /// Traffic Control filters
+    pub tc_filters: Vec<String>,
+    /// Packet priority (if available)
+    pub packet_priority: Option<u32>,
+    /// Differentiated Services Code Point (DSCP)
+    pub dscp: Option<u8>,
+    /// Explicit Congestion Notification (ECN) support
+    pub ecn_support: bool,
+    /// Traffic shaping rate (bytes per second)
+    pub shaping_rate_bps: Option<u64>,
+    /// Traffic policing rate (bytes per second)
+    pub policing_rate_bps: Option<u64>,
+    /// Queue length
+    pub queue_length: Option<u32>,
+    /// Packet drop statistics
+    pub packet_drops: u64,
+    /// Packet reordering statistics
+    pub packet_reorders: u64,
+    /// QoS policy applied
+    pub qos_policy: Option<String>,
+}
+
+/// Extended network interface statistics with QoS support
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkInterfaceStatsWithQoS {
+    /// Base interface statistics
+    pub base_stats: NetworkInterfaceStats,
+    /// QoS metrics for this interface
+    pub qos_metrics: NetworkQoSMetrics,
+    /// Traffic Control (tc) configuration
+    pub tc_config: Option<String>,
+    /// QoS queue statistics
+    pub qos_queue_stats: Vec<QoSQueueStats>,
+}
+
+/// QoS queue statistics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct QoSQueueStats {
+    /// Queue identifier
+    pub queue_id: String,
+    /// Queue type
+    pub queue_type: String,
+    /// Current queue length
+    pub current_length: u32,
+    /// Maximum queue length
+    pub max_length: u32,
+    /// Packets in queue
+    pub packets_in_queue: u64,
+    /// Bytes in queue
+    pub bytes_in_queue: u64,
+    /// Packets dropped from this queue
+    pub packets_dropped: u64,
+    /// Bytes dropped from this queue
+    pub bytes_dropped: u64,
+    /// Queue processing rate (packets per second)
+    pub processing_rate_pps: u64,
+    /// Queue processing rate (bytes per second)
+    pub processing_rate_bps: u64,
+}
+
 /// Comprehensive network statistics
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ComprehensiveNetworkStats {
@@ -256,6 +325,10 @@ pub struct NetworkMonitorConfig {
     pub enable_connection_tracking: bool,
     /// Enable network quality monitoring
     pub enable_quality_monitoring: bool,
+    /// Enable QoS (Quality of Service) monitoring
+    pub enable_qos_monitoring: bool,
+    /// Enable Traffic Control (tc) monitoring
+    pub enable_tc_monitoring: bool,
     /// Maximum number of connections to track
     pub max_connections: usize,
     /// Update interval in seconds
@@ -264,6 +337,8 @@ pub struct NetworkMonitorConfig {
     pub monitored_ports: Vec<u16>,
     /// Protocols to monitor specifically
     pub monitored_protocols: Vec<String>,
+    /// QoS classes to monitor specifically
+    pub monitored_qos_classes: Vec<String>,
 }
 
 impl Default for NetworkMonitorConfig {
@@ -274,10 +349,55 @@ impl Default for NetworkMonitorConfig {
             enable_port_monitoring: true,
             enable_connection_tracking: true,
             enable_quality_monitoring: true,
+            enable_qos_monitoring: true,
+            enable_tc_monitoring: true,
             max_connections: 1024,
             update_interval_secs: 60,
             monitored_ports: vec![80, 443, 22, 53, 8080],
             monitored_protocols: vec!["TCP".to_string(), "UDP".to_string()],
+            monitored_qos_classes: vec!["best-effort".to_string(), "video".to_string(), "voice".to_string()],
+        }
+    }
+}
+
+/// Comprehensive network statistics with QoS support
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ComprehensiveNetworkStatsWithQoS {
+    /// Timestamp of collection
+    pub timestamp: SystemTime,
+    /// Network interfaces statistics with QoS
+    pub interfaces_with_qos: Vec<NetworkInterfaceStatsWithQoS>,
+    /// Protocol statistics
+    pub protocols: NetworkProtocolStats,
+    /// Port usage statistics
+    pub port_usage: Vec<PortUsageStats>,
+    /// Active connections
+    pub active_connections: Vec<NetworkConnectionStats>,
+    /// Network quality metrics
+    pub quality: NetworkQualityMetrics,
+    /// Total bytes received
+    pub total_rx_bytes: u64,
+    /// Total bytes transmitted
+    pub total_tx_bytes: u64,
+    /// Total packets received
+    pub total_rx_packets: u64,
+    /// Total packets transmitted
+    pub total_tx_packets: u64,
+}
+
+impl Default for ComprehensiveNetworkStatsWithQoS {
+    fn default() -> Self {
+        Self {
+            timestamp: SystemTime::UNIX_EPOCH,
+            interfaces_with_qos: Vec::new(),
+            protocols: NetworkProtocolStats::default(),
+            port_usage: Vec::new(),
+            active_connections: Vec::new(),
+            quality: NetworkQualityMetrics::default(),
+            total_rx_bytes: 0,
+            total_tx_bytes: 0,
+            total_rx_packets: 0,
+            total_tx_packets: 0,
         }
     }
 }
@@ -286,6 +406,7 @@ impl Default for NetworkMonitorConfig {
 pub struct NetworkMonitor {
     config: NetworkMonitorConfig,
     previous_stats: Option<ComprehensiveNetworkStats>,
+    previous_stats_with_qos: Option<ComprehensiveNetworkStatsWithQoS>,
     interface_cache: HashMap<String, NetworkInterfaceStats>,
     cache_ttl: Duration,
     last_cache_update: SystemTime,
@@ -296,6 +417,7 @@ impl Default for NetworkMonitor {
         Self {
             config: NetworkMonitorConfig::default(),
             previous_stats: None,
+            previous_stats_with_qos: None,
             interface_cache: HashMap::new(),
             cache_ttl: Duration::from_secs(5),
             last_cache_update: SystemTime::UNIX_EPOCH,
@@ -314,6 +436,7 @@ impl NetworkMonitor {
         Self {
             config,
             previous_stats: None,
+            previous_stats_with_qos: None,
             interface_cache: HashMap::new(),
             cache_ttl: Duration::from_secs(5),
             last_cache_update: SystemTime::UNIX_EPOCH,
@@ -325,6 +448,7 @@ impl NetworkMonitor {
         Self {
             config,
             previous_stats: None,
+            previous_stats_with_qos: None,
             interface_cache: HashMap::new(),
             cache_ttl: Duration::from_secs(cache_ttl_secs),
             last_cache_update: SystemTime::UNIX_EPOCH,
@@ -393,6 +517,78 @@ impl NetworkMonitor {
         Ok(stats)
     }
 
+    /// Collect comprehensive network statistics with QoS support
+    pub fn collect_network_stats_with_qos(&mut self) -> Result<ComprehensiveNetworkStatsWithQoS> {
+        let mut stats = ComprehensiveNetworkStatsWithQoS {
+            timestamp: SystemTime::now(),
+            ..Default::default()
+        };
+
+        // Collect interface statistics with QoS support
+        if self.config.enable_detailed_interfaces && self.config.enable_qos_monitoring {
+            stats.interfaces_with_qos = self.collect_interface_stats_with_qos()?;
+        } else if self.config.enable_detailed_interfaces {
+            // Fallback to basic interface statistics
+            let basic_interfaces = self.collect_interface_stats_optimized()?;
+            stats.interfaces_with_qos = basic_interfaces
+                .into_iter()
+                .map(|basic_iface| NetworkInterfaceStatsWithQoS {
+                    base_stats: basic_iface,
+                    qos_metrics: NetworkQoSMetrics::default(),
+                    tc_config: None,
+                    qos_queue_stats: Vec::new(),
+                })
+                .collect();
+        }
+
+        // Collect protocol statistics
+        if self.config.enable_protocol_monitoring {
+            stats.protocols = self.collect_protocol_stats()?;
+        }
+
+        // Collect port usage statistics
+        if self.config.enable_port_monitoring {
+            stats.port_usage = self.collect_port_usage_stats()?;
+        }
+
+        // Collect connection statistics
+        if self.config.enable_connection_tracking {
+            stats.active_connections = self.collect_connection_stats()?;
+        }
+
+        // Collect network quality metrics
+        if self.config.enable_quality_monitoring {
+            stats.quality = self.collect_network_quality_metrics()?;
+        }
+
+        // Calculate totals from interfaces with QoS
+        stats.total_rx_bytes = stats
+            .interfaces_with_qos
+            .iter()
+            .map(|iface| iface.base_stats.rx_bytes)
+            .sum();
+        stats.total_tx_bytes = stats
+            .interfaces_with_qos
+            .iter()
+            .map(|iface| iface.base_stats.tx_bytes)
+            .sum();
+        stats.total_rx_packets = stats
+            .interfaces_with_qos
+            .iter()
+            .map(|iface| iface.base_stats.rx_packets)
+            .sum();
+        stats.total_tx_packets = stats
+            .interfaces_with_qos
+            .iter()
+            .map(|iface| iface.base_stats.tx_packets)
+            .sum();
+
+        // Store current stats for next collection
+        self.previous_stats_with_qos = Some(stats.clone());
+
+        Ok(stats)
+    }
+
     /// Optimized interface statistics collection with caching
     fn collect_interface_stats_optimized(&mut self) -> Result<Vec<NetworkInterfaceStats>> {
         // Check if we can use cached interface data
@@ -421,6 +617,181 @@ impl NetworkMonitor {
         );
 
         Ok(interfaces)
+    }
+
+    /// Collect interface statistics with QoS support
+    fn collect_interface_stats_with_qos(&mut self) -> Result<Vec<NetworkInterfaceStatsWithQoS>> {
+        let mut interfaces_with_qos = Vec::new();
+
+        // First collect basic interface statistics
+        let basic_interfaces = self.collect_interface_stats_optimized()?;
+
+        // Then enhance each interface with QoS metrics
+        for basic_iface in basic_interfaces {
+            let mut interface_with_qos = NetworkInterfaceStatsWithQoS {
+                base_stats: basic_iface.clone(),
+                qos_metrics: NetworkQoSMetrics::default(),
+                tc_config: None,
+                qos_queue_stats: Vec::new(),
+            };
+
+            // Collect QoS metrics if enabled
+            if self.config.enable_qos_monitoring {
+                interface_with_qos.qos_metrics = self.collect_qos_metrics(&basic_iface.name)?;
+            }
+
+            // Collect TC configuration if enabled
+            if self.config.enable_tc_monitoring {
+                interface_with_qos.tc_config = self.get_tc_configuration(&basic_iface.name)?;
+            }
+
+            // Collect QoS queue statistics if enabled
+            if self.config.enable_qos_monitoring {
+                interface_with_qos.qos_queue_stats = self.collect_qos_queue_stats(&basic_iface.name)?;
+            }
+
+            interfaces_with_qos.push(interface_with_qos);
+        }
+
+        Ok(interfaces_with_qos)
+    }
+
+    /// Get full Traffic Control (tc) configuration for an interface
+    fn get_tc_configuration(&self, interface_name: &str) -> Result<Option<String>> {
+        // Try to execute tc command to get full configuration
+        let output = std::process::Command::new("tc")
+            .args(["-s", "-d", "qdisc", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout).to_string();
+                if output_str.trim().is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(output_str))
+                }
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get tc configuration for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc configuration command for {}: {}", interface_name, e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Collect QoS queue statistics for an interface
+    fn collect_qos_queue_stats(&self, interface_name: &str) -> Result<Vec<QoSQueueStats>> {
+        let mut queue_stats = Vec::new();
+
+        // Try to get queue statistics from tc command
+        let output = std::process::Command::new("tc")
+            .args(["-s", "-d", "qdisc", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                let mut current_queue = QoSQueueStats::default();
+
+                for line in output_str.lines() {
+                    if line.contains("qdisc") && !line.contains("root") {
+                        // Start of a new queue
+                        if !current_queue.queue_id.is_empty() {
+                            queue_stats.push(current_queue);
+                        }
+                        current_queue = QoSQueueStats::default();
+
+                        // Extract queue ID
+                        if let Some(queue_id) = line.split_whitespace().nth(1) {
+                            current_queue.queue_id = queue_id.to_string();
+                        }
+
+                        // Extract queue type
+                        if let Some(queue_type) = line.split_whitespace().nth(2) {
+                            current_queue.queue_type = queue_type.to_string();
+                        }
+                    }
+
+                    // Look for queue statistics
+                    if line.contains("Sent") || line.contains("sent") {
+                        // Parse sent packets and bytes
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        for i in 0..parts.len() {
+                            if parts[i] == "Sent" || parts[i] == "sent" {
+                                if i + 1 < parts.len() {
+                                    if let Ok(packets) = parts[i + 1].parse::<u64>() {
+                                        current_queue.packets_in_queue = packets;
+                                    }
+                                }
+                                if i + 3 < parts.len() {
+                                    if let Ok(bytes) = parts[i + 3].parse::<u64>() {
+                                        current_queue.bytes_in_queue = bytes;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if line.contains("dropped") || line.contains("Dropped") {
+                        // Parse dropped packets and bytes
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        for i in 0..parts.len() {
+                            if parts[i] == "dropped" || parts[i] == "Dropped" {
+                                if i + 1 < parts.len() {
+                                    if let Ok(packets) = parts[i + 1].parse::<u64>() {
+                                        current_queue.packets_dropped = packets;
+                                    }
+                                }
+                                if i + 3 < parts.len() {
+                                    if let Ok(bytes) = parts[i + 3].parse::<u64>() {
+                                        current_queue.bytes_dropped = bytes;
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    if line.contains("backlog") || line.contains("Backlog") {
+                        // Parse queue length
+                        let parts: Vec<&str> = line.split_whitespace().collect();
+                        for i in 0..parts.len() {
+                            if parts[i] == "backlog" || parts[i] == "Backlog" {
+                                if i + 1 < parts.len() {
+                                    if let Ok(length) = parts[i + 1].parse::<u32>() {
+                                        current_queue.current_length = length;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Don't forget the last queue
+                if !current_queue.queue_id.is_empty() {
+                    queue_stats.push(current_queue);
+                }
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get QoS queue stats for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc queue stats command for {}: {}", interface_name, e);
+            }
+        }
+
+        Ok(queue_stats)
     }
 
     /// Collect interface statistics from /proc/net/dev and /sys/class/net
@@ -685,6 +1056,423 @@ impl NetworkMonitor {
         } else {
             NetworkInterfaceType::Unknown
         }
+    }
+
+    /// Collect QoS metrics for a network interface
+    fn collect_qos_metrics(&self, interface_name: &str) -> Result<NetworkQoSMetrics> {
+        let mut qos_metrics = NetworkQoSMetrics::default();
+
+        // Try to get Traffic Control (tc) information
+        if self.config.enable_tc_monitoring {
+            qos_metrics.tc_qdisc = self.get_tc_qdisc(interface_name)?;
+            qos_metrics.tc_classes = self.get_tc_classes(interface_name)?;
+            qos_metrics.tc_filters = self.get_tc_filters(interface_name)?;
+        }
+
+        // Try to get QoS class information
+        qos_metrics.qos_class = self.detect_qos_class(interface_name);
+
+        // Try to get DSCP and ECN information
+        qos_metrics.dscp = self.get_dscp_value(interface_name)?;
+        qos_metrics.ecn_support = self.check_ecn_support(interface_name);
+
+        // Try to get traffic shaping and policing information
+        qos_metrics.shaping_rate_bps = self.get_shaping_rate(interface_name)?;
+        qos_metrics.policing_rate_bps = self.get_policing_rate(interface_name)?;
+
+        // Try to get queue statistics
+        qos_metrics.queue_length = self.get_queue_length(interface_name)?;
+        qos_metrics.packet_drops = self.get_packet_drops(interface_name)?;
+        qos_metrics.packet_reorders = self.get_packet_reorders(interface_name)?;
+
+        // Determine QoS policy based on collected metrics
+        qos_metrics.qos_policy = self.determine_qos_policy(&qos_metrics);
+
+        Ok(qos_metrics)
+    }
+
+    /// Get Traffic Control (tc) queue discipline for an interface
+    fn get_tc_qdisc(&self, interface_name: &str) -> Result<Option<String>> {
+        // Try to execute tc command to get qdisc information
+        let output = std::process::Command::new("tc")
+            .args(["qdisc", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                if output_str.contains("qdisc") {
+                    // Extract qdisc type from output
+                    for line in output_str.lines() {
+                        if line.contains("qdisc") && !line.contains("root") {
+                            if let Some(qdisc_type) = line.split_whitespace().nth(1) {
+                                return Ok(Some(qdisc_type.to_string()));
+                            }
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get tc qdisc for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc command for {}: {}", interface_name, e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Get Traffic Control (tc) classes for an interface
+    fn get_tc_classes(&self, interface_name: &str) -> Result<Vec<String>> {
+        let mut classes = Vec::new();
+
+        // Try to execute tc command to get class information
+        let output = std::process::Command::new("tc")
+            .args(["class", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                for line in output_str.lines() {
+                    if line.contains("class") && !line.contains("root") {
+                        if let Some(class_id) = line.split_whitespace().nth(1) {
+                            classes.push(class_id.to_string());
+                        }
+                    }
+                }
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get tc classes for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc class command for {}: {}", interface_name, e);
+            }
+        }
+
+        Ok(classes)
+    }
+
+    /// Get Traffic Control (tc) filters for an interface
+    fn get_tc_filters(&self, interface_name: &str) -> Result<Vec<String>> {
+        let mut filters = Vec::new();
+
+        // Try to execute tc command to get filter information
+        let output = std::process::Command::new("tc")
+            .args(["filter", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                for line in output_str.lines() {
+                    if line.contains("filter") && !line.contains("root") {
+                        if let Some(filter_id) = line.split_whitespace().nth(1) {
+                            filters.push(filter_id.to_string());
+                        }
+                    }
+                }
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get tc filters for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc filter command for {}: {}", interface_name, e);
+            }
+        }
+
+        Ok(filters)
+    }
+
+    /// Detect QoS class for an interface based on various factors
+    fn detect_qos_class(&self, interface_name: &str) -> Option<String> {
+        // Check if this is a priority interface
+        if interface_name.starts_with("eth") || interface_name.starts_with("en") {
+            return Some("best-effort".to_string());
+        }
+
+        // Check if this is a wireless interface (often has different QoS)
+        if interface_name.starts_with("wlan") || interface_name.starts_with("wl") {
+            return Some("wireless".to_string());
+        }
+
+        // Check if this is a loopback interface
+        if interface_name.starts_with("lo") {
+            return Some("loopback".to_string());
+        }
+
+        // Check if this is a virtual interface
+        if interface_name.starts_with("vir") || interface_name.starts_with("veth") {
+            return Some("virtual".to_string());
+        }
+
+        // Default to best-effort
+        Some("best-effort".to_string())
+    }
+
+    /// Get DSCP (Differentiated Services Code Point) value for an interface
+    fn get_dscp_value(&self, interface_name: &str) -> Result<Option<u8>> {
+        // Try to read DSCP information from sysfs or use ip command
+        let output = std::process::Command::new("ip")
+            .args(["-s", "-d", "link", "show", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                // Look for DSCP information in output
+                for line in output_str.lines() {
+                    if line.contains("dscp") || line.contains("DSCP") {
+                        if let Some(dscp_str) = line.split_whitespace().find(|s| s.contains("dscp") || s.contains("DSCP")) {
+                            if let Some(dscp_value) = dscp_str.split('=').nth(1) {
+                                if let Ok(dscp) = dscp_value.parse::<u8>() {
+                                    return Ok(Some(dscp));
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get DSCP for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute ip command for {}: {}", interface_name, e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Check if ECN (Explicit Congestion Notification) is supported
+    fn check_ecn_support(&self, interface_name: &str) -> bool {
+        // Try to check ECN support using sysctl or other methods
+        // For now, we'll return a reasonable default based on interface type
+        if interface_name.starts_with("lo") {
+            return false; // Loopback usually doesn't need ECN
+        }
+
+        // Most modern interfaces support ECN
+        true
+    }
+
+    /// Get traffic shaping rate for an interface
+    fn get_shaping_rate(&self, interface_name: &str) -> Result<Option<u64>> {
+        // Try to get shaping rate from tc command
+        let output = std::process::Command::new("tc")
+            .args(["qdisc", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                // Look for rate information
+                for line in output_str.lines() {
+                    if line.contains("rate") || line.contains("Rate") {
+                        if let Some(rate_str) = line.split_whitespace().find(|s| s.contains("rate") || s.contains("Rate")) {
+                            if let Some(rate_value) = rate_str.split(':').nth(1) {
+                                // Parse rate value (could be in various formats like "100mbit", "1gbit", etc.)
+                                let rate_value = rate_value.trim_end_matches(|c: char| !c.is_ascii_digit());
+                                if let Ok(rate) = rate_value.parse::<u64>() {
+                                    // Convert to bytes per second (approximate)
+                                    if line.contains("mbit") || line.contains("Mbit") {
+                                        return Ok(Some(rate * 125_000)); // 1 Mbit = 125,000 bytes
+                                    } else if line.contains("gbit") || line.contains("Gbit") {
+                                        return Ok(Some(rate * 125_000_000)); // 1 Gbit = 125,000,000 bytes
+                                    } else if line.contains("kbit") || line.contains("Kbit") {
+                                        return Ok(Some(rate * 125)); // 1 Kbit = 125 bytes
+                                    } else {
+                                        return Ok(Some(rate)); // Assume bytes per second
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get shaping rate for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc command for shaping rate {}: {}", interface_name, e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Get traffic policing rate for an interface
+    fn get_policing_rate(&self, interface_name: &str) -> Result<Option<u64>> {
+        // Try to get policing rate from tc command
+        let output = std::process::Command::new("tc")
+            .args(["qdisc", "show", "dev", interface_name])
+            .output();
+
+        match output {
+            Ok(output) if output.status.success() => {
+                let output_str = String::from_utf8_lossy(&output.stdout);
+                // Look for police or policing information
+                for line in output_str.lines() {
+                    if line.contains("police") || line.contains("Police") {
+                        if let Some(rate_str) = line.split_whitespace().find(|s| s.contains("rate") || s.contains("Rate")) {
+                            if let Some(rate_value) = rate_str.split(':').nth(1) {
+                                // Parse rate value (could be in various formats)
+                                let rate_value = rate_value.trim_end_matches(|c: char| !c.is_ascii_digit());
+                                if let Ok(rate) = rate_value.parse::<u64>() {
+                                    // Convert to bytes per second (approximate)
+                                    if line.contains("mbit") || line.contains("Mbit") {
+                                        return Ok(Some(rate * 125_000));
+                                    } else if line.contains("gbit") || line.contains("Gbit") {
+                                        return Ok(Some(rate * 125_000_000));
+                                    } else if line.contains("kbit") || line.contains("Kbit") {
+                                        return Ok(Some(rate * 125));
+                                    } else {
+                                        return Ok(Some(rate));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                Ok(None)
+            }
+            Ok(output) => {
+                tracing::debug!(
+                    "Failed to get policing rate for {}: {}",
+                    interface_name,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                Ok(None)
+            }
+            Err(e) => {
+                tracing::debug!("Failed to execute tc command for policing rate {}: {}", interface_name, e);
+                Ok(None)
+            }
+        }
+    }
+
+    /// Get queue length for an interface
+    fn get_queue_length(&self, interface_name: &str) -> Result<Option<u32>> {
+        // Try to get queue length from sysfs
+        let queue_length_path = format!("/sys/class/net/{}/tx_queue_len", interface_name);
+        match fs::read_to_string(queue_length_path) {
+            Ok(s) => {
+                if let Ok(length) = s.trim().parse::<u32>() {
+                    return Ok(Some(length));
+                }
+            }
+            Err(_) => {
+                // Fallback: try to get from tc command
+                let output = std::process::Command::new("tc")
+                    .args(["qdisc", "show", "dev", interface_name])
+                    .output();
+
+                match output {
+                    Ok(output) if output.status.success() => {
+                        let output_str = String::from_utf8_lossy(&output.stdout);
+                        for line in output_str.lines() {
+                            if line.contains("limit") || line.contains("Limit") {
+                                if let Some(limit_str) = line.split_whitespace().find(|s| s.contains("limit") || s.contains("Limit")) {
+                                    if let Some(limit_value) = limit_str.split(':').nth(1) {
+                                        if let Ok(limit) = limit_value.parse::<u32>() {
+                                            return Ok(Some(limit));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Ok(output) => {
+                        tracing::debug!(
+                            "Failed to get queue length for {}: {}",
+                            interface_name,
+                            String::from_utf8_lossy(&output.stderr)
+                        );
+                    }
+                    Err(e) => {
+                        tracing::debug!("Failed to execute tc command for queue length {}: {}", interface_name, e);
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Get packet drop statistics for an interface
+    fn get_packet_drops(&self, interface_name: &str) -> Result<u64> {
+        // Try to get packet drops from /proc/net/dev
+        let proc_net_dev = fs::read_to_string("/proc/net/dev")
+            .with_context(|| format!("Failed to read /proc/net/dev for packet drops"))?;
+
+        for line in proc_net_dev.lines().skip(2) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 17 && parts[0].trim_end_matches(':') == interface_name {
+                // Sum up all drop-related counters
+                let rx_dropped = parts[4].parse::<u64>().unwrap_or(0);
+                let tx_dropped = parts[12].parse::<u64>().unwrap_or(0);
+                return Ok(rx_dropped + tx_dropped);
+            }
+        }
+
+        Ok(0)
+    }
+
+    /// Get packet reordering statistics for an interface
+    fn get_packet_reorders(&self, interface_name: &str) -> Result<u64> {
+        // Packet reordering is harder to detect directly
+        // For now, we'll return 0 as a placeholder
+        // In a real implementation, this would require packet sequence analysis
+        Ok(0)
+    }
+
+    /// Determine QoS policy based on collected metrics
+    fn determine_qos_policy(&self, qos_metrics: &NetworkQoSMetrics) -> Option<String> {
+        // Check if there's a specific QoS class
+        if let Some(qos_class) = &qos_metrics.qos_class {
+            if qos_class == "voice" || qos_class == "video" {
+                return Some("priority".to_string());
+            } else if qos_class == "best-effort" {
+                return Some("best-effort".to_string());
+            }
+        }
+
+        // Check if there's traffic control configured
+        if qos_metrics.tc_qdisc.is_some() && !qos_metrics.tc_classes.is_empty() {
+            return Some("tc-controlled".to_string());
+        }
+
+        // Check if there's traffic shaping or policing
+        if qos_metrics.shaping_rate_bps.is_some() || qos_metrics.policing_rate_bps.is_some() {
+            return Some("rate-limited".to_string());
+        }
+
+        // Default to best-effort
+        Some("best-effort".to_string())
     }
 
     /// Collect protocol statistics from /proc/net/snmp
@@ -1626,6 +2414,155 @@ mod tests {
             .unwrap();
         assert_eq!(wlan0_delta.rx_bytes_delta, 500);
         assert_eq!(wlan0_delta.tx_bytes_delta, 1000);
+    }
+
+    #[test]
+    fn test_qos_metrics_default() {
+        let qos_metrics = NetworkQoSMetrics::default();
+        assert!(qos_metrics.qos_class.is_none());
+        assert!(qos_metrics.tc_qdisc.is_none());
+        assert!(qos_metrics.tc_classes.is_empty());
+        assert!(qos_metrics.tc_filters.is_empty());
+        assert!(qos_metrics.packet_priority.is_none());
+        assert!(qos_metrics.dscp.is_none());
+        assert!(!qos_metrics.ecn_support);
+        assert!(qos_metrics.shaping_rate_bps.is_none());
+        assert!(qos_metrics.policing_rate_bps.is_none());
+        assert!(qos_metrics.queue_length.is_none());
+        assert_eq!(qos_metrics.packet_drops, 0);
+        assert_eq!(qos_metrics.packet_reorders, 0);
+        assert!(qos_metrics.qos_policy.is_none());
+    }
+
+    #[test]
+    fn test_qos_queue_stats_default() {
+        let queue_stats = QoSQueueStats::default();
+        assert!(queue_stats.queue_id.is_empty());
+        assert!(queue_stats.queue_type.is_empty());
+        assert_eq!(queue_stats.current_length, 0);
+        assert_eq!(queue_stats.max_length, 0);
+        assert_eq!(queue_stats.packets_in_queue, 0);
+        assert_eq!(queue_stats.bytes_in_queue, 0);
+        assert_eq!(queue_stats.packets_dropped, 0);
+        assert_eq!(queue_stats.bytes_dropped, 0);
+        assert_eq!(queue_stats.processing_rate_pps, 0);
+        assert_eq!(queue_stats.processing_rate_bps, 0);
+    }
+
+    #[test]
+    fn test_network_interface_stats_with_qos_default() {
+        let basic_stats = NetworkInterfaceStats::default();
+        let interface_with_qos = NetworkInterfaceStatsWithQoS {
+            base_stats: basic_stats.clone(),
+            qos_metrics: NetworkQoSMetrics::default(),
+            tc_config: None,
+            qos_queue_stats: Vec::new(),
+        };
+
+        assert_eq!(interface_with_qos.base_stats.name, basic_stats.name);
+        assert_eq!(interface_with_qos.base_stats.rx_bytes, basic_stats.rx_bytes);
+        assert_eq!(interface_with_qos.qos_metrics.qos_class, None);
+        assert!(interface_with_qos.qos_queue_stats.is_empty());
+        assert!(interface_with_qos.tc_config.is_none());
+    }
+
+    #[test]
+    fn test_comprehensive_network_stats_with_qos_default() {
+        let stats = ComprehensiveNetworkStatsWithQoS::default();
+        assert_eq!(stats.interfaces_with_qos.len(), 0);
+        assert_eq!(stats.total_rx_bytes, 0);
+        assert_eq!(stats.total_tx_bytes, 0);
+        assert_eq!(stats.total_rx_packets, 0);
+        assert_eq!(stats.total_tx_packets, 0);
+    }
+
+    #[test]
+    fn test_qos_config_serialization() {
+        let config = NetworkMonitorConfig::default();
+        let json = serde_json::to_string(&config).expect("Serialization should work");
+        let deserialized: NetworkMonitorConfig =
+            serde_json::from_str(&json).expect("Deserialization should work");
+        assert_eq!(deserialized.enable_qos_monitoring, config.enable_qos_monitoring);
+        assert_eq!(deserialized.enable_tc_monitoring, config.enable_tc_monitoring);
+        assert_eq!(
+            deserialized.monitored_qos_classes,
+            config.monitored_qos_classes
+        );
+    }
+
+    #[test]
+    fn test_qos_policy_determination() {
+        let monitor = NetworkMonitor::new();
+
+        // Test voice QoS class
+        let mut qos_metrics = NetworkQoSMetrics::default();
+        qos_metrics.qos_class = Some("voice".to_string());
+        let policy = monitor.determine_qos_policy(&qos_metrics);
+        assert_eq!(policy, Some("priority".to_string()));
+
+        // Test video QoS class
+        qos_metrics.qos_class = Some("video".to_string());
+        let policy = monitor.determine_qos_policy(&qos_metrics);
+        assert_eq!(policy, Some("priority".to_string()));
+
+        // Test best-effort QoS class
+        qos_metrics.qos_class = Some("best-effort".to_string());
+        let policy = monitor.determine_qos_policy(&qos_metrics);
+        assert_eq!(policy, Some("best-effort".to_string()));
+
+        // Test TC-controlled policy
+        qos_metrics.qos_class = None;
+        qos_metrics.tc_qdisc = Some("htb".to_string());
+        qos_metrics.tc_classes = vec!["1:10".to_string()];
+        let policy = monitor.determine_qos_policy(&qos_metrics);
+        assert_eq!(policy, Some("tc-controlled".to_string()));
+
+        // Test rate-limited policy
+        qos_metrics.tc_qdisc = None;
+        qos_metrics.tc_classes = Vec::new();
+        qos_metrics.shaping_rate_bps = Some(1000000);
+        let policy = monitor.determine_qos_policy(&qos_metrics);
+        assert_eq!(policy, Some("rate-limited".to_string()));
+
+        // Test default policy
+        qos_metrics.shaping_rate_bps = None;
+        let policy = monitor.determine_qos_policy(&qos_metrics);
+        assert_eq!(policy, Some("best-effort".to_string()));
+    }
+
+    #[test]
+    fn test_qos_interface_type_detection() {
+        let monitor = NetworkMonitor::new();
+
+        // Test Ethernet interface
+        assert_eq!(
+            monitor.detect_qos_class("eth0"),
+            Some("best-effort".to_string())
+        );
+
+        // Test Wireless interface
+        assert_eq!(
+            monitor.detect_qos_class("wlan0"),
+            Some("wireless".to_string())
+        );
+
+        // Test Loopback interface
+        assert_eq!(
+            monitor.detect_qos_class("lo"),
+            Some("loopback".to_string())
+        );
+
+        // Test Virtual interface
+        assert_eq!(
+            monitor.detect_qos_class("virbr0"),
+            Some("virtual".to_string())
+        );
+
+        // Test unknown interface
+        assert_eq!(
+            monitor.detect_qos_class("unknown0"),
+            Some("best-effort".to_string())
+        );
     }
 
     #[test]
