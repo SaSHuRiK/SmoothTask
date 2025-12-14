@@ -11,20 +11,35 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [ ] ST-825: Add evdev input device monitoring for user activity detection
+- [x] ST-825: Add evdev input device monitoring for user activity detection
   - Тип: Rust / core / metrics / input
   - Примечания: Input device monitoring for user presence and activity detection
   - Приоритет: Высокий
   - Оценка времени: ~90 минут
+  - Время выполнения: ~90 минут
   - Критерии готовности:
-    - [ ] Research evdev APIs and input monitoring techniques
-    - [ ] Implement keyboard and mouse activity tracking
-    - [ ] Add touchpad and touchscreen support
-    - [ ] Implement user presence detection algorithms
-    - [ ] Add error handling for input device issues
-    - [ ] Integrate with policy engine for activity-based prioritization
-    - [ ] Add unit and integration tests
+    - [x] Research evdev APIs and input monitoring techniques
+    - [x] Implement keyboard and mouse activity tracking
+    - [x] Add touchpad and touchscreen support
+    - [x] Implement user presence detection algorithms
+    - [x] Add error handling for input device issues
+    - [x] Integrate with policy engine for activity-based prioritization
+    - [x] Add unit and integration tests
   - Ожидаемые результаты: Better user activity awareness for intelligent priority management
+  - Технические детали:
+    - Файлы: smoothtask-core/src/metrics/input.rs
+    - Функции: EvdevInputTracker, InputActivityTracker, InputTracker enum
+    - Возможности: evdev device discovery, non-blocking event reading, comprehensive error handling
+    - Интеграция: Full integration with main metrics collection pipeline
+    - Тесты: 40+ comprehensive unit tests covering all functionality and edge cases
+  - Результаты:
+    - Complete evdev input monitoring system with automatic device discovery
+    - Support for keyboard, mouse, touchpad, and touchscreen devices
+    - Advanced user presence detection with configurable idle thresholds
+    - Comprehensive error handling with practical troubleshooting messages
+    - Graceful degradation to simple tracker when evdev is unavailable
+    - Full integration with policy engine for activity-based prioritization
+    - Extensive test coverage with edge case testing
 
 - [ ] ST-829: Implement advanced error recovery and system health monitoring
   - Тип: Rust / core / health
@@ -57,21 +72,6 @@
     - [ ] Integrate with process classification system
     - [ ] Add unit and integration tests
   - Ожидаемые результаты: Better audio application awareness and real-time audio monitoring
-
-- [ ] ST-825: Add evdev input device monitoring for user activity detection
-  - Тип: Rust / core / metrics / input
-  - Примечания: Input device monitoring for user presence and activity detection
-  - Приоритет: Средний
-  - Оценка времени: ~90 минут
-  - Критерии готовности:
-    - [ ] Research evdev APIs and input monitoring techniques
-    - [ ] Implement keyboard and mouse activity tracking
-    - [ ] Add touchpad and touchscreen support
-    - [ ] Implement user presence detection algorithms
-    - [ ] Add error handling for input device issues
-    - [ ] Integrate with policy engine for activity-based prioritization
-    - [ ] Add unit and integration tests
-  - Ожидаемые результаты: Better user activity awareness for intelligent priority management
 
 - [x] ST-827: Implement comprehensive caching system for metrics to reduce I/O overhead
   - Тип: Rust / core / metrics / optimization
@@ -164,6 +164,36 @@
     - Comprehensive test suite covering all new functionality
     - Graceful degradation and error recovery mechanisms
     - Serialization/deserialization support for health monitoring data
+
+- [x] ST-825: Add evdev input device monitoring for user activity detection
+  - Тип: Rust / core / metrics / input
+  - Примечания: Input device monitoring for user presence and activity detection
+  - Приоритет: Высокий
+  - Оценка времени: ~90 минут
+  - Время выполнения: ~90 минут
+  - Критерии готовности:
+    - [x] Research evdev APIs and input monitoring techniques
+    - [x] Implement keyboard and mouse activity tracking
+    - [x] Add touchpad and touchscreen support
+    - [x] Implement user presence detection algorithms
+    - [x] Add error handling for input device issues
+    - [x] Integrate with policy engine for activity-based prioritization
+    - [x] Add unit and integration tests
+  - Ожидаемые результаты: Better user activity awareness for intelligent priority management
+  - Технические детали:
+    - Файлы: smoothtask-core/src/metrics/input.rs
+    - Функции: EvdevInputTracker, InputActivityTracker, InputTracker enum
+    - Возможности: evdev device discovery, non-blocking event reading, comprehensive error handling
+    - Интеграция: Full integration with main metrics collection pipeline
+    - Тесты: 40+ comprehensive unit tests covering all functionality and edge cases
+  - Результаты:
+    - Complete evdev input monitoring system with automatic device discovery
+    - Support for keyboard, mouse, touchpad, and touchscreen devices
+    - Advanced user presence detection with configurable idle thresholds
+    - Comprehensive error handling with practical troubleshooting messages
+    - Graceful degradation to simple tracker when evdev is unavailable
+    - Full integration with policy engine for activity-based prioritization
+    - Extensive test coverage with edge case testing
 
 - [x] ST-833: Clean up remaining compilation warnings
   - Тип: Rust / core / cleanup
