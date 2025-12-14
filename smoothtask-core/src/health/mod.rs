@@ -4,14 +4,14 @@
 //! включая проверку состояния компонентов, диагностику проблем и уведомления
 //! о критических состояниях.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn};
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::{error, info};
 
 pub mod diagnostics;
 pub mod monitoring;
@@ -581,7 +581,7 @@ impl HealthMonitorImpl {
         } else {
             // Проверяем, что можно читать информацию о процессах
             match std::fs::read_dir(proc_path) {
-                Ok(mut entries) => {
+                Ok(entries) => {
                     let count = entries.count();
                     if count < 10 {
                         status = ComponentHealthStatus::Warning;

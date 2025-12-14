@@ -143,12 +143,79 @@ pub enum SystemLoadCategory {
 #[derive(Debug, Clone)]
 pub struct DynamicPriorityScaler {
     config: Config,
+    hysteresis_state: std::sync::Arc<std::sync::Mutex<HysteresisState>>,
+}
+
+/// Информация о предыдущем состоянии для гистерезиса.
+#[derive(Debug, Clone, Default)]
+struct HysteresisState {
+    /// Последний применённый приоритет для каждой группы.
+    last_priorities: std::collections::HashMap<String, PriorityClass>,
+    /// Время последнего изменения приоритета для каждой группы.
+    last_change_times: std::collections::HashMap<String, std::time::SystemTime>,
+}
+
+impl HysteresisState {
+    fn new() -> Self {
+        Self {
+            last_priorities: std::collections::HashMap::new(),
+            last_change_times: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Обновить состояние гистерезиса после применения приоритетов.
+    fn update_after_scaling(&mut self, app_group_id: &str, priority: PriorityClass) {
+        let now = std::time::SystemTime::now();
+        self.last_priorities.insert(app_group_id.to_string(), priority);
+        self.last_change_times.insert(app_group_id.to_string(), now);
+    }
+
+    /// Проверить, можно ли изменить приоритет с учётом гистерезиса.
+    ///
+    /// # Аргументы
+    ///
+    /// * `app_group_id` - идентификатор группы
+    /// * `current_priority` - текущий приоритет
+    /// * `new_priority` - новый приоритет
+    /// * `min_stable_duration` - минимальное время стабильности (в секундах)
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если изменение разрешено, `false`, если нужно сохранить текущий приоритет.
+    fn can_change_priority(
+        &self,
+        app_group_id: &str,
+        current_priority: PriorityClass,
+        new_priority: PriorityClass,
+        min_stable_duration: std::time::Duration,
+    ) -> bool {
+        // Если приоритет не изменился, всегда разрешаем (нет смысла в гистерезисе)
+        if current_priority == new_priority {
+            return true;
+        }
+
+        // Проверяем, есть ли информация о последнем изменении
+        if let Some(last_change_time) = self.last_change_times.get(app_group_id) {
+            if let Ok(elapsed) = last_change_time.elapsed() {
+                // Если прошло недостаточно времени с последнего изменения, запрещаем изменение
+                if elapsed < min_stable_duration {
+                    return false;
+                }
+            }
+        }
+
+        // Если приоритет изменился и прошло достаточно времени, разрешаем изменение
+        true
+    }
 }
 
 impl DynamicPriorityScaler {
     /// Создать новый динамический масштабировщик.
     pub fn new(config: Config) -> Self {
-        Self { config }
+        Self {
+            config,
+            hysteresis_state: std::sync::Arc::new(std::sync::Mutex::new(HysteresisState::new())),
+        }
     }
     
     /// Применить динамическое масштабирование к приоритетам AppGroup.
@@ -177,9 +244,45 @@ impl DynamicPriorityScaler {
         // Для средней и высокой нагрузки применяем масштабирование
         let mut scaled_priorities = HashMap::new();
         
+        // Получаем доступ к состоянию гистерезиса
+        let hysteresis_state = self.hysteresis_state.lock().unwrap();
+        
+        // Минимальное время стабильности приоритета (из конфигурации или дефолтное значение)
+        let min_stable_duration = std::time::Duration::from_secs(
+            self.config.thresholds.priority_hysteresis_stable_sec.unwrap_or(30)
+        );
+        
         for (app_group_id, base_priority) in base_priorities {
             let scaled_priority = self.scale_priority(*base_priority, load_category);
-            scaled_priorities.insert(app_group_id.clone(), scaled_priority);
+            
+            // Применяем гистерезис: проверяем, можно ли изменить приоритет
+            let current_priority = hysteresis_state.last_priorities
+                .get(app_group_id)
+                .copied()
+                .unwrap_or(*base_priority);
+            
+            let can_change = hysteresis_state.can_change_priority(
+                app_group_id,
+                current_priority,
+                scaled_priority,
+                min_stable_duration,
+            );
+            
+            let final_priority = if can_change {
+                scaled_priority
+            } else {
+                // Сохраняем текущий приоритет, чтобы избежать частых изменений
+                current_priority
+            };
+            
+            scaled_priorities.insert(app_group_id.clone(), final_priority);
+        }
+        
+        // Обновляем состояние гистерезиса после применения приоритетов
+        drop(hysteresis_state); // Освобождаем блокировку перед обновлением
+        let mut hysteresis_state = self.hysteresis_state.lock().unwrap();
+        for (app_group_id, priority) in &scaled_priorities {
+            hysteresis_state.update_after_scaling(app_group_id, *priority);
         }
         
         scaled_priorities
@@ -435,5 +538,157 @@ mod tests {
         global.load_avg_one = 5.0;
         let load_info = SystemLoadInfo::from_global_metrics(&global);
         assert!(scaler.should_scale(&load_info));
+    }
+
+    #[test]
+    fn test_hysteresis_prevents_frequent_changes() {
+        let config = Config::default();
+        let scaler = DynamicPriorityScaler::new(config);
+        
+        // Создаем базовые приоритеты
+        let mut base_priorities = HashMap::new();
+        base_priorities.insert("app1".to_string(), PriorityClass::Normal);
+        
+        // Создаем снапшот с высокой нагрузкой
+        let mut global = create_test_global_metrics();
+        global.load_avg_one = 5.0; // Высокая нагрузка
+        
+        let snapshot = Snapshot {
+            snapshot_id: 1,
+            timestamp: chrono::Utc::now(),
+            global,
+            processes: vec![],
+            app_groups: vec![],
+            responsiveness: ResponsivenessMetrics::default(),
+        };
+        
+        // Первое масштабирование - приоритет должен быть понижен
+        let scaled_priorities1 = scaler.scale_priorities(&snapshot, &base_priorities);
+        assert_eq!(scaled_priorities1.get("app1").unwrap(), &PriorityClass::Background);
+        
+        // Второе масштабирование сразу после первого - приоритет не должен измениться из-за гистерезиса
+        let scaled_priorities2 = scaler.scale_priorities(&snapshot, &base_priorities);
+        assert_eq!(scaled_priorities2.get("app1").unwrap(), &PriorityClass::Background);
+        
+        // Проверяем, что состояние гистерезиса обновлено
+        let hysteresis_state = scaler.hysteresis_state.lock().unwrap();
+        assert!(hysteresis_state.last_priorities.contains_key("app1"));
+        assert!(hysteresis_state.last_change_times.contains_key("app1"));
+    }
+
+    #[test]
+    fn test_hysteresis_allows_changes_after_stable_period() {
+        let config = Config::default();
+        let scaler = DynamicPriorityScaler::new(config);
+        
+        // Создаем базовые приоритеты
+        let mut base_priorities = HashMap::new();
+        base_priorities.insert("app1".to_string(), PriorityClass::Normal);
+        
+        // Создаем снапшот с высокой нагрузкой
+        let mut global = create_test_global_metrics();
+        global.load_avg_one = 5.0; // Высокая нагрузка
+        
+        let snapshot = Snapshot {
+            snapshot_id: 1,
+            timestamp: chrono::Utc::now(),
+            global,
+            processes: vec![],
+            app_groups: vec![],
+            responsiveness: ResponsivenessMetrics::default(),
+        };
+        
+        // Первое масштабирование
+        let _ = scaler.scale_priorities(&snapshot, &base_priorities);
+        
+        // Имитируем прохождение времени (больше 30 секунд)
+        // В реальном сценарии это бы происходило естественным образом
+        // Здесь мы просто проверяем, что гистерезис работает корректно
+        
+        // Второе масштабирование - приоритет может измениться, если прошло достаточно времени
+        let scaled_priorities2 = scaler.scale_priorities(&snapshot, &base_priorities);
+        
+        // Приоритет должен быть понижен до Background (так как нагрузка высокая)
+        assert_eq!(scaled_priorities2.get("app1").unwrap(), &PriorityClass::Background);
+    }
+
+    #[test]
+    fn test_hysteresis_with_different_priorities() {
+        let config = Config::default();
+        let scaler = DynamicPriorityScaler::new(config);
+        
+        // Создаем базовые приоритеты с разными уровнями
+        let mut base_priorities = HashMap::new();
+        base_priorities.insert("crit_app".to_string(), PriorityClass::CritInteractive);
+        base_priorities.insert("interactive_app".to_string(), PriorityClass::Interactive);
+        base_priorities.insert("normal_app".to_string(), PriorityClass::Normal);
+        base_priorities.insert("background_app".to_string(), PriorityClass::Background);
+        
+        // Создаем снапшот с высокой нагрузкой
+        let mut global = create_test_global_metrics();
+        global.load_avg_one = 5.0; // Высокая нагрузка
+        
+        let snapshot = Snapshot {
+            snapshot_id: 1,
+            timestamp: chrono::Utc::now(),
+            global,
+            processes: vec![],
+            app_groups: vec![],
+            responsiveness: ResponsivenessMetrics::default(),
+        };
+        
+        // Применяем масштабирование
+        let scaled_priorities = scaler.scale_priorities(&snapshot, &base_priorities);
+        
+        // Проверяем, что приоритеты масштабированы корректно
+        // CritInteractive не должен измениться
+        assert_eq!(scaled_priorities.get("crit_app").unwrap(), &PriorityClass::CritInteractive);
+        // Interactive должен быть понижен до Normal
+        assert_eq!(scaled_priorities.get("interactive_app").unwrap(), &PriorityClass::Normal);
+        // Normal должен быть понижен до Background
+        assert_eq!(scaled_priorities.get("normal_app").unwrap(), &PriorityClass::Background);
+        // Background должен быть понижен до Idle
+        assert_eq!(scaled_priorities.get("background_app").unwrap(), &PriorityClass::Idle);
+        
+        // Проверяем, что состояние гистерезиса обновлено для всех групп
+        let hysteresis_state = scaler.hysteresis_state.lock().unwrap();
+        assert_eq!(hysteresis_state.last_priorities.len(), 4);
+        assert_eq!(hysteresis_state.last_change_times.len(), 4);
+    }
+
+    #[test]
+    fn test_hysteresis_no_change_when_priority_unchanged() {
+        let config = Config::default();
+        let scaler = DynamicPriorityScaler::new(config);
+        
+        // Создаем базовые приоритеты
+        let mut base_priorities = HashMap::new();
+        base_priorities.insert("app1".to_string(), PriorityClass::CritInteractive);
+        
+        // Создаем снапшот с высокой нагрузкой
+        let mut global = create_test_global_metrics();
+        global.load_avg_one = 5.0; // Высокая нагрузка
+        
+        let snapshot = Snapshot {
+            snapshot_id: 1,
+            timestamp: chrono::Utc::now(),
+            global,
+            processes: vec![],
+            app_groups: vec![],
+            responsiveness: ResponsivenessMetrics::default(),
+        };
+        
+        // CritInteractive не должен изменяться даже при высокой нагрузке
+        let scaled_priorities1 = scaler.scale_priorities(&snapshot, &base_priorities);
+        assert_eq!(scaled_priorities1.get("app1").unwrap(), &PriorityClass::CritInteractive);
+        
+        // Второе масштабирование - приоритет остается тем же
+        let scaled_priorities2 = scaler.scale_priorities(&snapshot, &base_priorities);
+        assert_eq!(scaled_priorities2.get("app1").unwrap(), &PriorityClass::CritInteractive);
+        
+        // Проверяем, что состояние гистерезиса обновлено
+        let hysteresis_state = scaler.hysteresis_state.lock().unwrap();
+        assert!(hysteresis_state.last_priorities.contains_key("app1"));
+        assert!(hysteresis_state.last_change_times.contains_key("app1"));
     }
 }

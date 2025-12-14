@@ -4,7 +4,7 @@
 //! здоровья демона SmoothTask.
 
 use super::*;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::collections::HashMap;
 
 /// Структура для хранения результатов диагностики.
@@ -102,7 +102,7 @@ impl DiagnosticAnalyzer for DiagnosticAnalyzerImpl {
         let mut recommendations = Vec::new();
         
         // Анализируем каждый компонент
-        for (component_name, component_status) in &health_status.component_statuses {
+        for (component_name, _component_status) in &health_status.component_statuses {
             let diagnostic = self.diagnose_component(component_name).await?;
             
             // Собираем рекомендации перед вставкой

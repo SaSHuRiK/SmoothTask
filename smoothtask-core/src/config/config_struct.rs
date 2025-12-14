@@ -113,7 +113,6 @@ impl MLClassifierConfig {
         Ok(())
     }
 }
-    use super::*;
 
     #[test]
     fn test_ml_classifier_config_validation() {
@@ -666,6 +665,13 @@ pub struct Thresholds {
     /// По умолчанию 16.67 мс (60 FPS).
     #[serde(default = "default_ui_loop_p95_threshold")]
     pub ui_loop_p95_threshold_ms: f64,
+
+    /// Минимальное время стабильности приоритета (в секундах) для гистерезиса.
+    /// Это время, в течение которого приоритет не должен изменяться, чтобы избежать
+    /// частых колебаний (priority thrashing) при динамическом масштабировании.
+    /// По умолчанию 30 секунд.
+    #[serde(default = "default_priority_hysteresis_stable_sec")]
+    pub priority_hysteresis_stable_sec: Option<u64>,
 }
 
 /// Возвращает дефолтное значение для `sched_latency_p99_threshold_ms`.
@@ -699,6 +705,22 @@ pub(crate) fn default_sched_latency_p99_threshold() -> f64 {
 /// - Дефолтное значение применяется автоматически при загрузке конфигурации, если поле `ui_loop_p95_threshold_ms` не указано
 pub(crate) fn default_ui_loop_p95_threshold() -> f64 {
     16.67 // 16.67 мс по умолчанию (60 FPS)
+}
+
+/// Возвращает дефолтное значение для `priority_hysteresis_stable_sec`.
+///
+/// По умолчанию используется 30 секунд как разумное время стабильности приоритета.
+/// Это значение используется для предотвращения частых колебаний приоритетов
+/// (priority thrashing) при динамическом масштабировании.
+///
+/// # Примечания
+///
+/// - Это значение используется в `#[serde(default = "default_priority_hysteresis_stable_sec")]`
+/// - Значение 30 секунд выбрано как баланс между отзывчивостью и стабильностью
+/// - Дефолтное значение применяется автоматически при загрузке конфигурации
+/// - Может быть переопределено в конфигурационном файле
+pub(crate) fn default_priority_hysteresis_stable_sec() -> Option<u64> {
+    Some(30) // 30 секунд по умолчанию
 }
 
 /// Интервалы кэширования для оптимизации производительности.
@@ -1748,6 +1770,7 @@ impl Default for Thresholds {
             background_percentile: default_background_percentile(),
             sched_latency_p99_threshold_ms: default_sched_latency_p99_threshold_ms(),
             ui_loop_p95_threshold_ms: default_ui_loop_p95_threshold_ms(),
+            priority_hysteresis_stable_sec: default_priority_hysteresis_stable_sec(),
         }
     }
 }

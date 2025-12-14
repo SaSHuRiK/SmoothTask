@@ -314,7 +314,7 @@ impl PolicyEngine {
                 if *scaled_priority != result.priority_class {
                     // Если приоритет был изменен динамическим масштабированием, обновляем причину
                     let load_info = SystemLoadInfo::from_global_metrics(&snapshot.global);
-                    let load_category = load_info.get_load_category();
+                    let _load_category = load_info.get_load_category();
                     let reason = format!(
                         "{}. dynamic-scaling: {} -> {} (load={:.3})",
                         result.reason,
@@ -623,6 +623,7 @@ mod tests {
                 background_percentile: 0.1,
                 sched_latency_p99_threshold_ms: 10.0,
                 ui_loop_p95_threshold_ms: 16.67,
+                priority_hysteresis_stable_sec: Some(30),
             },
             paths: Paths {
                 log_file_path: "smoothtask.log".to_string(),
@@ -677,6 +678,7 @@ mod tests {
                 background_percentile: 0.1,
                 sched_latency_p99_threshold_ms: 10.0,
                 ui_loop_p95_threshold_ms: 16.67,
+                priority_hysteresis_stable_sec: Some(30),
             },
             paths: Paths {
                 log_file_path: "smoothtask.log".to_string(),

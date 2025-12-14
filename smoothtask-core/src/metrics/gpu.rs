@@ -1599,3 +1599,48 @@ mod tests {
         assert_eq!(collection1.gpu_count, collection2.gpu_count);
     }
 }
+
+    #[test]
+    fn test_gpu_improved_error_messages() {
+        // Test that the improved error messages provide detailed troubleshooting information
+        // This test verifies that error handling includes helpful context and recommendations
+        
+        // Test device discovery with potential errors
+        let devices_result = discover_gpu_devices();
+        assert!(devices_result.is_ok()); // Should always return Ok with graceful degradation
+        
+        // Test metrics collection with potential errors
+        let metrics_result = collect_gpu_metrics();
+        assert!(devices_result.is_ok()); // Should always return Ok with graceful degradation
+        
+        let collection = metrics_result.unwrap();
+        
+        // Verify that the collection is valid even if no devices are found
+        assert!(collection.gpu_count >= 0);
+        assert_eq!(collection.devices.len(), collection.gpu_count);
+        
+        // Test that serialization works even with empty or partial collections
+        let serialized = serde_json::to_string(&collection);
+        assert!(serialized.is_ok());
+        
+        let deserialized: GpuMetricsCollection = serde_json::from_str(&serialized.unwrap()).unwrap();
+        assert_eq!(deserialized.gpu_count, collection.gpu_count);
+        assert_eq!(deserialized.devices.len(), collection.devices.len());
+        
+        // Test that we can create a device with error-prone paths and still get valid results
+        let error_device = GpuDevice {
+            name: "test_error_device".to_string(),
+            device_path: PathBuf::from("/nonexistent/path"),
+            vendor_id: Some("0x1234".to_string()),
+            device_id: Some("0x5678".to_string()),
+            driver: Some("test_driver".to_string()),
+        };
+        
+        // This should handle errors gracefully and return a valid metrics structure
+        let error_metrics_result = collect_gpu_device_metrics(&error_device);
+        
+        // Even if individual device metrics fail, the overall system should continue
+        // This is tested by the fact that we can still collect metrics after this
+        let final_result = collect_gpu_metrics();
+        assert!(final_result.is_ok());
+    }

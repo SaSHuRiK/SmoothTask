@@ -25,9 +25,10 @@
     - [x] Fix unreachable code in config watcher
     - [x] Fix unused mutable variables
     - [x] Fix unused variables
+    - [x] Fix unused doc comments for lazy_static macros
     - [x] Verify all tests still pass
   - Ожидаемые результаты: Clean codebase with minimal warnings
-  - Результаты: Reduced warnings from 31 to 2 (only unused doc comments for lazy_static macros remain)
+  - Результаты: Reduced warnings from 12 to 7 (remaining warnings are for unused functions kept for compatibility)
 
 - [x] ST-832: Add comprehensive documentation for new features
   - Тип: Documentation
@@ -198,16 +199,6 @@
   - Примечания: Улучшенная система логирования с автоматическим управлением
   - Результаты: Автоматическая ротация и сжатие логов с поддержкой конфигурации
 
-- [x] ST-827: Implement comprehensive caching system for metrics to reduce I/O overhead
-  - Тип: Rust / core / metrics / optimization
-  - Примечания: Advanced caching system to minimize filesystem I/O operations
-  - Результаты: Comprehensive LRU-based caching with memory management and intelligent invalidation
-
-- [x] ST-831: Fix compilation warnings and clean up unused imports
-  - Тип: Rust / core / cleanup
-  - Примечания: Remove unused imports and fix warnings in the codebase
-  - Результаты: Reduced warnings from 31 to 2 (only unused doc comments for lazy_static macros remain)
-
 - [x] ST-832: Add comprehensive documentation for new features
   - Тип: Documentation
   - Примечания: Add detailed documentation for GPU metrics, hysteresis, and caching
@@ -217,35 +208,25 @@
     - Updated existing API.md with new endpoints and features
     - Added examples, diagrams, and best practices
 
+- [x] ST-831: Fix compilation warnings and clean up unused imports
+  - Тип: Rust / core / cleanup
+  - Примечания: Remove unused imports and fix warnings in the codebase
+  - Результаты: Reduced warnings from 12 to 7 (remaining warnings are for unused functions kept for compatibility)
+
 - [x] ST-830: Add comprehensive integration tests for new features
   - Тип: Testing / integration
   - Примечания: Complete test coverage for all new features and components
   - Результаты: Comprehensive test coverage across eBPF, window monitoring, audio/input, and policy engine
 
-- [x] ST-821: Улучшить обработку ошибок в GPU модулях с более детальными сообщениями
-  - Тип: Rust / core / metrics / error_handling
-  - Примечания: Улучшение сообщений об ошибках и механизмов восстановления для GPU мониторинга
-  - Результаты: Детальные сообщения об ошибках с возможными причинами и рекомендациями по устранению
+- [x] ST-827: Implement comprehensive caching system for metrics to reduce I/O overhead
+  - Тип: Rust / core / metrics / optimization
+  - Примечания: Advanced caching system to minimize filesystem I/O operations
+  - Результаты: Comprehensive LRU-based caching with memory management and intelligent invalidation
 
-- [x] ST-820: Добавить поддержку мониторинга GPU температуры в существующий модуль system.rs
-  - Тип: Rust / core / metrics / system
-  - Примечания: Расширение существующего мониторинга температуры для включения GPU
-  - Результаты: GPU температура собирается из различных источников с приоритезацией
-
-- [x] ST-819: Интегрировать GPU метрики в основной цикл сбора метрик
-  - Тип: Rust / core / metrics / integration
-  - Примечания: Интеграция новых NVML и AMDGPU метрик в основной модуль сбора метрик
-  - Результаты: Полная интеграция GPU мониторинга в основной цикл сбора данных
-
-- [x] ST-818: Добавить поддержку мониторинга температуры CPU/GPU
-  - Тип: Rust / core / metrics / system
-  - Примечания: Мониторинг температуры для лучшего управления производительностью
-  - Результаты: Полноценная функциональность мониторинга температуры с поддержкой различных сенсоров
-
-- [x] ST-817: Улучшить систему логирования с ротацией и сжатием
-  - Тип: Rust / core / logging
-  - Примечания: Улучшенная система логирования с автоматическим управлением
-  - Результаты: Автоматическая ротация и сжатие логов с поддержкой конфигурации
+- [x] ST-826: Enhance policy engine with ML ranker integration and dynamic priority scaling
+  - Тип: Rust / core / policy
+  - Примечания: Integration of ML-based ranking with dynamic priority adjustment and hysteresis
+  - Результаты: Added hysteresis mechanism to prevent priority thrashing and improved adaptive priority management
 
 *(Более старые задачи перенесены в архив: см. docs/history/)*
 

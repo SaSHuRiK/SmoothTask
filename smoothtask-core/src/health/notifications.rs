@@ -4,7 +4,7 @@
 //! о проблемах здоровья демона.
 
 use super::*;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::sync::Arc;
 
 /// Интерфейс для отправки уведомлений о здоровье.

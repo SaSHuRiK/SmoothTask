@@ -8,16 +8,16 @@
 //! - eBPF для мониторинга вызовов GPU API
 
 use crate::logging::snapshots::ProcessRecord;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use glob;
 use lazy_static::lazy_static;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, RwLock};
-use std::time::{Duration, Instant, SystemTime};
-use tracing::{debug, error, info, warn};
+use std::time::{Duration, SystemTime};
+use tracing::{debug, error, info};
 
 /// Информация о GPU, используемом процессом
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -266,7 +266,7 @@ impl ProcessGpuMonitor {
 
     /// Собирает метрики использования GPU через DRM
     async fn collect_drm_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
-        let mut metrics = HashMap::new();
+        let metrics = HashMap::new();
         
         // Пробуем найти DRM устройства
         let drm_dir = Path::new("/sys/class/drm");
@@ -292,7 +292,7 @@ impl ProcessGpuMonitor {
 
     /// Собирает метрики использования GPU через NVIDIA NVML
     async fn collect_nvidia_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
-        let mut metrics = HashMap::new();
+        let metrics = HashMap::new();
         
         // Пробуем найти NVIDIA устройства
         let nvidia_dir = Path::new("/proc/driver/nvidia");
@@ -314,7 +314,7 @@ impl ProcessGpuMonitor {
 
     /// Собирает метрики использования GPU через AMD
     async fn collect_amd_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
-        let mut metrics = HashMap::new();
+        let metrics = HashMap::new();
         
         // Пробуем найти AMD GPU устройства
         let amdgpu_dir = Path::new("/sys/class/drm");
@@ -336,7 +336,7 @@ impl ProcessGpuMonitor {
 
     /// Собирает метрики использования GPU через eBPF
     async fn collect_ebpf_gpu_metrics(&self) -> Result<HashMap<i32, ProcessGpuInfo>> {
-        let mut metrics = HashMap::new();
+        let metrics = HashMap::new();
         
         info!("Collecting GPU metrics via eBPF (simplified implementation)");
         
@@ -399,14 +399,14 @@ impl ProcessGpuMonitor {
     }
 }
 
-/// Глобальный кэш метрик GPU для процессов
 lazy_static! {
+    /// Глобальный кэш метрик GPU для процессов
     pub static ref GLOBAL_PROCESS_GPU_CACHE: Arc<ProcessGpuCache> = 
         Arc::new(ProcessGpuCache::new_default());
 }
 
-/// Глобальный монитор использования GPU процессами
 lazy_static! {
+    /// Глобальный монитор использования GPU процессами
     pub static ref GLOBAL_PROCESS_GPU_MONITOR: Arc<ProcessGpuMonitor> = 
         Arc::new(ProcessGpuMonitor::new_default());
 }

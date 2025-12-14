@@ -7,7 +7,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 /// Сырые счётчики CPU из `/proc/stat`.
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]

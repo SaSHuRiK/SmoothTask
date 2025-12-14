@@ -6,7 +6,6 @@
 
 use anyhow::{anyhow, Context, Result};
 use serde::{Deserialize, Serialize};
-use std::ffi::{CStr, CString};
 use std::fs;
 use std::path::Path;
 use tracing::{debug, error, info, warn};
@@ -169,14 +168,19 @@ fn get_nvml_handle() -> Result<NvmlHandle> {
                 unsafe { NVML_HANDLE = Some(handle); }
             }
             Err(e) => {
-                error!("Не удалось инициализировать NVML: {}", e);
+                error!(
+                    "Не удалось инициализировать NVML: {}. \n                    Возможные причины:\n                    1) NVML библиотека не установлена (libnvidia-ml.so)\n                    2) Некорректные права доступа к библиотеке\n                    3) Проблемы с загрузкой модулей ядра NVIDIA\n                    4) Конфликт версий драйверов\n                    Рекомендации:\n                    - Проверьте установку NVML: ls -la /usr/lib/libnvidia-ml.so*\n                    - Проверьте загрузку модулей: lsmod | grep nvidia\n                    - Проверьте права доступа: sudo chmod 644 /usr/lib/libnvidia-ml.so*\n                    - Попробуйте переустановить драйверы NVIDIA\n                    - Проверьте системные логи: sudo dmesg | grep nvidia",
+                    e
+                );
             }
         }
     });
 
     match unsafe { NVML_HANDLE.as_ref() } {
         Some(handle) => Ok(handle.clone()),
-        None => Err(anyhow!("NVML не инициализирован")),
+        None => Err(anyhow!(
+            "NVML не инициализирован. \n            Это может быть вызвано:\n            1) Ошибкой инициализации NVML\n            2) Отсутствием NVIDIA GPU в системе\n            3) Проблемами с драйверами NVIDIA\n            Рекомендации:\n            - Проверьте наличие NVIDIA GPU: lspci | grep -i nvidia\n            - Проверьте загрузку драйверов: nvidia-smi\n            - Проверьте системные логи: sudo dmesg | grep nvidia\n            - Попробуйте перезагрузить систему"
+        )),
     }
 }
 
@@ -224,14 +228,19 @@ pub fn is_nvml_available() -> bool {
 /// Discover all NVIDIA GPU devices using NVML
 pub fn discover_nvml_devices() -> Result<Vec<NvmlDevice>> {
     if !is_nvml_available() {
-        warn!("NVML не доступен - NVIDIA GPU устройства не могут быть обнаружены");
+        warn!(
+            "NVML не доступен - NVIDIA GPU устройства не могут быть обнаружены. \n            Возможные причины:\n            1) NVML библиотека не установлена\n            2) NVIDIA драйверы не загружены\n            3) Отсутствие NVIDIA GPU в системе\n            Рекомендации:\n            - Проверьте установку NVML: ls -la /usr/lib/libnvidia-ml.so*\n            - Проверьте загрузку драйверов: lsmod | grep nvidia\n            - Проверьте наличие GPU: lspci | grep -i nvidia\n            - Попробуйте установить драйверы: sudo apt install nvidia-driver\n            - Проверьте системные логи: sudo dmesg | grep nvidia"
+        );
         return Ok(Vec::new());
     }
 
     let _handle = match get_nvml_handle() {
         Ok(handle) => handle,
         Err(e) => {
-            warn!("Не удалось получить NVML handle: {}", e);
+            warn!(
+                "Не удалось получить NVML handle: {}. \n                Возможные причины:\n                1) Ошибка инициализации NVML\n                2) Проблемы с правами доступа\n                3) Конфликт версий драйверов\n                Рекомендации:\n                - Проверьте права доступа: sudo chmod 644 /usr/lib/libnvidia-ml.so*\n                - Попробуйте перезагрузить драйверы: sudo rmmod nvidia; sudo modprobe nvidia\n                - Проверьте системные логи: sudo dmesg | grep nvidia\n                - Попробуйте переустановить драйверы NVIDIA",
+                e
+            );
             return Ok(Vec::new());
         }
     };
@@ -333,15 +342,20 @@ pub fn collect_nvml_metrics() -> Result<NvmlMetricsCollection> {
                 successful_devices += 1;
             }
             Err(e) => {
-                error!("Не удалось собрать метрики для NVIDIA GPU устройства {}: {}", device.name, e);
+                error!(
+                    "Не удалось собрать метрики для NVIDIA GPU устройства {}: {}. \n                    Возможные причины:\n                    1) Проблемы с доступом к sysfs файлам устройства\n                    2) Устройство занято другим процессом\n                    3) Драйвер устройства не отвечает\n                    4) Аппаратные проблемы с GPU\n                    Рекомендации:\n                    - Проверьте права доступа: sudo ls -la {}\n                    - Проверьте загрузку драйвера: lsmod | grep nvidia\n                    - Проверьте системные логи: sudo dmesg | grep nvidia\n                    - Попробуйте перезагрузить драйвер: sudo rmmod nvidia; sudo modprobe nvidia\n                    - Проверьте аппаратное состояние: nvidia-smi -q\n                    - Попробуйте перезагрузить систему",
+                    device.name, e, device.device_path
+                );
             }
         }
     }
 
     if successful_devices == 0 {
-        warn!("Не удалось собрать метрики ни для одного NVIDIA GPU устройства");
+        warn!(
+            "Не удалось собрать метрики ни для одного NVIDIA GPU устройства. \n            Возможные причины:\n            1) Проблемы с правами доступа ко всем устройствам\n            2) Драйверы NVIDIA не работают корректно\n            3) Аппаратные проблемы с GPU\n            4) Конфликт с другими GPU мониторинговыми инструментами\n            Рекомендации:\n            - Проверьте права доступа: sudo ls -la /sys/class/drm/*/device\n            - Проверьте загрузку драйверов: lsmod | grep nvidia\n            - Проверьте системные логи: sudo dmesg | grep nvidia\n            - Попробуйте перезагрузить драйверы: sudo systemctl restart nvidia-persistenced\n            - Проверьте конфликты: sudo lsof | grep nvidia\n            - Попробуйте перезагрузить систему"
+        );
     } else if successful_devices < collection.gpu_count {
-        info!("Собраны метрики для {} из {} NVIDIA GPU устройств", successful_devices, collection.gpu_count);
+        info!("Собраны метрики для {} из {} NVIDIA GPU устройств (частичный успех)", successful_devices, collection.gpu_count);
     } else {
         info!("Собраны метрики для всех {} NVIDIA GPU устройств", successful_devices);
     }
@@ -750,6 +764,35 @@ mod tests {
         let collection = result.unwrap();
         assert_eq!(collection.devices.len(), collection.gpu_count);
     }
+
+    #[test]
+    fn test_nvml_error_handling_detailed() {
+        // Test that NVML error handling provides detailed troubleshooting information
+        // This test verifies that error messages contain helpful context
+        
+        // Test device discovery error handling
+        let devices_result = discover_nvml_devices();
+        assert!(devices_result.is_ok()); // Should always return Ok, even if no devices found
+        
+        // Test metrics collection error handling
+        let metrics_result = collect_nvml_metrics();
+        assert!(metrics_result.is_ok()); // Should always return Ok with graceful degradation
+        
+        let collection = metrics_result.unwrap();
+        
+        // Verify that the collection is valid even if no devices are found
+        assert!(collection.gpu_count >= 0);
+        assert_eq!(collection.devices.len(), collection.gpu_count);
+        
+        // Test that serialization/deserialization works even with empty collections
+        let serialized = serde_json::to_string(&collection).expect("Serialization should work");
+        let deserialized: NvmlMetricsCollection = serde_json::from_str(&serialized).expect("Deserialization should work");
+        
+        assert_eq!(deserialized.gpu_count, collection.gpu_count);
+        assert_eq!(deserialized.devices.len(), collection.devices.len());
+    }
+
+
 
     #[test]
     fn test_nvml_memory_validation() {

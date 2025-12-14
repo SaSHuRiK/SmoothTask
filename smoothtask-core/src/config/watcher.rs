@@ -206,7 +206,7 @@ impl ConfigWatcher {
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     tracing::error!("Filesystem watcher channel disconnected");
-                    return Ok(());
+                    break;
                 }
             }
         }

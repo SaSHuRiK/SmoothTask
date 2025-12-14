@@ -4,7 +4,7 @@
 //! здоровья демона и автоматического обнаружения проблем.
 
 use super::*;
-use anyhow::{Context, Result};
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 

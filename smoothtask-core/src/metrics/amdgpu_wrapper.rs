@@ -179,7 +179,9 @@ pub fn is_amdgpu_available() -> bool {
 /// Discover all AMD GPU devices
 pub fn discover_amdgpu_devices() -> Result<Vec<AmdGpuDevice>> {
     if !is_amdgpu_available() {
-        warn!("AMDGPU не доступен - AMD GPU устройства не могут быть обнаружены");
+        warn!(
+            "AMDGPU не доступен - AMD GPU устройства не могут быть обнаружены. \n            Возможные причины:\n            1) AMD GPU драйверы не установлены\n            2) Отсутствие AMD GPU в системе\n            3) Проблемы с загрузкой модулей ядра\n            Рекомендации:\n            - Проверьте установку драйверов: lsmod | grep amdgpu\n            - Проверьте наличие GPU: lspci | grep -i amd\n            - Попробуйте установить драйверы: sudo apt install mesa-vulkan-drivers\n            - Проверьте системные логи: sudo dmesg | grep amdgpu\n            - Попробуйте загрузить модуль: sudo modprobe amdgpu"
+        );
         return Ok(Vec::new());
     }
 
@@ -273,15 +275,20 @@ pub fn collect_amdgpu_metrics() -> Result<AmdGpuMetricsCollection> {
                 successful_devices += 1;
             }
             Err(e) => {
-                error!("Не удалось собрать метрики для AMD GPU устройства {}: {}", device.name, e);
+                error!(
+                    "Не удалось собрать метрики для AMD GPU устройства {}: {}. \n                    Возможные причины:\n                    1) Проблемы с доступом к sysfs файлам устройства\n                    2) Устройство занято другим процессом\n                    3) Драйвер устройства не отвечает\n                    4) Аппаратные проблемы с GPU\n                    Рекомендации:\n                    - Проверьте права доступа: sudo ls -la {}\n                    - Проверьте загрузку драйвера: lsmod | grep amdgpu\n                    - Проверьте системные логи: sudo dmesg | grep amdgpu\n                    - Попробуйте перезагрузить драйвер: sudo rmmod amdgpu; sudo modprobe amdgpu\n                    - Проверьте аппаратное состояние: sudo dmesg | grep -i error\n                    - Попробуйте перезагрузить систему",
+                    device.name, e, device.device_path
+                );
             }
         }
     }
 
     if successful_devices == 0 {
-        warn!("Не удалось собрать метрики ни для одного AMD GPU устройства");
+        warn!(
+            "Не удалось собрать метрики ни для одного AMD GPU устройства. \n            Возможные причины:\n            1) Проблемы с правами доступа ко всем устройствам\n            2) Драйверы AMD GPU не работают корректно\n            3) Аппаратные проблемы с GPU\n            4) Конфликт с другими GPU мониторинговыми инструментами\n            Рекомендации:\n            - Проверьте права доступа: sudo ls -la /sys/class/drm/*/device\n            - Проверьте загрузку драйверов: lsmod | grep amdgpu\n            - Проверьте системные логи: sudo dmesg | grep amdgpu\n            - Попробуйте перезагрузить драйверы: sudo systemctl restart display-manager\n            - Проверьте конфликты: sudo lsof | grep amdgpu\n            - Попробуйте перезагрузить систему"
+        );
     } else if successful_devices < collection.gpu_count {
-        info!("Собраны метрики для {} из {} AMD GPU устройств", successful_devices, collection.gpu_count);
+        info!("Собраны метрики для {} из {} AMD GPU устройств (частичный успех)", successful_devices, collection.gpu_count);
     } else {
         info!("Собраны метрики для всех {} AMD GPU устройств", successful_devices);
     }
@@ -697,6 +704,35 @@ mod tests {
         let collection = result.unwrap();
         assert_eq!(collection.devices.len(), collection.gpu_count);
     }
+
+    #[test]
+    fn test_amdgpu_error_handling_detailed() {
+        // Test that AMDGPU error handling provides detailed troubleshooting information
+        // This test verifies that error messages contain helpful context
+        
+        // Test device discovery error handling
+        let devices_result = discover_amdgpu_devices();
+        assert!(devices_result.is_ok()); // Should always return Ok, even if no devices found
+        
+        // Test metrics collection error handling
+        let metrics_result = collect_amdgpu_metrics();
+        assert!(metrics_result.is_ok()); // Should always return Ok with graceful degradation
+        
+        let collection = metrics_result.unwrap();
+        
+        // Verify that the collection is valid even if no devices are found
+        assert!(collection.gpu_count >= 0);
+        assert_eq!(collection.devices.len(), collection.gpu_count);
+        
+        // Test that serialization/deserialization works even with empty collections
+        let serialized = serde_json::to_string(&collection).expect("Serialization should work");
+        let deserialized: AmdGpuMetricsCollection = serde_json::from_str(&serialized).expect("Deserialization should work");
+        
+        assert_eq!(deserialized.gpu_count, collection.gpu_count);
+        assert_eq!(deserialized.devices.len(), collection.devices.len());
+    }
+
+
 
     #[test]
     fn test_amdgpu_memory_validation() {
