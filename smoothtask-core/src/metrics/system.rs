@@ -12,6 +12,9 @@ use tracing::{info, warn};
 // Импорты для оптимизированного сбора метрик
 use rayon;
 
+// Импорты для типов метрик
+use crate::metrics::gpu::GpuMetricsCollection;
+
 /// Безопасно разобрать строку в u32 с fallback значением.
 #[allow(dead_code)]
 fn safe_parse_u32(s: &str, fallback: u32) -> u32 {
@@ -977,6 +980,160 @@ pub fn collect_system_metrics_parallel(paths: &ProcPaths) -> Result<SystemMetric
     })
 }
 
+/// Собрать системные метрики с адаптивным приоритетом на основе текущей нагрузки
+/// 
+/// Эта функция использует адаптивный подход к сбору метрик, где приоритет метрик
+/// определяется на основе текущей нагрузки системы. В условиях высокой нагрузки
+/// собираются только критические метрики, что позволяет снизить накладные расходы.
+/// 
+/// # Аргументы
+/// 
+/// * `paths` - Пути к системным файлам
+/// * `cache` - Опциональный кэш для хранения метрик
+/// * `current_load` - Текущая нагрузка системы (1-минутный load average)
+/// * `priority_overrides` - Опциональные переопределения приоритетов для конкретных метрик
+/// 
+/// # Возвращаемое значение
+/// 
+/// Системные метрики с адаптивным уровнем детализации
+/// 
+/// # Примеры
+/// 
+/// ```rust
+/// use smoothtask_core::metrics::system::{collect_system_metrics_adaptive, ProcPaths};
+/// 
+/// let paths = ProcPaths::default();
+/// let load_avg = 2.5; // Текущая нагрузка системы
+/// let metrics = collect_system_metrics_adaptive(&paths, None, load_avg, None);
+/// ```
+/// 
+/// # Примечания
+/// 
+/// - При нагрузке < 1.0 собираются все метрики (включая опциональные)
+/// - При нагрузке 1.0-3.0 пропускаются опциональные метрики
+/// - При нагрузке 3.0-5.0 пропускаются метрики низкого и опционального приоритета
+/// - При нагрузке > 5.0 собираются только критические и высокоприоритетные метрики
+pub fn collect_system_metrics_adaptive(
+    paths: &ProcPaths,
+    cache: Option<&SharedSystemMetricsCache>,
+    current_load: f64,
+    _priority_overrides: Option<&[SystemMetricPriority]>
+) -> Result<SystemMetrics> {
+    // Определяем, какие метрики следует собирать на основе текущей нагрузки
+    let collect_temperature = SystemMetricPriority::Medium.should_collect(current_load);
+    let collect_power = SystemMetricPriority::Medium.should_collect(current_load);
+    let collect_hardware = SystemMetricPriority::Low.should_collect(current_load);
+    let collect_network = SystemMetricPriority::High.should_collect(current_load);
+    let collect_disk = SystemMetricPriority::High.should_collect(current_load);
+    let collect_gpu = SystemMetricPriority::Medium.should_collect(current_load);
+    let collect_ebpf = SystemMetricPriority::Debug.should_collect(current_load);
+
+    // Если кэш доступен, используем его
+    if let Some(cache) = cache {
+        return cache.get_or_update(|| {
+            // Всегда собираем критические метрики
+            let cpu_times = parse_cpu_times(&read_file(&paths.stat)?)?;
+            let memory = parse_meminfo(&read_file(&paths.meminfo)?)?;
+            let load_avg = parse_loadavg(&read_file(&paths.loadavg)?)?;
+            let pressure = read_and_parse_psi_metrics(paths)?;
+
+            // Собираем дополнительные метрики в зависимости от приоритета
+            let (temperature, power) = if collect_temperature || collect_power {
+                rayon::join(
+                    || if collect_temperature { collect_temperature_metrics() } else { TemperatureMetrics::default() },
+                    || if collect_power { collect_power_metrics() } else { PowerMetrics::default() },
+                )
+            } else {
+                (TemperatureMetrics::default(), PowerMetrics::default())
+            };
+
+            let hardware = if collect_hardware { collect_hardware_metrics() } else { HardwareMetrics::default() };
+
+            let (network, disk) = if collect_network || collect_disk {
+                rayon::join(
+                    || if collect_network { collect_network_metrics() } else { NetworkMetrics::default() },
+                    || if collect_disk { collect_disk_metrics() } else { DiskMetrics::default() },
+                )
+            } else {
+                (NetworkMetrics::default(), DiskMetrics::default())
+            };
+
+            let (gpu, ebpf) = if collect_gpu || collect_ebpf {
+                rayon::join(
+                    || if collect_gpu { collect_gpu_metrics() } else { GpuMetricsCollection::default() },
+                    || if collect_ebpf { collect_ebpf_metrics() } else { None },
+                )
+            } else {
+                (GpuMetricsCollection::default(), None)
+            };
+
+            Ok(SystemMetrics {
+                cpu_times,
+                memory,
+                load_avg,
+                pressure,
+                temperature,
+                power,
+                hardware,
+                network,
+                disk,
+                gpu: if collect_gpu { Some(gpu) } else { None },
+                ebpf,
+            })
+        });
+    }
+
+    // Если кэш не доступен, собираем метрики напрямую
+    let cpu_times = parse_cpu_times(&read_file(&paths.stat)?)?;
+    let memory = parse_meminfo(&read_file(&paths.meminfo)?)?;
+    let load_avg = parse_loadavg(&read_file(&paths.loadavg)?)?;
+    let pressure = read_and_parse_psi_metrics(paths)?;
+
+    // Собираем дополнительные метрики в зависимости от приоритета
+    let (temperature, power) = if collect_temperature || collect_power {
+        rayon::join(
+            || if collect_temperature { collect_temperature_metrics() } else { TemperatureMetrics::default() },
+            || if collect_power { collect_power_metrics() } else { PowerMetrics::default() },
+        )
+    } else {
+        (TemperatureMetrics::default(), PowerMetrics::default())
+    };
+
+    let hardware = if collect_hardware { collect_hardware_metrics() } else { HardwareMetrics::default() };
+
+    let (network, disk) = if collect_network || collect_disk {
+        rayon::join(
+            || if collect_network { collect_network_metrics() } else { NetworkMetrics::default() },
+            || if collect_disk { collect_disk_metrics() } else { DiskMetrics::default() },
+        )
+    } else {
+        (NetworkMetrics::default(), DiskMetrics::default())
+    };
+
+    let (gpu, ebpf) = if collect_gpu || collect_ebpf {
+        rayon::join(
+            || if collect_gpu { collect_gpu_metrics() } else { GpuMetricsCollection::default() },
+            || if collect_ebpf { collect_ebpf_metrics() } else { None },
+        )
+    } else {
+        (GpuMetricsCollection::default(), None)
+    };
+
+    Ok(SystemMetrics {
+        cpu_times,
+        memory,
+        load_avg,
+        pressure,
+        temperature,
+        power,
+        hardware,
+        network,
+        disk,
+        gpu: if collect_gpu { Some(gpu) } else { None },
+        ebpf,
+    })
+}
+
 /// Вспомогательная функция для чтения и парсинга CPU метрик
 #[cfg(test)]
 fn read_and_parse_cpu_metrics(paths: &ProcPaths) -> Result<Result<CpuTimes>> {
@@ -1294,6 +1451,30 @@ pub enum SystemMetricPriority {
     Debug,
 }
 
+impl SystemMetricPriority {
+    /// Преобразовать приоритет в числовое значение для сравнения
+    pub fn as_usize(&self) -> usize {
+        match self {
+            SystemMetricPriority::Critical => 0,
+            SystemMetricPriority::High => 1,
+            SystemMetricPriority::Medium => 2,
+            SystemMetricPriority::Low => 3,
+            SystemMetricPriority::Debug => 4,
+        }
+    }
+    
+    /// Проверка, следует ли собирать метрики с данным приоритетом при текущей нагрузке
+    pub fn should_collect(&self, current_load: f64) -> bool {
+        match self {
+            SystemMetricPriority::Critical => true,
+            SystemMetricPriority::High => current_load < 5.0, // Собирать при нагрузке < 5.0
+            SystemMetricPriority::Medium => current_load < 3.0, // Собирать при нагрузке < 3.0
+            SystemMetricPriority::Low => current_load < 1.5, // Собирать при нагрузке < 1.5
+            SystemMetricPriority::Debug => current_load < 1.0, // Собирать только при очень низкой нагрузке
+        }
+    }
+}
+
 /// Собрать системные метрики с оптимизацией производительности.
 ///
 /// Эта функция использует адаптивные стратегии для оптимизации производительности:
@@ -1411,6 +1592,8 @@ enum TemperatureSourcePriority {
     ThermalZone,        // Универсальный интерфейс термальных зон
     GenericHwmon,       // Общий hwmon интерфейс
 }
+
+
 
 /// Вспомогательная функция для определения приоритета источника температуры
 fn determine_temperature_source_priority(
@@ -3877,6 +4060,88 @@ SwapFree:        4096000 kB
                     || !err_str.contains("loadavg")
             );
         }
+    }
+
+    #[test]
+    fn test_system_metric_priority_should_collect() {
+        // Тест проверяет логику определения, следует ли собирать метрики при разной нагрузке
+        
+        // Критические метрики всегда собираются
+        assert!(SystemMetricPriority::Critical.should_collect(0.5));
+        assert!(SystemMetricPriority::Critical.should_collect(2.0));
+        assert!(SystemMetricPriority::Critical.should_collect(5.0));
+        assert!(SystemMetricPriority::Critical.should_collect(10.0));
+        
+        // Метрики высокого приоритета собираются при нагрузке < 5.0
+        assert!(SystemMetricPriority::High.should_collect(0.5));
+        assert!(SystemMetricPriority::High.should_collect(2.0));
+        assert!(SystemMetricPriority::High.should_collect(4.9));
+        assert!(!SystemMetricPriority::High.should_collect(5.0));
+        assert!(!SystemMetricPriority::High.should_collect(10.0));
+        
+        // Метрики среднего приоритета собираются при нагрузке < 3.0
+        assert!(SystemMetricPriority::Medium.should_collect(0.5));
+        assert!(SystemMetricPriority::Medium.should_collect(2.0));
+        assert!(SystemMetricPriority::Medium.should_collect(2.9));
+        assert!(!SystemMetricPriority::Medium.should_collect(3.0));
+        assert!(!SystemMetricPriority::Medium.should_collect(10.0));
+        
+        // Метрики низкого приоритета собираются при нагрузке < 1.5
+        assert!(SystemMetricPriority::Low.should_collect(0.5));
+        assert!(SystemMetricPriority::Low.should_collect(1.0));
+        assert!(SystemMetricPriority::Low.should_collect(1.4));
+        assert!(!SystemMetricPriority::Low.should_collect(1.5));
+        assert!(!SystemMetricPriority::Low.should_collect(10.0));
+        
+        // Отладочные метрики собираются только при очень низкой нагрузке
+        assert!(SystemMetricPriority::Debug.should_collect(0.5));
+        assert!(SystemMetricPriority::Debug.should_collect(0.9));
+        assert!(!SystemMetricPriority::Debug.should_collect(1.0));
+        assert!(!SystemMetricPriority::Debug.should_collect(10.0));
+    }
+
+    #[test]
+    fn test_system_metric_priority_as_usize() {
+        // Тест проверяет преобразование приоритета в числовое значение
+        assert_eq!(SystemMetricPriority::Critical.as_usize(), 0);
+        assert_eq!(SystemMetricPriority::High.as_usize(), 1);
+        assert_eq!(SystemMetricPriority::Medium.as_usize(), 2);
+        assert_eq!(SystemMetricPriority::Low.as_usize(), 3);
+        assert_eq!(SystemMetricPriority::Optional.as_usize(), 4);
+    }
+
+    #[test]
+    fn test_collect_system_metrics_adaptive_low_load() {
+        // Тест проверяет, что при низкой нагрузке собираются все метрики
+        let paths = ProcPaths::default();
+        
+        // При низкой нагрузке (0.5) должны собираться все метрики
+        let result = collect_system_metrics_adaptive(&paths, None, 0.5, None);
+        
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        
+        // Критические метрики должны быть собраны
+        assert!(metrics.cpu_times.user > 0);
+        assert!(metrics.memory.mem_total_kb > 0);
+        assert!(metrics.load_avg.one > 0.0);
+    }
+
+    #[test]
+    fn test_collect_system_metrics_adaptive_high_load() {
+        // Тест проверяет, что при высокой нагрузке собираются только критические метрики
+        let paths = ProcPaths::default();
+        
+        // При высокой нагрузке (6.0) должны собираться только критические метрики
+        let result = collect_system_metrics_adaptive(&paths, None, 6.0, None);
+        
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        
+        // Критические метрики должны быть собраны
+        assert!(metrics.cpu_times.user > 0);
+        assert!(metrics.memory.mem_total_kb > 0);
+        assert!(metrics.load_avg.one > 0.0);
     }
 
     #[test]
