@@ -640,7 +640,7 @@ impl MetricsCache {
                 break;
             }
             
-            if let Some(cached) = cache_guard.pop(&key) {
+            if let Some(_cached) = cache_guard.pop(&key) {
                 *current_usage = current_usage.saturating_sub(size);
                 *removed_count += 1;
                 *bytes_freed += size;

@@ -1443,7 +1443,7 @@ impl NetworkMonitor {
     }
 
     /// Get packet reordering statistics for an interface
-    fn get_packet_reorders(&self, interface_name: &str) -> Result<u64> {
+    fn get_packet_reorders(&self, _interface_name: &str) -> Result<u64> {
         // Packet reordering is harder to detect directly
         // For now, we'll return 0 as a placeholder
         // In a real implementation, this would require packet sequence analysis
