@@ -1046,24 +1046,28 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
         memory: pressure_memory,
     };
 
-    // Собираем метрики температуры и энергопотребления
+    // Собираем метрики температуры и энергопотребления с приоритетом eBPF
     let mut temperature = collect_temperature_metrics();
+    let mut power = collect_power_metrics();
     
-    // Пробуем использовать eBPF метрики температуры, если доступно
+    // Пробуем использовать eBPF метрики как основной источник, если доступно
     if let Some(ebpf_metrics) = collect_ebpf_metrics() {
+        // Приоритет 1: eBPF температура CPU (наиболее точная)
         if ebpf_metrics.cpu_temperature > 0 {
-            // eBPF предоставляет температуру в градусах Цельсия
             temperature.cpu_temperature_c = Some(ebpf_metrics.cpu_temperature as f32);
             tracing::info!("Using eBPF CPU temperature: {:.1}°C", ebpf_metrics.cpu_temperature as f32);
         }
         
+        // Приоритет 2: eBPF максимальная температура CPU
         if ebpf_metrics.cpu_max_temperature > 0 {
-            // eBPF также предоставляет максимальную температуру
-            // Мы можем использовать это для более точного мониторинга
+            // Используем максимальную температуру для более точного мониторинга
+            if temperature.cpu_temperature_c.is_none() {
+                temperature.cpu_temperature_c = Some(ebpf_metrics.cpu_max_temperature as f32);
+            }
             tracing::debug!("eBPF CPU max temperature: {:.1}°C", ebpf_metrics.cpu_max_temperature as f32);
         }
         
-        // Если eBPF предоставляет детализированную статистику температуры
+        // Приоритет 3: Детализированная статистика температуры CPU (наиболее точная)
         if let Some(cpu_temp_details) = ebpf_metrics.cpu_temperature_details {
             if !cpu_temp_details.is_empty() {
                 // Используем среднюю температуру из детализированной статистики
@@ -1076,9 +1080,23 @@ pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
                     cpu_temp_details.len(), avg_temp);
             }
         }
+        
+        // Приоритет 4: eBPF температура GPU
+        if ebpf_metrics.gpu_temperature > 0 {
+            temperature.gpu_temperature_c = Some(ebpf_metrics.gpu_temperature as f32);
+            tracing::info!("Using eBPF GPU temperature: {:.1}°C", ebpf_metrics.gpu_temperature as f32);
+        }
+        
+        // Приоритет 5: eBPF энергопотребление
+        if ebpf_metrics.gpu_power_usage > 0 {
+            power.gpu_power_w = Some(ebpf_metrics.gpu_power_usage as f32 / 1_000_000.0); // Convert from microWatts to Watts
+            tracing::info!("Using eBPF GPU power: {:.2}W", power.gpu_power_w.unwrap_or(0.0));
+        }
+        
+        if ebpf_metrics.cpu_usage > 0.0 {
+            tracing::debug!("eBPF CPU usage: {:.1}%", ebpf_metrics.cpu_usage * 100.0);
+        }
     }
-    
-    let power = collect_power_metrics();
 
     // Собираем метрики сетевой активности и дисковых операций
     let network = collect_network_metrics();

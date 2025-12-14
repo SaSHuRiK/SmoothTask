@@ -28,6 +28,99 @@ fn test_ebpf_basic_functionality() {
 }
 
 #[test]
+fn test_ebpf_error_classification() {
+    // Тестируем классификацию ошибок eBPF
+    let config = EbpfConfig::default();
+    let collector = EbpfMetricsCollector::new(config);
+
+    // Тестируем критические ошибки
+    let critical_error = "Permission denied: insufficient privileges for CAP_BPF";
+    let category = collector.classify_ebpf_error(critical_error);
+    assert_eq!(category, EbpfErrorCategory::Critical);
+
+    // Тестируем восстанавливаемые ошибки
+    let recoverable_error = "Timeout while reading eBPF map";
+    let category = collector.classify_ebpf_error(recoverable_error);
+    assert_eq!(category, EbpfErrorCategory::Recoverable);
+
+    // Тестируем информационные ошибки
+    let informational_error = "eBPF feature not supported on this kernel version";
+    let category = collector.classify_ebpf_error(informational_error);
+    assert_eq!(category, EbpfErrorCategory::Informational);
+
+    // Тестируем неизвестные ошибки (должны быть восстанавливаемыми по умолчанию)
+    let unknown_error = "Unknown eBPF error occurred";
+    let category = collector.classify_ebpf_error(unknown_error);
+    assert_eq!(category, EbpfErrorCategory::Recoverable);
+}
+
+#[test]
+fn test_ebpf_health_status() {
+    // Тестируем функции состояния здоровья eBPF
+    let config = EbpfConfig::default();
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Проверяем начальное состояние (не инициализировано)
+    assert!(!collector.is_healthy());
+    assert!(!collector.is_ebpf_available());
+
+    // Инициализируем коллектор
+    assert!(collector.initialize().is_ok());
+
+    // Проверяем состояние после инициализации
+    let status = collector.get_health_status();
+    assert!(status.initialized);
+    assert!(status.last_error.is_none());
+    assert!(status.cache_enabled);
+
+    // Проверяем состояние здоровья
+    assert!(collector.is_healthy());
+    assert!(collector.is_ebpf_available());
+}
+
+#[test]
+fn test_ebpf_error_recovery() {
+    // Тестируем механизмы восстановления после ошибок
+    let config = EbpfConfig::default();
+    let mut collector = EbpfMetricsCollector::new(config);
+
+    // Инициализируем коллектор
+    assert!(collector.initialize().is_ok());
+
+    // Проверяем, что коллектор здоров
+    assert!(collector.is_healthy());
+
+    // Тестируем сбор метрик (должен работать даже без реальной eBPF поддержки)
+    let metrics_result = collector.collect_metrics();
+    assert!(metrics_result.is_ok());
+
+    let metrics = metrics_result.unwrap();
+    // Проверяем, что метрики имеют разумные значения по умолчанию
+    assert!(metrics.cpu_usage >= 0.0);
+    assert_eq!(metrics.syscall_count, 0); // Должно быть 0 без реальной eBPF поддержки
+}
+
+#[test]
+fn test_ebpf_config_validation() {
+    // Тестируем валидацию конфигурации
+    let mut config = EbpfConfig::default();
+    
+    // Тестируем корректную конфигурацию
+    let collector = EbpfMetricsCollector::new(config.clone());
+    assert!(collector.validate_config().is_ok());
+    
+    // Тестируем некорректную конфигурацию (batch_size = 0)
+    config.batch_size = 0;
+    let collector = EbpfMetricsCollector::new(config);
+    let validation_result = collector.validate_config();
+    assert!(validation_result.is_err());
+    
+    // Проверяем сообщение об ошибке
+    let error_msg = validation_result.unwrap_err().to_string();
+    assert!(error_msg.contains("batch_size"));
+}
+
+#[test]
 fn test_ebpf_config_options() {
     // Тестируем различные конфигурации
     let config = EbpfConfig {

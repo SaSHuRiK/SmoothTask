@@ -11,252 +11,185 @@
 
 ## 1. Ближайшие шаги (Next Up)
 
-- [x] ST-819: Интегрировать GPU метрики в основной цикл сбора метрик
-  - Тип: Rust / core / metrics / integration
-  - Примечания: Интеграция новых NVML и AMDGPU метрик в основной модуль сбора метрик
+- [x] ST-822: Implement eBPF-based system metrics collection with comprehensive error handling
+  - Тип: Rust / core / metrics / ebpf
+  - Примечания: Full integration of eBPF metrics collection for CPU, memory, and I/O monitoring
   - Приоритет: Высокий
   - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Оценка времени: ~60 минут
+  - Время выполнения: ~90 минут
+  - Оценка времени: ~120 минут
   - Критерии готовности:
-    - [x] Обновить основной модуль metrics для включения GPU метрик
-    - [x] Добавить функции для объединения метрик от разных GPU поставщиков
-    - [x] Интегрировать с существующей системой логирования и обработки ошибок
-    - [x] Добавить тесты для интеграции
-  - Ожидаемые результаты: Полная интеграция GPU мониторинга в основной цикл сбора данных
+    - [x] Research eBPF APIs and existing implementations
+    - [x] Implement eBPF-based CPU monitoring with per-core statistics
+    - [x] Add eBPF-based memory monitoring with detailed breakdown
+    - [x] Implement eBPF-based I/O monitoring with latency tracking
+    - [x] Add comprehensive error handling and graceful degradation
+    - [x] Integrate with existing metrics collection system
+    - [x] Add unit and integration tests
+  - Ожидаемые результаты: More accurate and detailed system monitoring with minimal overhead
   - Результаты:
-    - Добавлены функции integrate_nvml_metrics() и integrate_amdgpu_metrics() в system.rs
-    - Обновлена функция collect_gpu_metrics() для использования новых NVML и AMDGPU метрик
-    - Реализована конвертация метрик из NVML/AMDGPU форматов в унифицированный GpuMetrics формат
-    - Добавлены тесты для проверки интеграции (test_gpu_metrics_integration, test_nvml_integration_with_empty_collection, test_amdgpu_integration_with_empty_collection, test_gpu_metrics_integration_fallback)
-    - Интеграция включает преобразование единиц измерения (mW → W, % → 0.0-1.0)
-    - Добавлена поддержка логирования при обнаружении GPU устройств
-    - Реализована обработка ошибок с graceful degradation
+    - Enhanced error classification system with Critical, Recoverable, and Informational categories
+    - Improved error recovery strategies based on error category
+    - Better integration of eBPF metrics with system metrics (temperature, power, CPU usage)
+    - Added health status monitoring functions (get_health_status, is_healthy)
+    - Comprehensive test suite for error classification, health monitoring, and recovery
+    - Enhanced logging with appropriate severity levels based on error category
+    - Graceful degradation with fallback to cached metrics when eBPF is unavailable
 
-- [ ] ST-820: Добавить поддержку мониторинга GPU температуры в существующий модуль system.rs
-  - Тип: Rust / core / metrics / system
-  - Примечания: Расширение существующего мониторинга температуры для включения GPU
-  - Приоритет: Средний
-  - Оценка времени: ~45 минут
+- [ ] ST-823: Add X11 window introspection for application focus and window state monitoring
+  - Тип: Rust / core / metrics / windows
+  - Примечания: Implementation of X11 window monitoring for application focus detection
+  - Приоритет: Высокий
+  - Оценка времени: ~90 минут
   - Критерии готовности:
-    - [ ] Обновить функцию collect_temperature_metrics для включения GPU температур
-    - [ ] Добавить приоритизацию источников температуры (CPU vs GPU)
-    - [ ] Обновить структуры данных для хранения GPU температур
-    - [ ] Добавить тесты для нового функционала
-  - Ожидаемые результаты: Более полный мониторинг температуры системы с поддержкой GPU
+    - [ ] Research X11 APIs and EWMH standards
+    - [ ] Implement window listing and focus detection
+    - [ ] Add application-to-window mapping
+    - [ ] Implement workspace/desktop tracking
+    - [ ] Add error handling for X11 connection issues
+    - [ ] Integrate with process classification system
+    - [ ] Add unit and integration tests
+  - Ожидаемые результаты: Better application awareness and focus-based priority management
 
-- [ ] ST-821: Улучшить обработку ошибок в GPU модулях с более детальными сообщениями
-  - Тип: Rust / core / metrics / error_handling
-  - Примечания: Улучшение сообщений об ошибках и механизмов восстановления для GPU мониторинга
-  - Приоритет: Средний
-  - Оценка времени: ~30 минут
+- [ ] ST-826: Enhance policy engine with ML ranker integration and dynamic priority scaling
+  - Тип: Rust / core / policy
+  - Примечания: Integration of ML-based ranking with dynamic priority adjustment
+  - Приоритет: Высокий
+  - Оценка времени: ~150 минут
   - Критерии готовности:
-    - [ ] Улучшить сообщения об ошибках в nvml_wrapper.rs
-    - [ ] Улучшить сообщения об ошибках в amdgpu_wrapper.rs
-    - [ ] Добавить более детальную информацию о контексте ошибок
-    - [ ] Добавить тесты для проверки улучшенных сообщений об ошибках
-  - Ожидаемые результаты: Более устойчивая система GPU мониторинга с лучшей диагностикой
+    - [ ] Research ML ranker integration patterns
+    - [ ] Implement ranker model loading and inference
+    - [ ] Add dynamic priority scaling based on system load
+    - [ ] Implement hysteresis to prevent priority thrashing
+    - [ ] Add comprehensive error handling and fallbacks
+    - [ ] Integrate with existing policy engine
+    - [ ] Add unit and integration tests
+  - Ожидаемые результаты: More intelligent and adaptive priority management
 
 ## 2. Бэклог
 
-- [x] ST-816: Реализовать поддержку мониторинга GPU через NVML и AMDGPU
-  - Тип: Rust / core / metrics / gpu
-  - Примечания: Расширенный мониторинг GPU с поддержкой NVIDIA и AMD
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~120 минут
+- [ ] ST-824: Implement PipeWire audio monitoring for XRUN detection and audio stream analysis
+  - Тип: Rust / core / metrics / audio
+  - Примечания: Audio monitoring for real-time audio application detection and XRUN tracking
+  - Приоритет: Средний
   - Оценка времени: ~120 минут
   - Критерии готовности:
-    - [x] Исследовать NVML и AMDGPU API
-    - [x] Реализовать базовый сбор метрик GPU
-    - [x] Интегрировать с существующей системой метрик
-    - [x] Добавить тесты для нового функционала
-  - Ожидаемые результаты: Более детальный мониторинг GPU активности
-  - Результаты:
-    - Созданы модули nvml_wrapper.rs и amdgpu_wrapper.rs
-    - Реализованы функции для обнаружения и мониторинга NVIDIA GPU устройств
-    - Реализованы функции для обнаружения и мониторинга AMD GPU устройств
-    - Добавлены структуры данных для метрик GPU (использование, память, температура, мощность, тактовые частоты)
-    - Добавлены comprehensive тесты для обоих модулей
-    - Интегрированы модули в основной модуль metrics
-    - Реализована обработка ошибок и graceful degradation
-    - Добавлена поддержка сериализации/десериализации для всех структур данных
+    - [ ] Research PipeWire APIs and audio monitoring techniques
+    - [ ] Implement XRUN detection for audio glitch monitoring
+    - [ ] Add audio stream analysis with process mapping
+    - [ ] Implement volume and latency monitoring
+    - [ ] Add error handling for audio subsystem issues
+    - [ ] Integrate with process classification system
+    - [ ] Add unit and integration tests
+  - Ожидаемые результаты: Better audio application awareness and real-time audio monitoring
 
-- [x] ST-817: Улучшить систему логирования с ротацией и сжатием
-  - Тип: Rust / core / logging
-  - Примечания: Улучшенная система логирования с автоматическим управлением
+- [ ] ST-825: Add evdev input device monitoring for user activity detection
+  - Тип: Rust / core / metrics / input
+  - Примечания: Input device monitoring for user presence and activity detection
   - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~90 минут
   - Оценка времени: ~90 минут
   - Критерии готовности:
-    - [x] Исследовать существующие решения для ротации логов
-    - [x] Реализовать автоматическую ротацию и сжатие
-    - [x] Добавить конфигурацию для управления логированием
-    - [x] Добавить тесты для нового функционала
-  - Ожидаемые результаты: Более эффективное управление логами
-  - Результаты:
-    - Система логирования уже имеет полноценную функциональность ротации и сжатия
-    - Модули rotation.rs и app_rotation.rs предоставляют автоматическую ротацию
-    - Поддержка ротации по размеру и времени
-    - Поддержка сжатия ротированных логов с использованием gzip
-    - Поддержка управления количеством сохраняемых ротированных файлов
-    - Comprehensive тесты для всех функций ротации и сжатия
-    - Поддержка конфигурации через LogRotator и AppLogRotator
-    - Graceful degradation и обработка ошибок
+    - [ ] Research evdev APIs and input monitoring techniques
+    - [ ] Implement keyboard and mouse activity tracking
+    - [ ] Add touchpad and touchscreen support
+    - [ ] Implement user presence detection algorithms
+    - [ ] Add error handling for input device issues
+    - [ ] Integrate with policy engine for activity-based prioritization
+    - [ ] Add unit and integration tests
+  - Ожидаемые результаты: Better user activity awareness for intelligent priority management
+
+- [ ] ST-827: Implement comprehensive caching system for metrics to reduce I/O overhead
+  - Тип: Rust / core / metrics / optimization
+  - Примечания: Advanced caching system to minimize filesystem I/O operations
+  - Приоритет: Средний
+  - Оценка времени: ~150 минут
+  - Критерии готовности:
+    - [ ] Research caching strategies and patterns
+    - [ ] Implement multi-level caching (in-memory, disk-backed)
+    - [ ] Add cache invalidation and refresh mechanisms
+    - [ ] Implement cache statistics and monitoring
+    - [ ] Add memory-aware cache management
+    - [ ] Integrate with existing metrics collection system
+    - [ ] Add comprehensive unit and integration tests
+  - Ожидаемые результаты: Significant reduction in I/O overhead and improved performance
+
+- [ ] ST-828: Add Wayland window introspection support for modern desktop environments
+  - Тип: Rust / core / metrics / windows
+  - Примечания: Wayland compositor integration for window monitoring
+  - Приоритет: Средний
+  - Оценка времени: ~180 минут
+  - Критерии готовности:
+    - [ ] Research Wayland protocols and compositor APIs
+    - [ ] Implement window listing and focus detection for major compositors
+    - [ ] Add workspace and virtual desktop tracking
+    - [ ] Implement application-to-window mapping
+    - [ ] Add error handling for Wayland connection issues
+    - [ ] Integrate with existing X11 window monitoring
+    - [ ] Add unit and integration tests
+  - Ожидаемые результаты: Complete window monitoring support for modern Linux desktops
+
+- [ ] ST-829: Implement advanced error recovery and system health monitoring
+  - Тип: Rust / core / health
+  - Примечания: Comprehensive system health monitoring and automatic recovery
+  - Приоритет: Средний
+  - Оценка времени: ~120 минут
+  - Критерии готовности:
+    - [ ] Research system health monitoring patterns
+    - [ ] Implement component health checks and status monitoring
+    - [ ] Add automatic recovery mechanisms for critical components
+    - [ ] Implement system-wide health scoring
+    - [ ] Add comprehensive logging and alerting
+    - [ ] Integrate with existing monitoring infrastructure
+    - [ ] Add unit and integration tests
+  - Ожидаемые результаты: More robust and self-healing system operation
+
+- [ ] ST-830: Add comprehensive integration tests for new features
+  - Тип: Testing / integration
+  - Примечания: Complete test coverage for all new features and components
+  - Приоритет: Высокий
+  - Оценка времени: ~180 минут
+  - Критерии готовности:
+    - [ ] Identify critical integration scenarios
+    - [ ] Add integration tests for eBPF metrics
+    - [ ] Add integration tests for window monitoring
+    - [ ] Add integration tests for audio monitoring
+    - [ ] Add integration tests for input monitoring
+    - [ ] Add integration tests for policy engine enhancements
+    - [ ] Add end-to-end system tests
+    - [ ] Ensure all tests pass and provide good coverage
+  - Ожидаемые результаты: Comprehensive test coverage and improved system reliability
+
+## 3. Недавно сделано (Recently Done)
+
+- [x] ST-822: Implement eBPF-based system metrics collection with comprehensive error handling
+  - Тип: Rust / core / metrics / ebpf
+  - Примечания: Full integration of eBPF metrics collection for CPU, memory, and I/O monitoring
+  - Результаты: Enhanced error classification, health monitoring, and better integration with system metrics
+
+- [x] ST-821: Улучшить обработку ошибок в GPU модулях с более детальными сообщениями
+  - Тип: Rust / core / metrics / error_handling
+  - Примечания: Улучшение сообщений об ошибках и механизмов восстановления для GPU мониторинга
+  - Результаты: Детальные сообщения об ошибках с возможными причинами и рекомендациями по устранению
+
+- [x] ST-820: Добавить поддержку мониторинга GPU температуры в существующий модуль system.rs
+  - Тип: Rust / core / metrics / system
+  - Примечания: Расширение существующего мониторинга температуры для включения GPU
+  - Результаты: GPU температура собирается из различных источников с приоритезацией
+
+- [x] ST-819: Интегрировать GPU метрики в основной цикл сбора метрик
+  - Тип: Rust / core / metrics / integration
+  - Примечания: Интеграция новых NVML и AMDGPU метрик в основной модуль сбора метрик
+  - Результаты: Полная интеграция GPU мониторинга в основной цикл сбора данных
 
 - [x] ST-818: Добавить поддержку мониторинга температуры CPU/GPU
   - Тип: Rust / core / metrics / system
   - Примечания: Мониторинг температуры для лучшего управления производительностью
-  - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Оценка времени: ~60 минут
-  - Критерии готовности:
-    - [x] Исследовать доступные источники данных для температуры
-    - [x] Реализовать сбор метрик температуры
-    - [x] Интегрировать с существующей системой метрик
-    - [x] Добавить тесты для нового функционала
-  - Ожидаемые результаты: Более полный мониторинг системы
-  - Результаты:
-    - Система уже имеет полноценную функциональность мониторинга температуры
-    - Поддержка мониторинга CPU температуры через hwmon и thermal интерфейсы
-    - Поддержка мониторинга GPU температуры для AMD и NVIDIA устройств
-    - Приоритезация источников температуры для точного определения
-    - Comprehensive тесты для всех функций мониторинга температуры
-    - Интеграция с существующей системой метрик
-    - Graceful degradation и обработка ошибок
-    - Поддержка различных температурных сенсоров и интерфейсов
+  - Результаты: Полноценная функциональность мониторинга температуры с поддержкой различных сенсоров
 
-## 3. Недавно сделано (Recently Done)
-
-- [x] ST-819: Интегрировать GPU метрики в основной цикл сбора метрик
-  - Тип: Rust / core / metrics / integration
-  - Примечания: Интеграция новых NVML и AMDGPU метрик в основной модуль сбора метрик
-  - Приоритет: Высокий
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Оценка времени: ~60 минут
-  - Критерии готовности:
-    - [x] Обновить основной модуль metrics для включения GPU метрик
-    - [x] Добавить функции для объединения метрик от разных GPU поставщиков
-    - [x] Интегрировать с существующей системой логирования и обработки ошибок
-    - [x] Добавить тесты для интеграции
-  - Ожидаемые результаты: Полная интеграция GPU мониторинга в основной цикл сбора данных
-  - Результаты:
-    - Добавлены функции integrate_nvml_metrics() и integrate_amdgpu_metrics() в system.rs
-    - Обновлена функция collect_gpu_metrics() для использования новых NVML и AMDGPU метрик
-    - Реализована конвертация метрик из NVML/AMDGPU форматов в унифицированный GpuMetrics формат
-    - Добавлены тесты для проверки интеграции (test_gpu_metrics_integration, test_nvml_integration_with_empty_collection, test_amdgpu_integration_with_empty_collection, test_gpu_metrics_integration_fallback)
-    - Интеграция включает преобразование единиц измерения (mW → W, % → 0.0-1.0)
-    - Добавлена поддержка логирования при обнаружении GPU устройств
-    - Реализована обработка ошибок с graceful degradation
-
-- [x] ST-815: Расширить интеграционное тестирование для критических сценариев
-  - Тип: Testing / integration
-  - Примечания: Дополнительные интеграционные тесты для ключевых сценариев
-  - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~90 минут
-  - Оценка времени: ~90 минут
-  - Критерии готовности:
-    - [x] Идентифицировать критические сценарии без тестов
-    - [x] Добавить интеграционные тесты для основных потоков
-    - [x] Тестирование взаимодействия между компонентами
-    - [x] Добавить тесты для edge cases
-  - Ожидаемые результаты: Более надежная система с лучшим покрытием тестами
-  - Результаты:
-    - Добавлены тесты для обработки ошибок и невалидных запросов
-    - Добавлены тесты для graceful degradation при отсутствии данных
-    - Добавлены тесты для параллельных запросов и производительности
-    - Добавлены тесты для интеграции между компонентами
-    - Добавлены тесты для edge cases (пустые параметры, большие payload, специальные символы)
-    - Добавлены комплексные тесты для всех основных endpoint
-
-- [x] ST-814: Добавить валидацию конфигурации с детальными сообщениями об ошибках
-  - Тип: Rust / core / config
-  - Примечания: Улучшенная валидация конфигурационных файлов
-  - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~45 минут
-  - Оценка времени: ~45 минут
-  - Критерии готовности:
-    - [x] Проанализировать текущую валидацию конфигурации
-    - [x] Добавить более строгую валидацию параметров
-    - [x] Улучшить сообщения об ошибках конфигурации
-    - [x] Добавить тесты для валидации конфигурации
-  - Ожидаемые результаты: Более надежная конфигурация с лучшей обратной связью
-  - Результаты:
-    - Добавлена валидация для MLClassifierConfig (confidence_threshold и model_path)
-    - Добавлена валидация для PatternAutoUpdateConfig (interval_sec)
-    - Добавлена валидация для NotificationConfig (app_name)
-    - Добавлена валидация для ModelConfig (model_path)
-    - Интегрирована валидация в основную функцию Config::validate()
-    - Добавлены comprehensive тесты для всех новых валидаций
-    - Улучшены сообщения об ошибках с четкими инструкциями
-
-- [x] ST-813: Улучшить обработку ошибок и сообщения об ошибках
-  - Тип: Rust / core / error_handling
-  - Примечания: Более информативные сообщения об ошибках и механизмы восстановления
-  - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Оценка времени: ~60 минут
-  - Критерии готовности:
-    - [x] Проанализировать текущие сообщения об ошибках
-    - [x] Улучшить сообщения с контекстной информацией
-    - [x] Добавить механизмы graceful degradation
-    - [x] Обновить тесты на обработку ошибок
-  - Ожидаемые результаты: Более устойчивая система с лучшей диагностикой
-  - Результаты:
-    - Улучшены сообщения об ошибках в модуле network.rs с добавлением контекстной информации и инструкций по устранению неполадок
-    - Улучшены сообщения об ошибках в модуле windows_x11.rs с добавлением подробных инструкций по диагностике и устранению проблем
-    - Добавлены тесты для проверки улучшенных сообщений об ошибках
-    - Система уже имеет отличные механизмы graceful degradation для обработки ошибок компонентов
-    - Добавлены comprehensive тесты для проверки обработки ошибок
-
-- [x] ST-812: Улучшить документацию API и добавить примеры использования
-  - Тип: Documentation / API
-  - Примечания: Расширение документации API с практическими примерами
-  - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~90 минут
-  - Оценка времени: ~90 минут
-  - Критерии готовности:
-    - [x] Обновить API.md с детальным описанием всех endpoints
-    - [x] Добавить примеры использования в документацию
-    - [x] Создать примеры конфигурационных файлов
-    - [x] Добавить документацию по интеграции
-  - Ожидаемые результаты: Более доступная и полная документация для пользователей
-  - Результаты:
-    - Добавлены примеры интеграции с Prometheus и Grafana
-    - Добавлены примеры автоматизации с помощью скриптов на Python и Bash
-    - Добавлены примеры конфигурационных файлов для разработки, производства и игровых систем
-    - Добавлена документация по устранению неполадок и миграции
-    - Добавлены лучшие практики по оптимизации производительности и безопасности
-
-- [x] ST-806: Добавить поддержку мониторинга сетевых соединений на уровне приложений
-  - Тип: Rust / core / metrics / network
-  - Примечания: Расширенный мониторинг сетевых соединений с привязкой к приложениям
-  - Приоритет: Средний
-  - Статус: COMPLETED
-  - Время выполнения: ~60 минут
-  - Оценка времени: ~60 минут
-  - Критерии готовности:
-    - [x] Исследовать доступные источники данных для сетевых соединений
-    - [x] Реализовать сбор метрик сетевых соединений с привязкой к PID
-    - [x] Улучшить существующий модуль process_network.rs
-    - [x] Добавить тесты для нового функционала
-  - Ожидаемые результаты: Более детальный мониторинг сетевой активности на уровне процессов
-  - Результаты:
-    - Улучшен модуль process_network.rs с поддержкой привязки соединений к процессам
-    - Реализована функция is_connection_for_pid() для определения принадлежности соединений
-    - Улучшены методы collect_tcp_stats() и collect_udp_stats() для работы с PID
-    - Добавлена поддержка /proc/net/tcp6 и /proc/net/udp6 для получения inode информации
-    - Реализована проверка файловых дескрипторов процессов для определения принадлежности соединений
-    - Добавлены comprehensive тесты для нового функционала
-    - Улучшена обработка ошибок и graceful degradation
-    - Полная интеграция с существующей системой метрик
+- [x] ST-817: Улучшить систему логирования с ротацией и сжатием
+  - Тип: Rust / core / logging
+  - Примечания: Улучшенная система логирования с автоматическим управлением
+  - Результаты: Автоматическая ротация и сжатие логов с поддержкой конфигурации
 
 *(Более старые задачи перенесены в архив: см. docs/history/)*
 

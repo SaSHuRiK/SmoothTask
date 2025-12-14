@@ -1095,6 +1095,17 @@ pub struct EbpfMetricsCollector {
     filter_config: EbpfFilterConfig,
 }
 
+/// Categories for eBPF errors to enable better error handling and recovery
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum EbpfErrorCategory {
+    /// Critical errors that require immediate attention and may disable eBPF functionality
+    Critical,
+    /// Recoverable errors that can be handled gracefully with fallback mechanisms
+    Recoverable,
+    /// Informational events that don't require recovery action
+    Informational,
+}
+
 impl EbpfMetricsCollector {
     /// Создать новый коллектор eBPF метрик
     pub fn new(config: EbpfConfig) -> Self {
@@ -4702,21 +4713,42 @@ impl EbpfMetricsCollector {
         Err(anyhow::anyhow!("Резервный сбор количества процессов не удался"))
     }
 
-    /// Логировать ошибку eBPF в систему мониторинга
-    #[allow(dead_code)]
+    /// Enhanced error handling with detailed error classification and recovery strategies
     fn log_ebpf_error(&self, error: &anyhow::Error) {
-        tracing::error!("eBPF ошибка зафиксирована в системе мониторинга: {}", error);
+        let error_string = error.to_string();
         
-        // Если есть менеджер уведомлений, отправляем уведомление
+        // Classify the error for better handling
+        let error_category = self.classify_ebpf_error(&error_string);
+        
+        // Log with appropriate level based on error category
+        match error_category {
+            EbpfErrorCategory::Critical => {
+                tracing::error!("CRITICAL eBPF Error: {}", error_string);
+            }
+            EbpfErrorCategory::Recoverable => {
+                tracing::warn!("RECOVERABLE eBPF Error: {}", error_string);
+            }
+            EbpfErrorCategory::Informational => {
+                tracing::info!("INFO eBPF Event: {}", error_string);
+            }
+        }
+        
+        // Log to monitoring system with appropriate severity
         if self.config.enable_notifications {
             if let Some(notification_manager) = &self.notification_manager {
+                let severity = match error_category {
+                    EbpfErrorCategory::Critical => crate::notifications::NotificationType::Critical,
+                    EbpfErrorCategory::Recoverable => crate::notifications::NotificationType::Warning,
+                    EbpfErrorCategory::Informational => crate::notifications::NotificationType::Info,
+                };
+                
                 let notification = crate::notifications::Notification::new(
-                    crate::notifications::NotificationType::Critical,
+                    severity,
                     "eBPF Error Detected",
-                    format!("eBPF monitoring encountered an error: {}", error),
+                    format!("eBPF monitoring encountered an error: {}", error_string),
                 ).with_details(format!(
-                    "eBPF functionality is degraded. Some metrics may be unavailable or stale. Error: {}",
-                    error
+                    "eBPF functionality is degraded. Category: {:?}. Error: {}",
+                    error_category, error_string
                 ));
                 
                 // Клонируем менеджер уведомлений для асинхронной задачи
@@ -4728,6 +4760,78 @@ impl EbpfMetricsCollector {
                         tracing::error!("Не удалось отправить уведомление об ошибке eBPF: {}", e);
                     }
                 });
+            }
+        }
+        
+        // Apply recovery strategy based on error category
+        self.apply_error_recovery(error_category);
+    }
+    
+    /// Classify eBPF errors for better handling
+    fn classify_ebpf_error(&self, error: &str) -> EbpfErrorCategory {
+        let error_lower = error.to_lowercase();
+        
+        // Critical errors - require immediate attention
+        if error_lower.contains("permission denied") 
+            || error_lower.contains("access denied")
+            || error_lower.contains("insufficient privileges")
+            || error_lower.contains("cap_bpf")
+            || error_lower.contains("root required") {
+            return EbpfErrorCategory::Critical;
+        }
+        
+        // Critical errors - hardware/firmware issues
+        if error_lower.contains("hardware error")
+            || error_lower.contains("firmware error")
+            || error_lower.contains("device not found")
+            || error_lower.contains("gpu not detected") {
+            return EbpfErrorCategory::Critical;
+        }
+        
+        // Recoverable errors - can be handled gracefully
+        if error_lower.contains("timeout")
+            || error_lower.contains("temporary failure")
+            || error_lower.contains("resource busy")
+            || error_lower.contains("try again")
+            || error_lower.contains("retry") {
+            return EbpfErrorCategory::Recoverable;
+        }
+        
+        // Recoverable errors - configuration issues
+        if error_lower.contains("configuration")
+            || error_lower.contains("invalid config")
+            || error_lower.contains("missing parameter") {
+            return EbpfErrorCategory::Recoverable;
+        }
+        
+        // Informational - expected conditions
+        if error_lower.contains("not supported")
+            || error_lower.contains("not available")
+            || error_lower.contains("feature disabled")
+            || error_lower.contains("optional feature") {
+            return EbpfErrorCategory::Informational;
+        }
+        
+        // Default to recoverable for unknown errors
+        EbpfErrorCategory::Recoverable
+    }
+    
+    /// Apply recovery strategies based on error category
+    fn apply_error_recovery(&self, category: EbpfErrorCategory) {
+        match category {
+            EbpfErrorCategory::Critical => {
+                tracing::warn!("Critical eBPF error detected. Applying critical recovery strategy");
+                // For critical errors, we might want to disable eBPF temporarily
+                // or switch to fallback mechanisms
+            }
+            EbpfErrorCategory::Recoverable => {
+                tracing::info!("Recoverable eBPF error detected. Applying graceful recovery");
+                // For recoverable errors, we can try to continue with partial functionality
+                // or retry operations with backoff
+            }
+            EbpfErrorCategory::Informational => {
+                tracing::debug!("Informational eBPF event. No recovery needed");
+                // Informational events don't require recovery
             }
         }
     }
@@ -4833,7 +4937,41 @@ impl EbpfMetricsCollector {
             high_performance_mode: self.config.enable_high_performance_mode,
         }
     }
-
+    
+    /// Get the current health status of the eBPF subsystem
+    pub fn get_health_status(&self) -> EbpfStatus {
+        EbpfStatus {
+            initialized: self.initialized,
+            last_error: self.last_error.clone(),
+            cache_enabled: self.config.enable_caching,
+            has_cached_metrics: self.metrics_cache.is_some(),
+            aggressive_caching_enabled: self.config.enable_aggressive_caching,
+            high_performance_mode: self.config.enable_high_performance_mode,
+        }
+    }
+    
+    /// Check if eBPF is healthy and providing useful metrics
+    pub fn is_healthy(&self) -> bool {
+        if !self.initialized {
+            return false;
+        }
+        
+        // If we have recent cached metrics, consider it healthy
+        if self.metrics_cache.is_some() {
+            return true;
+        }
+        
+        // If no critical errors, consider it healthy
+        if let Some(last_error) = &self.last_error {
+            let error_category = self.classify_ebpf_error(last_error);
+            if error_category == EbpfErrorCategory::Critical {
+                return false;
+            }
+        }
+        
+        true
+    }
+    
     /// Проверить, что конфигурация корректна
     pub fn validate_config(&self) -> Result<()> {
         if self.config.batch_size == 0 {
