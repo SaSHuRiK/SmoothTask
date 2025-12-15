@@ -1292,38 +1292,36 @@ impl HealthMonitorImpl {
         // Выполняем проверку безопасности
         match security_monitor.check_security().await {
             Ok(security_status) => {
-                let mut status = ComponentHealthStatus::Healthy;
-                let mut message = "Security is healthy".to_string();
-                let mut error_details = None;
-
-                match security_status.overall_status {
-                    SecurityStatus::Secure => {
-                        status = ComponentHealthStatus::Healthy;
-                        message = "Security is healthy".to_string();
-                    }
-                    SecurityStatus::Warning => {
-                        status = ComponentHealthStatus::Warning;
-                        message = "Security warnings detected".to_string();
-                        error_details = Some(format!(
+                let (status, message, error_details) = match security_status.overall_status {
+                    SecurityStatus::Secure => (
+                        ComponentHealthStatus::Healthy,
+                        "Security is healthy".to_string(),
+                        None
+                    ),
+                    SecurityStatus::Warning => (
+                        ComponentHealthStatus::Warning,
+                        "Security warnings detected".to_string(),
+                        Some(format!(
                             "Security score: {:.1}, events: {}",
                             security_status.security_score,
                             security_status.event_history.len()
-                        ));
-                    }
-                    SecurityStatus::PotentialThreat | SecurityStatus::CriticalThreat => {
-                        status = ComponentHealthStatus::Unhealthy;
-                        message = "Security threats detected".to_string();
-                        error_details = Some(format!(
+                        ))
+                    ),
+                    SecurityStatus::PotentialThreat | SecurityStatus::CriticalThreat => (
+                        ComponentHealthStatus::Unhealthy,
+                        "Security threats detected".to_string(),
+                        Some(format!(
                             "Security score: {:.1}, critical events: {}",
                             security_status.security_score,
                             security_status.event_history.len()
-                        ));
-                    }
-                    SecurityStatus::Unknown => {
-                        status = ComponentHealthStatus::Unknown;
-                        message = "Security status unknown".to_string();
-                    }
-                }
+                        ))
+                    ),
+                    SecurityStatus::Unknown => (
+                        ComponentHealthStatus::Unknown,
+                        "Security status unknown".to_string(),
+                        None
+                    ),
+                };
 
                 Ok(ComponentStatus {
                     status,

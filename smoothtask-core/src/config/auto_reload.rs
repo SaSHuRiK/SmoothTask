@@ -211,6 +211,16 @@ impl ConfigAutoReload {
     pub async fn is_reloading(&self) -> bool {
         *self.is_reloading.read().await
     }
+
+    /// Возвращает текущую конфигурацию (Arc<RwLock<Config>>).
+    pub fn current_config_arc(&self) -> Arc<RwLock<Config>> {
+        self.current_config.clone()
+    }
+
+    /// Возвращает путь к конфигурационному файлу.
+    pub fn config_path(&self) -> &str {
+        self.config_watcher.config_path()
+    }
 }
 
 #[cfg(test)]

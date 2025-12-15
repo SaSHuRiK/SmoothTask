@@ -1953,8 +1953,6 @@ pub enum MetadataOperator {
 /// Структурированный логгер с асинхронной поддержкой
 #[derive(Debug, Clone)]
 pub struct AsyncStructuredLogger {
-    /// Базовый структурированный логгер
-    inner: StructuredLogger,
     /// Канал для асинхронной отправки логов
     sender: tokio::sync::mpsc::Sender<StructuredLogMessage>,
 }
@@ -1982,7 +1980,7 @@ impl AsyncStructuredLogger {
             }
         });
         
-        Self { inner: inner_logger, sender }
+        Self { sender }
     }
 
     /// Асинхронно записать лог в файл

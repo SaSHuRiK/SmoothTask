@@ -2550,7 +2550,8 @@ mod tests {
     }
 }
 
-// Helper function to create test container metrics
+/// Helper function to create test container metrics
+#[allow(dead_code)]
 fn create_test_container_metric(
     container_id: &str,
     cpu_usage: f64,

@@ -1,7 +1,8 @@
 mod systemd;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::Parser;
+use smoothtask_core::config::auto_reload::ConfigAutoReload;
 use smoothtask_core::config::config_struct::Config;
 use smoothtask_core::run_daemon;
 use tokio::{signal, sync::watch};
@@ -30,6 +31,16 @@ async fn main() -> Result<()> {
     let config = Config::load(&args.config)?;
 
     tracing::info!("Starting SmoothTask daemon (dry_run = {})", args.dry_run);
+
+    // Создаём систему автоматической перезагрузки конфигурации
+    let config_auto_reload = ConfigAutoReload::new(&args.config, config.clone())
+        .context("Failed to initialize config auto-reload system")?;
+    
+    // Запускаем мониторинг изменений конфигурационного файла
+    let _watch_handle = config_auto_reload.start_watching();
+    
+    // Запускаем задачу автоматической перезагрузки конфигурации
+    let _auto_reload_handle = config_auto_reload.start_auto_reload();
 
     // Создаём канал для graceful shutdown (false = работаем, true = shutdown)
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
@@ -65,7 +76,8 @@ async fn main() -> Result<()> {
     });
     run_daemon(
         config,
-        args.config.clone(),
+        Some(config_auto_reload),
+        Some(args.config.clone()),
         args.dry_run,
         shutdown_rx,
         Some(on_ready),

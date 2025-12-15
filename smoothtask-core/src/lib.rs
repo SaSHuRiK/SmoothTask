@@ -12,6 +12,7 @@ pub mod utils;
 
 use anyhow::{Context, Result};
 use chrono::Utc;
+use config::auto_reload::ConfigAutoReload;
 use config::config_struct::Config;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -521,7 +522,8 @@ pub(crate) fn create_window_introspector() -> Box<dyn WindowIntrospector> {
 ///   остальные продолжают работать)
 pub async fn run_daemon(
     config: Config,
-    config_path: String,
+    config_auto_reload: Option<ConfigAutoReload>,
+    config_path: Option<String>,
     dry_run: bool,
     mut shutdown_rx: watch::Receiver<bool>,
     on_ready: Option<ReadyCallback>,
@@ -534,7 +536,13 @@ pub async fn run_daemon(
 
     // Используем Arc<RwLock<Config>> для совместного доступа к конфигурации
     // между основным циклом демона и API сервером
-    let config_arc = Arc::new(RwLock::new(config));
+    let config_arc: Arc<RwLock<Config>> = if let Some(auto_reload) = &config_auto_reload {
+        // Если используется автоматическая перезагрузка, используем её конфигурацию
+        auto_reload.current_config_arc()
+    } else {
+        // Иначе создаём обычный Arc<RwLock<Config>>
+        Arc::new(RwLock::new(config))
+    };
 
     // Читаем конфигурацию один раз для инициализации
     let initial_config = config_arc.read().await.clone();
@@ -795,6 +803,17 @@ pub async fn run_daemon(
     }
 
     // Инициализация ConfigWatcher для динамической перезагрузки конфигурации
+    let config_path = if let Some(auto_reload) = &config_auto_reload {
+        auto_reload.config_path().to_string()
+    } else if let Some(path) = config_path {
+        // Если автоматическая перезагрузка не используется, но путь передан явным образом
+        path
+    } else {
+        // Если путь не передан, используем путь из конфигурации (если он есть)
+        // В текущей реализации конфигурация не хранит свой путь, поэтому это резервный вариант
+        "smoothtask.yml".to_string()
+    };
+    
     let config_watcher = ConfigWatcher::new(&config_path).with_context(|| {
         format!(
             "Failed to initialize config watcher for file: {}",

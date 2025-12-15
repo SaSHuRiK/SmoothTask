@@ -13,7 +13,6 @@ use libc;
 use tracing::{debug, warn};
 
 use crate::logging::snapshots::Snapshot;
-use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
 use crate::policy::classes::{CgroupParams, IoNiceParams, PriorityClass, PriorityParams};
 use crate::policy::engine::PolicyResult;
 
@@ -1284,6 +1283,7 @@ mod tests {
     use crate::logging::snapshots::{
         AppGroupRecord, GlobalMetrics, ProcessRecord, ResponsivenessMetrics,
     };
+    use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
     use chrono::Utc;
 
     fn make_snapshot(processes: Vec<ProcessRecord>, app_groups: Vec<AppGroupRecord>) -> Snapshot {
