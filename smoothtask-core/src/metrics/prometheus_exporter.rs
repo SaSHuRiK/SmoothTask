@@ -1233,7 +1233,6 @@ mod tests {
         process_metrics.exe = Some("test_process".to_string());
         process_metrics.cpu_usage_percent = 25.5;
         process_metrics.memory_rss_bytes = 1024 * 1024; // 1 MB
-        process_1 = 4;
         
         let result = exporter.export_process_metrics_prometheus(&process_metrics);
         assert!(result.is_ok());

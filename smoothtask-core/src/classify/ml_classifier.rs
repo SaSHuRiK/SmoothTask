@@ -1425,11 +1425,12 @@ impl CatBoostMLClassifier {
     /// Этот метод используется внутренне в `classify_with_catboost` и `classify_with_onnx`.
     /// Включает расширенные фичи для более точной классификации.
     /// Использует кэширование для оптимизации производительности.
+    /// Расширенная версия с дополнительными метриками (энергопотребление, сеть, GPU, IO операции).
     #[allow(dead_code)]
     fn process_to_features(&self, process: &ProcessRecord) -> Vec<f32> {
         // Используем кэширование для оптимизации производительности
         GLOBAL_FEATURE_CACHE.get_or_compute(process.pid as u32, || {
-            let mut features = Vec::new();
+            let mut features = Vec::with_capacity(50); // Enhanced from 35 to 50 features
 
             // Числовые фичи
             features.push(process.cpu_share_1s.unwrap_or(0.0) as f32);
@@ -1447,6 +1448,11 @@ impl CatBoostMLClassifier {
                     + process.io_write_bytes.unwrap_or(0) as f32)
                     / (1024.0 * 1024.0),
             ); // Total IO in MB
+
+            // IO операции (новые фичи)
+            features.push(process.io_read_operations.unwrap_or(0) as f32); // Read operations
+            features.push(process.io_write_operations.unwrap_or(0) as f32); // Write operations
+            features.push(process.io_total_operations.unwrap_or(0) as f32); // Total operations
 
             // Память фичи
             features.push(process.rss_mb.unwrap_or(0) as f32);
@@ -1505,6 +1511,53 @@ impl CatBoostMLClassifier {
             } else {
                 0.0
             }); // Аудио активность
+
+            // Новые фичи: Энергопотребление
+            features.push(process.energy_uj.unwrap_or(0) as f32 / 1_000_000.0); // Energy in mJ
+            features.push(process.power_w.unwrap_or(0.0)); // Power in W
+
+            // Новые фичи: Сетевая активность
+            features.push(process.network_rx_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // RX MB
+            features.push(process.network_tx_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // TX MB
+            features.push(process.network_rx_packets.unwrap_or(0) as f32); // RX packets
+            features.push(process.network_tx_packets.unwrap_or(0) as f32); // TX packets
+            features.push(process.network_tcp_connections.unwrap_or(0) as f32); // TCP connections
+            features.push(process.network_udp_connections.unwrap_or(0) as f32); // UDP connections
+
+            // Новые фичи: GPU активность
+            features.push(process.gpu_utilization.unwrap_or(0.0)); // GPU utilization
+            features.push(process.gpu_memory_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // GPU memory MB
+            features.push(process.gpu_time_us.unwrap_or(0) as f32 / 1_000_000.0); // GPU time sec
+            features.push(process.gpu_api_calls.unwrap_or(0) as f32); // GPU API calls
+
+            // Расширенные производные фичи
+            let cpu_1s = process.cpu_share_1s.unwrap_or(0.0) as f32;
+            let io_total = (process.io_read_bytes.unwrap_or(0) as f32 + process.io_write_bytes.unwrap_or(0) as f32) / (1024.0 * 1024.0);
+            let memory_mb = process.rss_mb.unwrap_or(0) as f32;
+
+            // Соотношения
+            features.push(if io_total > 0.0 { cpu_1s / io_total } else { 0.0 }); // CPU/IO ratio
+            features.push(if cpu_1s > 0.0 { memory_mb / cpu_1s } else { 0.0 }); // Memory/CPU ratio
+
+            // Нормализованное время работы
+            let normalized_uptime = (process.uptime_sec as f32 / 86400.0).min(1.0); // 0-1 scale (days)
+            features.push(normalized_uptime);
+
+            // Интерактивный скор (0-1)
+            let interactivity_score = if process.has_gui_window || process.has_tty || process.is_audio_client {
+                1.0
+            } else {
+                0.0
+            };
+            features.push(interactivity_score);
+
+            // Ресурсоемкость (0-1)
+            let resource_intensity = ((cpu_1s * 100.0).min(100.0) + (memory_mb / 1024.0).min(100.0) + io_total.min(100.0)) / 300.0;
+            features.push(resource_intensity);
+
+            // Стабильность процесса (0-1)
+            let stability_score = (1.0 - (process.involuntary_ctx.unwrap_or(0) as f32 / process.voluntary_ctx.unwrap_or(1) as f32).min(1.0)).max(0.0);
+            features.push(stability_score);
 
             features
         })
@@ -3036,5 +3089,234 @@ mod tests {
         
         // Stability score should be low due to high context switches
         assert!(features[34] > 0.0 && features[34] < 0.1);
+    }
+
+    #[test]
+    fn test_process_to_features_enhanced() {
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        process.pid = 123;
+        process.cpu_share_1s = Some(0.5);
+        process.cpu_share_10s = Some(0.3);
+        process.io_read_bytes = Some(1024 * 1024);
+        process.io_write_bytes = Some(512 * 1024);
+        process.rss_mb = Some(100);
+        process.swap_mb = Some(50);
+        process.voluntary_ctx = Some(1000);
+        process.involuntary_ctx = Some(100);
+        process.uptime_sec = 3600;
+        process.has_tty = true;
+        process.has_gui_window = true;
+        process.is_focused_window = true;
+        process.env_has_display = true;
+        process.env_has_wayland = true;
+        process.env_ssh = false;
+        process.is_audio_client = true;
+        process.has_active_stream = true;
+
+        let features = classifier.process_to_features(&process);
+        assert_eq!(features.len(), 50); // Enhanced to 50 features
+        
+        // Проверяем некоторые ключевые фичи
+        assert_eq!(features[0], 0.5); // cpu_share_1s
+        assert_eq!(features[1], 0.3); // cpu_share_10s
+        assert_eq!(features[4], 1.5); // total IO in MB
+        assert_eq!(features[8], 100.0); // rss_mb
+        assert_eq!(features[12], 1000.0); // voluntary_ctx
+        assert_eq!(features[18], 1.0); // has_tty
+        assert_eq!(features[19], 1.0); // has_gui_window
+    }
+
+    #[test]
+    fn test_process_to_features_with_new_metrics() {
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        process.pid = 456;
+        process.cpu_share_1s = Some(0.7);
+        process.cpu_share_10s = Some(0.4);
+        process.io_read_bytes = Some(2048 * 1024);
+        process.io_write_bytes = Some(1024 * 1024);
+        process.rss_mb = Some(200);
+        process.swap_mb = Some(100);
+        process.voluntary_ctx = Some(2000);
+        process.involuntary_ctx = Some(200);
+        process.uptime_sec = 7200;
+        process.has_tty = false;
+        process.has_gui_window = false;
+        process.is_focused_window = false;
+        process.env_has_display = false;
+        process.env_has_wayland = false;
+        process.env_ssh = true;
+        process.is_audio_client = false;
+        process.has_active_stream = false;
+        
+        // Новые метрики
+        process.energy_uj = Some(5000000); // 5000 mJ
+        process.power_w = Some(2.5);
+        process.network_rx_bytes = Some(10 * 1024 * 1024); // 10 MB
+        process.network_tx_bytes = Some(5 * 1024 * 1024); // 5 MB
+        process.network_rx_packets = Some(1000);
+        process.network_tx_packets = Some(500);
+        process.network_tcp_connections = Some(10);
+        process.network_udp_connections = Some(5);
+        process.gpu_utilization = Some(0.8);
+        process.gpu_memory_bytes = Some(512 * 1024 * 1024); // 512 MB
+        process.gpu_time_us = Some(1000000); // 1 sec
+        process.gpu_api_calls = Some(1000);
+
+        let features = classifier.process_to_features(&process);
+        assert_eq!(features.len(), 50); // Enhanced to 50 features
+        
+        // Проверяем новые фичи
+        assert_eq!(features[32], 5.0); // energy in mJ (5000000 / 1000000)
+        assert_eq!(features[33], 2.5); // power in W
+        assert_eq!(features[34], 10.0); // RX MB
+        assert_eq!(features[35], 5.0); // TX MB
+        assert_eq!(features[36], 1000.0); // RX packets
+        assert_eq!(features[37], 500.0); // TX packets
+        assert_eq!(features[38], 10.0); // TCP connections
+        assert_eq!(features[39], 5.0); // UDP connections
+        assert_eq!(features[40], 0.8); // GPU utilization
+        assert_eq!(features[41], 512.0); // GPU memory MB
+        assert_eq!(features[42], 1.0); // GPU time sec
+        assert_eq!(features[43], 1000.0); // GPU API calls
+    }
+
+    #[test]
+    fn test_process_to_features_edge_cases() {
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        process.pid = 789;
+        
+        // Тестируем с нулевыми значениями
+        process.cpu_share_1s = Some(0.0);
+        process.cpu_share_10s = Some(0.0);
+        process.io_read_bytes = Some(0);
+        process.io_write_bytes = Some(0);
+        process.rss_mb = Some(0);
+        process.swap_mb = Some(0);
+        process.voluntary_ctx = Some(0);
+        process.involuntary_ctx = Some(0);
+        process.uptime_sec = 0;
+
+        let features = classifier.process_to_features(&process);
+        assert_eq!(features.len(), 50);
+        
+        // Проверяем, что нет паники с нулевыми значениями
+        assert_eq!(features[0], 0.0); // cpu_share_1s
+        assert_eq!(features[1], 0.0); // cpu_share_10s
+        assert_eq!(features[4], 0.0); // total IO in MB
+        assert_eq!(features[8], 0.0); // rss_mb
+    }
+
+    #[test]
+    fn test_process_to_features_with_maximum_values() {
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        process.pid = 999;
+        
+        // Тестируем с максимальными значениями
+        process.cpu_share_1s = Some(1.0);
+        process.cpu_share_10s = Some(1.0);
+        process.io_read_bytes = Some(u64::MAX);
+        process.io_write_bytes = Some(u64::MAX);
+        process.rss_mb = Some(u64::MAX);
+        process.swap_mb = Some(u64::MAX);
+        process.voluntary_ctx = Some(u64::MAX);
+        process.involuntary_ctx = Some(u64::MAX);
+        process.uptime_sec = u64::MAX;
+
+        let features = classifier.process_to_features(&process);
+        assert_eq!(features.len(), 50);
+        
+        // Проверяем, что нет паники с максимальными значениями
+        assert_eq!(features[0], 1.0); // cpu_share_1s
+        assert_eq!(features[1], 1.0); // cpu_share_10s
+    }
+
+    #[test]
+    fn test_process_to_features_consistency() {
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        process.pid = 111;
+        process.cpu_share_1s = Some(0.25);
+        process.cpu_share_10s = Some(0.15);
+        process.io_read_bytes = Some(512 * 1024);
+        process.io_write_bytes = Some(256 * 1024);
+        process.rss_mb = Some(50);
+        process.swap_mb = Some(25);
+        process.voluntary_ctx = Some(500);
+        process.involuntary_ctx = Some(50);
+        process.uptime_sec = 1800;
+        process.has_tty = true;
+        process.has_gui_window = false;
+        process.is_focused_window = false;
+        process.env_has_display = true;
+        process.env_has_wayland = false;
+        process.env_ssh = true;
+        process.is_audio_client = false;
+        process.has_active_stream = true;
+
+        // Вызываем дважды для проверки кэширования
+        let features1 = classifier.process_to_features(&process);
+        let features2 = classifier.process_to_features(&process);
+        
+        assert_eq!(features1.len(), 50);
+        assert_eq!(features2.len(), 50);
+        
+        // Проверяем, что результаты идентичны
+        for i in 0..features1.len() {
+            assert_eq!(features1[i], features2[i], "Features differ at index {}", i);
+        }
+    }
+
+    #[test]
+    fn test_enhanced_ml_classification_integration() {
+        // Тестируем интеграцию расширенных фич с ML классификацией
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        
+        // Устанавливаем различные типы процессов
+        process.has_gui_window = true;
+        process.is_focused_window = true;
+        process.cpu_share_1s = Some(0.8);
+        process.rss_mb = Some(500);
+        process.energy_uj = Some(10000000); // 10 J
+        process.power_w = Some(5.0);
+        process.gpu_utilization = Some(0.9);
+
+        let features = classifier.process_to_features(&process);
+        
+        // Проверяем, что все фичи присутствуют
+        assert_eq!(features.len(), 50);
+        
+        // Проверяем ключевые фичи
+        assert!(features[0] > 0.0); // CPU usage
+        assert!(features[8] > 0.0); // Memory
+        assert!(features[32] > 0.0); // Energy
+        assert!(features[33] > 0.0); // Power
+        assert!(features[40] > 0.0); // GPU utilization
+    }
+
+    #[test]
+    fn test_ml_classifier_feature_scaling() {
+        // Тестируем масштабирование фич
+        let classifier = CatBoostMLClassifier::new_test();
+        let mut process = create_test_process();
+        
+        // Устанавливаем экстремальные значения
+        process.cpu_share_1s = Some(1.0);
+        process.rss_mb = Some(10000); // 10 GB
+        process.uptime_sec = 86400 * 30; // 30 days
+        
+        let features = classifier.process_to_features(&process);
+        
+        // Проверяем, что фичи не вызывают переполнения
+        assert!(features[0].is_finite()); // CPU
+        assert!(features[8].is_finite()); // Memory
+        assert!(features[16].is_finite()); // Uptime
+        
+        // Проверяем нормализованные фичи
+        assert!(features[31] >= 0.0 && features[31] <= 1.0); // Normalized uptime
     }
 }

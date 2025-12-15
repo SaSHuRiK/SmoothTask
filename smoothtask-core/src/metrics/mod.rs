@@ -43,6 +43,7 @@ pub mod cache;
 pub mod container;
 pub mod custom;
 pub mod ebpf;
+pub mod energy_monitoring;
 pub mod extended_hardware_sensors;
 pub mod filesystem_monitor;
 pub mod gpu;
