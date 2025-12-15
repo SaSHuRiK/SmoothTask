@@ -181,6 +181,7 @@ impl HealthMonitoringService for HealthMonitoringServiceImpl {
                                 component: None,
                                 description: "Critical health status detected".to_string(),
                                 error_details: None,
+                                enhanced_error_context: None,
                                 status: HealthIssueStatus::Open,
                                 resolved_time: None,
                             };

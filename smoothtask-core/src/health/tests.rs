@@ -38,6 +38,7 @@ mod tests {
             component: Some("test_component".to_string()),
             description: "Test critical issue".to_string(),
             error_details: Some("Test error details".to_string()),
+            enhanced_error_context: None,
             status: HealthIssueStatus::Open,
             resolved_time: None,
         };
@@ -65,6 +66,7 @@ mod tests {
             component: Some("test_component".to_string()),
             description: "Test warning issue".to_string(),
             error_details: Some("Test warning details".to_string()),
+            enhanced_error_context: None,
             status: HealthIssueStatus::Open,
             resolved_time: None,
         };
@@ -101,6 +103,7 @@ mod tests {
                 component: Some("test_component".to_string()),
                 description: format!("Test issue {}", i),
                 error_details: Some(format!("Test error details {}", i)),
+                enhanced_error_context: None,
                 status: HealthIssueStatus::Open,
                 resolved_time: None,
             };
@@ -157,6 +160,7 @@ mod tests {
             component: Some("test_component".to_string()),
             description: "Test critical notification".to_string(),
             error_details: Some("Test critical details".to_string()),
+            enhanced_error_context: None,
             status: HealthIssueStatus::Open,
             resolved_time: None,
         };
@@ -285,6 +289,7 @@ mod tests {
             component: Some("system_metrics".to_string()),
             description: "System metrics component failed".to_string(),
             error_details: Some("Component not responding".to_string()),
+            enhanced_error_context: None,
             status: HealthIssueStatus::Open,
             resolved_time: None,
         };
@@ -370,5 +375,459 @@ mod tests {
 
         // Проверяем, что сообщение о состоянии установлено
         assert!(security_status.message.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_error_context_creation() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Создаем расширенный контекст ошибки
+        let error_context = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "resource_exhaustion",
+            "Test resource exhaustion error",
+            Some("Detailed error information".to_string()),
+            Some("Stack trace information".to_string()),
+            Some("Execution context details".to_string()),
+            Some("System context information".to_string()),
+        );
+
+        // Проверяем, что контекст создан корректно
+        assert_eq!(error_context.component_name, "test_component");
+        assert_eq!(error_context.error_type, "resource_exhaustion");
+        assert_eq!(error_context.error_message, "Test resource exhaustion error");
+        assert_eq!(error_context.error_details, Some("Detailed error information".to_string()));
+        assert_eq!(error_context.stack_trace, Some("Stack trace information".to_string()));
+        assert_eq!(error_context.execution_context, Some("Execution context details".to_string()));
+        assert_eq!(error_context.system_context, Some("System context information".to_string()));
+        assert_eq!(error_context.occurrence_count, 1);
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_recovery_suggestions() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Тестируем различные типы ошибок
+        let resource_suggestions = health_monitor.get_recovery_suggestions("resource_exhaustion", "test_component");
+        assert!(resource_suggestions.contains("Resource exhaustion detected"));
+        assert!(resource_suggestions.contains("Check system resource usage"));
+
+        let connection_suggestions = health_monitor.get_recovery_suggestions("connection_failed", "test_component");
+        assert!(connection_suggestions.contains("Connection failure"));
+        assert!(connection_suggestions.contains("Check network connectivity"));
+
+        let database_suggestions = health_monitor.get_recovery_suggestions("database_error", "test_component");
+        assert!(database_suggestions.contains("Database error"));
+        assert!(database_suggestions.contains("Check database connectivity"));
+
+        let security_suggestions = health_monitor.get_recovery_suggestions("security_error", "test_component");
+        assert!(security_suggestions.contains("Security error"));
+        assert!(security_suggestions.contains("Review security policies"));
+
+        let general_suggestions = health_monitor.get_recovery_suggestions("unknown_error", "test_component");
+        assert!(general_suggestions.contains("Error detected"));
+        assert!(general_suggestions.contains("Check system logs"));
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_auto_recovery_with_analysis() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Создаем расширенный контекст ошибки
+        let error_context = health_monitor.create_enhanced_error_context(
+            "system_metrics",
+            "resource_exhaustion",
+            "System metrics resource exhaustion",
+            Some("Memory and CPU resources exhausted".to_string()),
+            None,
+            None,
+            None,
+        );
+
+        // Выполняем улучшенное автоматическое восстановление
+        let recovery_attempt = health_monitor
+            .enhanced_auto_recovery_with_analysis("system_metrics", error_context)
+            .await
+            .unwrap();
+
+        // Проверяем результат восстановления
+        assert_eq!(recovery_attempt.component, "system_metrics");
+        assert_eq!(recovery_attempt.status, RecoveryStatus::Success);
+        assert!(recovery_attempt.recovery_details.unwrap().contains("Enhanced recovery"));
+        assert!(recovery_attempt.recovery_details.unwrap().contains("success"));
+
+        // Проверяем, что статистика восстановления обновлена
+        let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
+        assert_eq!(recovery_stats.total_recovery_attempts, 1);
+        assert_eq!(recovery_stats.successful_recoveries, 1);
+        assert_eq!(recovery_stats.failed_recoveries, 0);
+    }
+
+    #[tokio::test]
+    async fn test_recovery_strategy_determination() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Тестируем различные типы ошибок и стратегии восстановления
+        let resource_context = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "resource_exhaustion",
+            "Resource exhaustion",
+            None,
+            None,
+            None,
+            None,
+        );
+        let resource_strategy = health_monitor.determine_recovery_strategy(&resource_context);
+        assert_eq!(resource_strategy, RecoveryType::Cleanup);
+
+        let config_context = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "configuration_error",
+            "Configuration error",
+            None,
+            None,
+            None,
+            None,
+        );
+        let config_strategy = health_monitor.determine_recovery_strategy(&config_context);
+        assert_eq!(config_strategy, RecoveryType::Reconfigure);
+
+        let permission_context = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "permission_denied",
+            "Permission denied",
+            None,
+            None,
+            None,
+            None,
+        );
+        let permission_strategy = health_monitor.determine_recovery_strategy(&permission_context);
+        assert_eq!(permission_strategy, RecoveryType::Reset);
+
+        // Тестируем стратегию на основе частоты ошибок
+        let mut frequent_context = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "unknown_error",
+            "Frequent error",
+            None,
+            None,
+            None,
+            None,
+        );
+        frequent_context.occurrence_count = 5;
+        let frequent_strategy = health_monitor.determine_recovery_strategy(&frequent_context);
+        assert_eq!(frequent_strategy, RecoveryType::Restore);
+
+        let mut infrequent_context = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "unknown_error",
+            "Infrequent error",
+            None,
+            None,
+            None,
+            None,
+        );
+        infrequent_context.occurrence_count = 1;
+        let infrequent_strategy = health_monitor.determine_recovery_strategy(&infrequent_context);
+        assert_eq!(infrequent_strategy, RecoveryType::Restart);
+    }
+
+    #[tokio::test]
+    async fn test_error_pattern_analysis() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Добавляем несколько ошибок для анализа паттернов
+        let error_context1 = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "resource_exhaustion",
+            "Resource exhaustion error 1",
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let error_context2 = health_monitor.create_enhanced_error_context(
+            "test_component",
+            "resource_exhaustion",
+            "Resource exhaustion error 2",
+            None,
+            None,
+            None,
+            None,
+        );
+
+        // Обновляем паттерны ошибок
+        health_monitor
+            .update_error_patterns(
+                "resource_exhaustion",
+                "test_component",
+                HealthIssueSeverity::Error,
+                error_context1,
+            )
+            .await
+            .unwrap();
+
+        health_monitor
+            .update_error_patterns(
+                "resource_exhaustion",
+                "test_component",
+                HealthIssueSeverity::Error,
+                error_context2,
+            )
+            .await
+            .unwrap();
+
+        // Выполняем анализ паттернов ошибок
+        let patterns = health_monitor.analyze_error_patterns().await.unwrap();
+        assert_eq!(patterns.len(), 1);
+        assert_eq!(patterns[0].error_type, "resource_exhaustion");
+        assert_eq!(patterns[0].occurrence_count, 2);
+        assert!(patterns[0].is_recurring);
+
+        // Выполняем улучшенный анализ паттернов ошибок
+        let enhanced_patterns = health_monitor.enhanced_error_pattern_analysis().await.unwrap();
+        assert_eq!(enhanced_patterns.len(), 1);
+        assert_eq!(enhanced_patterns[0].error_type, "resource_exhaustion");
+        assert_eq!(enhanced_patterns[0].occurrence_count, 2);
+        assert!(enhanced_patterns[0].is_recurring);
+        assert!(!enhanced_patterns[0].error_classification.is_empty());
+        assert!(!enhanced_patterns[0].trend_analysis.is_empty());
+        assert!(!enhanced_patterns[0].recovery_priority.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_error_classification() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Создаем паттерн для критической ошибки
+        let mut critical_pattern = ErrorPattern {
+            error_type: "critical_error".to_string(),
+            occurrence_count: 3,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(10),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Critical,
+            frequency_per_minute: 0.5,
+            last_error_context: None,
+        };
+
+        let classification = health_monitor.classify_error_by_pattern(&critical_pattern);
+        assert_eq!(classification, "Critical Recurring Error");
+
+        // Создаем паттерн для частой ошибки
+        let mut frequent_pattern = ErrorPattern {
+            error_type: "frequent_error".to_string(),
+            occurrence_count: 5,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(15),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Error,
+            frequency_per_minute: 0.4,
+            last_error_context: None,
+        };
+
+        let classification = health_monitor.classify_error_by_pattern(&frequent_pattern);
+        assert_eq!(classification, "Frequent Error Pattern");
+
+        // Создаем паттерн для изолированной ошибки
+        let mut isolated_pattern = ErrorPattern {
+            error_type: "isolated_error".to_string(),
+            occurrence_count: 1,
+            first_occurrence: Utc::now(),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Error,
+            frequency_per_minute: 0.0,
+            last_error_context: None,
+        };
+
+        let classification = health_monitor.classify_error_by_pattern(&isolated_pattern);
+        assert_eq!(classification, "Isolated Error");
+    }
+
+    #[tokio::test]
+    async fn test_error_trend_analysis() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Тестируем различные тренды ошибок
+        let mut recent_pattern = ErrorPattern {
+            error_type: "recent_error".to_string(),
+            occurrence_count: 3,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(30),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Error,
+            frequency_per_minute: 0.1,
+            last_error_context: None,
+        };
+
+        let trend = health_monitor.analyze_error_trend(&recent_pattern);
+        assert_eq!(trend, "Recent Pattern");
+
+        let mut rapid_pattern = ErrorPattern {
+            error_type: "rapid_error".to_string(),
+            occurrence_count: 5,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(10),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Error,
+            frequency_per_minute: 0.5,
+            last_error_context: None,
+        };
+
+        let trend = health_monitor.analyze_error_trend(&rapid_pattern);
+        assert_eq!(trend, "Recent Rapid Occurrence");
+
+        let mut long_term_pattern = ErrorPattern {
+            error_type: "long_term_error".to_string(),
+            occurrence_count: 20,
+            first_occurrence: Utc::now() - chrono::Duration::days(10),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Warning,
+            frequency_per_minute: 0.01,
+            last_error_context: None,
+        };
+
+        let trend = health_monitor.analyze_error_trend(&long_term_pattern);
+        assert_eq!(trend, "Long-term Pattern");
+    }
+
+    #[tokio::test]
+    async fn test_recovery_priority_determination() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Тестируем определение приоритета восстановления
+        let mut critical_pattern = ErrorPattern {
+            error_type: "critical_error".to_string(),
+            occurrence_count: 2,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(5),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Critical,
+            frequency_per_minute: 0.4,
+            last_error_context: None,
+        };
+
+        let priority = health_monitor.determine_recovery_priority(&critical_pattern);
+        assert_eq!(priority, "High Priority");
+
+        let mut frequent_error_pattern = ErrorPattern {
+            error_type: "frequent_error".to_string(),
+            occurrence_count: 8,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(20),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Error,
+            frequency_per_minute: 0.5,
+            last_error_context: None,
+        };
+
+        let priority = health_monitor.determine_recovery_priority(&frequent_error_pattern);
+        assert_eq!(priority, "High Priority");
+
+        let mut medium_error_pattern = ErrorPattern {
+            error_type: "medium_error".to_string(),
+            occurrence_count: 3,
+            first_occurrence: Utc::now() - chrono::Duration::minutes(30),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Error,
+            frequency_per_minute: 0.1,
+            last_error_context: None,
+        };
+
+        let priority = health_monitor.determine_recovery_priority(&medium_error_pattern);
+        assert_eq!(priority, "Medium Priority");
+
+        let mut warning_pattern = ErrorPattern {
+            error_type: "warning_pattern".to_string(),
+            occurrence_count: 15,
+            first_occurrence: Utc::now() - chrono::Duration::hours(2),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Warning,
+            frequency_per_minute: 0.6,
+            last_error_context: None,
+        };
+
+        let priority = health_monitor.determine_recovery_priority(&warning_pattern);
+        assert_eq!(priority, "Medium Priority");
+
+        let mut info_pattern = ErrorPattern {
+            error_type: "info_pattern".to_string(),
+            occurrence_count: 5,
+            first_occurrence: Utc::now() - chrono::Duration::hours(1),
+            last_occurrence: Utc::now(),
+            affected_components: vec!["test_component".to_string()],
+            severity: HealthIssueSeverity::Info,
+            frequency_per_minute: 0.1,
+            last_error_context: None,
+        };
+
+        let priority = health_monitor.determine_recovery_priority(&info_pattern);
+        assert_eq!(priority, "Low Priority");
+    }
+
+    #[tokio::test]
+    async fn test_enhanced_error_recovery_integration() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Создаем несколько ошибок разных типов
+        let resource_context = health_monitor.create_enhanced_error_context(
+            "resource_manager",
+            "resource_exhaustion",
+            "Resource exhaustion in manager",
+            Some("CPU and memory exhausted".to_string()),
+            None,
+            None,
+            None,
+        );
+
+        let config_context = health_monitor.create_enhanced_error_context(
+            "config_service",
+            "configuration_error",
+            "Configuration error in service",
+            Some("Invalid configuration parameters".to_string()),
+            None,
+            None,
+            None,
+        );
+
+        // Выполняем восстановление для разных типов ошибок
+        let resource_recovery = health_monitor
+            .enhanced_auto_recovery_with_analysis("resource_manager", resource_context)
+            .await
+            .unwrap();
+
+        let config_recovery = health_monitor
+            .enhanced_auto_recovery_with_analysis("config_service", config_context)
+            .await
+            .unwrap();
+
+        // Проверяем, что восстановление выполнено успешно
+        assert_eq!(resource_recovery.status, RecoveryStatus::Success);
+        assert_eq!(config_recovery.status, RecoveryStatus::Success);
+
+        // Проверяем, что стратегии восстановления выбраны правильно
+        assert_eq!(resource_recovery.recovery_type, RecoveryType::Cleanup);
+        assert_eq!(config_recovery.recovery_type, RecoveryType::Reconfigure);
+
+        // Проверяем статистику восстановления
+        let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
+        assert_eq!(recovery_stats.total_recovery_attempts, 2);
+        assert_eq!(recovery_stats.successful_recoveries, 2);
+        assert_eq!(recovery_stats.failed_recoveries, 0);
+        assert_eq!(recovery_stats.recovery_history.len(), 2);
     }
 }
