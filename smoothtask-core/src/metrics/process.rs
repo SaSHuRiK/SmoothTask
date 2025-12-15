@@ -1123,6 +1123,14 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
     // Собираем метрики энергопотребления
     let (energy_uj, power_w, energy_timestamp) = collect_process_energy_metrics_new(proc.pid());
 
+    // Собираем расширенные метрики процесса
+    let (memory_usage_details, performance_metrics, resource_utilization) = 
+        collect_extended_process_metrics(proc.pid())
+            .unwrap_or_else(|e| {
+                tracing::warn!("Не удалось собрать расширенные метрики для процесса PID {}: {}", proc.pid(), e);
+                (ProcessMemoryUsage::default(), ProcessPerformanceMetrics::default(), ProcessResourceUtilization::default())
+            });
+
     let record = ProcessRecord {
         pid: stat.pid,
         ppid: stat.ppid,
@@ -1190,6 +1198,9 @@ fn collect_single_process(proc: &Process) -> Result<Option<ProcessRecord>> {
         gpu_api_calls: None,
         gpu_last_update_ns: None,
         gpu_data_source: None,
+        memory_usage_details: Some(memory_usage_details),
+        performance_metrics: Some(performance_metrics),
+        resource_utilization: Some(resource_utilization),
     };
 
     Ok(Some(record))

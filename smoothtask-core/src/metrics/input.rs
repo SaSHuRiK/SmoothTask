@@ -25,6 +25,20 @@ pub enum InputDeviceType {
     Touchscreen,
     /// Игровой контроллер
     GameController,
+    /// Трекбол
+    Trackball,
+    /// Графический планшет
+    DrawingTablet,
+    /// VR контроллер
+    VrController,
+    /// Микрофон
+    Microphone,
+    /// Веб-камера
+    Webcam,
+    /// Биометрическое устройство (отпечаток пальца, сканер лица)
+    Biometric,
+    /// Устройство ввода для людей с ограниченными возможностями
+    AccessibilityDevice,
     /// Неизвестное устройство
     Unknown,
 }
@@ -156,6 +170,20 @@ impl InputActivityTracker {
             InputDeviceType::Touchscreen
         } else if name_lower.contains("game") || name_lower.contains("controller") || name_lower.contains("joystick") || name_lower.contains("игровой") {
             InputDeviceType::GameController
+        } else if name_lower.contains("trackball") || name_lower.contains("трекбол") {
+            InputDeviceType::Trackball
+        } else if name_lower.contains("tablet") || name_lower.contains("планшет") || name_lower.contains("wacom") || name_lower.contains("huion") {
+            InputDeviceType::DrawingTablet
+        } else if name_lower.contains("vr") || name_lower.contains("virtual reality") || name_lower.contains("oculus") || name_lower.contains("valve") || name_lower.contains("htc vive") {
+            InputDeviceType::VrController
+        } else if name_lower.contains("microphone") || name_lower.contains("mic") || name_lower.contains("микрофон") {
+            InputDeviceType::Microphone
+        } else if name_lower.contains("webcam") || name_lower.contains("camera") || name_lower.contains("камера") || name_lower.contains("logitech brio") || name_lower.contains("c920") {
+            InputDeviceType::Webcam
+        } else if name_lower.contains("fingerprint") || name_lower.contains("biometric") || name_lower.contains("face") || name_lower.contains("отпечаток") || name_lower.contains("биометри") {
+            InputDeviceType::Biometric
+        } else if name_lower.contains("accessibility") || name_lower.contains("braille") || name_lower.contains("switch") || name_lower.contains("adaptive") || name_lower.contains("специальн") {
+            InputDeviceType::AccessibilityDevice
         } else {
             InputDeviceType::Unknown
         }
@@ -1469,6 +1497,39 @@ mod tests {
         assert_eq!(tracker.classify_device("Мышь"), InputDeviceType::Mouse);
         assert_eq!(tracker.classify_device("Тачпад"), InputDeviceType::Touchpad);
         assert_eq!(tracker.classify_device("Игровой контроллер"), InputDeviceType::GameController);
+    }
+
+    #[test]
+    fn test_extended_device_classification() {
+        let tracker = InputActivityTracker::new(Duration::from_secs(5));
+        
+        // Тестируем новые типы устройств
+        assert_eq!(tracker.classify_device("Logitech Trackball"), InputDeviceType::Trackball);
+        assert_eq!(tracker.classify_device("Wacom Drawing Tablet"), InputDeviceType::DrawingTablet);
+        assert_eq!(tracker.classify_device("Oculus VR Controller"), InputDeviceType::VrController);
+        assert_eq!(tracker.classify_device("USB Microphone"), InputDeviceType::Microphone);
+        assert_eq!(tracker.classify_device("Logitech Brio Webcam"), InputDeviceType::Webcam);
+        assert_eq!(tracker.classify_device("Fingerprint Reader"), InputDeviceType::Biometric);
+        assert_eq!(tracker.classify_device("Braille Keyboard"), InputDeviceType::AccessibilityDevice);
+        
+        // Тестируем русские названия для новых устройств
+        assert_eq!(tracker.classify_device("Трекбол"), InputDeviceType::Trackball);
+        assert_eq!(tracker.classify_device("Графический планшет"), InputDeviceType::DrawingTablet);
+        assert_eq!(tracker.classify_device("VR контроллер"), InputDeviceType::VrController);
+        assert_eq!(tracker.classify_device("Микрофон"), InputDeviceType::Microphone);
+        assert_eq!(tracker.classify_device("Веб-камера"), InputDeviceType::Webcam);
+        assert_eq!(tracker.classify_device("Сканер отпечатков"), InputDeviceType::Biometric);
+        assert_eq!(tracker.classify_device("Специальная клавиатура"), InputDeviceType::AccessibilityDevice);
+        
+        // Тестируем брендовые устройства
+        assert_eq!(tracker.classify_device("Huion H610 Pro"), InputDeviceType::DrawingTablet);
+        assert_eq!(tracker.classify_device("Valve Index Controller"), InputDeviceType::VrController);
+        assert_eq!(tracker.classify_device("Logitech C920"), InputDeviceType::Webcam);
+        assert_eq!(tracker.classify_device("Blue Yeti Mic"), InputDeviceType::Microphone);
+        
+        // Тестируем неизвестные устройства
+        assert_eq!(tracker.classify_device("Random Device"), InputDeviceType::Unknown);
+        assert_eq!(tracker.classify_device(""), InputDeviceType::Unknown);
     }
 
     #[test]
