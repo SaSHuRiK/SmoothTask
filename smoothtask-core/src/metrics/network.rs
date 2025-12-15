@@ -4035,7 +4035,7 @@ impl NetworkMonitor {
     }
 
     /// Discover network routes and analyze their performance
-    pub fn discover_and_analyze_network_routes(&self) -> Result<Vec<NetworkRouteAnalysis>> {
+    pub fn discover_and_analyze_network_routes(&mut self) -> Result<Vec<NetworkRouteAnalysis>> {
         let mut routes = Vec::new();
         
         // Read routing table from /proc/net/route
@@ -4073,9 +4073,9 @@ impl NetworkMonitor {
     }
 
     /// Get network load for a specific interface
-    fn get_network_load_for_interface(&self, interface_name: &str) -> Result<f32> {
+    fn get_network_load_for_interface(&mut self, interface_name: &str) -> Result<f32> {
         // Get current interface stats
-        let interfaces = self.collect_network_interfaces()?;
+        let interfaces = self.collect_interface_stats_optimized()?;
         
         // Find the specific interface
         for iface in interfaces {
@@ -4106,7 +4106,7 @@ impl NetworkMonitor {
     }
 
     /// Optimize network routes based on current conditions
-    pub fn optimize_network_routes(&self) -> Result<Vec<RouteOptimizationRecommendation>> {
+    pub fn optimize_network_routes(&mut self) -> Result<Vec<RouteOptimizationRecommendation>> {
         let routes = self.discover_and_analyze_network_routes()?;
         let mut recommendations = Vec::new();
         
