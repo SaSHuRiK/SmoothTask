@@ -337,6 +337,12 @@ impl EnergyMonitor {
                                 timestamp,
                                 is_reliable: true,
                                 sensor_path: energy_path.to_string_lossy().into_owned(),
+                                energy_efficiency: None,
+                                max_power_w: None,
+                                average_power_w: None,
+                                utilization_percent: None,
+                                temperature_c: None,
+                                component_type: None,
                             });
                         }
                     }
@@ -387,6 +393,12 @@ impl EnergyMonitor {
                             timestamp,
                             is_reliable: true,
                             sensor_path: energy_path.to_string_lossy().into_owned(),
+                            energy_efficiency: None,
+                            max_power_w: None,
+                            average_power_w: None,
+                            utilization_percent: None,
+                            temperature_c: None,
+                            component_type: None,
                         });
                     }
                 }
@@ -438,6 +450,12 @@ impl EnergyMonitor {
                                 timestamp,
                                 is_reliable: false, // Пользовательские сенсоры могут быть менее надежны
                                 sensor_path: test_path.to_string(),
+                                energy_efficiency: None,
+                                max_power_w: None,
+                                average_power_w: None,
+                                utilization_percent: None,
+                                temperature_c: None,
+                                component_type: None,
                             });
                         }
                     }
@@ -499,6 +517,12 @@ impl EnergyMonitor {
                                 timestamp,
                                 is_reliable: true,
                                 sensor_path: power_path.to_string_lossy().into_owned(),
+                                energy_efficiency: None,
+                                max_power_w: None,
+                                average_power_w: None,
+                                utilization_percent: None,
+                                temperature_c: None,
+                                component_type: None,
                             });
                         }
                     }
@@ -555,6 +579,12 @@ impl EnergyMonitor {
                                     timestamp,
                                     is_reliable: false, // Термальные метрики могут быть менее надежны
                                     sensor_path: thermal_path.to_string_lossy().into_owned(),
+                                    energy_efficiency: None,
+                                    max_power_w: None,
+                                    average_power_w: None,
+                                    utilization_percent: None,
+                                    temperature_c: None,
+                                    component_type: None,
                                 });
                             }
                         }
@@ -615,6 +645,12 @@ impl EnergyMonitor {
                                 timestamp,
                                 is_reliable: true,
                                 sensor_path: power_path.to_string_lossy().into_owned(),
+                                energy_efficiency: None,
+                                max_power_w: None,
+                                average_power_w: None,
+                                utilization_percent: None,
+                                temperature_c: None,
+                                component_type: None,
                             });
                         }
                     }
@@ -693,6 +729,12 @@ impl EnergyMonitor {
                             timestamp,
                             is_reliable: true,
                             sensor_path: battery_path.to_string_lossy().into_owned(),
+                            energy_efficiency: None,
+                            max_power_w: None,
+                            average_power_w: None,
+                            utilization_percent: None,
+                            temperature_c: None,
+                            component_type: None,
                         });
                     }
                 }
@@ -1035,6 +1077,12 @@ mod tests {
             timestamp: 1234567890,
             is_reliable: true,
             sensor_path: "/sys/class/powercap/test".to_string(),
+            energy_efficiency: Some(100.0),
+            max_power_w: Some(10.0),
+            average_power_w: Some(5.0),
+            utilization_percent: Some(75.0),
+            temperature_c: Some(45.0),
+            component_type: Some("cpu".to_string()),
         };
 
         let serialized = serde_json::to_string(&metrics).unwrap();
@@ -1168,6 +1216,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/test".to_string(),
+                energy_efficiency: Some(100.0),
+                max_power_w: Some(10.0),
+                average_power_w: Some(5.0),
+                utilization_percent: Some(75.0),
+                temperature_c: Some(45.0),
+                component_type: Some("test".to_string()),
             };
 
             // Проверяем, что метрики создаются корректно
@@ -1225,6 +1279,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/sys/class/powercap/test".to_string(),
+                energy_efficiency: Some(100.0),
+                max_power_w: Some(10.0),
+                average_power_w: Some(5.0),
+                utilization_percent: Some(75.0),
+                temperature_c: Some(45.0),
+                component_type: Some("cpu".to_string()),
             },
             EnergySensorMetrics {
                 sensor_id: "test_acpi".to_string(),
@@ -1234,6 +1294,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/sys/class/power_supply/test".to_string(),
+                energy_efficiency: Some(80.0),
+                max_power_w: Some(8.0),
+                average_power_w: Some(4.0),
+                utilization_percent: Some(60.0),
+                temperature_c: Some(40.0),
+                component_type: Some("battery".to_string()),
             },
         ];
 
@@ -1260,6 +1326,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/test1".to_string(),
+                energy_efficiency: Some(100.0),
+                max_power_w: Some(10.0),
+                average_power_w: Some(5.0),
+                utilization_percent: Some(75.0),
+                temperature_c: Some(45.0),
+                component_type: Some("cpu".to_string()),
             },
             EnergySensorMetrics {
                 sensor_id: "sensor2".to_string(),
@@ -1269,6 +1341,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/test2".to_string(),
+                energy_efficiency: Some(80.0),
+                max_power_w: Some(8.0),
+                average_power_w: Some(4.0),
+                utilization_percent: Some(60.0),
+                temperature_c: Some(40.0),
+                component_type: Some("battery".to_string()),
             },
         ];
 
@@ -1293,6 +1371,12 @@ mod tests {
             timestamp: 987654321,
             is_reliable: false,
             sensor_path: "/sys/class/powercap/complex/path".to_string(),
+            energy_efficiency: Some(150.0),
+            max_power_w: Some(100.0),
+            average_power_w: Some(50.0),
+            utilization_percent: Some(90.0),
+            temperature_c: Some(65.0),
+            component_type: Some("gpu".to_string()),
         };
 
         let serialized = serde_json::to_string(&metrics).unwrap();
@@ -1727,6 +1811,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/test/comprehensive".to_string(),
+                energy_efficiency: Some(100.0),
+                max_power_w: Some(10.0),
+                average_power_w: Some(5.0),
+                utilization_percent: Some(75.0),
+                temperature_c: Some(45.0),
+                component_type: Some("test".to_string()),
             };
 
             // Проверяем, что метрики создаются корректно
@@ -1750,6 +1840,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/sys/class/usb_power_delivery/test".to_string(),
+                energy_efficiency: Some(100.0),
+                max_power_w: Some(10.0),
+                average_power_w: Some(5.0),
+                utilization_percent: Some(75.0),
+                temperature_c: Some(45.0),
+                component_type: Some("usb".to_string()),
             },
             EnergySensorMetrics {
                 sensor_id: "thermal_test".to_string(),
@@ -1759,6 +1855,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: false,
                 sensor_path: "/sys/kernel/tracing/events/thermal_power_allocator/test".to_string(),
+                energy_efficiency: Some(80.0),
+                max_power_w: Some(8.0),
+                average_power_w: Some(4.0),
+                utilization_percent: Some(60.0),
+                temperature_c: Some(40.0),
+                component_type: Some("thermal".to_string()),
             },
             EnergySensorMetrics {
                 sensor_id: "software_test".to_string(),
@@ -1768,6 +1870,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/sys/devices/software/power/test".to_string(),
+                energy_efficiency: Some(90.0),
+                max_power_w: Some(9.0),
+                average_power_w: Some(4.5),
+                utilization_percent: Some(65.0),
+                temperature_c: Some(42.0),
+                component_type: Some("software".to_string()),
             },
         ];
 
@@ -1796,6 +1904,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/test1".to_string(),
+                energy_efficiency: Some(100.0),
+                max_power_w: Some(10.0),
+                average_power_w: Some(5.0),
+                utilization_percent: Some(75.0),
+                temperature_c: Some(45.0),
+                component_type: Some("usb".to_string()),
             },
             EnergySensorMetrics {
                 sensor_id: "sensor2".to_string(),
@@ -1805,6 +1919,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: false,
                 sensor_path: "/test2".to_string(),
+                energy_efficiency: Some(80.0),
+                max_power_w: Some(8.0),
+                average_power_w: Some(4.0),
+                utilization_percent: Some(60.0),
+                temperature_c: Some(40.0),
+                component_type: Some("thermal".to_string()),
             },
             EnergySensorMetrics {
                 sensor_id: "sensor3".to_string(),
@@ -1814,6 +1934,12 @@ mod tests {
                 timestamp: 1234567890,
                 is_reliable: true,
                 sensor_path: "/test3".to_string(),
+                energy_efficiency: Some(90.0),
+                max_power_w: Some(9.0),
+                average_power_w: Some(4.5),
+                utilization_percent: Some(65.0),
+                temperature_c: Some(42.0),
+                component_type: Some("software".to_string()),
             },
         ];
 
@@ -1857,6 +1983,12 @@ mod tests {
             timestamp: 1234567890,
             is_reliable: true,
             sensor_path: "/usb".to_string(),
+            energy_efficiency: Some(100.0),
+            max_power_w: Some(10.0),
+            average_power_w: Some(5.0),
+            utilization_percent: Some(75.0),
+            temperature_c: Some(45.0),
+            component_type: Some("usb".to_string()),
         };
 
         let thermal_metrics = EnergySensorMetrics {
@@ -1867,6 +1999,12 @@ mod tests {
             timestamp: 1234567890,
             is_reliable: false,
             sensor_path: "/thermal".to_string(),
+            energy_efficiency: Some(80.0),
+            max_power_w: Some(8.0),
+            average_power_w: Some(4.0),
+            utilization_percent: Some(60.0),
+            temperature_c: Some(40.0),
+            component_type: Some("thermal".to_string()),
         };
 
         let software_metrics = EnergySensorMetrics {
@@ -1877,6 +2015,12 @@ mod tests {
             timestamp: 1234567890,
             is_reliable: true,
             sensor_path: "/software".to_string(),
+            energy_efficiency: Some(90.0),
+            max_power_w: Some(9.0),
+            average_power_w: Some(4.5),
+            utilization_percent: Some(65.0),
+            temperature_c: Some(42.0),
+            component_type: Some("software".to_string()),
         };
 
         assert_eq!(usb_metrics.sensor_type, EnergySensorType::UsbPowerDelivery);
