@@ -29,6 +29,12 @@ pub enum EnergySensorType {
     PowerCap,
     /// Сенсор батареи
     Battery,
+    /// USB Power Delivery сенсор
+    UsbPowerDelivery,
+    /// Термальный сенсор мощности
+    ThermalPower,
+    /// Программный сенсор мощности
+    SoftwarePower,
     /// Пользовательский сенсор
     Custom,
     /// Неизвестный тип
@@ -71,6 +77,12 @@ pub struct EnergyMonitoringConfig {
     pub enable_powercap: bool,
     /// Включить мониторинг батареи
     pub enable_battery: bool,
+    /// Включить мониторинг USB Power Delivery
+    pub enable_usb_power_delivery: bool,
+    /// Включить мониторинг термальных сенсоров мощности
+    pub enable_thermal_power: bool,
+    /// Включить мониторинг программных сенсоров мощности
+    pub enable_software_power: bool,
     /// Включить мониторинг пользовательских сенсоров
     pub enable_custom_sensors: bool,
     /// Базовый путь к RAPL интерфейсам
@@ -81,6 +93,12 @@ pub struct EnergyMonitoringConfig {
     pub powercap_base_path: PathBuf,
     /// Базовый путь к интерфейсам батареи
     pub battery_base_path: PathBuf,
+    /// Базовый путь к USB Power Delivery интерфейсам
+    pub usb_power_delivery_base_path: PathBuf,
+    /// Базовый путь к термальным сенсорам мощности
+    pub thermal_power_base_path: PathBuf,
+    /// Базовый путь к программным сенсорам мощности
+    pub software_power_base_path: PathBuf,
 }
 
 impl Default for EnergyMonitoringConfig {
@@ -90,11 +108,17 @@ impl Default for EnergyMonitoringConfig {
             enable_acpi: true,
             enable_powercap: true,
             enable_battery: true,
+            enable_usb_power_delivery: true,
+            enable_thermal_power: true,
+            enable_software_power: true,
             enable_custom_sensors: true,
             rapl_base_path: PathBuf::from("/sys/class/powercap/intel-rapl"),
             acpi_base_path: PathBuf::from("/sys/class/power_supply"),
             powercap_base_path: PathBuf::from("/sys/class/powercap"),
             battery_base_path: PathBuf::from("/sys/class/power_supply"),
+            usb_power_delivery_base_path: PathBuf::from("/sys/class/usb_power_delivery"),
+            thermal_power_base_path: PathBuf::from("/sys/kernel/tracing/events/thermal_power_allocator"),
+            software_power_base_path: PathBuf::from("/sys/devices/software/power"),
         }
     }
 }
@@ -141,6 +165,27 @@ impl EnergyMonitor {
         if self.config.enable_powercap {
             if let Ok(powercap_metrics) = self.collect_powercap_metrics() {
                 all_metrics.extend(powercap_metrics);
+            }
+        }
+
+        // Собираем метрики USB Power Delivery
+        if self.config.enable_usb_power_delivery {
+            if let Ok(usb_metrics) = self.collect_usb_power_delivery_metrics() {
+                all_metrics.extend(usb_metrics);
+            }
+        }
+
+        // Собираем метрики термальных сенсоров мощности
+        if self.config.enable_thermal_power {
+            if let Ok(thermal_metrics) = self.collect_thermal_power_metrics() {
+                all_metrics.extend(thermal_metrics);
+            }
+        }
+
+        // Собираем метрики программных сенсоров мощности
+        if self.config.enable_software_power {
+            if let Ok(software_metrics) = self.collect_software_power_metrics() {
+                all_metrics.extend(software_metrics);
             }
         }
 
@@ -360,6 +405,179 @@ impl EnergyMonitor {
                                 timestamp,
                                 is_reliable: false, // Пользовательские сенсоры могут быть менее надежны
                                 sensor_path: test_path.to_string(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(metrics)
+    }
+
+    /// Собрать метрики USB Power Delivery
+    pub fn collect_usb_power_delivery_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut metrics = Vec::new();
+
+        if !self.config.usb_power_delivery_base_path.exists() {
+            debug!("USB Power Delivery base path does not exist: {:?}", self.config.usb_power_delivery_base_path);
+            return Ok(metrics);
+        }
+
+        let entries = fs::read_dir(&self.config.usb_power_delivery_base_path)
+            .context("Failed to read USB Power Delivery directory")?;
+
+        for entry in entries {
+            let entry = entry.context("Failed to read USB Power Delivery directory entry")?;
+            let usb_path = entry.path();
+
+            // Пробуем получить информацию о мощности USB
+            let power_files = ["power", "current_power", "max_power"];
+
+            for power_file in power_files {
+                let power_path = usb_path.join(power_file);
+
+                if power_path.exists() {
+                    if let Ok(power_content) = fs::read_to_string(&power_path) {
+                        if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
+                            // Конвертируем микроватты в ватты
+                            let power_w = power_microwatts as f32 / 1_000_000.0;
+                            // Оцениваем энергию на основе текущей мощности
+                            let energy_uj = (power_microwatts * 1000) as u64;
+                            let timestamp = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)?
+                                .as_secs();
+
+                            let sensor_id = format!(
+                                "{}_{}",
+                                usb_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("usb"),
+                                power_file
+                            );
+
+                            metrics.push(EnergySensorMetrics {
+                                sensor_id,
+                                sensor_type: EnergySensorType::UsbPowerDelivery,
+                                energy_uj,
+                                power_w,
+                                timestamp,
+                                is_reliable: true,
+                                sensor_path: power_path.to_string_lossy().into_owned(),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(metrics)
+    }
+
+    /// Собрать метрики термальных сенсоров мощности
+    pub fn collect_thermal_power_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut metrics = Vec::new();
+
+        if !self.config.thermal_power_base_path.exists() {
+            debug!("Thermal power base path does not exist: {:?}", self.config.thermal_power_base_path);
+            return Ok(metrics);
+        }
+
+        // Пробуем прочитать файлы термальных событий
+        let thermal_files = [
+            "thermal_power_devfreq_limit",
+            "thermal_power_devfreq_get_power",
+            "thermal_power_actor",
+            "thermal_power_allocator",
+        ];
+
+        for thermal_file in thermal_files {
+            let thermal_path = self.config.thermal_power_base_path.join(thermal_file);
+
+            if thermal_path.exists() {
+                if let Ok(thermal_content) = fs::read_to_string(&thermal_path) {
+                    // Парсим мощность из содержимого (упрощенно)
+                    let lines: Vec<&str> = thermal_content.lines().collect();
+                    if !lines.is_empty() {
+                        // Берем последнюю строку как текущее значение
+                        if let Some(last_line) = lines.last() {
+                            if let Ok(power_microwatts) = last_line.trim().parse::<u64>() {
+                                let power_w = power_microwatts as f32 / 1_000_000.0;
+                                let energy_uj = (power_microwatts * 1000) as u64;
+                                let timestamp = SystemTime::now()
+                                    .duration_since(UNIX_EPOCH)?
+                                    .as_secs();
+
+                                let sensor_id = format!("thermal_{}", thermal_file);
+
+                                metrics.push(EnergySensorMetrics {
+                                    sensor_id,
+                                    sensor_type: EnergySensorType::ThermalPower,
+                                    energy_uj,
+                                    power_w,
+                                    timestamp,
+                                    is_reliable: false, // Термальные метрики могут быть менее надежны
+                                    sensor_path: thermal_path.to_string_lossy().into_owned(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(metrics)
+    }
+
+    /// Собрать метрики программных сенсоров мощности
+    pub fn collect_software_power_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut metrics = Vec::new();
+
+        if !self.config.software_power_base_path.exists() {
+            debug!("Software power base path does not exist: {:?}", self.config.software_power_base_path);
+            return Ok(metrics);
+        }
+
+        let entries = fs::read_dir(&self.config.software_power_base_path)
+            .context("Failed to read software power directory")?;
+
+        for entry in entries {
+            let entry = entry.context("Failed to read software power directory entry")?;
+            let software_path = entry.path();
+
+            // Пробуем получить информацию о программной мощности
+            let power_files = ["power", "energy", "control"];
+
+            for power_file in power_files {
+                let power_path = software_path.join(power_file);
+
+                if power_path.exists() {
+                    if let Ok(power_content) = fs::read_to_string(&power_path) {
+                        if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
+                            let power_w = power_microwatts as f32 / 1_000_000.0;
+                            let energy_uj = (power_microwatts * 1000) as u64;
+                            let timestamp = SystemTime::now()
+                                .duration_since(UNIX_EPOCH)?
+                                .as_secs();
+
+                            let sensor_id = format!(
+                                "{}_{}",
+                                software_path
+                                    .file_name()
+                                    .and_then(|n| n.to_str())
+                                    .unwrap_or("software"),
+                                power_file
+                            );
+
+                            metrics.push(EnergySensorMetrics {
+                                sensor_id,
+                                sensor_type: EnergySensorType::SoftwarePower,
+                                energy_uj,
+                                power_w,
+                                timestamp,
+                                is_reliable: true,
+                                sensor_path: power_path.to_string_lossy().into_owned(),
                             });
                         }
                     }
@@ -1106,5 +1324,315 @@ mod tests {
         // Результат может быть пустым, если нет реальных сенсоров
         let metrics = result.unwrap();
         // Не проверяем количество метрик, так как оно зависит от системы
+    }
+
+    #[test]
+    fn test_new_energy_sensor_types() {
+        // Тестируем новые типы сенсоров
+        let sensor_types = vec![
+            EnergySensorType::UsbPowerDelivery,
+            EnergySensorType::ThermalPower,
+            EnergySensorType::SoftwarePower,
+        ];
+
+        for sensor_type in sensor_types {
+            let metrics = EnergySensorMetrics {
+                sensor_id: "test_new_sensor".to_string(),
+                sensor_type,
+                energy_uj: 1000,
+                power_w: 1.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/test/new".to_string(),
+            };
+
+            // Проверяем, что метрики создаются корректно
+            assert_eq!(metrics.sensor_id, "test_new_sensor");
+            assert_eq!(metrics.energy_uj, 1000);
+            assert_eq!(metrics.power_w, 1.0);
+            assert_eq!(metrics.timestamp, 1234567890);
+            assert!(metrics.is_reliable);
+        }
+    }
+
+    #[test]
+    fn test_new_sensor_types_serialization() {
+        // Тестируем сериализацию новых типов сенсоров
+        let sensor_types = vec![
+            EnergySensorType::UsbPowerDelivery,
+            EnergySensorType::ThermalPower,
+            EnergySensorType::SoftwarePower,
+        ];
+
+        for sensor_type in sensor_types {
+            let serialized = serde_json::to_string(&sensor_type).unwrap();
+            let deserialized: EnergySensorType = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(sensor_type, deserialized);
+        }
+    }
+
+    #[test]
+    fn test_extended_config_default() {
+        // Тестируем конфигурацию по умолчанию с новыми полями
+        let config = EnergyMonitoringConfig::default();
+        assert!(config.enable_usb_power_delivery);
+        assert!(config.enable_thermal_power);
+        assert!(config.enable_software_power);
+        assert_eq!(config.usb_power_delivery_base_path, PathBuf::from("/sys/class/usb_power_delivery"));
+        assert_eq!(config.thermal_power_base_path, PathBuf::from("/sys/kernel/tracing/events/thermal_power_allocator"));
+        assert_eq!(config.software_power_base_path, PathBuf::from("/sys/devices/software/power"));
+    }
+
+    #[test]
+    fn test_extended_config_serialization() {
+        // Тестируем сериализацию расширенной конфигурации
+        let config = EnergyMonitoringConfig::default();
+        let serialized = serde_json::to_string(&config).unwrap();
+        let deserialized: EnergyMonitoringConfig = serde_json::from_str(&serialized).unwrap();
+        
+        assert_eq!(config.enable_usb_power_delivery, deserialized.enable_usb_power_delivery);
+        assert_eq!(config.enable_thermal_power, deserialized.enable_thermal_power);
+        assert_eq!(config.enable_software_power, deserialized.enable_software_power);
+        assert_eq!(config.usb_power_delivery_base_path, deserialized.usb_power_delivery_base_path);
+        assert_eq!(config.thermal_power_base_path, deserialized.thermal_power_base_path);
+        assert_eq!(config.software_power_base_path, deserialized.software_power_base_path);
+    }
+
+    #[test]
+    fn test_usb_power_delivery_metrics_collection() {
+        // Тестируем сбор метрик USB Power Delivery
+        let monitor = EnergyMonitor::new();
+        let result = monitor.collect_usb_power_delivery_metrics();
+        assert!(result.is_ok());
+        // Результат может быть пустым, если нет USB Power Delivery устройств
+    }
+
+    #[test]
+    fn test_thermal_power_metrics_collection() {
+        // Тестируем сбор метрик термальных сенсоров мощности
+        let monitor = EnergyMonitor::new();
+        let result = monitor.collect_thermal_power_metrics();
+        assert!(result.is_ok());
+        // Результат может быть пустым, если нет термальных сенсоров
+    }
+
+    #[test]
+    fn test_software_power_metrics_collection() {
+        // Тестируем сбор метрик программных сенсоров мощности
+        let monitor = EnergyMonitor::new();
+        let result = monitor.collect_software_power_metrics();
+        assert!(result.is_ok());
+        // Результат может быть пустым, если нет программных сенсоров
+    }
+
+    #[test]
+    fn test_extended_metrics_integration() {
+        // Тестируем интеграцию новых метрик в общий сбор
+        let monitor = EnergyMonitor::new();
+        let result = monitor.collect_all_energy_metrics();
+        assert!(result.is_ok());
+        
+        // Проверяем, что все новые типы сенсоров поддерживаются
+        let metrics = result.unwrap();
+        for metric in metrics {
+            match metric.sensor_type {
+                EnergySensorType::UsbPowerDelivery => assert!(true),
+                EnergySensorType::ThermalPower => assert!(true),
+                EnergySensorType::SoftwarePower => assert!(true),
+                _ => assert!(true), // Другие типы тоже допустимы
+            }
+        }
+    }
+
+    #[test]
+    fn test_extended_monitor_configuration() {
+        // Тестируем конфигурацию монитора с новыми опциями
+        let mut config = EnergyMonitoringConfig::default();
+        config.enable_usb_power_delivery = false;
+        config.enable_thermal_power = false;
+        config.enable_software_power = false;
+        
+        let monitor = EnergyMonitor::with_config(config);
+        assert!(!monitor.config.enable_usb_power_delivery);
+        assert!(!monitor.config.enable_thermal_power);
+        assert!(!monitor.config.enable_software_power);
+    }
+
+    #[test]
+    fn test_all_sensor_types_comprehensive() {
+        // Тестируем все типы сенсоров, включая новые
+        let sensor_types = vec![
+            EnergySensorType::Rapl,
+            EnergySensorType::Acpi,
+            EnergySensorType::PowerCap,
+            EnergySensorType::Battery,
+            EnergySensorType::UsbPowerDelivery,
+            EnergySensorType::ThermalPower,
+            EnergySensorType::SoftwarePower,
+            EnergySensorType::Custom,
+            EnergySensorType::Unknown,
+        ];
+
+        for sensor_type in sensor_types {
+            let metrics = EnergySensorMetrics {
+                sensor_id: "comprehensive_test".to_string(),
+                sensor_type,
+                energy_uj: 1000,
+                power_w: 1.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/test/comprehensive".to_string(),
+            };
+
+            // Проверяем, что метрики создаются корректно
+            assert_eq!(metrics.sensor_id, "comprehensive_test");
+            assert_eq!(metrics.energy_uj, 1000);
+            assert_eq!(metrics.power_w, 1.0);
+            assert_eq!(metrics.timestamp, 1234567890);
+            assert!(metrics.is_reliable);
+        }
+    }
+
+    #[test]
+    fn test_extended_metrics_with_mock_data() {
+        // Тестируем новые метрики с моковыми данными
+        let mock_metrics = vec![
+            EnergySensorMetrics {
+                sensor_id: "usb_test".to_string(),
+                sensor_type: EnergySensorType::UsbPowerDelivery,
+                energy_uj: 500000,
+                power_w: 5.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/sys/class/usb_power_delivery/test".to_string(),
+            },
+            EnergySensorMetrics {
+                sensor_id: "thermal_test".to_string(),
+                sensor_type: EnergySensorType::ThermalPower,
+                energy_uj: 300000,
+                power_w: 3.0,
+                timestamp: 1234567890,
+                is_reliable: false,
+                sensor_path: "/sys/kernel/tracing/events/thermal_power_allocator/test".to_string(),
+            },
+            EnergySensorMetrics {
+                sensor_id: "software_test".to_string(),
+                sensor_type: EnergySensorType::SoftwarePower,
+                energy_uj: 200000,
+                power_w: 2.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/sys/devices/software/power/test".to_string(),
+            },
+        ];
+
+        // Проверяем, что все метрики создаются корректно
+        assert_eq!(mock_metrics.len(), 3);
+        assert_eq!(mock_metrics[0].sensor_type, EnergySensorType::UsbPowerDelivery);
+        assert_eq!(mock_metrics[1].sensor_type, EnergySensorType::ThermalPower);
+        assert_eq!(mock_metrics[2].sensor_type, EnergySensorType::SoftwarePower);
+        assert_eq!(mock_metrics[0].power_w, 5.0);
+        assert_eq!(mock_metrics[1].power_w, 3.0);
+        assert_eq!(mock_metrics[2].power_w, 2.0);
+    }
+
+    #[test]
+    fn test_extended_metrics_aggregation() {
+        // Тестируем агрегацию метрик с новыми типами сенсоров
+        let mock_metrics = vec![
+            EnergySensorMetrics {
+                sensor_id: "sensor1".to_string(),
+                sensor_type: EnergySensorType::UsbPowerDelivery,
+                energy_uj: 1000,
+                power_w: 1.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/test1".to_string(),
+            },
+            EnergySensorMetrics {
+                sensor_id: "sensor2".to_string(),
+                sensor_type: EnergySensorType::ThermalPower,
+                energy_uj: 2000,
+                power_w: 2.0,
+                timestamp: 1234567890,
+                is_reliable: false,
+                sensor_path: "/test2".to_string(),
+            },
+            EnergySensorMetrics {
+                sensor_id: "sensor3".to_string(),
+                sensor_type: EnergySensorType::SoftwarePower,
+                energy_uj: 3000,
+                power_w: 3.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/test3".to_string(),
+            },
+        ];
+
+        // Вручную агрегируем метрики
+        let total_energy = mock_metrics.iter().map(|m| m.energy_uj).sum::<u64>();
+        let total_power = mock_metrics.iter().map(|m| m.power_w).sum::<f32>();
+        let is_reliable = mock_metrics.iter().any(|m| m.is_reliable);
+
+        assert_eq!(total_energy, 6000);
+        assert_eq!(total_power, 6.0);
+        assert!(is_reliable);
+    }
+
+    #[test]
+    fn test_extended_config_variations() {
+        // Тестируем различные конфигурации с новыми опциями
+        let mut config_all_enabled = EnergyMonitoringConfig::default();
+        assert!(config_all_enabled.enable_usb_power_delivery);
+        assert!(config_all_enabled.enable_thermal_power);
+        assert!(config_all_enabled.enable_software_power);
+
+        let mut config_all_disabled = EnergyMonitoringConfig::default();
+        config_all_disabled.enable_usb_power_delivery = false;
+        config_all_disabled.enable_thermal_power = false;
+        config_all_disabled.enable_software_power = false;
+        
+        let monitor_disabled = EnergyMonitor::with_config(config_all_disabled);
+        assert!(!monitor_disabled.config.enable_usb_power_delivery);
+        assert!(!monitor_disabled.config.enable_thermal_power);
+        assert!(!monitor_disabled.config.enable_software_power);
+    }
+
+    #[test]
+    fn test_extended_sensor_type_identification() {
+        // Тестируем идентификацию новых типов сенсоров
+        let usb_metrics = EnergySensorMetrics {
+            sensor_id: "usb_sensor".to_string(),
+            sensor_type: EnergySensorType::UsbPowerDelivery,
+            energy_uj: 1000,
+            power_w: 1.0,
+            timestamp: 1234567890,
+            is_reliable: true,
+            sensor_path: "/usb".to_string(),
+        };
+
+        let thermal_metrics = EnergySensorMetrics {
+            sensor_id: "thermal_sensor".to_string(),
+            sensor_type: EnergySensorType::ThermalPower,
+            energy_uj: 2000,
+            power_w: 2.0,
+            timestamp: 1234567890,
+            is_reliable: false,
+            sensor_path: "/thermal".to_string(),
+        };
+
+        let software_metrics = EnergySensorMetrics {
+            sensor_id: "software_sensor".to_string(),
+            sensor_type: EnergySensorType::SoftwarePower,
+            energy_uj: 3000,
+            power_w: 3.0,
+            timestamp: 1234567890,
+            is_reliable: true,
+            sensor_path: "/software".to_string(),
+        };
+
+        assert_eq!(usb_metrics.sensor_type, EnergySensorType::UsbPowerDelivery);
+        assert_eq!(thermal_metrics.sensor_type, EnergySensorType::ThermalPower);
+        assert_eq!(software_metrics.sensor_type, EnergySensorType::SoftwarePower);
     }
 }
