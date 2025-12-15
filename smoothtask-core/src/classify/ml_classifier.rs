@@ -1170,13 +1170,122 @@ impl CatBoostMLClassifier {
     /// Этот метод предоставляет оптимизированную версию извлечения фич с возможностью
     /// отключения кэширования для тестирования производительности.
     pub fn process_to_features_optimized(
-        &self,
         process: &ProcessRecord,
         use_cache: bool,
     ) -> Vec<f32> {
         if use_cache {
             // Используем кэширование для оптимизации производительности
-            self.process_to_features(process)
+            GLOBAL_FEATURE_CACHE.get_or_compute(process.pid as u32, || {
+                let mut features = Vec::with_capacity(35); // Enhanced from 29 to 35 features
+
+                // Числовые фичи
+                features.push(process.cpu_share_1s.unwrap_or(0.0) as f32);
+                features.push(process.cpu_share_10s.unwrap_or(0.0) as f32);
+
+                // Расширенные CPU фичи
+                features.push((process.cpu_share_1s.unwrap_or(0.0) * 100.0) as f32); // CPU %
+                features.push((process.cpu_share_10s.unwrap_or(0.0) * 100.0) as f32); // CPU %
+
+                // IO фичи
+                features.push(process.io_read_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
+                features.push(process.io_write_bytes.unwrap_or(0) as f32 / (1024.0 * 1024.0)); // MB
+                features.push(
+                    (process.io_read_bytes.unwrap_or(0) as f32
+                        + process.io_write_bytes.unwrap_or(0) as f32)
+                        / (1024.0 * 1024.0),
+                ); // Total IO in MB
+
+                // Память фичи
+                features.push(process.rss_mb.unwrap_or(0) as f32);
+                features.push(process.swap_mb.unwrap_or(0) as f32);
+                features.push(
+                    (process.rss_mb.unwrap_or(0) as f32 + process.swap_mb.unwrap_or(0) as f32) * 1024.0,
+                ); // Total memory KB
+
+                // Контекстные переключения
+                features.push(process.voluntary_ctx.unwrap_or(0) as f32);
+                features.push(process.involuntary_ctx.unwrap_or(0) as f32);
+                features.push(
+                    (process.voluntary_ctx.unwrap_or(0) as f32
+                        + process.involuntary_ctx.unwrap_or(0) as f32)
+                        / process.uptime_sec.max(1) as f32,
+                ); // ctx/sec
+
+                // Расширенные фичи
+                features.push(process.uptime_sec as f32); // Время работы процесса
+                features.push(process.uptime_sec as f32 / 3600.0); // Время работы в часах
+
+                // Нормализованные фичи
+                features.push((process.cpu_share_1s.unwrap_or(0.0) as f32).ln_1p()); // Log CPU
+                features.push((process.rss_mb.unwrap_or(0) as f32).ln_1p()); // Log memory
+
+                // Булевые фичи (0/1)
+                features.push(if process.has_tty { 1.0 } else { 0.0 });
+                features.push(if process.has_gui_window { 1.0 } else { 0.0 });
+                features.push(if process.is_focused_window { 1.0 } else { 0.0 });
+                features.push(if process.env_has_display { 1.0 } else { 0.0 });
+                features.push(if process.env_has_wayland { 1.0 } else { 0.0 });
+                features.push(if process.env_ssh { 1.0 } else { 0.0 });
+                features.push(if process.is_audio_client { 1.0 } else { 0.0 });
+                features.push(if process.has_active_stream { 1.0 } else { 0.0 });
+
+                // Расширенные булевые фичи
+                features.push(if process.has_tty && !process.env_ssh {
+                    1.0
+                } else {
+                    0.0
+                }); // Локальный TTY
+                features.push(if process.has_gui_window && process.is_focused_window {
+                    1.0
+                } else {
+                    0.0
+                }); // Фокусированное GUI
+
+                // Интерактивные фичи
+                features.push(if process.has_gui_window || process.has_tty {
+                    1.0
+                } else {
+                    0.0
+                }); // Интерактивный процесс
+                features.push(if process.is_audio_client || process.has_active_stream {
+                    1.0
+                } else {
+                    0.0
+                }); // Аудио активность
+
+                // Новые расширенные фичи для улучшенной ML классификации
+                // CPU/IO соотношение - помогает отличать CPU-интенсивные от IO-интенсивных процессов
+                let cpu_1s = process.cpu_share_1s.unwrap_or(0.0) as f32;
+                let io_total = (process.io_read_bytes.unwrap_or(0) + process.io_write_bytes.unwrap_or(0)) as f32 / (1024.0 * 1024.0);
+                features.push(if io_total > 0.0 { cpu_1s / io_total } else { 0.0 }); // CPU/IO ratio
+
+                // Память/CPU соотношение - помогает идентифицировать память-интенсивные процессы
+                let memory_mb = process.rss_mb.unwrap_or(0) as f32;
+                features.push(if cpu_1s > 0.0 { memory_mb / cpu_1s } else { 0.0 }); // Memory/CPU ratio
+
+                // Нормализованное время работы (0-1) - помогает в классификации по времени жизни
+                let normalized_uptime = (process.uptime_sec as f32 / 86400.0).min(1.0); // 0-1 day scale
+                features.push(normalized_uptime);
+
+                // Интерактивный скор на основе нескольких факторов (0-1)
+                let mut interactivity_score = 0.0;
+                if process.has_gui_window { interactivity_score += 0.4; }
+                if process.is_focused_window { interactivity_score += 0.3; }
+                if process.has_tty && !process.env_ssh { interactivity_score += 0.2; }
+                if process.is_audio_client { interactivity_score += 0.1; }
+                features.push(interactivity_score);
+
+                // Ресурсоемкость на основе CPU, памяти и IO (нормализованный скор)
+                let resource_intensity = cpu_1s * 0.5 + (memory_mb / 1000.0) * 0.3 + (io_total / 100.0) * 0.2;
+                features.push(resource_intensity);
+
+                // Стабильность процесса (меньше контекстных переключений = более стабильный)
+                let ctx_switches = (process.voluntary_ctx.unwrap_or(0) + process.involuntary_ctx.unwrap_or(0)) as f32;
+                let stability_score = 1.0 / (1.0 + ctx_switches / 1000.0); // 0-1 scale
+                features.push(stability_score);
+
+                features
+            })
         } else {
             // Прямое извлечение фич без кэширования
             let mut features = Vec::with_capacity(35); // Enhanced from 29 to 35 features
@@ -2796,14 +2905,7 @@ mod tests {
             ..Default::default()
         };
 
-        let classifier = CatBoostMLClassifier {
-            model: None,
-            config: MLClassifierConfig::default(),
-            performance_metrics: MLPerformanceMetrics::default(),
-            use_feature_cache: false,
-        };
-
-        let features = classifier.process_to_features_optimized(&process, false);
+        let features = CatBoostMLClassifier::process_to_features_optimized(&process, false);
         
         // Should have 35 features now (enhanced from 29)
         assert_eq!(features.len(), 35);
@@ -2860,14 +2962,7 @@ mod tests {
             ..Default::default()
         };
 
-        let classifier = CatBoostMLClassifier {
-            model: None,
-            config: MLClassifierConfig::default(),
-            performance_metrics: MLPerformanceMetrics::default(),
-            use_feature_cache: false,
-        };
-
-        let features = classifier.process_to_features_optimized(&process, false);
+        let features = CatBoostMLClassifier::process_to_features_optimized(&process, false);
         
         // Should still have 35 features
         assert_eq!(features.len(), 35);
@@ -2919,14 +3014,7 @@ mod tests {
             ..Default::default()
         };
 
-        let classifier = CatBoostMLClassifier {
-            model: None,
-            config: MLClassifierConfig::default(),
-            performance_metrics: MLPerformanceMetrics::default(),
-            use_feature_cache: false,
-        };
-
-        let features = classifier.process_to_features_optimized(&process, false);
+        let features = CatBoostMLClassifier::process_to_features_optimized(&process, false);
         
         assert_eq!(features.len(), 35);
         

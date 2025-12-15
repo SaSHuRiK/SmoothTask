@@ -28,6 +28,7 @@
 //! - **extended_hardware_sensors**: Расширенный мониторинг аппаратных сенсоров
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
+//! - **performance_profiler**: Профилирование производительности и анализ узких мест
 //! - **hardware_acceleration**: Мониторинг аппаратного ускорения (VA-API, VDPAU, CUDA)
 //! - **container**: Мониторинг контейнеров Docker/Podman
 //! - **thunderbolt**: Мониторинг Thunderbolt устройств
@@ -48,6 +49,7 @@ pub mod gpu;
 pub mod hardware_acceleration;
 pub mod input;
 pub mod ml_performance;
+pub mod performance_profiler;
 pub mod network;
 pub mod nvml_wrapper;
 pub mod process;

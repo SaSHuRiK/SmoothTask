@@ -13,10 +13,12 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::{debug, error, info, warn};
 
+pub mod container_health;
 pub mod diagnostics;
 pub mod monitoring;
 pub mod notifications;
 
+pub use container_health::*;
 pub use diagnostics::*;
 pub use monitoring::*;
 pub use notifications::*;

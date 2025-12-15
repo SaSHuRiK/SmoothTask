@@ -2262,6 +2262,13 @@ impl NotificationManager {
 
     /// Отправляет уведомление с учетом стратегий и эскалации.
     pub async fn send_with_strategy(&self, notification: &Notification) -> Result<()> {
+        // Логируем начало обработки уведомления
+        tracing::info!(
+            "Processing notification: {} (type: {:?})",
+            notification.title,
+            notification.notification_type
+        );
+
         if !self.enabled {
             tracing::debug!("Notifications are disabled, skipping notification");
             return Ok(());
@@ -2269,7 +2276,7 @@ impl NotificationManager {
 
         // Проверяем, разрешено ли отправлять уведомление
         if !self.check_notification_allowed(&notification.notification_type).await? {
-            tracing::debug!(
+            tracing::warn!(
                 "Notification rate limit exceeded for type: {:?}",
                 notification.notification_type
             );
@@ -2314,22 +2321,51 @@ impl NotificationManager {
         // Отправляем уведомление через основной бэкенд с повторными попытками
         let mut attempt = 0;
         let mut primary_success = false;
+        let mut last_error: Option<anyhow::Error> = None;
         
         while attempt < strategy.max_retries {
             attempt += 1;
             
             match self.primary_notifier.send_notification(notification).await {
                 Ok(_) => {
+                    tracing::info!(
+                        "Successfully sent notification through primary backend (attempt {})",
+                        attempt
+                    );
                     primary_success = true;
                     break;
                 }
                 Err(e) => {
+                    last_error = Some(anyhow::anyhow!("{}", e));
                     tracing::warn!(
                         "Attempt {} failed to send notification: {}. Retrying in {}ms...",
                         attempt,
                         e,
                         strategy.retry_delay_ms
                     );
+                    
+                    // Логируем ошибку в хранилище логов, если оно доступно
+                    if let Some(ref log_storage_arc) = self.log_storage {
+                        let log_level = if attempt == strategy.max_retries {
+                            crate::logging::log_storage::LogLevel::Error
+                        } else {
+                            crate::logging::log_storage::LogLevel::Warn
+                        };
+                        
+                        let log_entry = crate::logging::log_storage::LogEntry::new(
+                            log_level,
+                            "notifications",
+                            format!("Notification send attempt {} failed", attempt),
+                        ).with_fields(serde_json::json!({
+                            "notification_title": notification.title,
+                            "notification_type": format!("{}", notification.notification_type),
+                            "error": format!("{}", e),
+                            "attempt": attempt,
+                            "max_retries": strategy.max_retries,
+                            "timestamp": notification.timestamp.to_rfc3339(),
+                        }));
+                        log_storage_arc.add_entry(log_entry).await;
+                    }
                     
                     if attempt < strategy.max_retries {
                         sleep(Duration::from_millis(strategy.retry_delay_ms)).await;
@@ -2338,12 +2374,39 @@ impl NotificationManager {
             }
         }
 
-        // Обновляем время последнего уведомления
-        self.update_last_notification_time(&notification.notification_type).await;
+        // Обновляем время последнего уведомления только если отправка была успешной
+        if primary_success {
+            self.update_last_notification_time(&notification.notification_type).await;
+        }
 
         // Если включена эскалация и основная отправка не удалась, пробуем эскалацию
         if strategy.enable_escalation && !primary_success {
+            tracing::warn!(
+                "Primary notification failed after {} attempts, initiating escalation",
+                strategy.max_retries
+            );
             self.handle_escalation(notification, &strategy).await?;
+        } else if !primary_success {
+            let error_message = last_error.map(|e| e.to_string()).unwrap_or_else(|| "Unknown error".to_string());
+            tracing::error!(
+                "Notification failed and escalation is disabled: {}",
+                error_message
+            );
+            
+            // Логируем критическую ошибку, если все попытки не удались
+            if let Some(ref log_storage_arc) = self.log_storage {
+                let log_entry = crate::logging::log_storage::LogEntry::new(
+                    crate::logging::log_storage::LogLevel::Error,
+                    "notifications",
+                    format!("Notification failed after {} attempts", strategy.max_retries),
+                ).with_fields(serde_json::json!({
+                    "notification_title": notification.title,
+                    "notification_type": format!("{}", notification.notification_type),
+                    "error": error_message,
+                    "timestamp": notification.timestamp.to_rfc3339(),
+                }));
+                log_storage_arc.add_entry(log_entry).await;
+            }
         }
 
         Ok(())
@@ -2352,6 +2415,13 @@ impl NotificationManager {
     /// Обрабатывает эскалацию уведомления через дополнительные каналы.
     async fn handle_escalation(&self, notification: &Notification, strategy: &NotificationStrategy) -> Result<()> {
         let escalation_notifiers = self.escalation_notifiers.read().await;
+        let mut escalation_success = false;
+        
+        tracing::info!(
+            "Starting escalation process for notification: {} (channels: {:?})",
+            notification.title,
+            strategy.escalation_channels
+        );
         
         for channel in &strategy.escalation_channels {
             if let Some(notifier) = escalation_notifiers.get(channel) {
@@ -2362,13 +2432,62 @@ impl NotificationManager {
                 );
                 
                 // Пробуем отправить через канал эскалации
-                if let Err(e) = notifier.send_notification(notification).await {
-                    tracing::error!(
-                        "Failed to escalate notification through {} channel: {}",
-                        channel,
-                        e
-                    );
+                match notifier.send_notification(notification).await {
+                    Ok(_) => {
+                        tracing::info!(
+                            "Successfully escalated notification through {} channel",
+                            channel
+                        );
+                        escalation_success = true;
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            "Failed to escalate notification through {} channel: {}",
+                            channel,
+                            e
+                        );
+                        
+                        // Логируем ошибку в хранилище логов, если оно доступно
+                        if let Some(ref log_storage_arc) = self.log_storage {
+                            let log_entry = crate::logging::log_storage::LogEntry::new(
+                                crate::logging::log_storage::LogLevel::Error,
+                                "notifications",
+                                format!("Escalation failed for {} channel", channel),
+                            ).with_fields(serde_json::json!({
+                                "notification_title": notification.title,
+                                "notification_type": format!("{}", notification.notification_type),
+                                "error": format!("{}", e),
+                                "timestamp": notification.timestamp.to_rfc3339(),
+                            }));
+                            log_storage_arc.add_entry(log_entry).await;
+                        }
+                    }
                 }
+            } else {
+                tracing::warn!(
+                    "Escalation channel {} not found in available notifiers",
+                    channel
+                );
+            }
+        }
+        
+        if !escalation_success && !strategy.escalation_channels.is_empty() {
+            tracing::error!(
+                "All escalation attempts failed for notification: {}",
+                notification.title
+            );
+            
+            // Если все попытки эскалации не удались, логируем критическую ошибку
+            if let Some(ref log_storage_arc) = self.log_storage {
+                let log_entry = crate::logging::log_storage::LogEntry::new(
+                    crate::logging::log_storage::LogLevel::Error,
+                    "notifications",
+                    format!("All escalation attempts failed: {}", notification.title),
+                ).with_fields(serde_json::json!({
+                    "notification_type": format!("{}", notification.notification_type),
+                    "timestamp": notification.timestamp.to_rfc3339(),
+                }));
+                log_storage_arc.add_entry(log_entry).await;
             }
         }
 

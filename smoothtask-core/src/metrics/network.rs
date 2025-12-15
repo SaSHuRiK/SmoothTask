@@ -139,6 +139,8 @@ impl Default for ComprehensiveNetworkStats {
             protocols: NetworkProtocolStats::default(),
             port_usage: Vec::new(),
             active_connections: Vec::new(),
+            ipv6_connections: Vec::new(),
+            ipv6_stats: IPv6NetworkStats::default(),
             quality: NetworkQualityMetrics::default(),
             total_rx_bytes: 0,
             total_tx_bytes: 0,
@@ -3414,6 +3416,147 @@ impl NetworkMonitor {
         Ok(connections)
     }
 
+    /// Collect IPv6 connection statistics
+    fn collect_ipv6_connection_stats(&self) -> Result<Vec<IPv6ConnectionStats>> {
+        let mut ipv6_connections = Vec::new();
+
+        // Try to read IPv6 TCP connections
+        if let Ok(tcp6_connections) = fs::read_to_string("/proc/net/tcp6") {
+            for (line_num, line) in tcp6_connections.lines().skip(1).enumerate() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 {
+                    // Parse IPv6 addresses and ports
+                    let src_ip_hex = parts[1];
+                    let dst_ip_hex = parts[2];
+                    
+                    // Convert hex IPv6 addresses to standard format
+                    let src_ip = self.hex_ipv6_to_std(src_ip_hex)?;
+                    let dst_ip = self.hex_ipv6_to_std(dst_ip_hex)?;
+                    
+                    // Parse ports (hex to decimal)
+                    let src_port = u16::from_str_radix(parts[1].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
+                    let dst_port = u16::from_str_radix(parts[2].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
+                    
+                    // Parse connection state
+                    let state = match parts[3] {
+                        "01" => "ESTABLISHED",
+                        "02" => "SYN_SENT",
+                        "03" => "SYN_RECV",
+                        "04" => "FIN_WAIT1",
+                        "05" => "FIN_WAIT2",
+                        "06" => "TIME_WAIT",
+                        "07" => "CLOSE",
+                        "08" => "CLOSE_WAIT",
+                        "09" => "LAST_ACK",
+                        "0A" => "LISTEN",
+                        "0B" => "CLOSING",
+                        _ => "UNKNOWN",
+                    };
+
+                    // Get process info (similar to IPv4 implementation)
+                    let inode = parts[9];
+                    let (pid, process_name) = self.get_process_info_from_inode(inode)?;
+
+                    ipv6_connections.push(IPv6ConnectionStats {
+                        src_ip,
+                        dst_ip,
+                        src_port,
+                        dst_port,
+                        protocol: "TCP6".to_string(),
+                        state: state.to_string(),
+                        pid: pid,
+                        process_name: process_name,
+                        bytes_transmitted: 0, // Would need to track this separately
+                        bytes_received: 0,   // Would need to track this separately
+                        packets_transmitted: 0,
+                        packets_received: 0,
+                        start_time: SystemTime::now(),
+                        last_activity: SystemTime::now(),
+                        duration: Duration::from_secs(0),
+                    });
+                }
+            }
+        }
+
+        // Try to read IPv6 UDP connections
+        if let Ok(udp6_connections) = fs::read_to_string("/proc/net/udp6") {
+            for (line_num, line) in udp6_connections.lines().skip(1).enumerate() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 10 {
+                    // Parse IPv6 addresses and ports
+                    let src_ip_hex = parts[1];
+                    let dst_ip_hex = parts[2];
+                    
+                    // Convert hex IPv6 addresses to standard format
+                    let src_ip = self.hex_ipv6_to_std(src_ip_hex)?;
+                    let dst_ip = self.hex_ipv6_to_std(dst_ip_hex)?;
+                    
+                    // Parse ports (hex to decimal)
+                    let src_port = u16::from_str_radix(parts[1].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
+                    let dst_port = u16::from_str_radix(parts[2].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
+
+                    ipv6_connections.push(IPv6ConnectionStats {
+                        src_ip,
+                        dst_ip,
+                        src_port,
+                        dst_port,
+                        protocol: "UDP6".to_string(),
+                        state: "OPEN".to_string(),
+                        pid: None,
+                        process_name: None,
+                        bytes_transmitted: 0,
+                        bytes_received: 0,
+                        packets_transmitted: 0,
+                        packets_received: 0,
+                        start_time: SystemTime::now(),
+                        last_activity: SystemTime::now(),
+                        duration: Duration::from_secs(0),
+                    });
+                }
+            }
+        }
+
+        tracing::debug!("Collected {} IPv6 connections", ipv6_connections.len());
+
+        Ok(ipv6_connections)
+    }
+
+    /// Collect IPv6 network statistics
+    fn collect_ipv6_stats(&self) -> Result<IPv6NetworkStats> {
+        let mut stats = IPv6NetworkStats::default();
+
+        // Read IPv6 stats from /proc/net/snmp6
+        if let Ok(snmp6_data) = fs::read_to_string("/proc/net/snmp6") {
+            for line in snmp6_data.lines() {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 12 {
+                    // Parse IPv6 statistics
+                    // Format: Ip6InReceives Ip6InHdrErrors Ip6InTooBigErrors Ip6InNoRoutes Ip6InAddrErrors ...
+                    stats.rx_packets = parts[0].parse().unwrap_or(0);
+                    stats.rx_errors = parts[1].parse().unwrap_or(0);
+                    // Add more fields as needed
+                    break; // Just take the first line for now
+                }
+            }
+        }
+
+        // Read IPv6 forwarding status
+        if let Ok(forwarding) = fs::read_to_string("/proc/sys/net/ipv6/conf/all/forwarding") {
+            stats.forwarding_enabled = forwarding.trim() == "1";
+        }
+
+        // Read IPv6 hop limit
+        if let Ok(hop_limit) = fs::read_to_string("/proc/sys/net/ipv6/conf/all/hop_limit") {
+            if let Ok(limit) = hop_limit.trim().parse::<u8>() {
+                stats.default_hop_limit = limit;
+            }
+        }
+
+        tracing::debug!("Collected IPv6 network statistics");
+
+        Ok(stats)
+    }
+
     /// Collect TCP connections with detailed information
     fn collect_tcp_connections(
         &self,
@@ -3643,6 +3786,37 @@ impl NetworkMonitor {
         metrics.jitter_ms = 5.0; // Average jitter in ms
 
         Ok(metrics)
+    }
+
+    /// Convert hex IPv6 address to standard format
+    fn hex_ipv6_to_std(&self, hex_ip: &str) -> Result<Ipv6Addr> {
+        // Split into IP and port parts
+        let ip_part = hex_ip.split(':').next().unwrap_or(hex_ip);
+        
+        // Convert hex string to bytes
+        let mut bytes = [0u8; 16];
+        for (i, chunk) in ip_part.as_bytes().chunks(2).enumerate() {
+            if i >= 16 { break; }
+            let hex_str = std::str::from_utf8(chunk)?;
+            bytes[i] = u8::from_str_radix(hex_str, 16)?;
+        }
+        
+        // Reverse bytes for network byte order
+        let mut final_bytes = [0u8; 16];
+        for i in 0..16 {
+            final_bytes[i] = bytes[15 - i];
+        }
+        
+        Ok(Ipv6Addr::from(final_bytes))
+    }
+
+    /// Get process info from inode (similar to IPv4 implementation)
+    fn get_process_info_from_inode(&self, inode: &str) -> Result<(Option<u32>, Option<String>)> {
+        // This is a simplified version - in a real implementation, you'd need to
+        // parse /proc/net/tcp6 and /proc/net/udp6 to find the process info
+        
+        // For now, return default values
+        Ok((Some(0), Some("unknown".to_string())))
     }
 
 }
