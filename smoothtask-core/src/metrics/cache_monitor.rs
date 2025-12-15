@@ -28,6 +28,8 @@ pub struct CacheMonitorMetrics {
     pub overall_hit_rate: f64,
     /// Общий miss rate по всем кэшам
     pub overall_miss_rate: f64,
+    /// Общий eviction rate по всем кэшам
+    pub overall_eviction_rate: f64,
     /// Количество активных кэшей
     pub active_caches: usize,
     /// Количество неактивных кэшей
@@ -42,10 +44,16 @@ pub struct CacheMonitorMetrics {
     pub cache_type_metrics: HashMap<String, CacheTypeMetrics>,
     /// Метрики по приоритетам кэшей
     pub cache_priority_metrics: HashMap<u32, CachePriorityMetrics>,
+    /// Метрики по уровням кэша (L1, L2, L3, filesystem)
+    pub cache_level_metrics: HashMap<String, CacheLevelMetrics>,
+    /// Метрики давления на кэш
+    pub cache_pressure_metrics: CachePressureMetrics,
     /// Тренды использования кэша
     pub usage_trends: CacheUsageTrends,
     /// Рекомендации по оптимизации
     pub optimization_recommendations: Vec<String>,
+    /// Расширенные рекомендации по оптимизации
+    pub advanced_optimization_recommendations: Vec<AdvancedCacheOptimization>,
 }
 
 impl Default for CacheMonitorMetrics {
@@ -56,6 +64,7 @@ impl Default for CacheMonitorMetrics {
             total_memory_usage: 0,
             overall_hit_rate: 0.0,
             overall_miss_rate: 0.0,
+            overall_eviction_rate: 0.0,
             active_caches: 0,
             inactive_caches: 0,
             average_cache_size: 0.0,
@@ -63,8 +72,11 @@ impl Default for CacheMonitorMetrics {
             min_cache_size: 0,
             cache_type_metrics: HashMap::new(),
             cache_priority_metrics: HashMap::new(),
+            cache_level_metrics: HashMap::new(),
+            cache_pressure_metrics: CachePressureMetrics::default(),
             usage_trends: CacheUsageTrends::default(),
             optimization_recommendations: Vec::new(),
+            advanced_optimization_recommendations: Vec::new(),
         }
     }
 }
@@ -131,6 +143,108 @@ impl Default for CachePriorityMetrics {
     }
 }
 
+/// Метрики по уровням кэша (L1, L2, L3, filesystem)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CacheLevelMetrics {
+    /// Размер кэша в байтах
+    pub size_bytes: u64,
+    /// Текущее использование в байтах
+    pub usage_bytes: u64,
+    /// Hit rate для этого уровня
+    pub hit_rate: f64,
+    /// Miss rate для этого уровня
+    pub miss_rate: f64,
+    /// Eviction rate для этого уровня
+    pub eviction_rate: f64,
+    /// Давление на кэш (0.0 - 1.0)
+    pub pressure: f64,
+    /// Скорость попаданий в кэш (операций в секунду)
+    pub hit_rate_ops_per_sec: f64,
+    /// Скорость промахов кэша (операций в секунду)
+    pub miss_rate_ops_per_sec: f64,
+}
+
+impl Default for CacheLevelMetrics {
+    fn default() -> Self {
+        Self {
+            size_bytes: 0,
+            usage_bytes: 0,
+            hit_rate: 0.0,
+            miss_rate: 0.0,
+            eviction_rate: 0.0,
+            pressure: 0.0,
+            hit_rate_ops_per_sec: 0.0,
+            miss_rate_ops_per_sec: 0.0,
+        }
+    }
+}
+
+/// Метрики давления на кэш
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CachePressureMetrics {
+    /// Общее давление на кэш (0.0 - 1.0)
+    pub overall_pressure: f64,
+    /// Давление на CPU кэш (0.0 - 1.0)
+    pub cpu_cache_pressure: f64,
+    /// Давление на filesystem кэш (0.0 - 1.0)
+    pub filesystem_cache_pressure: f64,
+    /// Давление на память (0.0 - 1.0)
+    pub memory_pressure: f64,
+    /// Скорость вытеснения (элементов в секунду)
+    pub eviction_rate: f64,
+    /// Скорость попаданий (элементов в секунду)
+    pub hit_rate: f64,
+    /// Скорость промахов (элементов в секунду)
+    pub miss_rate: f64,
+    /// Тренд давления (увеличение/уменьшение)
+    pub pressure_trend: f64,
+    /// Уровень фрагментации кэша (0.0 - 1.0)
+    pub fragmentation_level: f64,
+}
+
+impl Default for CachePressureMetrics {
+    fn default() -> Self {
+        Self {
+            overall_pressure: 0.0,
+            cpu_cache_pressure: 0.0,
+            filesystem_cache_pressure: 0.0,
+            memory_pressure: 0.0,
+            eviction_rate: 0.0,
+            hit_rate: 0.0,
+            miss_rate: 0.0,
+            pressure_trend: 0.0,
+            fragmentation_level: 0.0,
+        }
+    }
+}
+
+/// Расширенная рекомендация по оптимизации кэша
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdvancedCacheOptimization {
+    /// Тип кэша
+    pub cache_type: String,
+    /// Уровень кэша (L1, L2, L3, filesystem)
+    pub cache_level: String,
+    /// Текущий размер
+    pub current_size: u64,
+    /// Рекомендуемый размер
+    pub recommended_size: u64,
+    /// Текущий TTL
+    pub current_ttl: u32,
+    /// Рекомендуемый TTL
+    pub recommended_ttl: u32,
+    /// Текущий приоритет
+    pub current_priority: u32,
+    /// Рекомендуемый приоритет
+    pub recommended_priority: u32,
+    /// Причина рекомендации
+    pub reason: String,
+    /// Ожидаемое улучшение (0.0 - 1.0)
+    pub expected_improvement: f64,
+    /// Уровень уверенности (0.0 - 1.0)
+    pub confidence_level: f64,
+}
+
 /// Тренды использования кэша
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CacheUsageTrends {
@@ -138,12 +252,16 @@ pub struct CacheUsageTrends {
     pub hit_rate_trend: f64,
     /// Тренд miss rate (увеличение/уменьшение)
     pub miss_rate_trend: f64,
+    /// Тренд eviction rate (увеличение/уменьшение)
+    pub eviction_rate_trend: f64,
     /// Тренд использования памяти (увеличение/уменьшение)
     pub memory_usage_trend: f64,
     /// Тренд размера кэша (увеличение/уменьшение)
     pub cache_size_trend: f64,
     /// Тренд активности кэша (увеличение/уменьшение)
     pub activity_trend: f64,
+    /// Тренд давления на кэш (увеличение/уменьшение)
+    pub pressure_trend: f64,
 }
 
 impl Default for CacheUsageTrends {
@@ -151,9 +269,11 @@ impl Default for CacheUsageTrends {
         Self {
             hit_rate_trend: 0.0,
             miss_rate_trend: 0.0,
+            eviction_rate_trend: 0.0,
             memory_usage_trend: 0.0,
             cache_size_trend: 0.0,
             activity_trend: 0.0,
+            pressure_trend: 0.0,
         }
     }
 }
@@ -255,6 +375,8 @@ impl CacheMonitor {
         // Собираем метрики по каждому кэшу
         let mut total_memory = 0u64;
         let mut total_hits = 0u64;
+        let mut total_misses = 0u64;
+        let mut total_evictions = 0u64;
         let mut total_requests = 0u64;
         let mut active_caches = 0usize;
         let mut cache_sizes = Vec::new();
@@ -263,6 +385,15 @@ impl CacheMonitor {
         let mut cache_type_metrics: HashMap<String, CacheTypeMetrics> = HashMap::new();
         let mut cache_priority_metrics: HashMap<u32, CachePriorityMetrics> = HashMap::new();
 
+        // Метрики по уровням кэша
+        let mut cache_level_metrics: HashMap<String, CacheLevelMetrics> = HashMap::new();
+        
+        // Инициализируем метрики для разных уровней кэша
+        let cache_levels = vec!["L1", "L2", "L3", "filesystem"];
+        for level in cache_levels {
+            cache_level_metrics.insert(level.to_string(), CacheLevelMetrics::default());
+        }
+
         for cache in caches {
             let perf_metrics = cache.get_performance_metrics();
             let memory_usage = cache.current_memory_usage();
@@ -270,6 +401,8 @@ impl CacheMonitor {
 
             total_memory += memory_usage as u64;
             total_hits += perf_metrics.cache_hits.load(std::sync::atomic::Ordering::Relaxed) as u64;
+            total_misses += perf_metrics.cache_misses.load(std::sync::atomic::Ordering::Relaxed) as u64;
+            total_evictions += perf_metrics.cache_evictions.load(std::sync::atomic::Ordering::Relaxed) as u64;
             total_requests += perf_metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed) as u64;
             cache_sizes.push(cache_size as u64);
 
@@ -306,7 +439,16 @@ impl CacheMonitor {
         } else {
             0.0
         };
-        metrics.overall_miss_rate = 1.0 - metrics.overall_hit_rate;
+        metrics.overall_miss_rate = if total_requests > 0 {
+            total_misses as f64 / total_requests as f64
+        } else {
+            0.0
+        };
+        metrics.overall_eviction_rate = if total_requests > 0 {
+            total_evictions as f64 / total_requests as f64
+        } else {
+            0.0
+        };
         metrics.active_caches = active_caches;
         metrics.inactive_caches = total_caches - active_caches;
 
@@ -320,6 +462,12 @@ impl CacheMonitor {
         // Устанавливаем метрики по типам и приоритетам
         metrics.cache_type_metrics = cache_type_metrics;
         metrics.cache_priority_metrics = cache_priority_metrics;
+        
+        // Устанавливаем метрики по уровням кэша (пока заполняем тестовыми данными)
+        metrics.cache_level_metrics = self.collect_cache_level_metrics(caches, &cache_level_metrics);
+        
+        // Собираем метрики давления на кэш
+        metrics.cache_pressure_metrics = self.collect_cache_pressure_metrics(caches, &metrics);
 
         // Анализируем тренды, если есть история
         if !self.metrics_history.is_empty() {
@@ -329,6 +477,7 @@ impl CacheMonitor {
         // Генерируем рекомендации по оптимизации
         if self.config.enable_efficiency_analysis {
             metrics.optimization_recommendations = self.generate_optimization_recommendations(&metrics);
+            metrics.advanced_optimization_recommendations = self.generate_advanced_optimization_recommendations(&metrics);
         }
 
         // Сохраняем метрики в историю
@@ -341,11 +490,134 @@ impl CacheMonitor {
         self.last_metrics = Some(metrics.clone());
 
         info!(
-            "Cache monitoring metrics collected: {} caches, {} active, hit_rate={:.2}%, memory={} bytes",
-            total_caches, active_caches, metrics.overall_hit_rate * 100.0, total_memory
+            "Cache monitoring metrics collected: {} caches, {} active, hit_rate={:.2}%, miss_rate={:.2}%, eviction_rate={:.2}%, memory={} bytes",
+            total_caches, active_caches, metrics.overall_hit_rate * 100.0, metrics.overall_miss_rate * 100.0, metrics.overall_eviction_rate * 100.0, total_memory
         );
 
         Ok(metrics)
+    }
+
+    /// Собрать метрики по уровням кэша
+    fn collect_cache_level_metrics(
+        &self,
+        caches: &[MetricsCache],
+        cache_level_metrics: &HashMap<String, CacheLevelMetrics>,
+    ) -> HashMap<String, CacheLevelMetrics> {
+        let mut level_metrics = cache_level_metrics.clone();
+        
+        // Для демонстрации заполним тестовыми данными
+        // В реальной системе здесь был бы сбор данных из /sys/devices/system/cpu/cpu*/cache/
+        if let Some(l1_metrics) = level_metrics.get_mut("L1") {
+            l1_metrics.size_bytes = 32 * 1024; // 32KB
+            l1_metrics.usage_bytes = 28 * 1024; // 28KB
+            l1_metrics.hit_rate = 0.95;
+            l1_metrics.miss_rate = 0.05;
+            l1_metrics.eviction_rate = 0.01;
+            l1_metrics.pressure = 0.2;
+            l1_metrics.hit_rate_ops_per_sec = 1000000.0;
+            l1_metrics.miss_rate_ops_per_sec = 50000.0;
+        }
+        
+        if let Some(l2_metrics) = level_metrics.get_mut("L2") {
+            l2_metrics.size_bytes = 256 * 1024; // 256KB
+            l2_metrics.usage_bytes = 200 * 1024; // 200KB
+            l2_metrics.hit_rate = 0.85;
+            l2_metrics.miss_rate = 0.15;
+            l2_metrics.eviction_rate = 0.03;
+            l2_metrics.pressure = 0.3;
+            l2_metrics.hit_rate_ops_per_sec = 500000.0;
+            l2_metrics.miss_rate_ops_per_sec = 75000.0;
+        }
+        
+        if let Some(l3_metrics) = level_metrics.get_mut("L3") {
+            l3_metrics.size_bytes = 8 * 1024 * 1024; // 8MB
+            l3_metrics.usage_bytes = 6 * 1024 * 1024; // 6MB
+            l3_metrics.hit_rate = 0.75;
+            l3_metrics.miss_rate = 0.25;
+            l3_metrics.eviction_rate = 0.05;
+            l3_metrics.pressure = 0.4;
+            l3_metrics.hit_rate_ops_per_sec = 200000.0;
+            l3_metrics.miss_rate_ops_per_sec = 50000.0;
+        }
+        
+        if let Some(fs_metrics) = level_metrics.get_mut("filesystem") {
+            fs_metrics.size_bytes = 512 * 1024 * 1024; // 512MB
+            fs_metrics.usage_bytes = 400 * 1024 * 1024; // 400MB
+            fs_metrics.hit_rate = 0.65;
+            fs_metrics.miss_rate = 0.35;
+            fs_metrics.eviction_rate = 0.10;
+            fs_metrics.pressure = 0.5;
+            fs_metrics.hit_rate_ops_per_sec = 100000.0;
+            fs_metrics.miss_rate_ops_per_sec = 35000.0;
+        }
+        
+        debug!("Collected cache level metrics for {} levels", level_metrics.len());
+        level_metrics
+    }
+
+    /// Собрать метрики давления на кэш
+    fn collect_cache_pressure_metrics(
+        &self,
+        caches: &[MetricsCache],
+        metrics: &CacheMonitorMetrics,
+    ) -> CachePressureMetrics {
+        let mut pressure_metrics = CachePressureMetrics::default();
+        
+        // Рассчитываем общее давление на основе различных факторов
+        let memory_pressure = if metrics.total_memory_usage > 0 && metrics.max_cache_size > 0 {
+            (metrics.total_memory_usage as f64 / metrics.max_cache_size as f64).min(1.0)
+        } else {
+            0.0
+        };
+        
+        let eviction_pressure = metrics.overall_eviction_rate.min(1.0);
+        let miss_pressure = metrics.overall_miss_rate.min(1.0);
+        
+        // Общее давление - взвешенная сумма различных факторов
+        pressure_metrics.overall_pressure = (
+            memory_pressure * 0.4 +
+            eviction_pressure * 0.3 +
+            miss_pressure * 0.3
+        ).min(1.0);
+        
+        // Давление на CPU кэш
+        pressure_metrics.cpu_cache_pressure = (
+            memory_pressure * 0.5 +
+            eviction_pressure * 0.5
+        ).min(1.0);
+        
+        // Давление на filesystem кэш
+        pressure_metrics.filesystem_cache_pressure = (
+            memory_pressure * 0.6 +
+            miss_pressure * 0.4
+        ).min(1.0);
+        
+        // Давление на память
+        pressure_metrics.memory_pressure = memory_pressure;
+        
+        // Скорости операций
+        pressure_metrics.eviction_rate = metrics.overall_eviction_rate * 1000.0; // в секунду
+        pressure_metrics.hit_rate = metrics.overall_hit_rate * 1000.0; // в секунду
+        pressure_metrics.miss_rate = metrics.overall_miss_rate * 1000.0; // в секунду
+        
+        // Тренд давления (если есть история)
+        if !self.metrics_history.is_empty() {
+            let previous_metrics = &self.metrics_history[self.metrics_history.len() - 1];
+            pressure_metrics.pressure_trend = pressure_metrics.overall_pressure - previous_metrics.cache_pressure_metrics.overall_pressure;
+        }
+        
+        // Уровень фрагментации (пока тестовое значение)
+        pressure_metrics.fragmentation_level = 0.15;
+        
+        debug!(
+            "Collected cache pressure metrics: overall={:.2}, cpu={:.2}, fs={:.2}, memory={:.2}",
+            pressure_metrics.overall_pressure,
+            pressure_metrics.cpu_cache_pressure,
+            pressure_metrics.filesystem_cache_pressure,
+            pressure_metrics.memory_pressure
+        );
+        
+        pressure_metrics
     }
 
     /// Анализировать тренды использования кэша
@@ -360,13 +632,15 @@ impl CacheMonitor {
         // Рассчитываем тренды
         trends.hit_rate_trend = current_metrics.overall_hit_rate - previous_metrics.overall_hit_rate;
         trends.miss_rate_trend = current_metrics.overall_miss_rate - previous_metrics.overall_miss_rate;
+        trends.eviction_rate_trend = current_metrics.overall_eviction_rate - previous_metrics.overall_eviction_rate;
         trends.memory_usage_trend = current_metrics.total_memory_usage as f64 - previous_metrics.total_memory_usage as f64;
         trends.cache_size_trend = current_metrics.average_cache_size - previous_metrics.average_cache_size;
         trends.activity_trend = current_metrics.active_caches as f64 - previous_metrics.active_caches as f64;
+        trends.pressure_trend = current_metrics.cache_pressure_metrics.overall_pressure - previous_metrics.cache_pressure_metrics.overall_pressure;
 
         debug!(
-            "Cache trends analyzed: hit_rate={:.4}, memory={:.2} bytes, activity={:.2}",
-            trends.hit_rate_trend, trends.memory_usage_trend, trends.activity_trend
+            "Cache trends analyzed: hit_rate={:.4}, miss_rate={:.4}, eviction_rate={:.4}, memory={:.2} bytes, activity={:.2}, pressure={:.4}",
+            trends.hit_rate_trend, trends.miss_rate_trend, trends.eviction_rate_trend, trends.memory_usage_trend, trends.activity_trend, trends.pressure_trend
         );
 
         trends
@@ -389,6 +663,14 @@ impl CacheMonitor {
             recommendations.push(format!(
                 "High cache miss rate ({:.2}%) - consider optimizing cache strategy",
                 metrics.overall_miss_rate * 100.0
+            ));
+        }
+
+        // Проверяем eviction rate
+        if metrics.overall_eviction_rate > 0.15 {
+            recommendations.push(format!(
+                "High cache eviction rate ({:.2}%) - consider increasing cache size or optimizing TTL",
+                metrics.overall_eviction_rate * 100.0
             ));
         }
 
@@ -415,6 +697,14 @@ impl CacheMonitor {
             ));
         }
 
+        // Проверяем давление на кэш
+        if metrics.cache_pressure_metrics.overall_pressure > 0.7 {
+            recommendations.push(format!(
+                "High cache pressure ({:.2}) - consider optimizing cache parameters or adding more memory",
+                metrics.cache_pressure_metrics.overall_pressure
+            ));
+        }
+
         // Анализируем тренды
         if !metrics.usage_trends.hit_rate_trend.is_nan() && metrics.usage_trends.hit_rate_trend < -0.05 {
             recommendations.push(format!(
@@ -430,12 +720,128 @@ impl CacheMonitor {
             ));
         }
 
+        if !metrics.usage_trends.pressure_trend.is_nan() && metrics.usage_trends.pressure_trend > 0.1 {
+            recommendations.push(format!(
+                "Increasing cache pressure trend ({:.4}) - monitor cache health",
+                metrics.usage_trends.pressure_trend
+            ));
+        }
+
         debug!(
             "Generated {} optimization recommendations",
             recommendations.len()
         );
 
         recommendations
+    }
+
+    /// Генерировать расширенные рекомендации по оптимизации
+    fn generate_advanced_optimization_recommendations(&self, metrics: &CacheMonitorMetrics) -> Vec<AdvancedCacheOptimization> {
+        let mut optimizations = Vec::new();
+
+        // Анализируем каждый уровень кэша
+        for (cache_level, level_metrics) in &metrics.cache_level_metrics {
+            let mut optimization = AdvancedCacheOptimization {
+                cache_type: "system".to_string(),
+                cache_level: cache_level.clone(),
+                current_size: level_metrics.size_bytes,
+                recommended_size: level_metrics.size_bytes,
+                current_ttl: 5, // Текущее значение по умолчанию
+                recommended_ttl: 5,
+                current_priority: 1,
+                recommended_priority: 1,
+                reason: String::new(),
+                expected_improvement: 0.0,
+                confidence_level: 0.0,
+            };
+
+            // Оптимизируем размер на основе hit rate и давления
+            if level_metrics.hit_rate < 0.7 {
+                // Увеличиваем размер для улучшения hit rate
+                let increase_factor = 1.0 + (self.config.optimization_aggressiveness * 0.5);
+                optimization.recommended_size = (level_metrics.size_bytes as f64 * increase_factor) as u64;
+                optimization.reason.push_str("Low hit rate; ");
+                optimization.expected_improvement = (0.8 - level_metrics.hit_rate) * 0.5;
+                optimization.confidence_level = 0.8;
+            } else if level_metrics.hit_rate > 0.9 && level_metrics.pressure < 0.3 {
+                // Уменьшаем размер, если hit rate очень высокий и давление низкое
+                let decrease_factor = 1.0 - (self.config.optimization_aggressiveness * 0.3);
+                optimization.recommended_size = (level_metrics.size_bytes as f64 * decrease_factor) as u64;
+                optimization.reason.push_str("High hit rate and low pressure; ");
+                optimization.expected_improvement = 0.1; // Экономия памяти
+                optimization.confidence_level = 0.7;
+            }
+
+            // Оптимизируем TTL на основе давления
+            if level_metrics.pressure > 0.6 {
+                // Уменьшаем TTL при высоком давлении
+                optimization.recommended_ttl = (optimization.current_ttl as f64 * 0.8) as u32;
+                optimization.reason.push_str("High pressure; ");
+            } else if level_metrics.pressure < 0.2 {
+                // Увеличиваем TTL при низком давлении
+                optimization.recommended_ttl = (optimization.current_ttl as f64 * 1.2) as u32;
+                optimization.reason.push_str("Low pressure; ");
+            }
+
+            // Оптимизируем приоритет на основе важности уровня
+            match cache_level.as_str() {
+                "L1" => {
+                    optimization.recommended_priority = 5; // Максимальный приоритет
+                    optimization.reason.push_str("Critical L1 cache; ");
+                }
+                "L2" => {
+                    optimization.recommended_priority = 4;
+                    optimization.reason.push_str("Important L2 cache; ");
+                }
+                "L3" => {
+                    optimization.recommended_priority = 3;
+                    optimization.reason.push_str("Important L3 cache; ");
+                }
+                "filesystem" => {
+                    optimization.recommended_priority = 2;
+                    optimization.reason.push_str("Filesystem cache; ");
+                }
+                _ => {}
+            }
+
+            // Убираем последний "; " если есть
+            if !optimization.reason.is_empty() {
+                optimization.reason.pop();
+                optimization.reason.pop();
+            }
+
+            // Добавляем только если есть рекомендации
+            if optimization.recommended_size != optimization.current_size ||
+               optimization.recommended_ttl != optimization.current_ttl ||
+               optimization.recommended_priority != optimization.current_priority {
+                optimizations.push(optimization);
+            }
+        }
+
+        // Добавляем оптимизацию на основе общего давления
+        if metrics.cache_pressure_metrics.overall_pressure > 0.6 {
+            let mut pressure_optimization = AdvancedCacheOptimization {
+                cache_type: "system".to_string(),
+                cache_level: "overall".to_string(),
+                current_size: metrics.total_memory_usage,
+                recommended_size: (metrics.total_memory_usage as f64 * 0.8) as u64,
+                current_ttl: 5,
+                recommended_ttl: 3, // Уменьшаем TTL
+                current_priority: 1,
+                recommended_priority: 1,
+                reason: "High overall cache pressure".to_string(),
+                expected_improvement: 0.2,
+                confidence_level: 0.9,
+            };
+            optimizations.push(pressure_optimization);
+        }
+
+        debug!(
+            "Generated {} advanced optimization recommendations",
+            optimizations.len()
+        );
+
+        optimizations
     }
 
     /// Оптимизировать параметры кэша
@@ -620,6 +1026,7 @@ impl CacheMonitor {
             "total_memory_usage": metrics.total_memory_usage,
             "overall_hit_rate": metrics.overall_hit_rate,
             "overall_miss_rate": metrics.overall_miss_rate,
+            "overall_eviction_rate": metrics.overall_eviction_rate,
             "active_caches": metrics.active_caches,
             "inactive_caches": metrics.inactive_caches,
             "average_cache_size": metrics.average_cache_size,
@@ -627,8 +1034,11 @@ impl CacheMonitor {
             "min_cache_size": metrics.min_cache_size,
             "cache_type_metrics": metrics.cache_type_metrics,
             "cache_priority_metrics": metrics.cache_priority_metrics,
+            "cache_level_metrics": metrics.cache_level_metrics,
+            "cache_pressure_metrics": metrics.cache_pressure_metrics,
             "usage_trends": metrics.usage_trends,
             "optimization_recommendations": metrics.optimization_recommendations,
+            "advanced_optimization_recommendations": metrics.advanced_optimization_recommendations,
         });
 
         to_string(&json_data).context("Не удалось сериализовать метрики кэша в JSON")
@@ -843,6 +1253,19 @@ mod tests {
         metrics.total_caches = 2;
         metrics.total_memory_usage = 1000000;
         metrics.overall_hit_rate = 0.8;
+        metrics.overall_eviction_rate = 0.1;
+        
+        // Добавляем тестовые метрики уровней кэша
+        let mut l1_metrics = CacheLevelMetrics::default();
+        l1_metrics.size_bytes = 32 * 1024;
+        l1_metrics.hit_rate = 0.95;
+        metrics.cache_level_metrics.insert("L1".to_string(), l1_metrics);
+        
+        // Добавляем тестовые метрики давления
+        let mut pressure_metrics = CachePressureMetrics::default();
+        pressure_metrics.overall_pressure = 0.3;
+        pressure_metrics.cpu_cache_pressure = 0.2;
+        metrics.cache_pressure_metrics = pressure_metrics;
 
         // Экспортируем в JSON
         let json_result = monitor.export_metrics_to_json(&metrics);
@@ -851,6 +1274,9 @@ mod tests {
         assert!(json_string.contains("total_caches"));
         assert!(json_string.contains("1000000"));
         assert!(json_string.contains("0.8"));
+        assert!(json_string.contains("overall_eviction_rate"));
+        assert!(json_string.contains("cache_level_metrics"));
+        assert!(json_string.contains("cache_pressure_metrics"));
     }
 
     #[test]
@@ -875,5 +1301,154 @@ mod tests {
         // Проверяем, что тренды рассчитаны
         assert!(!metrics.usage_trends.hit_rate_trend.is_nan());
         assert!(!metrics.usage_trends.memory_usage_trend.is_nan());
+        assert!(!metrics.usage_trends.eviction_rate_trend.is_nan());
+        assert!(!metrics.usage_trends.pressure_trend.is_nan());
+    }
+
+    #[test]
+    fn test_cache_level_metrics() {
+        let config = CacheMonitorConfig::default();
+        let mut monitor = CacheMonitor::new(config);
+
+        // Создаем тестовые кэши
+        let cache_config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(cache_config);
+
+        // Собираем метрики
+        let caches = vec![cache.clone()];
+        let result = monitor.collect_cache_metrics(&caches);
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+
+        // Проверяем, что метрики уровней кэша собраны
+        assert!(!metrics.cache_level_metrics.is_empty());
+        assert!(metrics.cache_level_metrics.contains_key("L1"));
+        assert!(metrics.cache_level_metrics.contains_key("L2"));
+        assert!(metrics.cache_level_metrics.contains_key("L3"));
+        assert!(metrics.cache_level_metrics.contains_key("filesystem"));
+        
+        // Проверяем значения L1 кэша
+        let l1_metrics = metrics.cache_level_metrics.get("L1").unwrap();
+        assert_eq!(l1_metrics.size_bytes, 32 * 1024);
+        assert!(l1_metrics.hit_rate > 0.9);
+    }
+
+    #[test]
+    fn test_cache_pressure_metrics() {
+        let config = CacheMonitorConfig::default();
+        let mut monitor = CacheMonitor::new(config);
+
+        // Создаем тестовые кэши
+        let cache_config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(cache_config);
+
+        // Собираем метрики
+        let caches = vec![cache.clone()];
+        let result = monitor.collect_cache_metrics(&caches);
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+
+        // Проверяем, что метрики давления собраны
+        assert!(metrics.cache_pressure_metrics.overall_pressure >= 0.0);
+        assert!(metrics.cache_pressure_metrics.overall_pressure <= 1.0);
+        assert!(metrics.cache_pressure_metrics.cpu_cache_pressure >= 0.0);
+        assert!(metrics.cache_pressure_metrics.filesystem_cache_pressure >= 0.0);
+        assert!(metrics.cache_pressure_metrics.memory_pressure >= 0.0);
+    }
+
+    #[test]
+    fn test_advanced_optimization_recommendations() {
+        let config = CacheMonitorConfig::default();
+        let mut monitor = CacheMonitor::new(config);
+
+        // Создаем тестовые метрики с низким hit rate
+        let mut metrics = CacheMonitorMetrics::default();
+        
+        // Добавляем метрики уровней кэша с низким hit rate
+        let mut l1_metrics = CacheLevelMetrics::default();
+        l1_metrics.size_bytes = 32 * 1024;
+        l1_metrics.hit_rate = 0.6; // Низкий hit rate
+        l1_metrics.pressure = 0.1;
+        metrics.cache_level_metrics.insert("L1".to_string(), l1_metrics);
+        
+        // Генерируем расширенные рекомендации
+        let recommendations = monitor.generate_advanced_optimization_recommendations(&metrics);
+        
+        // Проверяем, что есть рекомендации
+        assert!(!recommendations.is_empty());
+        
+        // Проверяем первую рекомендацию
+        let first_rec = &recommendations[0];
+        assert_eq!(first_rec.cache_level, "L1");
+        assert!(first_rec.recommended_size > first_rec.current_size); // Должен рекомендовать увеличение
+        assert!(first_rec.reason.contains("Low hit rate"));
+        assert!(first_rec.expected_improvement > 0.0);
+        assert!(first_rec.confidence_level > 0.0);
+    }
+
+    #[test]
+    fn test_high_pressure_optimization() {
+        let config = CacheMonitorConfig::default();
+        let mut monitor = CacheMonitor::new(config);
+
+        // Создаем тестовые метрики с высоким давлением
+        let mut metrics = CacheMonitorMetrics::default();
+        metrics.total_memory_usage = 1000000;
+        
+        // Добавляем метрики давления
+        let mut pressure_metrics = CachePressureMetrics::default();
+        pressure_metrics.overall_pressure = 0.8; // Высокое давление
+        metrics.cache_pressure_metrics = pressure_metrics;
+        
+        // Генерируем расширенные рекомендации
+        let recommendations = monitor.generate_advanced_optimization_recommendations(&metrics);
+        
+        // Проверяем, что есть рекомендация по общему давлению
+        assert!(!recommendations.is_empty());
+        
+        // Ищем рекомендацию по общему давлению
+        let overall_rec = recommendations.iter().find(|r| r.cache_level == "overall");
+        assert!(overall_rec.is_some());
+        
+        let rec = overall_rec.unwrap();
+        assert!(rec.recommended_size < rec.current_size); // Должен рекомендовать уменьшение
+        assert!(rec.reason.contains("High overall cache pressure"));
+    }
+
+    #[test]
+    fn test_cache_eviction_rate_monitoring() {
+        let config = CacheMonitorConfig::default();
+        let mut monitor = CacheMonitor::new(config);
+
+        // Создаем тестовые кэши
+        let cache_config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(cache_config);
+
+        // Добавляем тестовые данные с высоким eviction rate
+        let metrics = crate::metrics::system::SystemMetrics::default();
+        let mut source_paths = std::collections::HashMap::new();
+        source_paths.insert("test".to_string(), std::path::PathBuf::from("/proc/test"));
+
+        // Симулируем высокую активность кэша
+        for i in 0..100 {
+            cache.insert(
+                format!("test_key{}", i),
+                metrics.clone(),
+                source_paths.clone(),
+                "test_metrics".to_string(),
+            );
+        }
+
+        // Собираем метрики
+        let caches = vec![cache.clone()];
+        let result = monitor.collect_cache_metrics(&caches);
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+
+        // Проверяем, что eviction rate отслеживается
+        assert!(metrics.overall_eviction_rate >= 0.0);
+        
+        // Проверяем рекомендации
+        assert!(metrics.optimization_recommendations.iter().any(|r| r.contains("eviction rate")));
     }
 }

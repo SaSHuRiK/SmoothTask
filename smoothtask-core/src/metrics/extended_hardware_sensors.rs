@@ -4,10 +4,11 @@
 //! Расширенный модуль для мониторинга дополнительных аппаратных сенсоров
 //! Добавляет поддержку дополнительных типов сенсоров, не покрытых базовым мониторингом
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
+use std::str::FromStr;
 use tracing::{debug, info, warn};
 
 /// Расширенные метрики аппаратных сенсоров
@@ -52,6 +53,164 @@ pub struct ExtendedHardwareSensors {
     pub magnetic_field_ut: Vec<(String, f32)>, // Магнитное поле в микротеслах
     pub sound_level_db: Vec<(String, f32)>, // Уровень звука в децибелах
     pub light_level_lux: Vec<(String, f32)>, // Уровень света в люксах
+    // Расширенные PCI устройства с детальной информацией
+    pub pcie_devices_detailed: Vec<PciDeviceInfo>, // Детальная информация о PCI устройствах
+}
+
+/// Детальная информация о PCI устройстве
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct PciDeviceInfo {
+    /// Идентификатор устройства (например, 0000:01:00.0)
+    pub device_id: String,
+    
+    /// Имя устройства
+    pub device_name: String,
+    
+    /// Тип устройства (GPU, Network, Storage, etc.)
+    pub device_type: PciDeviceType,
+    
+    /// Класс устройства (из PCI class code)
+    pub device_class: String,
+    
+    /// Подкласс устройства
+    pub device_subclass: String,
+    
+    /// Программный интерфейс
+    pub device_prog_if: String,
+    
+    /// Вендор ID
+    pub vendor_id: String,
+    
+    /// Device ID
+    pub device_id_code: String,
+    
+    /// Скорость PCIe (в Гбит/с)
+    pub speed_gbps: f32,
+    
+    /// Ширина PCIe (x1, x4, x8, x16, etc.)
+    pub width: String,
+    
+    /// Максимальная скорость связи
+    pub max_link_speed: String,
+    
+    /// Текущая скорость связи
+    pub current_link_speed: String,
+    
+    /// Максимальная ширина связи
+    pub max_link_width: String,
+    
+    /// Текущая ширина связи
+    pub current_link_width: String,
+    
+    /// Состояние здоровья устройства (0-100%)
+    pub health_percent: f32,
+    
+    /// Температура устройства (в °C, если доступно)
+    pub temperature_c: Option<f32>,
+    
+    /// Потребление мощности (в Вт, если доступно)
+    pub power_w: Option<f32>,
+    
+    /// Количество ошибок
+    pub error_count: u32,
+    
+    /// Состояние устройства
+    pub device_status: PciDeviceStatus,
+    
+    /// Временная метка последнего сбора данных
+    pub timestamp: std::time::SystemTime,
+}
+
+/// Тип PCI устройства
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PciDeviceType {
+    /// Неизвестный тип
+    Unknown,
+    
+    /// Графический процессор
+    Gpu,
+    
+    /// Сетевой адаптер
+    Network,
+    
+    /// Устройство хранения
+    Storage,
+    
+    /// Контроллер USB
+    UsbController,
+    
+    /// Звуковая карта
+    Audio,
+    
+    /// Мост (Bridge)
+    Bridge,
+    
+    /// Процессор
+    Processor,
+    
+    /// Контроллер памяти
+    MemoryController,
+    
+    /// Устройство ввода
+    InputDevice,
+    
+    /// Мультимедийное устройство
+    Multimedia,
+    
+    /// Устройство безопасности
+    Security,
+    
+    /// Устройство обработки сигналов
+    SignalProcessing,
+    
+    /// Устройство беспроводной связи
+    Wireless,
+    
+    /// Устройство отображения
+    Display,
+    
+    /// Устройство связи
+    Communication,
+    
+    /// Устройство хранения на основе памяти
+    MemoryStorage,
+    
+    /// Устройство обработки изображений
+    ImageProcessing,
+}
+
+impl Default for PciDeviceType {
+    fn default() -> Self {
+        PciDeviceType::Unknown
+    }
+}
+
+/// Состояние PCI устройства
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum PciDeviceStatus {
+    /// Устройство работает нормально
+    Normal,
+    
+    /// Устройство имеет предупреждения
+    Warning,
+    
+    /// Устройство в критическом состоянии
+    Critical,
+    
+    /// Устройство отключено
+    Disabled,
+    
+    /// Устройство не отвечает
+    Unresponsive,
+    
+    /// Состояние неизвестно
+    Unknown,
+}
+
+impl Default for PciDeviceStatus {
+    fn default() -> Self {
+        PciDeviceStatus::Unknown
+    }
 }
 
 /// Конфигурация расширенного мониторинга сенсоров
@@ -69,6 +228,7 @@ pub struct ExtendedHardwareSensorsConfig {
     pub enable_custom_sensors: bool,
     pub enable_thunderbolt_monitoring: bool,
     pub enable_pcie_monitoring: bool,
+    pub enable_pcie_detailed_monitoring: bool, // Расширенный мониторинг PCI устройств
     pub enable_usb4_monitoring: bool,
     pub enable_nvme_monitoring: bool,
     pub enable_thunderbolt5_monitoring: bool,
@@ -113,6 +273,7 @@ impl Default for ExtendedHardwareSensorsConfig {
             enable_custom_sensors: true,
             enable_thunderbolt_monitoring: true,
             enable_pcie_monitoring: true,
+            enable_pcie_detailed_monitoring: true, // Включаем расширенный мониторинг PCI
             enable_usb4_monitoring: true,
             enable_nvme_monitoring: true,
             enable_thunderbolt5_monitoring: true,
@@ -1196,6 +1357,84 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
+        // Если включен расширенный мониторинг, собираем детальную информацию
+        if self.config.enable_pcie_detailed_monitoring {
+            self.collect_pcie_detailed_metrics(sensors)?;
+        } else {
+            // Базовый мониторинг (только скорость)
+            match fs::read_dir(pci_dir) {
+                Ok(entries) => {
+                    for entry in entries {
+                        match entry {
+                            Ok(entry) => {
+                                let device_path = entry.path();
+                                let device_name = entry.file_name();
+                                let device_name_str = device_name.to_string_lossy();
+
+                                // Пробуем получить информацию о скорости устройства
+                                let speed_file = device_path.join("max_link_speed");
+                                if speed_file.exists() {
+                                    match fs::read_to_string(&speed_file) {
+                                        Ok(speed_content) => {
+                                            // Конвертируем скорость из кода в Гбит/с
+                                            let speed_code = speed_content.trim();
+                                            let speed_gbps = match speed_code {
+                                                "2.5 GT/s" => 2.5,
+                                                "5.0 GT/s" => 5.0,
+                                                "8.0 GT/s" => 8.0,
+                                                "16.0 GT/s" => 16.0,
+                                                "32.0 GT/s" => 32.0,
+                                                _ => {
+                                                    warn!("Unknown PCIe speed code: {}", speed_code);
+                                                    0.0
+                                                }
+                                            };
+
+                                            if speed_gbps > 0.0 {
+                                                sensors
+                                                    .pcie_devices
+                                                    .push((device_name_str.to_string(), speed_gbps));
+                                                debug!(
+                                                    "Successfully read PCIe device: {} at {} Gbps",
+                                                    device_name_str, speed_gbps
+                                                );
+                                            }
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "Failed to read PCIe speed from {}: {}",
+                                                speed_file.display(),
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("Failed to read PCIe device entry: {}", e);
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to read PCI directory: {}", e);
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Собрать детальные метрики с PCIe устройств
+    fn collect_pcie_detailed_metrics(&self, sensors: &mut ExtendedHardwareSensors) -> Result<()> {
+        let pci_dir = Path::new("/sys/bus/pci/devices");
+        debug!("Scanning for detailed PCIe devices at: {}", pci_dir.display());
+
+        if !pci_dir.exists() {
+            debug!("PCI directory not found at: {}", pci_dir.display());
+            return Ok(());
+        }
+
         match fs::read_dir(pci_dir) {
             Ok(entries) => {
                 for entry in entries {
@@ -1204,44 +1443,18 @@ impl ExtendedHardwareSensorsMonitor {
                             let device_path = entry.path();
                             let device_name = entry.file_name();
                             let device_name_str = device_name.to_string_lossy();
-
-                            // Пробуем получить информацию о скорости устройства
-                            let speed_file = device_path.join("max_link_speed");
-                            if speed_file.exists() {
-                                match fs::read_to_string(&speed_file) {
-                                    Ok(speed_content) => {
-                                        // Конвертируем скорость из кода в Гбит/с
-                                        let speed_code = speed_content.trim();
-                                        let speed_gbps = match speed_code {
-                                            "2.5 GT/s" => 2.5,
-                                            "5.0 GT/s" => 5.0,
-                                            "8.0 GT/s" => 8.0,
-                                            "16.0 GT/s" => 16.0,
-                                            "32.0 GT/s" => 32.0,
-                                            _ => {
-                                                warn!("Unknown PCIe speed code: {}", speed_code);
-                                                0.0
-                                            }
-                                        };
-
-                                        if speed_gbps > 0.0 {
-                                            sensors
-                                                .pcie_devices
-                                                .push((device_name_str.to_string(), speed_gbps));
-                                            debug!(
-                                                "Successfully read PCIe device: {} at {} Gbps",
-                                                device_name_str, speed_gbps
-                                            );
-                                        }
-                                    }
-                                    Err(e) => {
-                                        warn!(
-                                            "Failed to read PCIe speed from {}: {}",
-                                            speed_file.display(),
-                                            e
-                                        );
-                                    }
-                                }
+                            
+                            // Собираем детальную информацию о устройстве
+                            if let Some(device_info) = self.collect_pci_device_info(&device_path, &device_name_str.to_string())? {
+                                sensors.pcie_devices_detailed.push(device_info);
+                                
+                                // Также добавляем в базовый список для обратной совместимости
+                                sensors.pcie_devices.push((device_name_str.to_string(), device_info.speed_gbps));
+                                
+                                debug!(
+                                    "Successfully collected detailed PCIe device info: {}",
+                                    device_name_str
+                                );
                             }
                         }
                         Err(e) => {
@@ -1256,6 +1469,212 @@ impl ExtendedHardwareSensorsMonitor {
         }
 
         Ok(())
+    }
+
+    /// Собрать детальную информацию о конкретном PCI устройстве
+    fn collect_pci_device_info(&self, device_path: &Path, device_name: &str) -> Result<Option<PciDeviceInfo>> {
+        let mut device_info = PciDeviceInfo {
+            device_id: device_name.to_string(),
+            device_name: device_name.to_string(),
+            device_type: PciDeviceType::Unknown,
+            device_class: String::new(),
+            device_subclass: String::new(),
+            device_prog_if: String::new(),
+            vendor_id: String::new(),
+            device_id_code: String::new(),
+            speed_gbps: 0.0,
+            width: String::new(),
+            max_link_speed: String::new(),
+            current_link_speed: String::new(),
+            max_link_width: String::new(),
+            current_link_width: String::new(),
+            health_percent: 100.0, // По умолчанию 100% здоровье
+            temperature_c: None,
+            power_w: None,
+            error_count: 0,
+            device_status: PciDeviceStatus::Unknown,
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Считываем информацию о классе устройства
+        if let Ok(class_content) = fs::read_to_string(device_path.join("class")) {
+            let class_code = class_content.trim().replace('0', "");
+            let class_parts: Vec<&str> = class_code.split_whitespace().collect();
+            
+            if class_parts.len() >= 3 {
+                device_info.device_class = format!("0x{:02x}", class_parts[0]);
+                device_info.device_subclass = format!("0x{:02x}", class_parts[1]);
+                device_info.device_prog_if = format!("0x{:02x}", class_parts[2]);
+                
+                // Классифицируем устройство по классу
+                device_info.device_type = self.classify_pci_device(&device_info.device_class, &device_info.device_subclass);
+            }
+        }
+
+        // Считываем информацию о вендоре и устройстве
+        if let Ok(vendor_content) = fs::read_to_string(device_path.join("vendor")) {
+            device_info.vendor_id = vendor_content.trim().to_string();
+        }
+
+        if let Ok(device_content) = fs::read_to_string(device_path.join("device")) {
+            device_info.device_id_code = device_content.trim().to_string();
+        }
+
+        // Считываем информацию о скорости и ширине PCIe
+        if let Ok(speed_content) = fs::read_to_string(device_path.join("max_link_speed")) {
+            let speed_code = speed_content.trim();
+            device_info.max_link_speed = speed_code.to_string();
+            device_info.speed_gbps = self.convert_pcie_speed_to_gbps(speed_code);
+        }
+
+        if let Ok(current_speed_content) = fs::read_to_string(device_path.join("current_link_speed")) {
+            device_info.current_link_speed = current_speed_content.trim().to_string();
+        }
+
+        if let Ok(width_content) = fs::read_to_string(device_path.join("max_link_width")) {
+            device_info.max_link_width = width_content.trim().to_string();
+        }
+
+        if let Ok(current_width_content) = fs::read_to_string(device_path.join("current_link_width")) {
+            device_info.current_link_width = current_width_content.trim().to_string();
+            device_info.width = format!("x{}", current_width_content.trim());
+        }
+
+        // Пробуем получить информацию о температуре (если доступно)
+        if let Ok(temp_content) = fs::read_to_string(device_path.join("temp")) {
+            if let Ok(temp_value) = temp_content.trim().parse::<f32>() {
+                device_info.temperature_c = Some(temp_value / 1000.0); // Конвертируем из миллиградусов
+            }
+        }
+
+        // Пробуем получить информацию о мощности (если доступно)
+        if let Ok(power_content) = fs::read_to_string(device_path.join("power")) {
+            if let Ok(power_value) = power_content.trim().parse::<f32>() {
+                device_info.power_w = Some(power_value / 1000.0); // Конвертируем из милливатт
+            }
+        }
+
+        // Пробуем получить информацию об ошибках
+        if let Ok(error_content) = fs::read_to_string(device_path.join("aer_stats")) {
+            // Простой подсчет количества ошибок в логе
+            let error_count = error_content.lines().filter(|line| 
+                line.contains("error") || line.contains("Error")
+            ).count();
+            device_info.error_count = error_count as u32;
+        }
+
+        // Определяем состояние устройства
+        device_info.device_status = self.determine_pci_device_status(&device_info);
+
+        // Если у нас есть базовая информация, возвращаем устройство
+        if device_info.speed_gbps > 0.0 || !device_info.device_class.is_empty() {
+            Ok(Some(device_info))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Конвертировать код скорости PCIe в Гбит/с
+    fn convert_pcie_speed_to_gbps(&self, speed_code: &str) -> f32 {
+        match speed_code {
+            "2.5 GT/s" => 2.5,
+            "5.0 GT/s" => 5.0,
+            "8.0 GT/s" => 8.0,
+            "16.0 GT/s" => 16.0,
+            "32.0 GT/s" => 32.0,
+            _ => {
+                warn!("Unknown PCIe speed code: {}", speed_code);
+                0.0
+            }
+        }
+    }
+
+    /// Классифицировать PCI устройство по классу и подклассу
+    fn classify_pci_device(&self, class_code: &str, subclass_code: &str) -> PciDeviceType {
+        // Удаляем префикс 0x если он есть
+        let class_code = class_code.trim_start_matches("0x");
+        let subclass_code = subclass_code.trim_start_matches("0x");
+
+        // Конвертируем в числа
+        let class = u8::from_str_radix(class_code, 16).unwrap_or(0);
+        let subclass = u8::from_str_radix(subclass_code, 16).unwrap_or(0);
+
+        match class {
+            0x00 => PciDeviceType::Unknown, // Неклассифицированное устройство
+            0x01 => PciDeviceType::Storage, // Контроллер хранения
+            0x02 => PciDeviceType::Network, // Сетевой контроллер
+            0x03 => {
+                match subclass {
+                    0x00 => PciDeviceType::Gpu, // VGA совместимый контроллер
+                    0x01 => PciDeviceType::Gpu, // XGA контроллер
+                    0x02 => PciDeviceType::Gpu, // 3D контроллер
+                    _ => PciDeviceType::Display, // Другие дисплейные контроллеры
+                }
+            }
+            0x04 => PciDeviceType::Multimedia, // Мультимедийный контроллер
+            0x05 => PciDeviceType::MemoryController, // Контроллер памяти
+            0x06 => PciDeviceType::Bridge, // Мост
+            0x07 => PciDeviceType::Communication, // Контроллер связи
+            0x08 => PciDeviceType::Unknown, // Базовые системные периферийные устройства
+            0x09 => PciDeviceType::InputDevice, // Устройства ввода
+            0x0A => PciDeviceType::Unknown, // Докинг-станции
+            0x0B => PciDeviceType::Processor, // Процессоры
+            0x0C => {
+                match subclass {
+                    0x03 => PciDeviceType::UsbController, // USB контроллер
+                    _ => PciDeviceType::Unknown, // Другие последовательные шины
+                }
+            }
+            0x0D => PciDeviceType::Wireless, // Беспроводные контроллеры
+            0x0E => PciDeviceType::Wireless, // Интеллектуальные контроллеры ввода-вывода
+            0x0F => PciDeviceType::Unknown, // Устройства спутниковой связи
+            0x10 => PciDeviceType::Unknown, // Устройства шифрования/дешифрования
+            0x11 => PciDeviceType::SignalProcessing, // Обработка сигналов
+            0x12 => PciDeviceType::Unknown, // Устройства обработки
+            0x13 => PciDeviceType::Unknown, // Нейронные сети
+            0x40 => PciDeviceType::Unknown, // Устройства сопряжения
+            _ => PciDeviceType::Unknown,
+        }
+    }
+
+    /// Определить состояние PCI устройства
+    fn determine_pci_device_status(&self, device_info: &PciDeviceInfo) -> PciDeviceStatus {
+        // Если есть ошибки, устройство в предупреждении или критическом состоянии
+        if device_info.error_count > 10 {
+            PciDeviceStatus::Critical
+        } else if device_info.error_count > 0 {
+            PciDeviceStatus::Warning
+        }
+        
+        // Если температура слишком высокая (если доступна)
+        else if let Some(temp) = device_info.temperature_c {
+            if temp > 90.0 {
+                PciDeviceStatus::Critical
+            } else if temp > 80.0 {
+                PciDeviceStatus::Warning
+            } else {
+                PciDeviceStatus::Normal
+            }
+        }
+        
+        // Если скорость связи ниже максимальной
+        else if !device_info.current_link_speed.is_empty() 
+            && !device_info.max_link_speed.is_empty()
+            && device_info.current_link_speed != device_info.max_link_speed {
+            PciDeviceStatus::Warning
+        }
+        
+        // Если ширина связи ниже максимальной
+        else if !device_info.current_link_width.is_empty()
+            && !device_info.max_link_width.is_empty()
+            && device_info.current_link_width != device_info.max_link_width {
+            PciDeviceStatus::Warning
+        }
+        
+        // В остальных случаях устройство в нормальном состоянии
+        else {
+            PciDeviceStatus::Normal
+        }
     }
 
     /// Собрать метрики с USB4 устройств
@@ -2881,6 +3300,191 @@ mod tests {
         assert!(sensors.pcie_devices.len() >= 0);
         assert!(sensors.usb4_devices.len() >= 0);
         assert!(sensors.nvme_devices.len() >= 0);
+    }
+
+    #[test]
+    fn test_pci_device_classification() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        // Тестируем классификацию различных типов PCI устройств
+        assert_eq!(monitor.classify_pci_device("0x03", "0x00"), PciDeviceType::Gpu); // VGA
+        assert_eq!(monitor.classify_pci_device("0x03", "0x02"), PciDeviceType::Gpu); // 3D
+        assert_eq!(monitor.classify_pci_device("0x02", "0x00"), PciDeviceType::Network); // Ethernet
+        assert_eq!(monitor.classify_pci_device("0x01", "0x06"), PciDeviceType::Storage); // SATA
+        assert_eq!(monitor.classify_pci_device("0x04", "0x03"), PciDeviceType::Multimedia); // Audio
+        assert_eq!(monitor.classify_pci_device("0x06", "0x04"), PciDeviceType::Bridge); // PCI bridge
+        assert_eq!(monitor.classify_pci_device("0x0C", "0x03"), PciDeviceType::UsbController); // USB
+        assert_eq!(monitor.classify_pci_device("0x00", "0x00"), PciDeviceType::Unknown); // Unknown
+    }
+
+    #[test]
+    fn test_pci_device_status_determination() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        // Тестируем определение состояния устройства
+        let mut device_info = PciDeviceInfo::default();
+        device_info.error_count = 0;
+        device_info.temperature_c = Some(70.0);
+        device_info.current_link_speed = "16.0 GT/s".to_string();
+        device_info.max_link_speed = "16.0 GT/s".to_string();
+        assert_eq!(monitor.determine_pci_device_status(&device_info), PciDeviceStatus::Normal);
+
+        // Тестируем устройство с ошибками
+        let mut device_with_errors = PciDeviceInfo::default();
+        device_with_errors.error_count = 5;
+        assert_eq!(monitor.determine_pci_device_status(&device_with_errors), PciDeviceStatus::Warning);
+
+        // Тестируем устройство с критическими ошибками
+        let mut device_with_critical_errors = PciDeviceInfo::default();
+        device_with_critical_errors.error_count = 15;
+        assert_eq!(monitor.determine_pci_device_status(&device_with_critical_errors), PciDeviceStatus::Critical);
+
+        // Тестируем устройство с высокой температурой
+        let mut device_with_high_temp = PciDeviceInfo::default();
+        device_with_high_temp.temperature_c = Some(85.0);
+        assert_eq!(monitor.determine_pci_device_status(&device_with_high_temp), PciDeviceStatus::Warning);
+
+        // Тестируем устройство с очень высокой температурой
+        let mut device_with_very_high_temp = PciDeviceInfo::default();
+        device_with_very_high_temp.temperature_c = Some(95.0);
+        assert_eq!(monitor.determine_pci_device_status(&device_with_very_high_temp), PciDeviceStatus::Critical);
+
+        // Тестируем устройство с пониженной скоростью
+        let mut device_with_reduced_speed = PciDeviceInfo::default();
+        device_with_reduced_speed.current_link_speed = "8.0 GT/s".to_string();
+        device_with_reduced_speed.max_link_speed = "16.0 GT/s".to_string();
+        assert_eq!(monitor.determine_pci_device_status(&device_with_reduced_speed), PciDeviceStatus::Warning);
+    }
+
+    #[test]
+    fn test_pcie_speed_conversion() {
+        let config = ExtendedHardwareSensorsConfig::default();
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        // Тестируем конвертацию скоростей PCIe
+        assert_eq!(monitor.convert_pcie_speed_to_gbps("2.5 GT/s"), 2.5);
+        assert_eq!(monitor.convert_pcie_speed_to_gbps("5.0 GT/s"), 5.0);
+        assert_eq!(monitor.convert_pcie_speed_to_gbps("8.0 GT/s"), 8.0);
+        assert_eq!(monitor.convert_pcie_speed_to_gbps("16.0 GT/s"), 16.0);
+        assert_eq!(monitor.convert_pcie_speed_to_gbps("32.0 GT/s"), 32.0);
+        assert_eq!(monitor.convert_pcie_speed_to_gbps("unknown"), 0.0);
+    }
+
+    #[test]
+    fn test_pci_detailed_monitoring_disabled() {
+        let mut config = ExtendedHardwareSensorsConfig::default();
+        config.enable_pcie_detailed_monitoring = false;
+        let monitor = ExtendedHardwareSensorsMonitor::new(config);
+
+        let mut sensors = ExtendedHardwareSensors::default();
+        let result = monitor.collect_pcie_detailed_metrics(&mut sensors);
+        assert!(result.is_ok());
+        // При отключенном расширенном мониторинге детальная информация не собирается
+        assert_eq!(sensors.pcie_devices_detailed.len(), 0);
+    }
+
+    #[test]
+    fn test_pci_device_info_serialization() {
+        let device_info = PciDeviceInfo {
+            device_id: "0000:01:00.0".to_string(),
+            device_name: "Test GPU".to_string(),
+            device_type: PciDeviceType::Gpu,
+            device_class: "0x03".to_string(),
+            device_subclass: "0x00".to_string(),
+            device_prog_if: "0x00".to_string(),
+            vendor_id: "0x10de".to_string(),
+            device_id_code: "0x13c2".to_string(),
+            speed_gbps: 16.0,
+            width: "x16".to_string(),
+            max_link_speed: "16.0 GT/s".to_string(),
+            current_link_speed: "16.0 GT/s".to_string(),
+            max_link_width: "16".to_string(),
+            current_link_width: "16".to_string(),
+            health_percent: 95.0,
+            temperature_c: Some(65.0),
+            power_w: Some(150.0),
+            error_count: 0,
+            device_status: PciDeviceStatus::Normal,
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Тестируем сериализацию в JSON
+        let json_result = serde_json::to_string(&device_info);
+        assert!(json_result.is_ok());
+        let json_string = json_result.unwrap();
+        assert!(json_string.contains("Test GPU"));
+        assert!(json_string.contains("Gpu"));
+        assert!(json_string.contains("16.0"));
+
+        // Тестируем десериализацию
+        let deserialized: Result<PciDeviceInfo, _> = serde_json::from_str(&json_string);
+        assert!(deserialized.is_ok());
+        let deserialized_device = deserialized.unwrap();
+        assert_eq!(deserialized_device.device_name, "Test GPU");
+        assert_eq!(deserialized_device.device_type, PciDeviceType::Gpu);
+        assert_eq!(deserialized_device.speed_gbps, 16.0);
+    }
+
+    #[test]
+    fn test_pci_device_type_enum() {
+        // Тестируем все варианты enum PciDeviceType
+        let types = vec![
+            PciDeviceType::Unknown,
+            PciDeviceType::Gpu,
+            PciDeviceType::Network,
+            PciDeviceType::Storage,
+            PciDeviceType::UsbController,
+            PciDeviceType::Audio,
+            PciDeviceType::Bridge,
+            PciDeviceType::Processor,
+            PciDeviceType::MemoryController,
+            PciDeviceType::InputDevice,
+            PciDeviceType::Multimedia,
+            PciDeviceType::Security,
+            PciDeviceType::SignalProcessing,
+            PciDeviceType::Wireless,
+            PciDeviceType::Display,
+            PciDeviceType::Communication,
+            PciDeviceType::MemoryStorage,
+            PciDeviceType::ImageProcessing,
+        ];
+
+        // Тестируем сериализацию каждого типа
+        for device_type in types {
+            let json_result = serde_json::to_string(&device_type);
+            assert!(json_result.is_ok());
+            
+            let json_string = json_result.unwrap();
+            let deserialized: Result<PciDeviceType, _> = serde_json::from_str(&json_string);
+            assert!(deserialized.is_ok());
+            assert_eq!(deserialized.unwrap(), device_type);
+        }
+    }
+
+    #[test]
+    fn test_pci_device_status_enum() {
+        // Тестируем все варианты enum PciDeviceStatus
+        let statuses = vec![
+            PciDeviceStatus::Normal,
+            PciDeviceStatus::Warning,
+            PciDeviceStatus::Critical,
+            PciDeviceStatus::Disabled,
+            PciDeviceStatus::Unresponsive,
+            PciDeviceStatus::Unknown,
+        ];
+
+        // Тестируем сериализацию каждого статуса
+        for status in statuses {
+            let json_result = serde_json::to_string(&status);
+            assert!(json_result.is_ok());
+            
+            let json_string = json_result.unwrap();
+            let deserialized: Result<PciDeviceStatus, _> = serde_json::from_str(&json_string);
+            assert!(deserialized.is_ok());
+            assert_eq!(deserialized.unwrap(), status);
+        }
     }
 
     #[test]

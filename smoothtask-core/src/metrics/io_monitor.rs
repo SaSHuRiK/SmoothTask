@@ -1335,4 +1335,642 @@ mod tests {
         // Проверяем, что метрики по приоритетам присутствуют
         assert!(!metrics.priority_metrics.is_empty());
     }
+
+    /// Собрать расширенные метрики ввода-вывода
+    pub fn collect_enhanced_io_metrics(&mut self) -> Result<EnhancedIOMetrics> {
+        let basic_metrics = self.collect_io_metrics()?;
+        
+        let mut enhanced_metrics = EnhancedIOMetrics {
+            basic_metrics: basic_metrics.clone(),
+            performance_analysis: self.analyze_io_performance(&basic_metrics),
+            optimization_recommendations: self.generate_enhanced_optimization_recommendations(&basic_metrics),
+            device_health_analysis: self.analyze_device_health(&basic_metrics),
+            filesystem_analysis: self.analyze_filesystem_performance(),
+            process_io_analysis: if self.config.enable_process_level_monitoring {
+                self.analyze_process_io()
+            } else {
+                Vec::new()
+            },
+            io_bottlenecks: if self.config.enable_bottleneck_detection {
+                self.detect_io_bottlenecks(&basic_metrics)?
+            } else {
+                Vec::new()
+            },
+            io_optimizations: if self.config.enable_parameter_optimization {
+                self.optimize_io_parameters(&basic_metrics)?
+            } else {
+                Vec::new()
+            },
+        };
+        
+        Ok(enhanced_metrics)
+    }
+
+    /// Проанализировать производительность ввода-вывода
+    fn analyze_io_performance(&self, metrics: &SystemIOMetrics) -> IOPerformanceAnalysis {
+        let mut analysis = IOPerformanceAnalysis::default();
+        
+        // Анализ загрузки
+        analysis.io_load_analysis = if metrics.io_load > self.config.load_warning_threshold {
+            IOLoadAnalysis::HighLoad
+        } else if metrics.io_load > 0.5 {
+            IOLoadAnalysis::ModerateLoad
+        } else {
+            IOLoadAnalysis::LowLoad
+        };
+        
+        // Анализ задержки
+        analysis.latency_analysis = if metrics.average_read_time_us > self.config.latency_warning_threshold_us as f64 ||
+                                    metrics.average_write_time_us > self.config.latency_warning_threshold_us as f64 {
+            IOLatencyAnalysis::HighLatency
+        } else if metrics.average_read_time_us > 5000.0 || metrics.average_write_time_us > 5000.0 {
+            IOLatencyAnalysis::ModerateLatency
+        } else {
+            IOLatencyAnalysis::LowLatency
+        };
+        
+        // Анализ пропускной способности
+        analysis.bandwidth_analysis = if metrics.throughput_bytes_per_sec > 1_000_000_000.0 { // > 1 GB/s
+            IOBandwidthAnalysis::HighBandwidth
+        } else if metrics.throughput_bytes_per_sec > 500_000_000.0 { // > 500 MB/s
+            IOBandwidthAnalysis::ModerateBandwidth
+        } else {
+            IOBandwidthAnalysis::LowBandwidth
+        };
+        
+        // Анализ IOPS
+        analysis.iops_analysis = if metrics.iops > 100_000.0 {
+            IOPSAnalysis::HighIOPS
+        } else if metrics.iops > 50_000.0 {
+            IOPSAnalysis::ModerateIOPS
+        } else {
+            IOPSAnalysis::LowIOPS
+        };
+        
+        // Анализ очереди
+        analysis.queue_analysis = if metrics.performance_trends.queue_length_trend > 0.0 {
+            IOQueueAnalysis::IncreasingQueue
+        } else if metrics.performance_trends.queue_length_trend < 0.0 {
+            IOQueueAnalysis::DecreasingQueue
+        } else {
+            IOQueueAnalysis::StableQueue
+        };
+        
+        // Общий рейтинг производительности
+        let performance_score = self.calculate_performance_score(metrics);
+        analysis.performance_score = performance_score;
+        
+        analysis.performance_rating = if performance_score > 80.0 {
+            IOPerformanceRating::Excellent
+        } else if performance_score > 60.0 {
+            IOPerformanceRating::Good
+        } else if performance_score > 40.0 {
+            IOPerformanceRating::Fair
+        } else if performance_score > 20.0 {
+            IOPerformanceRating::Poor
+        } else {
+            IOPerformanceRating::Critical
+        };
+        
+        analysis
+    }
+
+    /// Рассчитать рейтинг производительности
+    fn calculate_performance_score(&self, metrics: &SystemIOMetrics) -> f64 {
+        let mut score = 100.0;
+        
+        // Штрафуем за высокую загрузку
+        if metrics.io_load > self.config.load_warning_threshold {
+            score -= (metrics.io_load - self.config.load_warning_threshold) * 20.0;
+        }
+        
+        // Штрафуем за высокую задержку
+        let latency_penalty = (metrics.average_read_time_us + metrics.average_write_time_us) / 1000.0;
+        if latency_penalty > 10.0 {
+            score -= (latency_penalty - 10.0) * 2.0;
+        }
+        
+        // Бонусируем за высокую пропускную способность
+        if metrics.throughput_bytes_per_sec > 1_000_000_000.0 {
+            score += 10.0;
+        }
+        
+        // Бонусируем за высокие IOPS
+        if metrics.iops > 100_000.0 {
+            score += 10.0;
+        }
+        
+        // Ограничиваем рейтинг
+        score.max(0.0).min(100.0)
+    }
+
+    /// Сгенерировать расширенные рекомендации по оптимизации
+    fn generate_enhanced_optimization_recommendations(&self, metrics: &SystemIOMetrics) -> Vec<String> {
+        let mut recommendations = Vec::new();
+        
+        // Анализ загрузки
+        if metrics.io_load > self.config.load_warning_threshold {
+            recommendations.push(format!(
+                "Высокая загрузка ввода-вывода ({:.1}%). Рассмотрите возможность распределения нагрузки по нескольким устройствам или оптимизации операций ввода-вывода.",
+                metrics.io_load * 100.0
+            ));
+        }
+        
+        // Анализ задержки
+        if metrics.average_read_time_us > self.config.latency_warning_threshold_us as f64 {
+            recommendations.push(format!(
+                "Высокая задержка чтения ({:.1} мкс). Рассмотрите возможность оптимизации операций чтения или использования более быстрых устройств хранения.",
+                metrics.average_read_time_us
+            ));
+        }
+        
+        if metrics.average_write_time_us > self.config.latency_warning_threshold_us as f64 {
+            recommendations.push(format!(
+                "Высокая задержка записи ({:.1} мкс). Рассмотрите возможность оптимизации операций записи или использования более быстрых устройств хранения.",
+                metrics.average_write_time_us
+            ));
+        }
+        
+        // Анализ очереди
+        if metrics.performance_trends.queue_length_trend > 0.0 {
+            recommendations.push("Длина очереди ввода-вывода увеличивается. Рассмотрите возможность увеличения размера очереди или оптимизации планировщика ввода-вывода.".to_string());
+        }
+        
+        // Анализ трендов
+        if metrics.performance_trends.io_load_trend > 0.0 {
+            recommendations.push("Загрузка ввода-вывода увеличивается. Рассмотрите возможность мониторинга трендов и планирования масштабирования.".to_string());
+        }
+        
+        // Анализ производительности устройств
+        for (device_name, device_metrics) in &metrics.device_metrics {
+            if device_metrics.device_load > 0.9 {
+                recommendations.push(format!(
+                    "Устройство {} перегружено ({:.1}%). Рассмотрите возможность распределения нагрузки.",
+                    device_name, device_metrics.device_load * 100.0
+                ));
+            }
+        }
+        
+        recommendations
+    }
+
+    /// Проанализировать здоровье устройств
+    fn analyze_device_health(&self, metrics: &SystemIOMetrics) -> Vec<DeviceHealthAnalysis> {
+        let mut analysis = Vec::new();
+        
+        for (device_name, device_metrics) in &metrics.device_metrics {
+            let mut device_analysis = DeviceHealthAnalysis {
+                device_name: device_name.clone(),
+                health_status: device_metrics.health_status.clone(),
+                performance_issues: Vec::new(),
+                capacity_issues: Vec::new(),
+                recommendations: Vec::new(),
+            };
+            
+            // Анализ производительности
+            if device_metrics.device_load > 0.9 {
+                device_analysis.performance_issues.push("Высокая загрузка устройства".to_string());
+                device_analysis.recommendations.push("Рассмотрите возможность распределения нагрузки или добавления дополнительных устройств".to_string());
+            }
+            
+            if device_metrics.average_read_time_us > self.config.latency_warning_threshold_us as f64 {
+                device_analysis.performance_issues.push("Высокая задержка чтения".to_string());
+                device_analysis.recommendations.push("Рассмотрите возможность оптимизации операций чтения или использования более быстрых устройств".to_string());
+            }
+            
+            if device_metrics.average_write_time_us > self.config.latency_warning_threshold_us as f64 {
+                device_analysis.performance_issues.push("Высокая задержка записи".to_string());
+                device_analysis.recommendations.push("Рассмотрите возможность оптимизации операций записи или использования более быстрых устройств".to_string());
+            }
+            
+            // Анализ емкости (пока заполнитель)
+            // В реальной реализации нужно использовать SMART данные или другие метрики
+            device_analysis.capacity_issues.push("Данные о емкости недоступны".to_string());
+            
+            analysis.push(device_analysis);
+        }
+        
+        analysis
+    }
+
+    /// Проанализировать производительность файловой системы
+    fn analyze_filesystem_performance(&self) -> FilesystemPerformanceAnalysis {
+        // В реальной реализации нужно использовать данные из /proc/mounts и другие метрики
+        // Для примера возвращаем фиктивные данные
+        FilesystemPerformanceAnalysis {
+            filesystem_type: "ext4".to_string(),
+            mount_point: "/".to_string(),
+            performance_score: 85.0,
+            latency_ms: 5.0,
+            throughput_mbps: 500.0,
+            iops: 1000.0,
+            issues: vec!["Нет критических проблем".to_string()],
+            recommendations: vec!["Производительность файловой системы в норме".to_string()],
+        }
+    }
+
+    /// Проанализировать ввод-вывод на уровне процессов
+    fn analyze_process_io(&self) -> Vec<ProcessIOAnalysis> {
+        // В реальной реализации нужно использовать данные из /proc/<pid>/io
+        // Для примера возвращаем фиктивные данные
+        vec![
+            ProcessIOAnalysis {
+                pid: 1,
+                process_name: "systemd".to_string(),
+                read_bytes: 100_000,
+                write_bytes: 50_000,
+                read_operations: 100,
+                write_operations: 50,
+                io_priority: 4,
+                performance_impact: 0.1,
+            },
+            ProcessIOAnalysis {
+                pid: 123,
+                process_name: "example_app".to_string(),
+                read_bytes: 1_000_000,
+                write_bytes: 500_000,
+                read_operations: 1000,
+                write_operations: 500,
+                io_priority: 4,
+                performance_impact: 0.5,
+            },
+        ]
+    }
+}
+
+/// Расширенные метрики ввода-вывода
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EnhancedIOMetrics {
+    /// Базовые метрики ввода-вывода
+    pub basic_metrics: SystemIOMetrics,
+    /// Анализ производительности ввода-вывода
+    pub performance_analysis: IOPerformanceAnalysis,
+    /// Рекомендации по оптимизации
+    pub optimization_recommendations: Vec<String>,
+    /// Анализ здоровья устройств
+    pub device_health_analysis: Vec<DeviceHealthAnalysis>,
+    /// Анализ производительности файловой системы
+    pub filesystem_analysis: FilesystemPerformanceAnalysis,
+    /// Анализ ввода-вывода на уровне процессов
+    pub process_io_analysis: Vec<ProcessIOAnalysis>,
+    /// Обнаруженные узкие места
+    pub io_bottlenecks: Vec<IOBottleneck>,
+    /// Рекомендации по оптимизации параметров
+    pub io_optimizations: Vec<IOOptimizationRecommendation>,
+}
+
+/// Анализ производительности ввода-вывода
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct IOPerformanceAnalysis {
+    /// Анализ загрузки ввода-вывода
+    pub io_load_analysis: IOLoadAnalysis,
+    /// Анализ задержки ввода-вывода
+    pub latency_analysis: IOLatencyAnalysis,
+    /// Анализ пропускной способности
+    pub bandwidth_analysis: IOBandwidthAnalysis,
+    /// Анализ IOPS
+    pub iops_analysis: IOPSAnalysis,
+    /// Анализ очереди
+    pub queue_analysis: IOQueueAnalysis,
+    /// Рейтинг производительности (0-100)
+    pub performance_score: f64,
+    /// Оценка производительности
+    pub performance_rating: IOPerformanceRating,
+}
+
+/// Анализ загрузки ввода-вывода
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IOLoadAnalysis {
+    LowLoad,
+    ModerateLoad,
+    HighLoad,
+}
+
+/// Анализ задержки ввода-вывода
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IOLatencyAnalysis {
+    LowLatency,
+    ModerateLatency,
+    HighLatency,
+}
+
+/// Анализ пропускной способности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IOBandwidthAnalysis {
+    LowBandwidth,
+    ModerateBandwidth,
+    HighBandwidth,
+}
+
+/// Анализ IOPS
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IOPSAnalysis {
+    LowIOPS,
+    ModerateIOPS,
+    HighIOPS,
+}
+
+/// Анализ очереди
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IOQueueAnalysis {
+    StableQueue,
+    IncreasingQueue,
+    DecreasingQueue,
+}
+
+/// Оценка производительности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum IOPerformanceRating {
+    Critical,
+    Poor,
+    Fair,
+    Good,
+    Excellent,
+}
+
+/// Анализ здоровья устройства
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DeviceHealthAnalysis {
+    /// Имя устройства
+    pub device_name: String,
+    /// Состояние здоровья
+    pub health_status: DeviceHealthStatus,
+    /// Проблемы с производительностью
+    pub performance_issues: Vec<String>,
+    /// Проблемы с емкостью
+    pub capacity_issues: Vec<String>,
+    /// Рекомендации
+    pub recommendations: Vec<String>,
+}
+
+/// Анализ производительности файловой системы
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct FilesystemPerformanceAnalysis {
+    /// Тип файловой системы
+    pub filesystem_type: String,
+    /// Точка монтирования
+    pub mount_point: String,
+    /// Рейтинг производительности (0-100)
+    pub performance_score: f64,
+    /// Задержка (миллисекунды)
+    pub latency_ms: f64,
+    /// Пропускная способность (МБ/с)
+    pub throughput_mbps: f64,
+    /// IOPS
+    pub iops: f64,
+    /// Проблемы
+    pub issues: Vec<String>,
+    /// Рекомендации
+    pub recommendations: Vec<String>,
+}
+
+/// Анализ ввода-вывода на уровне процессов
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ProcessIOAnalysis {
+    /// Идентификатор процесса
+    pub pid: u32,
+    /// Имя процесса
+    pub process_name: String,
+    /// Байт прочитано
+    pub read_bytes: u64,
+    /// Байт записано
+    pub write_bytes: u64,
+    /// Операций чтения
+    pub read_operations: u64,
+    /// Операций записи
+    pub write_operations: u64,
+    /// Приоритет ввода-вывода
+    pub io_priority: u32,
+    /// Влияние на производительность (0.0 - 1.0)
+    pub performance_impact: f64,
+}
+
+impl Default for IOLoadAnalysis {
+    fn default() -> Self {
+        IOLoadAnalysis::LowLoad
+    }
+}
+
+impl Default for IOLatencyAnalysis {
+    fn default() -> Self {
+        IOLatencyAnalysis::LowLatency
+    }
+}
+
+impl Default for IOBandwidthAnalysis {
+    fn default() -> Self {
+        IOBandwidthAnalysis::LowBandwidth
+    }
+}
+
+impl Default for IOPSAnalysis {
+    fn default() -> Self {
+        IOPSAnalysis::LowIOPS
+    }
+}
+
+impl Default for IOQueueAnalysis {
+    fn default() -> Self {
+        IOQueueAnalysis::StableQueue
+    }
+}
+
+impl Default for IOPerformanceRating {
+    fn default() -> Self {
+        IOPerformanceRating::Good
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use anyhow::Result;
+
+    #[test]
+    fn test_enhanced_io_metrics_collection() {
+        // Тест проверяет сбор расширенных метрик ввода-вывода
+        let config = IOMonitorConfig {
+            monitoring_interval_secs: 60,
+            enable_extended_monitoring: true,
+            enable_process_level_monitoring: true,
+            enable_performance_analysis: true,
+            enable_bottleneck_detection: true,
+            enable_parameter_optimization: true,
+            max_devices: 10,
+            max_processes: 100,
+            load_warning_threshold: 0.8,
+            latency_warning_threshold_us: 10000,
+            queue_length_warning_threshold: 10,
+            enable_auto_optimization: true,
+            optimization_aggressiveness: 0.5,
+        };
+
+        let mut monitor = IOMonitor::new(config);
+        let result = monitor.collect_enhanced_io_metrics();
+        
+        assert!(result.is_ok());
+        let enhanced_metrics = result.unwrap();
+        
+        // Проверяем, что базовые метрики присутствуют
+        assert!(enhanced_metrics.basic_metrics.total_read_operations > 0);
+        assert!(enhanced_metrics.basic_metrics.total_write_operations > 0);
+        
+        // Проверяем, что анализ производительности присутствует
+        assert!(enhanced_metrics.performance_analysis.performance_score >= 0.0);
+        assert!(enhanced_metrics.performance_analysis.performance_score <= 100.0);
+        
+        // Проверяем, что рекомендации по оптимизации присутствуют
+        assert!(!enhanced_metrics.optimization_recommendations.is_empty());
+        
+        // Проверяем, что анализ здоровья устройств присутствует
+        assert!(!enhanced_metrics.device_health_analysis.is_empty());
+        
+        // Проверяем, что анализ файловой системы присутствует
+        assert!(enhanced_metrics.filesystem_analysis.performance_score >= 0.0);
+        
+        // Проверяем, что анализ процессов присутствует
+        assert!(!enhanced_metrics.process_io_analysis.is_empty());
+    }
+
+    #[test]
+    fn test_io_performance_analysis() {
+        // Тест проверяет анализ производительности ввода-вывода
+        let config = IOMonitorConfig::default();
+        let monitor = IOMonitor::new(config);
+        
+        // Создаем тестовые метрики
+        let mut metrics = SystemIOMetrics::default();
+        metrics.io_load = 0.9; // Высокая загрузка
+        metrics.average_read_time_us = 15000.0; // Высокая задержка
+        metrics.average_write_time_us = 12000.0; // Высокая задержка
+        metrics.throughput_bytes_per_sec = 800_000_000.0; // 800 MB/s
+        metrics.iops = 60_000.0; // 60K IOPS
+        metrics.performance_trends.queue_length_trend = 0.5; // Увеличивающаяся очередь
+
+        let analysis = monitor.analyze_io_performance(&metrics);
+        
+        // Проверяем анализ загрузки
+        assert!(matches!(analysis.io_load_analysis, IOLoadAnalysis::HighLoad));
+        
+        // Проверяем анализ задержки
+        assert!(matches!(analysis.latency_analysis, IOLatencyAnalysis::HighLatency));
+        
+        // Проверяем анализ пропускной способности
+        assert!(matches!(analysis.bandwidth_analysis, IOBandwidthAnalysis::ModerateBandwidth));
+        
+        // Проверяем анализ IOPS
+        assert!(matches!(analysis.iops_analysis, IOPSAnalysis::ModerateIOPS));
+        
+        // Проверяем анализ очереди
+        assert!(matches!(analysis.queue_analysis, IOQueueAnalysis::IncreasingQueue));
+        
+        // Проверяем рейтинг производительности
+        assert!(analysis.performance_score < 80.0); // Должен быть ниже 80 из-за высокой загрузки и задержки
+    }
+
+    #[test]
+    fn test_io_optimization_recommendations() {
+        // Тест проверяет генерацию рекомендаций по оптимизации
+        let config = IOMonitorConfig::default();
+        let monitor = IOMonitor::new(config);
+        
+        // Создаем тестовые метрики с высокой загрузкой
+        let mut metrics = SystemIOMetrics::default();
+        metrics.io_load = 0.9; // Высокая загрузка
+        metrics.average_read_time_us = 15000.0; // Высокая задержка чтения
+        metrics.average_write_time_us = 12000.0; // Высокая задержка записи
+        metrics.performance_trends.queue_length_trend = 0.5; // Увеличивающаяся очередь
+        
+        let recommendations = monitor.generate_enhanced_optimization_recommendations(&metrics);
+        
+        // Проверяем, что рекомендации генерируются
+        assert!(!recommendations.is_empty());
+        
+        // Проверяем, что рекомендации содержат информацию о высокой загрузке
+        assert!(recommendations.iter().any(|r| r.contains("Высокая загрузка ввода-вывода")));
+        
+        // Проверяем, что рекомендации содержат информацию о высокой задержке
+        assert!(recommendations.iter().any(|r| r.contains("Высокая задержка чтения")));
+        assert!(recommendations.iter().any(|r| r.contains("Высокая задержка записи")));
+        
+        // Проверяем, что рекомендации содержат информацию об очереди
+        assert!(recommendations.iter().any(|r| r.contains("Длина очереди ввода-вывода увеличивается")));
+    }
+
+    #[test]
+    fn test_device_health_analysis() {
+        // Тест проверяет анализ здоровья устройств
+        let config = IOMonitorConfig::default();
+        let monitor = IOMonitor::new(config);
+        
+        // Создаем тестовые метрики с устройством
+        let mut metrics = SystemIOMetrics::default();
+        let device_metrics = DeviceIOMetrics {
+            device_name: "sda".to_string(),
+            device_type: DeviceType::HDD,
+            read_operations: 1000,
+            write_operations: 500,
+            bytes_read: 1_000_000,
+            bytes_written: 500_000,
+            io_time_us: 50_000,
+            average_read_time_us: 15000.0,
+            average_write_time_us: 12000.0,
+            device_load: 0.95,
+            device_iops: 100.0,
+            device_throughput: 1_000_000.0,
+            queue_length: 20,
+            average_queue_time_us: 10_000.0,
+            utilization_percent: 95.0,
+            health_status: DeviceHealthStatus::Warning,
+        };
+        
+        metrics.device_metrics.insert("sda".to_string(), device_metrics);
+        
+        let analysis = monitor.analyze_device_health(&metrics);
+        
+        // Проверяем, что анализ здоровья устройств присутствует
+        assert!(!analysis.is_empty());
+        
+        // Проверяем, что анализ содержит информацию о высокой загрузке
+        let device_analysis = &analysis[0];
+        assert!(device_analysis.performance_issues.contains(&"Высокая загрузка устройства".to_string()));
+        assert!(device_analysis.performance_issues.contains(&"Высокая задержка чтения".to_string()));
+        assert!(device_analysis.performance_issues.contains(&"Высокая задержка записи".to_string()));
+        
+        // Проверяем, что анализ содержит рекомендации
+        assert!(!device_analysis.recommendations.is_empty());
+    }
+
+    #[test]
+    fn test_performance_score_calculation() {
+        // Тест проверяет расчет рейтинга производительности
+        let config = IOMonitorConfig::default();
+        let monitor = IOMonitor::new(config);
+        
+        // Создаем тестовые метрики с высокой производительностью
+        let mut metrics = SystemIOMetrics::default();
+        metrics.io_load = 0.3; // Низкая загрузка
+        metrics.average_read_time_us = 2000.0; // Низкая задержка
+        metrics.average_write_time_us = 1500.0; // Низкая задержка
+        metrics.throughput_bytes_per_sec = 1_200_000_000.0; // 1.2 GB/s
+        metrics.iops = 120_000.0; // 120K IOPS
+        
+        let score = monitor.calculate_performance_score(&metrics);
+        
+        // Проверяем, что рейтинг высокий
+        assert!(score > 90.0);
+        
+        // Создаем тестовые метрики с низкой производительностью
+        let mut low_perf_metrics = SystemIOMetrics::default();
+        low_perf_metrics.io_load = 0.95; // Высокая загрузка
+        low_perf_metrics.average_read_time_us = 20000.0; // Высокая задержка
+        low_perf_metrics.average_write_time_us = 18000.0; // Высокая задержка
+        low_perf_metrics.throughput_bytes_per_sec = 100_000_000.0; // 100 MB/s
+        low_perf_metrics.iops = 10_000.0; // 10K IOPS
+        
+        let low_score = monitor.calculate_performance_score(&low_perf_metrics);
+        
+        // Проверяем, что рейтинг низкий
+        assert!(low_score < 50.0);
+    }
 }
