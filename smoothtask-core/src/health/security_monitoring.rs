@@ -10,6 +10,9 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
+use sysconf;
+
 /// Тип события безопасности.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SecurityEventType {
@@ -534,6 +537,9 @@ impl SecurityMonitorImpl {
         // Проверяем подозрительные процессы
         self.check_suspicious_processes(&mut security_monitor).await?;
 
+        // Проверяем подозрительные паттерны поведения процессов
+        self.check_suspicious_behavior(&mut security_monitor).await?;
+
         // Проверяем аномальное использование ресурсов
         self.check_anomalous_resource_usage(&mut security_monitor).await?;
 
@@ -853,6 +859,305 @@ impl SecurityMonitorImpl {
         // В реальной реализации здесь будет анализ активности
         false
     }
+
+    /// Анализ поведения процесса.
+    async fn analyze_process_behavior(&self, pid: i32) -> Result<ProcessBehavior> {
+        let mut behavior = ProcessBehavior {
+            pid,
+            child_count: 0,
+            thread_count: 0,
+            open_files_count: 0,
+            network_connections_count: 0,
+            start_time: None,
+            parent_pid: None,
+            parent_name: None,
+            cpu_usage: 0.0,
+            memory_usage: 0.0,
+            child_creation_rate: 0.0,
+        };
+
+        // Получаем информацию о процессе
+        let proc_path = Path::new("/proc").join(pid.to_string());
+        if !proc_path.exists() {
+            return Ok(behavior);
+        }
+
+        // Чтение статуса процесса
+        let status_path = proc_path.join("status");
+        if let Ok(status_content) = std::fs::read_to_string(&status_path) {
+            for line in status_content.lines() {
+                if line.starts_with("Threads:") {
+                    if let Some(thread_count) = line.split(':').nth(1) {
+                        behavior.thread_count = thread_count.trim().parse().unwrap_or(0);
+                    }
+                }
+            }
+        }
+
+        // Чтение информации о родительском процессе
+        behavior.parent_pid = self.get_parent_pid(pid).await?;
+        if let Some(parent_pid) = behavior.parent_pid {
+            behavior.parent_name = self.get_process_name(parent_pid).await?;
+        }
+
+        // Чтение времени создания процесса
+        behavior.start_time = self.get_process_start_time(pid).await?;
+
+        // Подсчет дочерних процессов
+        behavior.child_count = self.count_child_processes(pid).await?;
+
+        // Подсчет открытых файлов
+        behavior.open_files_count = self.count_open_files(pid).await?;
+
+        // Подсчет сетевых соединений
+        behavior.network_connections_count = self.count_network_connections(pid).await?;
+
+        // Получение использования ресурсов
+        let process_info = self.get_process_info(pid).await?;
+        if let Some(info) = process_info {
+            behavior.cpu_usage = info.cpu_usage;
+            behavior.memory_usage = info.memory_usage;
+        }
+
+        Ok(behavior)
+    }
+
+    /// Получение идентификатора родительского процесса.
+    async fn get_parent_pid(&self, pid: i32) -> Result<Option<i32>> {
+        let proc_path = Path::new("/proc").join(pid.to_string());
+        let status_path = proc_path.join("status");
+
+        if let Ok(status_content) = std::fs::read_to_string(&status_path) {
+            for line in status_content.lines() {
+                if line.starts_with("PPid:") {
+                    if let Some(ppid) = line.split(':').nth(1) {
+                        return Ok(Some(ppid.trim().parse().unwrap_or(0)));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Получение имени процесса.
+    async fn get_process_name(&self, pid: i32) -> Result<Option<String>> {
+        let proc_path = Path::new("/proc").join(pid.to_string());
+        let status_path = proc_path.join("status");
+
+        if let Ok(status_content) = std::fs::read_to_string(&status_path) {
+            for line in status_content.lines() {
+                if line.starts_with("Name:") {
+                    if let Some(name) = line.split(':').nth(1) {
+                        return Ok(Some(name.trim().to_string()));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Получение времени создания процесса.
+    async fn get_process_start_time(&self, pid: i32) -> Result<Option<DateTime<Utc>>> {
+        let proc_path = Path::new("/proc").join(pid.to_string());
+        let stat_path = proc_path.join("stat");
+
+        if let Ok(stat_content) = std::fs::read_to_string(&stat_path) {
+            // Парсинг времени создания из /proc/[pid]/stat
+            // Формат: pid (comm) state ppid ... starttime ...
+            let parts: Vec<&str> = stat_content.split_whitespace().collect();
+            if parts.len() >= 22 {
+                if let Ok(start_time_clock_ticks) = parts[21].parse::<i64>() {
+                    // Конвертация clock ticks в DateTime
+                    let boot_time = self.get_system_boot_time().await?;
+                    let duration_since_boot = Duration::from_secs_f64(start_time_clock_ticks as f64 / sysconf::sysconf(sysconf::SysconfVariable::SC_CLK_TCK).unwrap_or(100) as f64);
+                    let start_time = boot_time + duration_since_boot;
+                    return Ok(Some(start_time));
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Получение времени загрузки системы.
+    async fn get_system_boot_time(&self) -> Result<DateTime<Utc>> {
+        let proc_stat_path = Path::new("/proc/stat");
+        if let Ok(stat_content) = std::fs::read_to_string(proc_stat_path) {
+            for line in stat_content.lines() {
+                if line.starts_with("btime") {
+                    if let Some(btime) = line.split_whitespace().nth(1) {
+                        if let Ok(btime_secs) = btime.parse::<i64>() {
+                            return Ok(DateTime::<Utc>::from_timestamp(btime_secs, 0).unwrap_or(Utc::now()));
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(Utc::now())
+    }
+
+    /// Подсчет дочерних процессов.
+    async fn count_child_processes(&self, parent_pid: i32) -> Result<usize> {
+        let mut count = 0;
+        let proc_dir = Path::new("/proc");
+
+        if !proc_dir.exists() {
+            return Ok(count);
+        }
+
+        for entry in proc_dir.read_dir()? {
+            let entry = entry?;
+            let pid_str = entry.file_name().to_string_lossy().to_string();
+
+            if let Ok(pid) = pid_str.parse::<i32>() {
+                if let Ok(Some(ppid)) = self.get_parent_pid(pid).await {
+                    if ppid == parent_pid {
+                        count += 1;
+                    }
+                }
+            }
+        }
+
+        Ok(count)
+    }
+
+    /// Подсчет открытых файлов.
+    async fn count_open_files(&self, pid: i32) -> Result<usize> {
+        let fd_path = Path::new("/proc").join(pid.to_string()).join("fd");
+        if !fd_path.exists() {
+            return Ok(0);
+        }
+
+        let mut count = 0;
+        for entry in fd_path.read_dir()? {
+            let _ = entry?;
+            count += 1;
+        }
+
+        Ok(count)
+    }
+
+    /// Подсчет сетевых соединений.
+    async fn count_network_connections(&self, pid: i32) -> Result<usize> {
+        // В реальной реализации здесь будет анализ /proc/[pid]/fd и /proc/net/tcp
+        // Для примера возвращаем 0
+        Ok(0)
+    }
+
+    /// Проверка подозрительных паттернов поведения.
+    async fn check_suspicious_behavior_patterns(&self, behavior: &ProcessBehavior) -> Result<Vec<SuspiciousBehaviorPattern>> {
+        let mut patterns = Vec::new();
+
+        // Паттерн 1: Слишком много дочерних процессов
+        if behavior.child_count > 10 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "high_child_process_count".to_string(),
+                description: "Process has unusually high number of child processes".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                threshold: 10.0,
+                current_value: behavior.child_count as f32,
+            });
+        }
+
+        // Паттерн 2: Слишком много потоков
+        if behavior.thread_count > 100 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "high_thread_count".to_string(),
+                description: "Process has unusually high number of threads".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                threshold: 100.0,
+                current_value: behavior.thread_count as f32,
+            });
+        }
+
+        // Паттерн 3: Слишком много открытых файлов
+        if behavior.open_files_count > 100 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "high_open_files_count".to_string(),
+                description: "Process has unusually high number of open files".to_string(),
+                severity: SecurityEventSeverity::Low,
+                threshold: 100.0,
+                current_value: behavior.open_files_count as f32,
+            });
+        }
+
+        // Паттерн 4: Подозрительный родительский процесс
+        if let Some(parent_name) = &behavior.parent_name {
+            if self.is_suspicious_process(parent_name) {
+                patterns.push(SuspiciousBehaviorPattern {
+                    pattern_type: "suspicious_parent_process".to_string(),
+                    description: format!("Process has suspicious parent: {}", parent_name),
+                    severity: SecurityEventSeverity::High,
+                    threshold: 0.0,
+                    current_value: 1.0,
+                });
+            }
+        }
+
+        // Паттерн 5: Высокое использование CPU
+        if behavior.cpu_usage > 90.0 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "high_cpu_usage".to_string(),
+                description: "Process has unusually high CPU usage".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                threshold: 90.0,
+                current_value: behavior.cpu_usage,
+            });
+        }
+
+        // Паттерн 6: Высокое использование памяти
+        if behavior.memory_usage > 80.0 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "high_memory_usage".to_string(),
+                description: "Process has unusually high memory usage".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                threshold: 80.0,
+                current_value: behavior.memory_usage,
+            });
+        }
+
+        Ok(patterns)
+    }
+
+    /// Проверка подозрительных паттернов поведения процессов.
+    async fn check_suspicious_behavior(&self, _security_monitor: &mut SecurityMonitor) -> Result<()> {
+        // Получаем список всех процессов
+        let processes = self.get_all_processes().await?;
+
+        for process in processes {
+            // Анализируем поведение процесса
+            let behavior = self.analyze_process_behavior(process.pid).await?;
+
+            // Проверяем подозрительные паттерны
+            let patterns = self.check_suspicious_behavior_patterns(&behavior).await?;
+
+            for pattern in patterns {
+                let event = SecurityEvent {
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now(),
+                    event_type: SecurityEventType::UnusualProcessActivity,
+                    severity: pattern.severity,
+                    status: SecurityEventStatus::New,
+                    process_name: Some(process.name.clone()),
+                    process_id: Some(process.pid),
+                    description: format!("Suspicious behavior pattern detected: {}", pattern.pattern_type),
+                    details: Some(format!(
+                        "Pattern: {}\nDescription: {}\nThreshold: {}\nCurrent: {}",
+                        pattern.pattern_type, pattern.description, pattern.threshold, pattern.current_value
+                    )),
+                    recommendations: Some("Investigate this process behavior and monitor for potential threats".to_string()),
+                    resolved_time: None,
+                };
+
+                self.add_security_event(event).await?;
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Информация о процессе.
@@ -904,6 +1209,48 @@ pub struct FilesystemActivity {
     pub operation: String,
     /// Время операции
     pub timestamp: DateTime<Utc>,
+}
+
+/// Информация о поведении процесса.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ProcessBehavior {
+    /// Идентификатор процесса
+    pub pid: i32,
+    /// Количество дочерних процессов
+    pub child_count: usize,
+    /// Количество потоков
+    pub thread_count: usize,
+    /// Количество открытых файлов
+    pub open_files_count: usize,
+    /// Количество сетевых соединений
+    pub network_connections_count: usize,
+    /// Время создания процесса
+    pub start_time: Option<DateTime<Utc>>,
+    /// Родительский процесс
+    pub parent_pid: Option<i32>,
+    /// Родительское имя процесса
+    pub parent_name: Option<String>,
+    /// Использование CPU
+    pub cpu_usage: f32,
+    /// Использование памяти
+    pub memory_usage: f32,
+    /// Частота создания дочерних процессов (в минуту)
+    pub child_creation_rate: f32,
+}
+
+/// Паттерны подозрительного поведения.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SuspiciousBehaviorPattern {
+    /// Тип паттерна
+    pub pattern_type: String,
+    /// Описание паттерна
+    pub description: String,
+    /// Уровень серьезности
+    pub severity: SecurityEventSeverity,
+    /// Пороговое значение
+    pub threshold: f32,
+    /// Текущее значение
+    pub current_value: f32,
 }
 
 /// Вспомогательная функция для создания SecurityMonitor.
@@ -1039,6 +1386,69 @@ mod tests {
         // Проверяем, что обычные процессы не обнаруживаются
         assert!(!monitor.is_suspicious_process("smoothtaskd"));
         assert!(!monitor.is_suspicious_process("systemd"));
+    }
+
+    #[tokio::test]
+    async fn test_analyze_process_behavior() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Тестируем анализ поведения процесса (используем текущий PID)
+        let current_pid = std::process::id() as i32;
+        let behavior = monitor.analyze_process_behavior(current_pid).await.unwrap();
+
+        // Проверяем, что поведение содержит основную информацию
+        assert_eq!(behavior.pid, current_pid);
+        assert!(behavior.thread_count > 0);
+        assert!(behavior.open_files_count > 0);
+    }
+
+    #[tokio::test]
+    async fn test_check_suspicious_behavior_patterns() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовое поведение с высокими значениями
+        let mut behavior = ProcessBehavior {
+            pid: 1234,
+            child_count: 15, // Выше порога
+            thread_count: 150, // Выше порога
+            open_files_count: 150, // Выше порога
+            network_connections_count: 0,
+            start_time: None,
+            parent_pid: None,
+            parent_name: Some("xmrig".to_string()), // Подозрительный родитель
+            cpu_usage: 95.0, // Выше порога
+            memory_usage: 85.0, // Выше порога
+            child_creation_rate: 0.0,
+        };
+
+        // Проверяем обнаружение паттернов
+        let patterns = monitor.check_suspicious_behavior_patterns(&behavior).await.unwrap();
+
+        // Должны быть обнаружены несколько паттернов
+        assert!(!patterns.is_empty());
+        assert!(patterns.iter().any(|p| p.pattern_type == "high_child_process_count"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "high_thread_count"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "high_open_files_count"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "suspicious_parent_process"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "high_cpu_usage"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "high_memory_usage"));
+    }
+
+    #[tokio::test]
+    async fn test_check_suspicious_behavior() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем проверку подозрительного поведения
+        let result = monitor.check_suspicious_behavior(&mut security_monitor).await;
+
+        // Проверяем, что проверка завершилась успешно
+        assert!(result.is_ok());
     }
 }
 
