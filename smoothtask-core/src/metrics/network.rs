@@ -4034,4 +4034,228 @@ impl NetworkMonitor {
         Ok((Some(0), Some("unknown".to_string())))
     }
 
+    /// Discover network routes and analyze their performance
+    pub fn discover_and_analyze_network_routes(&self) -> Result<Vec<NetworkRouteAnalysis>> {
+        let mut routes = Vec::new();
+        
+        // Read routing table from /proc/net/route
+        let route_info = fs::read_to_string("/proc/net/route")
+            .context("Failed to read /proc/net/route")?;
+        
+        // Parse routing table (skip header line)
+        for line in route_info.lines().skip(1) {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 8 { continue; }
+            
+            let destination = parts[1].parse::<u32>().unwrap_or(0);
+            let gateway = parts[2].parse::<u32>().unwrap_or(0);
+            let interface = parts[0].to_string();
+            let metric = parts[7].parse::<u32>().unwrap_or(0);
+            
+            // Get current network load for this interface
+            let network_load = self.get_network_load_for_interface(&interface)?;
+            
+            // Analyze route quality
+            let quality_score = self.calculate_route_quality(metric, network_load);
+            
+            routes.push(NetworkRouteAnalysis {
+                destination: Ipv4Addr::from(destination.to_be_bytes()),
+                gateway: Ipv4Addr::from(gateway.to_be_bytes()),
+                interface,
+                metric,
+                network_load,
+                quality_score,
+                is_optimal: quality_score > 0.7, // Threshold for optimal routes
+            });
+        }
+        
+        Ok(routes)
+    }
+
+    /// Get network load for a specific interface
+    fn get_network_load_for_interface(&self, interface_name: &str) -> Result<f32> {
+        // Get current interface stats
+        let interfaces = self.collect_network_interfaces()?;
+        
+        // Find the specific interface
+        for iface in interfaces {
+            if iface.name == interface_name {
+                // Calculate load based on recent traffic
+                let total_traffic = iface.rx_bytes + iface.tx_bytes;
+                let max_capacity = iface.speed_mbps.unwrap_or(1000) * 125_000; // Convert Mbps to bytes/s
+                
+                // Calculate load percentage (0.0 - 1.0)
+                let load = (total_traffic as f32 / max_capacity as f32).min(1.0);
+                return Ok(load);
+            }
+        }
+        
+        Ok(0.0) // Default load if interface not found
+    }
+
+    /// Calculate route quality score based on metric and network load
+    fn calculate_route_quality(&self, metric: u32, network_load: f32) -> f32 {
+        // Normalize metric (lower is better)
+        let metric_score = 1.0 / (1.0 + metric as f32 * 0.1);
+        
+        // Network load impact (lower is better)
+        let load_impact = 1.0 - network_load;
+        
+        // Combined quality score
+        (metric_score * 0.6 + load_impact * 0.4).clamp(0.0, 1.0)
+    }
+
+    /// Optimize network routes based on current conditions
+    pub fn optimize_network_routes(&self) -> Result<Vec<RouteOptimizationRecommendation>> {
+        let routes = self.discover_and_analyze_network_routes()?;
+        let mut recommendations = Vec::new();
+        
+        // Analyze each route and suggest optimizations
+        for route in routes {
+            if route.is_optimal {
+                continue; // Skip already optimal routes
+            }
+            
+            // Suggest route optimization based on quality score
+            if route.quality_score < 0.5 {
+                recommendations.push(RouteOptimizationRecommendation {
+                    destination: route.destination,
+                    current_interface: route.interface.clone(),
+                    current_quality: route.quality_score,
+                    recommendation: RouteOptimizationType::ChangeInterface,
+                    priority: RouteOptimizationPriority::High,
+                    reason: format!("Low quality score: {:.2}", route.quality_score),
+                });
+            } else if route.quality_score < 0.7 {
+                recommendations.push(RouteOptimizationRecommendation {
+                    destination: route.destination,
+                    current_interface: route.interface.clone(),
+                    current_quality: route.quality_score,
+                    recommendation: RouteOptimizationType::AdjustMetric,
+                    priority: RouteOptimizationPriority::Medium,
+                    reason: format!("Medium quality score: {:.2}", route.quality_score),
+                });
+            }
+        }
+        
+        Ok(recommendations)
+    }
+
+}
+
+/// Network route analysis structure
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkRouteAnalysis {
+    /// Destination IP address
+    pub destination: Ipv4Addr,
+    /// Gateway IP address
+    pub gateway: Ipv4Addr,
+    /// Network interface name
+    pub interface: String,
+    /// Route metric (lower is better)
+    pub metric: u32,
+    /// Current network load on this interface (0.0 - 1.0)
+    pub network_load: f32,
+    /// Calculated quality score (0.0 - 1.0)
+    pub quality_score: f32,
+    /// Whether this route is considered optimal
+    pub is_optimal: bool,
+}
+
+/// Route optimization recommendation
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RouteOptimizationRecommendation {
+    /// Destination IP address
+    pub destination: Ipv4Addr,
+    /// Current interface being used
+    pub current_interface: String,
+    /// Current route quality score
+    pub current_quality: f32,
+    /// Type of optimization recommended
+    pub recommendation: RouteOptimizationType,
+    /// Priority of this recommendation
+    pub priority: RouteOptimizationPriority,
+    /// Reason for this recommendation
+    pub reason: String,
+}
+
+/// Type of route optimization
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum RouteOptimizationType {
+    /// Change to a different network interface
+    ChangeInterface,
+    /// Adjust route metric for better priority
+    AdjustMetric,
+    /// Add backup route for redundancy
+    AddBackupRoute,
+    /// Remove problematic route
+    RemoveRoute,
+}
+
+/// Priority of route optimization
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum RouteOptimizationPriority {
+    /// High priority - should be addressed immediately
+    High,
+    /// Medium priority - should be addressed soon
+    Medium,
+    /// Low priority - can be addressed later
+    Low,
+}
+
+#[cfg(test)]
+mod route_optimization_tests {
+    use super::*;
+    use std::net::Ipv4Addr;
+    
+    #[test]
+    fn test_route_quality_calculation() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test with good metric and low load
+        let quality1 = monitor.calculate_route_quality(100, 0.2);
+        assert!(quality1 > 0.8, "Good route should have high quality score");
+        
+        // Test with poor metric and high load
+        let quality2 = monitor.calculate_route_quality(500, 0.9);
+        assert!(quality2 < 0.4, "Poor route should have low quality score");
+        
+        // Test with medium values
+        let quality3 = monitor.calculate_route_quality(300, 0.5);
+        assert!(quality3 > 0.4 && quality3 < 0.7, "Medium route should have medium quality score");
+    }
+    
+    #[test]
+    fn test_route_optimization_recommendations() {
+        // Create a mock network monitor for testing
+        let monitor = NetworkMonitor::new();
+        
+        // Test route analysis creation
+        let route = NetworkRouteAnalysis {
+            destination: Ipv4Addr::new(192, 168, 1, 1),
+            gateway: Ipv4Addr::new(192, 168, 1, 254),
+            interface: "eth0".to_string(),
+            metric: 200,
+            network_load: 0.3,
+            quality_score: 0.65,
+            is_optimal: false,
+        };
+        
+        assert_eq!(route.destination, Ipv4Addr::new(192, 168, 1, 1));
+        assert!(!route.is_optimal, "Route with quality 0.65 should not be optimal");
+    }
+    
+    #[test]
+    fn test_network_load_calculation() {
+        let monitor = NetworkMonitor::new();
+        
+        // Test with zero traffic
+        let load1 = monitor.get_network_load_for_interface("lo");
+        assert!(load1.is_ok(), "Should handle interface lookup gracefully");
+        
+        // Test with non-existent interface
+        let load2 = monitor.get_network_load_for_interface("nonexistent");
+        assert!(load2.is_ok(), "Should handle non-existent interface gracefully");
+        assert_eq!(load2.unwrap(), 0.0, "Non-existent interface should have zero load");
+    }
 }
