@@ -31,6 +31,7 @@
 //! - **performance_profiler**: Профилирование производительности и анализ узких мест
 //! - **hardware_acceleration**: Мониторинг аппаратного ускорения (VA-API, VDPAU, CUDA)
 //! - **container**: Мониторинг контейнеров Docker/Podman
+//! - **vm**: Мониторинг и управление виртуальными машинами (QEMU/KVM, VirtualBox)
 //! - **thunderbolt**: Мониторинг Thunderbolt устройств
 //! - **pcie**: Мониторинг PCIe устройств
 
@@ -50,9 +51,9 @@ pub mod gpu;
 pub mod hardware_acceleration;
 pub mod input;
 pub mod ml_performance;
-pub mod performance_profiler;
 pub mod network;
 pub mod nvml_wrapper;
+pub mod performance_profiler;
 pub mod process;
 pub mod process_energy;
 pub mod process_gpu;
@@ -60,6 +61,7 @@ pub mod process_network;
 pub mod prometheus_exporter;
 pub mod scheduling_latency;
 pub mod system;
+pub mod vm;
 pub mod windows;
 pub mod windows_wayland;
 pub mod windows_x11;
