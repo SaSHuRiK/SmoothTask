@@ -20,9 +20,36 @@ pub mod integration;
 pub mod log_storage;
 pub mod rotation;
 
+use anyhow::Result;
 use chrono::{DateTime, Utc};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::logging::log_storage::{LogEntry, LogLevel};
+
+/// Extension trait for LogLevel to add numeric conversion
+pub trait LogLevelExt {
+    /// Convert LogLevel to numeric value for comparison
+    fn as_numeric(&self) -> u8;
+}
+
+impl LogLevelExt for LogLevel {
+    fn as_numeric(&self) -> u8 {
+        match self {
+            LogLevel::Trace => 0,
+            LogLevel::Debug => 1,
+            LogLevel::Info => 2,
+            LogLevel::Warn => 3,
+            LogLevel::Error => 4,
+        }
+    }
+}
+
+/// Default implementation for LogLevel
+impl Default for LogLevel {
+    fn default() -> Self {
+        LogLevel::Debug
+    }
+}
 
 pub mod snapshots;
 
@@ -77,6 +104,404 @@ pub fn log_log_stats(stats: &LogStats) {
         let avg_size = stats.total_size as f64 / stats.total_entries as f64;
         tracing::debug!("Average log entry size: {:.2} bytes", avg_size);
     }
+}
+
+/// Enhanced log filter configuration
+#[derive(Debug, Clone)]
+pub struct LogFilterConfig {
+    /// Minimum log level to include
+    pub min_level: LogLevel,
+    /// Maximum log level to include
+    pub max_level: LogLevel,
+    /// Filter by keywords (include if any keyword matches)
+    pub include_keywords: Vec<String>,
+    /// Filter by keywords (exclude if any keyword matches)
+    pub exclude_keywords: Vec<String>,
+    /// Filter by source modules
+    pub include_modules: Vec<String>,
+    /// Filter by source modules (exclude)
+    pub exclude_modules: Vec<String>,
+    /// Time range filter (timestamp range)
+    pub time_range: Option<(u64, u64)>,
+    /// Size limit for filtered results
+    pub max_results: Option<usize>,
+}
+
+impl Default for LogFilterConfig {
+    fn default() -> Self {
+        Self {
+            min_level: LogLevel::Debug,
+            max_level: LogLevel::Error,
+            include_keywords: Vec::new(),
+            exclude_keywords: Vec::new(),
+            include_modules: Vec::new(),
+            exclude_modules: Vec::new(),
+            time_range: None,
+            max_results: None,
+        }
+    }
+}
+
+impl LogFilterConfig {
+    /// Create a new log filter configuration
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set minimum log level
+    pub fn with_min_level(mut self, level: LogLevel) -> Self {
+        self.min_level = level;
+        self
+    }
+
+    /// Set maximum log level
+    pub fn with_max_level(mut self, level: LogLevel) -> Self {
+        self.max_level = level;
+        self
+    }
+
+    /// Add include keyword
+    pub fn with_include_keyword(mut self, keyword: String) -> Self {
+        self.include_keywords.push(keyword);
+        self
+    }
+
+    /// Add exclude keyword
+    pub fn with_exclude_keyword(mut self, keyword: String) -> Self {
+        self.exclude_keywords.push(keyword);
+        self
+    }
+
+    /// Add include module
+    pub fn with_include_module(mut self, module: String) -> Self {
+        self.include_modules.push(module);
+        self
+    }
+
+    /// Add exclude module
+    pub fn with_exclude_module(mut self, module: String) -> Self {
+        self.exclude_modules.push(module);
+        self
+    }
+
+    /// Set time range filter
+    pub fn with_time_range(mut self, start: u64, end: u64) -> Self {
+        self.time_range = Some((start, end));
+        self
+    }
+
+    /// Set maximum results limit
+    pub fn with_max_results(mut self, max: usize) -> Self {
+        self.max_results = Some(max);
+        self
+    }
+}
+
+/// Enhanced log entry with additional metadata for filtering
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct EnhancedLogEntry {
+    /// Original log entry
+    pub entry: LogEntry,
+    /// Source module
+    pub module: String,
+    /// Additional tags
+    pub tags: Vec<String>,
+    /// Timestamp (seconds since epoch)
+    pub timestamp: u64,
+    /// Process ID (if available)
+    pub pid: Option<i32>,
+}
+
+impl EnhancedLogEntry {
+    /// Create a new enhanced log entry
+    pub fn new(entry: LogEntry, module: String) -> Self {
+        Self {
+            entry,
+            module,
+            tags: Vec::new(),
+            timestamp: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            pid: None,
+        }
+    }
+
+    /// Add a tag to the log entry
+    pub fn with_tag(mut self, tag: String) -> Self {
+        self.tags.push(tag);
+        self
+    }
+
+    /// Set process ID
+    pub fn with_pid(mut self, pid: i32) -> Self {
+        self.pid = Some(pid);
+        self
+    }
+
+    /// Check if this entry matches the filter criteria
+    pub fn matches_filter(&self, filter: &LogFilterConfig) -> bool {
+        // Check log level range
+        let level_value = self.entry.level.as_numeric();
+        let min_value = filter.min_level.as_numeric();
+        let max_value = filter.max_level.as_numeric();
+
+        if level_value < min_value || level_value > max_value {
+            return false;
+        }
+
+        // Check time range
+        if let Some((start, end)) = filter.time_range {
+            if self.timestamp < start || self.timestamp > end {
+                return false;
+            }
+        }
+
+        // Check include keywords
+        if !filter.include_keywords.is_empty() {
+            let message = self.entry.message.to_lowercase();
+            let has_match = filter.include_keywords.iter().any(|keyword| {
+                message.contains(&keyword.to_lowercase())
+            });
+            if !has_match {
+                return false;
+            }
+        }
+
+        // Check exclude keywords
+        if !filter.exclude_keywords.is_empty() {
+            let message = self.entry.message.to_lowercase();
+            let has_match = filter.exclude_keywords.iter().any(|keyword| {
+                message.contains(&keyword.to_lowercase())
+            });
+            if has_match {
+                return false;
+            }
+        }
+
+        // Check include modules
+        if !filter.include_modules.is_empty() {
+            let has_match = filter.include_modules.iter().any(|module| {
+                self.module.contains(module)
+            });
+            if !has_match {
+                return false;
+            }
+        }
+
+        // Check exclude modules
+        if !filter.exclude_modules.is_empty() {
+            let has_match = filter.exclude_modules.iter().any(|module| {
+                self.module.contains(module)
+            });
+            if has_match {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// Log analysis result
+#[derive(Debug, Clone, Default)]
+pub struct LogAnalysisResult {
+    /// Filtered log entries
+    pub entries: Vec<EnhancedLogEntry>,
+    /// Statistics for the filtered results
+    pub stats: LogStats,
+    /// Analysis metadata
+    pub metadata: LogAnalysisMetadata,
+}
+
+/// Log analysis metadata
+#[derive(Debug, Clone, Default)]
+pub struct LogAnalysisMetadata {
+    /// Filter configuration used
+    pub filter_config: LogFilterConfig,
+    /// Analysis timestamp
+    pub analysis_time: u64,
+    /// Duration of analysis in milliseconds
+    pub analysis_duration_ms: u64,
+    /// Number of entries processed
+    pub entries_processed: u64,
+    /// Number of entries filtered out
+    pub entries_filtered_out: u64,
+}
+
+/// Enhanced log analyzer
+#[derive(Debug)]
+pub struct LogAnalyzer {
+    /// Log storage for analysis
+    storage: crate::logging::log_storage::LogStorage,
+}
+
+impl LogAnalyzer {
+    /// Create a new log analyzer
+    pub fn new() -> Self {
+        Self {
+            storage: crate::logging::log_storage::LogStorage::new(1000),
+        }
+    }
+
+    /// Analyze logs with the given filter configuration
+    pub fn analyze_logs(&self, filter: LogFilterConfig) -> Result<LogAnalysisResult> {
+        let start_time = SystemTime::now();
+        let mut result = LogAnalysisResult::default();
+        result.metadata.filter_config = filter.clone();
+
+        // Get all log entries from storage
+        let all_entries = self.storage.get_all_entries();
+        result.metadata.entries_processed = all_entries.len() as u64;
+
+        // Apply filtering
+        let filtered_entries: Vec<EnhancedLogEntry> = all_entries
+            .into_iter()
+            .filter(|entry| {
+                let enhanced = EnhancedLogEntry::new(entry.clone(), "unknown".to_string());
+                enhanced.matches_filter(&filter)
+            })
+            .map(|entry| EnhancedLogEntry::new(entry, "unknown".to_string()))
+            .collect();
+
+        // Apply max results limit
+        let final_entries = if let Some(max_results) = filter.max_results {
+            filtered_entries.into_iter().take(max_results).collect()
+        } else {
+            filtered_entries
+        };
+
+        result.entries = final_entries;
+        result.metadata.entries_filtered_out = result.metadata.entries_processed - result.entries.len() as u64;
+
+        // Calculate statistics
+        result.stats.total_entries = result.entries.len() as u64;
+        result.stats.total_size = result.entries.iter().map(|e| e.entry.message.len() as u64).sum();
+        result.stats.error_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Error).count() as u64;
+        result.stats.warning_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Warn).count() as u64;
+        result.stats.info_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Info).count() as u64;
+        result.stats.debug_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Debug).count() as u64;
+
+        // Calculate analysis duration
+        let end_time = SystemTime::now();
+        result.metadata.analysis_time = end_time
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        result.metadata.analysis_duration_ms = end_time
+            .duration_since(start_time)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        Ok(result)
+    }
+
+    /// Get log statistics with enhanced filtering
+    pub fn get_filtered_stats(&self, filter: LogFilterConfig) -> Result<LogStats> {
+        let analysis = self.analyze_logs(filter)?;
+        Ok(analysis.stats)
+    }
+
+    /// Find logs by keyword with filtering
+    pub fn find_logs_by_keyword(&self, keyword: &str, filter: LogFilterConfig) -> Result<Vec<EnhancedLogEntry>> {
+        let mut filter = filter;
+        filter.include_keywords.push(keyword.to_string());
+        let analysis = self.analyze_logs(filter)?;
+        Ok(analysis.entries)
+    }
+
+    /// Find logs by module with filtering
+    pub fn find_logs_by_module(&self, module: &str, filter: LogFilterConfig) -> Result<Vec<EnhancedLogEntry>> {
+        let mut filter = filter;
+        filter.include_modules.push(module.to_string());
+        let analysis = self.analyze_logs(filter)?;
+        Ok(analysis.entries)
+    }
+
+    /// Analyze log patterns and trends
+    pub fn analyze_log_patterns(&self, filter: LogFilterConfig) -> Result<LogPatternAnalysis> {
+        let analysis = self.analyze_logs(filter)?;
+        let mut pattern_analysis = LogPatternAnalysis::default();
+
+        // Count entries by level
+        for entry in &analysis.entries {
+            match entry.entry.level {
+                LogLevel::Trace => pattern_analysis.debug_count += 1, // Treat trace as debug
+                LogLevel::Debug => pattern_analysis.debug_count += 1,
+                LogLevel::Info => pattern_analysis.info_count += 1,
+                LogLevel::Warn => pattern_analysis.warning_count += 1,
+                LogLevel::Error => pattern_analysis.error_count += 1,
+            }
+        }
+
+        // Calculate total
+        pattern_analysis.total_entries = pattern_analysis.error_count +
+            pattern_analysis.warning_count +
+            pattern_analysis.info_count +
+            pattern_analysis.debug_count;
+
+        // Calculate percentages
+        if pattern_analysis.total_entries > 0 {
+            pattern_analysis.error_percentage = (pattern_analysis.error_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
+            pattern_analysis.warning_percentage = (pattern_analysis.warning_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
+            pattern_analysis.info_percentage = (pattern_analysis.info_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
+            pattern_analysis.debug_percentage = (pattern_analysis.debug_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
+        }
+
+        Ok(pattern_analysis)
+    }
+}
+
+/// Log pattern analysis result
+#[derive(Debug, Clone, Default)]
+pub struct LogPatternAnalysis {
+    /// Total number of entries analyzed
+    pub total_entries: u64,
+    /// Number of error entries
+    pub error_count: u64,
+    /// Number of warning entries
+    pub warning_count: u64,
+    /// Number of info entries
+    pub info_count: u64,
+    /// Number of debug entries
+    pub debug_count: u64,
+    /// Percentage of error entries
+    pub error_percentage: f32,
+    /// Percentage of warning entries
+    pub warning_percentage: f32,
+    /// Percentage of info entries
+    pub info_percentage: f32,
+    /// Percentage of debug entries
+    pub debug_percentage: f32,
+}
+
+/// Integration with monitoring system
+pub fn integrate_log_analysis_with_monitoring(analysis: &LogAnalysisResult) -> Result<()> {
+    // In a real implementation, this would integrate with the monitoring system
+    // to provide log analysis metrics and alerts
+
+    tracing::info!(
+        "Log Analysis Integration - Processed: {}, Filtered: {}, Duration: {}ms",
+        analysis.metadata.entries_processed,
+        analysis.metadata.entries_filtered_out,
+        analysis.metadata.analysis_duration_ms
+    );
+
+    // Check for critical patterns
+    let error_percentage = if analysis.stats.total_entries > 0 {
+        (analysis.stats.error_count as f32 / analysis.stats.total_entries as f32) * 100.0
+    } else {
+        0.0
+    };
+
+    if error_percentage > 10.0 {
+        tracing::warn!(
+            "High error rate detected: {:.2}% errors in filtered logs",
+            error_percentage
+        );
+    }
+
+    Ok(())
 }
 
 /// Adjust log settings based on memory pressure with actual optimization logic
@@ -910,6 +1335,270 @@ mod tests {
         assert!(metrics.memory_usage_bytes > 0);
         assert!(metrics.disk_usage_bytes > 0);
         assert!(metrics.cache_hit_rate > 0.0 && metrics.cache_hit_rate <= 1.0);
+    }
+
+    // New tests for enhanced logging functionality
+    #[test]
+    fn test_log_filter_config_creation() {
+        let filter = LogFilterConfig::new();
+        assert_eq!(filter.min_level, LogLevel::Debug);
+        assert_eq!(filter.max_level, LogLevel::Error);
+        assert!(filter.include_keywords.is_empty());
+        assert!(filter.exclude_keywords.is_empty());
+        assert!(filter.include_modules.is_empty());
+        assert!(filter.exclude_modules.is_empty());
+        assert!(filter.time_range.is_none());
+        assert!(filter.max_results.is_none());
+    }
+
+    #[test]
+    fn test_log_filter_config_builders() {
+        let filter = LogFilterConfig::new()
+            .with_min_level(LogLevel::Warn)
+            .with_max_level(LogLevel::Error)
+            .with_include_keyword("error".to_string())
+            .with_exclude_keyword("debug".to_string())
+            .with_include_module("metrics".to_string())
+            .with_exclude_module("test".to_string())
+            .with_time_range(1000, 2000)
+            .with_max_results(100);
+
+        assert_eq!(filter.min_level, LogLevel::Warn);
+        assert_eq!(filter.max_level, LogLevel::Error);
+        assert_eq!(filter.include_keywords, vec!["error"]);
+        assert_eq!(filter.exclude_keywords, vec!["debug"]);
+        assert_eq!(filter.include_modules, vec!["metrics"]);
+        assert_eq!(filter.exclude_modules, vec!["test"]);
+        assert_eq!(filter.time_range, Some((1000, 2000)));
+        assert_eq!(filter.max_results, Some(100));
+    }
+
+    #[test]
+    fn test_enhanced_log_entry_creation() {
+        let entry = LogEntry {
+            level: LogLevel::Info,
+            message: "Test message".to_string(),
+            timestamp: 1234567890,
+        };
+
+        let enhanced = EnhancedLogEntry::new(entry, "test_module".to_string());
+        assert_eq!(enhanced.entry.message, "Test message");
+        assert_eq!(enhanced.module, "test_module");
+        assert!(enhanced.tags.is_empty());
+        assert!(enhanced.timestamp > 0);
+        assert!(enhanced.pid.is_none());
+    }
+
+    #[test]
+    fn test_enhanced_log_entry_methods() {
+        let entry = LogEntry {
+            level: LogLevel::Info,
+            message: "Test message".to_string(),
+            timestamp: 1234567890,
+        };
+
+        let enhanced = EnhancedLogEntry::new(entry, "test_module".to_string())
+            .with_tag("important".to_string())
+            .with_pid(123);
+
+        assert_eq!(enhanced.tags, vec!["important"]);
+        assert_eq!(enhanced.pid, Some(123));
+    }
+
+    #[test]
+    fn test_log_entry_filtering() {
+        let entry = LogEntry {
+            level: LogLevel::Info,
+            message: "This is a test error message".to_string(),
+            timestamp: 1500,
+        };
+
+        let enhanced = EnhancedLogEntry::new(entry, "test_module".to_string());
+
+        // Test level filtering
+        let filter_level = LogFilterConfig::new()
+            .with_min_level(LogLevel::Warn)
+            .with_max_level(LogLevel::Error);
+        assert!(!enhanced.matches_filter(&filter_level));
+
+        // Test keyword filtering
+        let filter_keyword = LogFilterConfig::new()
+            .with_include_keyword("error".to_string());
+        assert!(enhanced.matches_filter(&filter_keyword));
+
+        let filter_exclude = LogFilterConfig::new()
+            .with_exclude_keyword("test".to_string());
+        assert!(!enhanced.matches_filter(&filter_exclude));
+
+        // Test time range filtering
+        let filter_time = LogFilterConfig::new()
+            .with_time_range(1000, 2000);
+        assert!(enhanced.matches_filter(&filter_time));
+
+        let filter_time_outside = LogFilterConfig::new()
+            .with_time_range(2000, 3000);
+        assert!(!enhanced.matches_filter(&filter_time_outside));
+
+        // Test module filtering
+        let filter_module = LogFilterConfig::new()
+            .with_include_module("test".to_string());
+        assert!(enhanced.matches_filter(&filter_module));
+
+        let filter_exclude_module = LogFilterConfig::new()
+            .with_exclude_module("test".to_string());
+        assert!(!enhanced.matches_filter(&filter_exclude_module));
+    }
+
+    #[test]
+    fn test_log_analyzer_creation() {
+        let analyzer = LogAnalyzer::new();
+        assert!(analyzer.storage.entries.is_empty());
+    }
+
+    #[test]
+    fn test_log_analysis_basic() {
+        let analyzer = LogAnalyzer::new();
+        let filter = LogFilterConfig::new();
+
+        // Add some test entries to storage
+        let mut storage = crate::logging::log_storage::LogStorage::new();
+        storage.add_entry(LogEntry {
+            level: LogLevel::Info,
+            message: "Test info message".to_string(),
+            timestamp: 1000,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Error,
+            message: "Test error message".to_string(),
+            timestamp: 1500,
+        });
+
+        // Replace the analyzer's storage
+        let analyzer = LogAnalyzer { storage };
+
+        let result = analyzer.analyze_logs(filter).unwrap();
+        assert_eq!(result.entries.len(), 2);
+        assert_eq!(result.stats.total_entries, 2);
+        assert_eq!(result.stats.error_count, 1);
+        assert_eq!(result.stats.info_count, 1);
+    }
+
+    #[test]
+    fn test_log_analysis_filtering() {
+        let analyzer = LogAnalyzer::new();
+
+        // Add some test entries to storage
+        let mut storage = crate::logging::log_storage::LogStorage::new();
+        storage.add_entry(LogEntry {
+            level: LogLevel::Info,
+            message: "Test info message".to_string(),
+            timestamp: 1000,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Error,
+            message: "Test error message".to_string(),
+            timestamp: 1500,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Debug,
+            message: "Debug message".to_string(),
+            timestamp: 2000,
+        });
+
+        // Replace the analyzer's storage
+        let analyzer = LogAnalyzer { storage };
+
+        // Test level filtering
+        let filter_level = LogFilterConfig::new()
+            .with_min_level(LogLevel::Warn)
+            .with_max_level(LogLevel::Error);
+        let result = analyzer.analyze_logs(filter_level).unwrap();
+        assert_eq!(result.entries.len(), 1);
+        assert_eq!(result.stats.error_count, 1);
+
+        // Test keyword filtering
+        let filter_keyword = LogFilterConfig::new()
+            .with_include_keyword("error".to_string());
+        let result = analyzer.analyze_logs(filter_keyword).unwrap();
+        assert_eq!(result.entries.len(), 1);
+
+        // Test time range filtering
+        let filter_time = LogFilterConfig::new()
+            .with_time_range(1200, 1800);
+        let result = analyzer.analyze_logs(filter_time).unwrap();
+        assert_eq!(result.entries.len(), 1);
+    }
+
+    #[test]
+    fn test_log_pattern_analysis() {
+        let analyzer = LogAnalyzer::new();
+
+        // Add some test entries to storage
+        let mut storage = crate::logging::log_storage::LogStorage::new();
+        storage.add_entry(LogEntry {
+            level: LogLevel::Error,
+            message: "Error message 1".to_string(),
+            timestamp: 1000,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Error,
+            message: "Error message 2".to_string(),
+            timestamp: 1500,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Warn,
+            message: "Warning message".to_string(),
+            timestamp: 2000,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Info,
+            message: "Info message".to_string(),
+            timestamp: 2500,
+        });
+
+        // Replace the analyzer's storage
+        let analyzer = LogAnalyzer { storage };
+
+        let filter = LogFilterConfig::new();
+        let result = analyzer.analyze_log_patterns(filter).unwrap();
+
+        assert_eq!(result.total_entries, 4);
+        assert_eq!(result.error_count, 2);
+        assert_eq!(result.warning_count, 1);
+        assert_eq!(result.info_count, 1);
+        assert_eq!(result.debug_count, 0);
+        assert_eq!(result.error_percentage, 50.0);
+        assert_eq!(result.warning_percentage, 25.0);
+        assert_eq!(result.info_percentage, 25.0);
+        assert_eq!(result.debug_percentage, 0.0);
+    }
+
+    #[test]
+    fn test_log_analysis_integration() {
+        let analyzer = LogAnalyzer::new();
+
+        // Add some test entries to storage
+        let mut storage = crate::logging::log_storage::LogStorage::new();
+        storage.add_entry(LogEntry {
+            level: LogLevel::Error,
+            message: "Critical error".to_string(),
+            timestamp: 1000,
+        });
+        storage.add_entry(LogEntry {
+            level: LogLevel::Info,
+            message: "Normal operation".to_string(),
+            timestamp: 1500,
+        });
+
+        // Replace the analyzer's storage
+        let analyzer = LogAnalyzer { storage };
+
+        let filter = LogFilterConfig::new();
+        let analysis = analyzer.analyze_logs(filter).unwrap();
+
+        // Test integration function
+        let result = integrate_log_analysis_with_monitoring(&analysis);
+        assert!(result.is_ok());
     }
 }
 

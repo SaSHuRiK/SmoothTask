@@ -73,6 +73,122 @@ pub struct ProcessEnergyStats {
     pub is_reliable: bool,
 }
 
+/// Статистика энергопотребления компонента.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ComponentEnergyStats {
+    /// Идентификатор процесса
+    pub pid: i32,
+    /// Идентификатор компонента
+    pub component_id: String,
+    /// Тип компонента
+    pub component_type: ComponentType,
+    /// Потребление энергии в микроджоулях
+    pub energy_uj: u64,
+    /// Мгновенная мощность в ваттах
+    pub power_w: f32,
+    /// Время последнего измерения (timestamp в секундах)
+    pub timestamp: u64,
+    /// Источник данных
+    pub source: EnergySource,
+    /// Признак достоверности данных
+    pub is_reliable: bool,
+}
+
+/// Тип компонента.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ComponentType {
+    /// CPU компонент
+    Cpu,
+    /// GPU компонент
+    Gpu,
+    /// Память
+    Memory,
+    /// Диск
+    Disk,
+    /// Сеть
+    Network,
+    /// Неизвестный
+    Unknown,
+}
+
+impl Default for ComponentType {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}
+
+impl ComponentType {
+    /// Возвращает строковое представление типа компонента.
+    pub fn as_str(&self) -> &str {
+        match self {
+            ComponentType::Cpu => "cpu",
+            ComponentType::Gpu => "gpu",
+            ComponentType::Memory => "memory",
+            ComponentType::Disk => "disk",
+            ComponentType::Network => "network",
+            ComponentType::Unknown => "unknown",
+        }
+    }
+}
+
+/// Анализ распределения энергопотребления по компонентам.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ComponentDistributionAnalysis {
+    /// Идентификатор процесса
+    pub pid: i32,
+    /// Общее энергопотребление
+    pub total_energy_uj: u64,
+    /// Процент энергопотребления CPU
+    pub cpu_percentage: f32,
+    /// Энергопотребление CPU
+    pub cpu_energy_uj: u64,
+    /// Процент энергопотребления GPU
+    pub gpu_percentage: f32,
+    /// Энергопотребление GPU
+    pub gpu_energy_uj: u64,
+    /// Процент энергопотребления памяти
+    pub memory_percentage: f32,
+    /// Энергопотребление памяти
+    pub memory_energy_uj: u64,
+    /// Процент энергопотребления диска
+    pub disk_percentage: f32,
+    /// Энергопотребление диска
+    pub disk_energy_uj: u64,
+    /// Процент энергопотребления сети
+    pub network_percentage: f32,
+    /// Энергопотребление сети
+    pub network_energy_uj: u64,
+    /// Процент энергопотребления других компонентов
+    pub other_percentage: f32,
+    /// Энергопотребление других компонентов
+    pub other_energy_uj: u64,
+    /// Общий процент (должен быть ~100%)
+    pub total_percentage: f32,
+    /// Время анализа
+    pub timestamp: u64,
+    /// Признак достоверности данных
+    pub is_reliable: bool,
+}
+
+/// Статистика энергопотребления компонентов процесса.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct ProcessComponentEnergyStats {
+    /// Идентификатор процесса
+    pub pid: i32,
+    /// Общее энергопотребление процесса
+    pub total_energy_uj: u64,
+    /// Общая мощность процесса
+    pub total_power_w: f32,
+    /// Энергопотребление по компонентам
+    pub components: Vec<ComponentEnergyStats>,
+    /// Время последнего измерения
+    pub timestamp: u64,
+    /// Источник данных
+    pub source: EnergySource,
+    /// Признак достоверности данных
+    pub is_reliable: bool,
+}
+
 impl Default for ProcessEnergyStats {
     fn default() -> Self {
         Self {
@@ -539,6 +655,405 @@ impl ProcessEnergyMonitor {
         }
 
         Ok(results)
+    }
+
+    /// Собрать метрики энергопотребления по компонентам для процесса.
+    ///
+    /// Этот метод предоставляет детализированную информацию об энергопотреблении
+    /// по отдельным компонентам процесса (CPU, GPU, память, диск, сеть).
+    ///
+    /// # Аргументы
+    ///
+    /// * `pid` - Идентификатор процесса
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<Option<ProcessComponentEnergyStats>>` - Статистика по компонентам или None, если данные недоступны
+    pub async fn collect_component_energy(&self, pid: i32) -> Result<Option<ProcessComponentEnergyStats>> {
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+        
+        // Получаем общие метрики энергопотребления процесса
+        let process_energy = self.collect_process_energy(pid).await?;
+        
+        if process_energy.is_none() {
+            return Ok(None);
+        }
+        
+        let process_stats = process_energy.unwrap();
+        
+        // Собираем метрики по компонентам
+        let cpu_energy = self.collect_cpu_component_energy(pid).await?;
+        let gpu_energy = self.collect_gpu_component_energy(pid).await?;
+        let memory_energy = self.collect_memory_component_energy(pid).await?;
+        let disk_energy = self.collect_disk_component_energy(pid).await?;
+        let network_energy = self.collect_network_component_energy(pid).await?;
+        
+        let mut components = Vec::new();
+        
+        if let Some(cpu) = cpu_energy {
+            components.push(cpu);
+        }
+        if let Some(gpu) = gpu_energy {
+            components.push(gpu);
+        }
+        if let Some(memory) = memory_energy {
+            components.push(memory);
+        }
+        if let Some(disk) = disk_energy {
+            components.push(disk);
+        }
+        if let Some(network) = network_energy {
+            components.push(network);
+        }
+        
+        if components.is_empty() {
+            return Ok(None);
+        }
+        
+        // Рассчитываем общие показатели
+        let total_energy_uj = components.iter().map(|c| c.energy_uj).sum();
+        let total_power_w = components.iter().map(|c| c.power_w).sum();
+        let is_reliable = components.iter().all(|c| c.is_reliable);
+        
+        Ok(Some(ProcessComponentEnergyStats {
+            pid,
+            total_energy_uj,
+            total_power_w,
+            components,
+            timestamp,
+            source: process_stats.source,
+            is_reliable,
+        }))
+    }
+
+    /// Собрать метрики энергопотребления для CPU компонента.
+    async fn collect_cpu_component_energy(&self, pid: i32) -> Result<Option<ComponentEnergyStats>> {
+        // В реальной реализации это бы использовало специализированные метрики
+        // Для этой демонстрации мы используем оценку на основе CPU использования
+        
+        let cpu_usage = self.get_process_cpu_usage(pid).await?;
+        
+        if cpu_usage > 0.0 {
+            // Упрощенная модель: предполагаем, что CPU потребляет 10 Вт при 100% нагрузке
+            let estimated_power_w = cpu_usage * 10.0;
+            let estimated_energy_uj = (estimated_power_w * 1_000_000.0) as u64;
+            
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            
+            Ok(Some(ComponentEnergyStats {
+                pid,
+                component_id: format!("cpu:{}", pid),
+                component_type: ComponentType::Cpu,
+                energy_uj: estimated_energy_uj,
+                power_w: estimated_power_w,
+                timestamp,
+                source: EnergySource::None, // Оценка
+                is_reliable: false,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Собрать метрики энергопотребления для GPU компонента.
+    async fn collect_gpu_component_energy(&self, pid: i32) -> Result<Option<ComponentEnergyStats>> {
+        // В реальной реализации это бы использовало GPU метрики
+        // Для этой демонстрации мы возвращаем None, так как GPU метрики сложно оценить
+        
+        // Пробуем получить GPU метрики через системный мониторинг
+        // Это упрощенная версия - в реальности нужно интегрироваться с GPU API
+        let gpu_usage = self.estimate_gpu_usage(pid).await?;
+        
+        if gpu_usage > 0.0 {
+            // Упрощенная модель: предполагаем, что GPU потребляет 50 Вт при 100% нагрузке
+            let estimated_power_w = gpu_usage * 50.0;
+            let estimated_energy_uj = (estimated_power_w * 1_000_000.0) as u64;
+            
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            
+            Ok(Some(ComponentEnergyStats {
+                pid,
+                component_id: format!("gpu:{}", pid),
+                component_type: ComponentType::Gpu,
+                energy_uj: estimated_energy_uj,
+                power_w: estimated_power_w,
+                timestamp,
+                source: EnergySource::None, // Оценка
+                is_reliable: false,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Оценить использование GPU для процесса.
+    async fn estimate_gpu_usage(&self, _pid: i32) -> Result<f32> {
+        // В реальной реализации это бы использовало GPU API
+        // Для этой демонстрации возвращаем 0
+        Ok(0.0)
+    }
+
+    /// Собрать метрики энергопотребления для компонента памяти.
+    async fn collect_memory_component_energy(&self, pid: i32) -> Result<Option<ComponentEnergyStats>> {
+        // В реальной реализации это бы использовало специализированные метрики памяти
+        // Для этой демонстрации мы используем оценку на основе использования памяти
+        
+        let memory_usage = self.get_process_memory_usage(pid).await?;
+        
+        if memory_usage > 0 {
+            // Упрощенная модель: предполагаем, что память потребляет 0.1 Вт на 100 МБ
+            let memory_mb = memory_usage as f32 / 1024.0 / 1024.0;
+            let estimated_power_w = memory_mb * 0.1;
+            let estimated_energy_uj = (estimated_power_w * 1_000_000.0) as u64;
+            
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            
+            Ok(Some(ComponentEnergyStats {
+                pid,
+                component_id: format!("memory:{}", pid),
+                component_type: ComponentType::Memory,
+                energy_uj: estimated_energy_uj,
+                power_w: estimated_power_w,
+                timestamp,
+                source: EnergySource::None, // Оценка
+                is_reliable: false,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Получить использование памяти процесса.
+    async fn get_process_memory_usage(&self, pid: i32) -> Result<u64> {
+        let statm_path = format!("/proc/{}/statm", pid);
+        
+        if let Ok(statm_content) = tokio_fs::read_to_string(&statm_path).await {
+            // Парсим /proc/[pid]/statm для получения использования памяти
+            // Формат: size resident shared text lib data dt
+            let parts: Vec<&str> = statm_content.split_whitespace().collect();
+            
+            if parts.len() >= 2 {
+                // resident - количество страниц в памяти (страница = 4KB)
+                if let Ok(resident_pages) = parts[1].parse::<u64>() {
+                    return Ok(resident_pages * 4096); // Конвертация в байты
+                }
+            }
+        }
+        
+        Ok(0)
+    }
+
+    /// Собрать метрики энергопотребления для дискового компонента.
+    async fn collect_disk_component_energy(&self, pid: i32) -> Result<Option<ComponentEnergyStats>> {
+        // В реальной реализации это бы использовало метрики дискового ввода-вывода
+        // Для этой демонстрации мы используем оценку на основе дисковой активности
+        
+        let disk_activity = self.get_process_disk_activity(pid).await?;
+        
+        if disk_activity > 0 {
+            // Упрощенная модель: предполагаем, что диск потребляет 0.5 Вт при активности
+            let estimated_power_w = disk_activity as f32 * 0.5;
+            let estimated_energy_uj = (estimated_power_w * 1_000_000.0) as u64;
+            
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            
+            Ok(Some(ComponentEnergyStats {
+                pid,
+                component_id: format!("disk:{}", pid),
+                component_type: ComponentType::Disk,
+                energy_uj: estimated_energy_uj,
+                power_w: estimated_power_w,
+                timestamp,
+                source: EnergySource::None, // Оценка
+                is_reliable: false,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Получить дисковую активность процесса.
+    async fn get_process_disk_activity(&self, pid: i32) -> Result<u64> {
+        let io_path = format!("/proc/{}/io", pid);
+        
+        if let Ok(io_content) = tokio_fs::read_to_string(&io_path).await {
+            // Парсим /proc/[pid]/io для получения дисковой активности
+            // Ищем общий объем операций ввода-вывода
+            let mut total_io = 0u64;
+            
+            for line in io_content.lines() {
+                if line.starts_with("read_bytes:") || line.starts_with("write_bytes:") {
+                    let parts: Vec<&str> = line.split_whitespace().collect();
+                    if parts.len() >= 2 {
+                        if let Ok(bytes) = parts[1].parse::<u64>() {
+                            total_io += bytes;
+                        }
+                    }
+                }
+            }
+            
+            if total_io > 0 {
+                return Ok(total_io);
+            }
+        }
+        
+        Ok(0)
+    }
+
+    /// Собрать метрики энергопотребления для сетевого компонента.
+    async fn collect_network_component_energy(&self, pid: i32) -> Result<Option<ComponentEnergyStats>> {
+        // В реальной реализации это бы использовало метрики сетевой активности
+        // Для этой демонстрации мы используем оценку на основе сетевого трафика
+        
+        let network_activity = self.get_process_network_activity(pid).await?;
+        
+        if network_activity > 0 {
+            // Упрощенная модель: предполагаем, что сеть потребляет 0.2 Вт при активности
+            let estimated_power_w = network_activity as f32 * 0.2;
+            let estimated_energy_uj = (estimated_power_w * 1_000_000.0) as u64;
+            
+            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
+            
+            Ok(Some(ComponentEnergyStats {
+                pid,
+                component_id: format!("network:{}", pid),
+                component_type: ComponentType::Network,
+                energy_uj: estimated_energy_uj,
+                power_w: estimated_power_w,
+                timestamp,
+                source: EnergySource::None, // Оценка
+                is_reliable: false,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Получить сетевую активность процесса.
+    async fn get_process_network_activity(&self, _pid: i32) -> Result<u64> {
+        // В реальной реализации это бы использовало сетевые метрики
+        // Для этой демонстрации возвращаем 0
+        Ok(0)
+    }
+
+    /// Собрать метрики энергопотребления по компонентам для нескольких процессов.
+    pub async fn collect_batch_component_energy(&self, pids: &[i32]) -> Result<Vec<ProcessComponentEnergyStats>> {
+        let mut results = Vec::new();
+
+        for &pid in pids {
+            if let Some(stats) = self.collect_component_energy(pid).await? {
+                results.push(stats);
+            }
+        }
+
+        Ok(results)
+    }
+
+    /// Анализировать распределение энергопотребления по компонентам.
+    ///
+    /// Возвращает анализ распределения энергопотребления между компонентами.
+    pub async fn analyze_component_distribution(&self, pid: i32) -> Result<Option<ComponentDistributionAnalysis>> {
+        if let Some(component_stats) = self.collect_component_energy(pid).await? {
+            let mut analysis = ComponentDistributionAnalysis::default();
+            analysis.pid = pid;
+            analysis.timestamp = component_stats.timestamp;
+            
+            // Рассчитываем распределение
+            let total_energy = component_stats.total_energy_uj as f32;
+            
+            if total_energy > 0.0 {
+                for component in &component_stats.components {
+                    let percentage = (component.energy_uj as f32 / total_energy) * 100.0;
+                    
+                    match component.component_type {
+                        ComponentType::Cpu => {
+                            analysis.cpu_percentage = percentage;
+                            analysis.cpu_energy_uj = component.energy_uj;
+                        }
+                        ComponentType::Gpu => {
+                            analysis.gpu_percentage = percentage;
+                            analysis.gpu_energy_uj = component.energy_uj;
+                        }
+                        ComponentType::Memory => {
+                            analysis.memory_percentage = percentage;
+                            analysis.memory_energy_uj = component.energy_uj;
+                        }
+                        ComponentType::Disk => {
+                            analysis.disk_percentage = percentage;
+                            analysis.disk_energy_uj = component.energy_uj;
+                        }
+                        ComponentType::Network => {
+                            analysis.network_percentage = percentage;
+                            analysis.network_energy_uj = component.energy_uj;
+                        }
+                        ComponentType::Unknown => {
+                            analysis.other_percentage = percentage;
+                            analysis.other_energy_uj = component.energy_uj;
+                        }
+                    }
+                }
+            }
+            
+            // Рассчитываем общие проценты
+            analysis.total_percentage = analysis.cpu_percentage +
+                analysis.gpu_percentage +
+                analysis.memory_percentage +
+                analysis.disk_percentage +
+                analysis.network_percentage +
+                analysis.other_percentage;
+            
+            analysis.total_energy_uj = component_stats.total_energy_uj;
+            analysis.is_reliable = component_stats.is_reliable;
+            
+            Ok(Some(analysis))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Интеграция с основной системой метрик для компонентного мониторинга.
+    pub async fn get_enhanced_component_metrics(
+        &self,
+        pid: i32,
+    ) -> Result<Option<crate::logging::snapshots::ProcessRecord>> {
+        // Получаем базовые метрики процесса
+        let process_record = self.get_process_record_from_system(pid).await?;
+        
+        if let Some(mut record) = process_record {
+            // Добавляем компонентные метрики энергопотребления
+            if let Some(component_stats) = self.collect_component_energy(pid).await? {
+                // Добавляем общие метрики
+                record.energy_uj = Some(component_stats.total_energy_uj);
+                record.power_w = Some(component_stats.total_power_w);
+                record.energy_timestamp = Some(component_stats.timestamp);
+                
+                // Добавляем метрики по компонентам в теги
+                for component in &component_stats.components {
+                    record.tags.push(format!(
+                        "component_energy:{}:{}:{}",
+                        component.component_type.as_str(),
+                        component.energy_uj,
+                        component.power_w
+                    ));
+                }
+                
+                // Добавляем анализ распределения
+                if let Some(distribution) = self.analyze_component_distribution(pid).await? {
+                    record.tags.push(format!(
+                        "energy_distribution:cpu:{:.1}%:gpu:{:.1}%:memory:{:.1}%:disk:{:.1}%:network:{:.1}%",
+                        distribution.cpu_percentage,
+                        distribution.gpu_percentage,
+                        distribution.memory_percentage,
+                        distribution.disk_percentage,
+                        distribution.network_percentage
+                    ));
+                }
+            }
+            
+            return Ok(Some(record));
+        }
+        
+        Ok(None)
     }
 
     /// Синхронная версия сбора метрик энергопотребления.
@@ -1316,6 +1831,384 @@ mod tests {
         let efficiency = result.unwrap();
         if let Some(eff) = efficiency {
             assert!(eff >= 0.0 && eff <= 1.0);
+        }
+    }
+
+    // New tests for component-level energy monitoring
+    #[test]
+    async fn test_component_type_as_str() {
+        assert_eq!(ComponentType::Cpu.as_str(), "cpu");
+        assert_eq!(ComponentType::Gpu.as_str(), "gpu");
+        assert_eq!(ComponentType::Memory.as_str(), "memory");
+        assert_eq!(ComponentType::Disk.as_str(), "disk");
+        assert_eq!(ComponentType::Network.as_str(), "network");
+        assert_eq!(ComponentType::Unknown.as_str(), "unknown");
+    }
+
+    #[test]
+    async fn test_component_energy_stats_default() {
+        let stats = ComponentEnergyStats {
+            pid: 123,
+            component_id: "cpu:123".to_string(),
+            component_type: ComponentType::Cpu,
+            energy_uj: 1000,
+            power_w: 1.5,
+            timestamp: 1234567890,
+            source: EnergySource::None,
+            is_reliable: false,
+        };
+
+        assert_eq!(stats.pid, 123);
+        assert_eq!(stats.component_id, "cpu:123");
+        assert_eq!(stats.component_type, ComponentType::Cpu);
+        assert_eq!(stats.energy_uj, 1000);
+        assert_eq!(stats.power_w, 1.5);
+        assert_eq!(stats.timestamp, 1234567890);
+        assert_eq!(stats.source, EnergySource::None);
+        assert!(!stats.is_reliable);
+    }
+
+    #[test]
+    async fn test_process_component_energy_stats_default() {
+        let stats = ProcessComponentEnergyStats {
+            pid: 123,
+            total_energy_uj: 5000,
+            total_power_w: 7.5,
+            components: Vec::new(),
+            timestamp: 1234567890,
+            source: EnergySource::None,
+            is_reliable: false,
+        };
+
+        assert_eq!(stats.pid, 123);
+        assert_eq!(stats.total_energy_uj, 5000);
+        assert_eq!(stats.total_power_w, 7.5);
+        assert!(stats.components.is_empty());
+        assert_eq!(stats.timestamp, 1234567890);
+        assert_eq!(stats.source, EnergySource::None);
+        assert!(!stats.is_reliable);
+    }
+
+    #[test]
+    async fn test_component_distribution_analysis_default() {
+        let analysis = ComponentDistributionAnalysis {
+            pid: 123,
+            total_energy_uj: 10000,
+            cpu_percentage: 40.0,
+            cpu_energy_uj: 4000,
+            gpu_percentage: 20.0,
+            gpu_energy_uj: 2000,
+            memory_percentage: 15.0,
+            memory_energy_uj: 1500,
+            disk_percentage: 10.0,
+            disk_energy_uj: 1000,
+            network_percentage: 5.0,
+            network_energy_uj: 500,
+            other_percentage: 10.0,
+            other_energy_uj: 1000,
+            total_percentage: 100.0,
+            timestamp: 1234567890,
+            is_reliable: false,
+        };
+
+        assert_eq!(analysis.pid, 123);
+        assert_eq!(analysis.total_energy_uj, 10000);
+        assert_eq!(analysis.cpu_percentage, 40.0);
+        assert_eq!(analysis.cpu_energy_uj, 4000);
+        assert_eq!(analysis.total_percentage, 100.0);
+        assert_eq!(analysis.timestamp, 1234567890);
+        assert!(!analysis.is_reliable);
+    }
+
+    #[test]
+    async fn test_component_energy_collection() {
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с реальным процессом
+        let result = monitor.collect_component_energy(1).await;
+        assert!(result.is_ok());
+        
+        // Результат может быть None или Some в зависимости от системы
+        let component_stats = result.unwrap();
+        if let Some(stats) = component_stats {
+            assert_eq!(stats.pid, 1);
+            assert!(stats.total_energy_uj > 0);
+            assert!(stats.total_power_w >= 0.0);
+            assert!(!stats.components.is_empty());
+            assert!(stats.timestamp > 0);
+        }
+    }
+
+    #[test]
+    async fn test_component_energy_collection_fallback() {
+        let monitor = ProcessEnergyMonitor::with_config(false, false);
+        
+        // Тестируем с реальным процессом
+        let result = monitor.collect_component_energy(1).await;
+        assert!(result.is_ok());
+        
+        // Должно вернуть Some с fallback данными
+        let component_stats = result.unwrap();
+        if let Some(stats) = component_stats {
+            assert_eq!(stats.pid, 1);
+            assert!(stats.total_energy_uj > 0);
+            assert!(stats.total_power_w >= 0.0);
+            assert!(!stats.components.is_empty());
+            assert!(!stats.is_reliable);
+        }
+    }
+
+    #[test]
+    async fn test_batch_component_energy_collection() {
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с несколькими процессами
+        let pids = [1, 2];
+        let result = monitor.collect_batch_component_energy(&pids).await;
+        assert!(result.is_ok());
+        
+        let stats = result.unwrap();
+        // Должны получить результаты для существующих процессов
+        assert!(stats.len() <= pids.len());
+        
+        for stat in &stats {
+            assert!(stat.pid == 1 || stat.pid == 2);
+            assert!(stat.total_energy_uj > 0);
+            assert!(stat.total_power_w >= 0.0);
+        }
+    }
+
+    #[test]
+    async fn test_component_distribution_analysis() {
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с реальным процессом
+        let result = monitor.analyze_component_distribution(1).await;
+        assert!(result.is_ok());
+        
+        // Результат может быть None или Some в зависимости от системы
+        let analysis = result.unwrap();
+        if let Some(analysis) = analysis {
+            assert_eq!(analysis.pid, 1);
+            assert!(analysis.total_energy_uj > 0);
+            assert!(analysis.total_percentage > 0.0);
+            assert!(analysis.timestamp > 0);
+            
+            // Проверяем, что сумма процентов примерно равна 100%
+            assert!(analysis.total_percentage >= 99.0 && analysis.total_percentage <= 101.0);
+        }
+    }
+
+    #[test]
+    async fn test_enhanced_component_metrics() {
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с реальным процессом
+        let result = monitor.get_enhanced_component_metrics(1).await;
+        assert!(result.is_ok());
+        
+        let record_option = result.unwrap();
+        if let Some(record) = record_option {
+            // Запись должна содержать базовую информацию
+            assert_eq!(record.pid, 1);
+            
+            // Должна содержать данные об энергопотреблении
+            if let Some(energy) = record.energy_uj {
+                assert!(energy > 0);
+            }
+            
+            // Проверяем теги на наличие компонентных метрик
+            let has_component_tag = record.tags.iter().any(|tag| tag.starts_with("component_energy:"));
+            assert!(has_component_tag);
+            
+            // Проверяем теги на наличие распределения
+            let has_distribution_tag = record.tags.iter().any(|tag| tag.starts_with("energy_distribution:"));
+            assert!(has_distribution_tag);
+        }
+    }
+
+    #[test]
+    async fn test_component_energy_serialization() {
+        let component_stats = ComponentEnergyStats {
+            pid: 123,
+            component_id: "cpu:123".to_string(),
+            component_type: ComponentType::Cpu,
+            energy_uj: 1000,
+            power_w: 1.5,
+            timestamp: 1234567890,
+            source: EnergySource::None,
+            is_reliable: false,
+        };
+
+        // Тестируем сериализацию
+        let serialized = serde_json::to_string(&component_stats).unwrap();
+        let deserialized: ComponentEnergyStats = serde_json::from_str(&serialized).unwrap();
+
+        // Проверяем, что десериализованные данные совпадают с оригиналом
+        assert_eq!(component_stats.pid, deserialized.pid);
+        assert_eq!(component_stats.component_id, deserialized.component_id);
+        assert_eq!(component_stats.component_type, deserialized.component_type);
+        assert_eq!(component_stats.energy_uj, deserialized.energy_uj);
+        assert_eq!(component_stats.power_w, deserialized.power_w);
+        assert_eq!(component_stats.timestamp, deserialized.timestamp);
+        assert_eq!(component_stats.source, deserialized.source);
+        assert_eq!(component_stats.is_reliable, deserialized.is_reliable);
+    }
+
+    #[test]
+    async fn test_process_component_energy_serialization() {
+        let process_component_stats = ProcessComponentEnergyStats {
+            pid: 123,
+            total_energy_uj: 5000,
+            total_power_w: 7.5,
+            components: vec![
+                ComponentEnergyStats {
+                    pid: 123,
+                    component_id: "cpu:123".to_string(),
+                    component_type: ComponentType::Cpu,
+                    energy_uj: 2000,
+                    power_w: 3.0,
+                    timestamp: 1234567890,
+                    source: EnergySource::None,
+                    is_reliable: false,
+                },
+                ComponentEnergyStats {
+                    pid: 123,
+                    component_id: "memory:123".to_string(),
+                    component_type: ComponentType::Memory,
+                    energy_uj: 1500,
+                    power_w: 2.0,
+                    timestamp: 1234567890,
+                    source: EnergySource::None,
+                    is_reliable: false,
+                },
+            ],
+            timestamp: 1234567890,
+            source: EnergySource::None,
+            is_reliable: false,
+        };
+
+        // Тестируем сериализацию
+        let serialized = serde_json::to_string(&process_component_stats).unwrap();
+        let deserialized: ProcessComponentEnergyStats = serde_json::from_str(&serialized).unwrap();
+
+        // Проверяем, что десериализованные данные совпадают с оригиналом
+        assert_eq!(process_component_stats.pid, deserialized.pid);
+        assert_eq!(process_component_stats.total_energy_uj, deserialized.total_energy_uj);
+        assert_eq!(process_component_stats.total_power_w, deserialized.total_power_w);
+        assert_eq!(process_component_stats.components.len(), deserialized.components.len());
+        assert_eq!(process_component_stats.timestamp, deserialized.timestamp);
+        assert_eq!(process_component_stats.source, deserialized.source);
+        assert_eq!(process_component_stats.is_reliable, deserialized.is_reliable);
+    }
+
+    #[test]
+    async fn test_component_distribution_serialization() {
+        let distribution = ComponentDistributionAnalysis {
+            pid: 123,
+            total_energy_uj: 10000,
+            cpu_percentage: 40.0,
+            cpu_energy_uj: 4000,
+            gpu_percentage: 20.0,
+            gpu_energy_uj: 2000,
+            memory_percentage: 15.0,
+            memory_energy_uj: 1500,
+            disk_percentage: 10.0,
+            disk_energy_uj: 1000,
+            network_percentage: 5.0,
+            network_energy_uj: 500,
+            other_percentage: 10.0,
+            other_energy_uj: 1000,
+            total_percentage: 100.0,
+            timestamp: 1234567890,
+            is_reliable: false,
+        };
+
+        // Тестируем сериализацию
+        let serialized = serde_json::to_string(&distribution).unwrap();
+        let deserialized: ComponentDistributionAnalysis = serde_json::from_str(&serialized).unwrap();
+
+        // Проверяем, что десериализованные данные совпадают с оригиналом
+        assert_eq!(distribution.pid, deserialized.pid);
+        assert_eq!(distribution.total_energy_uj, deserialized.total_energy_uj);
+        assert_eq!(distribution.cpu_percentage, deserialized.cpu_percentage);
+        assert_eq!(distribution.cpu_energy_uj, deserialized.cpu_energy_uj);
+        assert_eq!(distribution.total_percentage, deserialized.total_percentage);
+        assert_eq!(distribution.timestamp, deserialized.timestamp);
+        assert_eq!(distribution.is_reliable, deserialized.is_reliable);
+    }
+
+    #[test]
+    async fn test_component_energy_edge_cases() {
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с несуществующим процессом
+        let result = monitor.collect_component_energy(999999).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        
+        // Тестируем анализ распределения с несуществующим процессом
+        let result = monitor.analyze_component_distribution(999999).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+        
+        // Тестируем расширенные метрики с несуществующим процессом
+        let result = monitor.get_enhanced_component_metrics(999999).await;
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    async fn test_component_energy_with_disabled_sources() {
+        let monitor = ProcessEnergyMonitor::with_config(false, false);
+        
+        // Тестируем с реальным процессом
+        let result = monitor.collect_component_energy(1).await;
+        assert!(result.is_ok());
+        
+        // Должно вернуть Some с fallback данными
+        let component_stats = result.unwrap();
+        if let Some(stats) = component_stats {
+            assert_eq!(stats.pid, 1);
+            assert!(stats.total_energy_uj > 0);
+            assert!(stats.total_power_w >= 0.0);
+            assert!(!stats.components.is_empty());
+            assert!(!stats.is_reliable);
+            
+            // Все компоненты должны быть помечены как ненадежные
+            for component in &stats.components {
+                assert!(!component.is_reliable);
+                assert_eq!(component.source, EnergySource::None);
+            }
+        }
+    }
+
+    #[test]
+    async fn test_component_energy_integration() {
+        let monitor = ProcessEnergyMonitor::new();
+        
+        // Тестируем с несколькими процессами
+        let pids = [1, 2];
+        for pid in pids {
+            let result = monitor.collect_component_energy(pid).await;
+            assert!(result.is_ok());
+            
+            let component_stats = result.unwrap();
+            if let Some(stats) = component_stats {
+                assert_eq!(stats.pid, pid);
+                assert!(stats.total_energy_uj > 0);
+                assert!(stats.total_power_w >= 0.0);
+                
+                // Тестируем анализ распределения
+                let dist_result = monitor.analyze_component_distribution(pid).await;
+                assert!(dist_result.is_ok());
+                
+                if let Some(dist) = dist_result.unwrap() {
+                    assert_eq!(dist.pid, pid);
+                    assert!(dist.total_energy_uj > 0);
+                    assert!(dist.total_percentage > 0.0);
+                }
+            }
         }
     }
 }

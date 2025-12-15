@@ -29,6 +29,7 @@
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
 //! - **hardware_acceleration**: Мониторинг аппаратного ускорения (VA-API, VDPAU, CUDA)
+//! - **container**: Мониторинг контейнеров Docker/Podman
 //! - **thunderbolt**: Мониторинг Thunderbolt устройств
 //! - **pcie**: Мониторинг PCIe устройств
 
@@ -38,6 +39,7 @@ pub mod audio;
 pub mod audio_pipewire;
 pub mod batch_processor;
 pub mod cache;
+pub mod container;
 pub mod custom;
 pub mod ebpf;
 pub mod extended_hardware_sensors;
