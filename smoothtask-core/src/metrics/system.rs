@@ -9,6 +9,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime};
 use tracing::{info, warn};
 
+// Импорты для тестирования
+#[cfg(test)]
+use tempfile;
+
 // Импорты для оптимизированного сбора метрик
 use rayon;
 
@@ -429,12 +433,6 @@ pub struct PowerMetrics {
     /// Энергопотребление GPU в ваттах (если доступно)
     pub gpu_power_w: Option<f32>,
 }
-
-
-
-
-
-
 
 /// Метрики аппаратных сенсоров (вентиляторы, напряжение и т.д.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -4584,11 +4582,25 @@ pub fn collect_pci_device_metrics() -> Result<Vec<PciDeviceMetrics>> {
         // Read power if available
         let power = read_pci_device_power(&device_path);
 
+        // Check if this is a PCIe device
+        let is_pcie = is_pcie_device(&device_path);
+        
+        // Read PCIe-specific metrics if it's a PCIe device
+        let (pcie_max_link_speed, pcie_max_link_width, pcie_current_link_speed) = if is_pcie {
+            read_pcie_device_metrics(&device_path)
+        } else {
+            (None, None, None)
+        };
+        
         devices.push(PciDeviceMetrics {
             device_id,
             vendor_id,
             device_class,
             status,
+            is_pcie,
+            pcie_max_link_speed,
+            pcie_max_link_width,
+            pcie_current_link_speed,
             bandwidth_usage_percent: None, // Would require more advanced monitoring
             temperature_c: temperature,
             power_w: power,
@@ -4666,6 +4678,79 @@ fn read_pci_device_power(device_path: &Path) -> Option<f32> {
         }
     }
     None
+}
+
+/// Проверить, является ли устройство PCIe
+fn is_pcie_device(device_path: &Path) -> bool {
+    // Check if this is a PCIe device by looking for PCIe-specific attributes
+    
+    // First, check if it's a PCIe bridge (class 0x0604)
+    if let Ok(device_class) = fs::read_to_string(device_path.join("class")) {
+        if device_class.trim().starts_with("0x0604") {
+            return true;
+        }
+    }
+    
+    // Check for PCIe capabilities in config space
+    let config_path = device_path.join("config");
+    if config_path.exists() {
+        // PCIe devices have extended configuration space
+        // Check for PCIe capability (0x10) in config space
+        if let Ok(config_data) = fs::read(&config_path) {
+            if config_data.len() > 0x34 { // PCIe capability offset
+                // Check if PCIe capability is present
+                // This is a simplified check - in reality we'd need to parse the config space
+                return true;
+            }
+        }
+    }
+    
+    // Check for common PCIe device classes
+    if let Ok(device_class) = fs::read_to_string(device_path.join("class")) {
+        let class_code = device_class.trim();
+        // Common PCIe device classes
+        let pcie_classes = [
+            "0x0108", // NVMe (always PCIe)
+            "0x0200", // Ethernet (often PCIe)
+            "0x0300", // VGA (often PCIe)
+            "0x0403", // USB (often PCIe)
+        ];
+        
+        if pcie_classes.contains(&class_code.as_str()) {
+            return true;
+        }
+    }
+    
+    false
+}
+
+/// Прочитать метрики PCIe устройства (скорость, ширина и т.д.)
+fn read_pcie_device_metrics(device_path: &Path) -> (Option<String>, Option<u32>, Option<u32>) {
+    // Read PCIe link speed and width
+    let max_link_speed_path = device_path.join("max_link_speed");
+    let max_link_width_path = device_path.join("max_link_width");
+    let current_link_speed_path = device_path.join("current_link_speed");
+    let current_link_width_path = device_path.join("current_link_width");
+    
+    let link_speed = if max_link_speed_path.exists() {
+        fs::read_to_string(&max_link_speed_path).ok().map(|s| s.trim().to_string())
+    } else {
+        None
+    };
+    
+    let link_width = if max_link_width_path.exists() {
+        fs::read_to_string(&max_link_width_path).ok().and_then(|s| s.trim().parse().ok())
+    } else {
+        None
+    };
+    
+    let current_link_speed = if current_link_speed_path.exists() {
+        fs::read_to_string(&current_link_speed_path).ok().and_then(|s| s.trim().parse().ok())
+    } else {
+        None
+    };
+    
+    (link_speed, link_width, current_link_speed)
 }
 
 /// Собрать метрики USB устройств
@@ -4842,11 +4927,15 @@ pub fn collect_thunderbolt_device_metrics() -> Result<Vec<ThunderboltDeviceMetri
     let thunderbolt_devices_path = Path::new("/sys/bus/thunderbolt/devices");
 
     if !thunderbolt_devices_path.exists() {
-        warn!("Thunderbolt devices path not found: {}", thunderbolt_devices_path.display());
+        warn!(
+            "Thunderbolt devices path not found: {}",
+            thunderbolt_devices_path.display()
+        );
         return Ok(devices);
     }
 
-    let entries = fs::read_dir(thunderbolt_devices_path).context("Failed to read Thunderbolt devices directory")?;
+    let entries = fs::read_dir(thunderbolt_devices_path)
+        .context("Failed to read Thunderbolt devices directory")?;
 
     for entry in entries {
         let entry = entry.context("Error reading Thunderbolt device entry")?;
@@ -4888,11 +4977,7 @@ pub fn collect_thunderbolt_device_metrics() -> Result<Vec<ThunderboltDeviceMetri
 /// Прочитать имя Thunderbolt устройства
 fn read_thunderbolt_device_name(device_path: &Path) -> String {
     // Try to read device name from various possible locations
-    let possible_names = [
-        "device_name",
-        "name",
-        "product_name",
-    ];
+    let possible_names = ["device_name", "name", "product_name"];
 
     for name_file in &possible_names {
         let name_path = device_path.join(name_file);
@@ -4912,11 +4997,7 @@ fn read_thunderbolt_device_name(device_path: &Path) -> String {
 /// Прочитать скорость соединения Thunderbolt устройства
 fn read_thunderbolt_connection_speed(device_path: &Path) -> f32 {
     // Try to read connection speed from various possible locations
-    let possible_speed_files = [
-        "link_speed",
-        "speed",
-        "connection_speed",
-    ];
+    let possible_speed_files = ["link_speed", "speed", "connection_speed"];
 
     for speed_file in &possible_speed_files {
         let speed_path = device_path.join(speed_file);
@@ -4971,11 +5052,7 @@ fn read_thunderbolt_device_temperature(device_path: &Path) -> Option<f32> {
 /// Прочитать потребляемую мощность Thunderbolt устройства (если доступна)
 fn read_thunderbolt_device_power(device_path: &Path) -> Option<f32> {
     // Try to read power from various possible locations
-    let possible_power_files = [
-        "power",
-        "current_power",
-        "power_consumption",
-    ];
+    let possible_power_files = ["power", "current_power", "power_consumption"];
 
     for power_file in &possible_power_files {
         let power_path = device_path.join(power_file);
@@ -7087,7 +7164,11 @@ SwapFree:        4096000 kB
         let manager = HardwareDeviceManager::new();
         assert!(manager.last_known_pci_devices.lock().unwrap().is_empty());
         assert!(manager.last_known_usb_devices.lock().unwrap().is_empty());
-        assert!(manager.last_known_storage_devices.lock().unwrap().is_empty());
+        assert!(manager
+            .last_known_storage_devices
+            .lock()
+            .unwrap()
+            .is_empty());
     }
 
     #[test]
@@ -7095,27 +7176,195 @@ SwapFree:        4096000 kB
         let manager = HardwareDeviceManager::new();
 
         // Test PCI device classification
-        let pci_class = manager.classify_pci_device("0x10de", "0x0300");
+        let pci_class = manager.classify_pci_device("0x10de", "0x0300", false);
         assert_eq!(pci_class, DeviceClassification::HighPerformanceGpu);
 
-        let pci_class2 = manager.classify_pci_device("0x8086", "0x0106");
+        let pci_class2 = manager.classify_pci_device("0x8086", "0x0106", false);
         assert_eq!(pci_class2, DeviceClassification::StorageController);
 
         // Test PCIe NVMe classification
-        let pcie_nvme_class = manager.classify_pci_device("0x144d", "0x0108");
+        let pcie_nvme_class = manager.classify_pci_device("0x144d", "0x0108", true);
         assert_eq!(pcie_nvme_class, DeviceClassification::NvmeStorage);
 
         // Test PCIe bridge classification
-        let pcie_bridge_class = manager.classify_pci_device("0x8086", "0x0604");
+        let pcie_bridge_class = manager.classify_pci_device("0x8086", "0x0604", true);
         assert_eq!(pcie_bridge_class, DeviceClassification::PcieDevice);
 
         // Test USB device classification
         let usb_class = manager.classify_usb_device("0x046d", "0xc52b", "USB 3.2 Gen 2");
         assert_eq!(usb_class, DeviceClassification::HighSpeedDevice);
 
+        // Test PCIe device classification
+        let pcie_gpu_class = manager.classify_pci_device("0x10de", "0x0300", true);
+        assert_eq!(pcie_gpu_class, DeviceClassification::HighPerformanceGpu);
+
+        let pcie_network_class = manager.classify_pci_device("0x8086", "0x0200", true);
+        assert_eq!(pcie_network_class, DeviceClassification::Network);
+
+        let pcie_generic_class = manager.classify_pci_device("0x1234", "0x1111", true);
+        assert_eq!(pcie_generic_class, DeviceClassification::PcieDevice);
+
+        // Test USB storage device classification
+        let usb_storage_class = manager.classify_usb_device("0x0bc2", "0x2322", "USB 3.0");
+        assert_eq!(usb_storage_class, DeviceClassification::StorageController);
+
+        // Test USB network device classification
+        let usb_network_class = manager.classify_usb_device("0x0b95", "0x1790", "USB 2.0");
+        assert_eq!(usb_network_class, DeviceClassification::Network);
+
+        // Test PCIe detection functions
+        // Note: These tests would normally require actual PCIe devices, so we test the logic
+        // Create a mock PCIe device path for testing
+        let mock_pcie_path = Path::new("/sys/bus/pci/devices/0000:01:00.0");
+        let mock_pci_path = Path::new("/sys/bus/pci/devices/0000:00:1f.0");
+
+        // Test PCIe bridge detection (class 0x0604 should be PCIe)
+        let temp_dir = tempfile::tempdir().unwrap();
+        let mock_device_path = temp_dir.path().join("mock_pcie_bridge");
+        fs::create_dir_all(&mock_device_path).unwrap();
+        fs::write(mock_device_path.join("class"), "0x060400").unwrap();
+        
+        let is_pcie = is_pcie_device(&mock_device_path);
+        assert!(is_pcie, "PCIe bridge should be detected as PCIe");
+
+        // Test USB graphics device classification
+        let usb_graphics_class = manager.classify_usb_device("0x046d", "0x082d", "USB 2.0");
+        assert_eq!(usb_graphics_class, DeviceClassification::Graphics);
+
+        // Test USB multimedia device classification
+        let usb_multimedia_class = manager.classify_usb_device("0x046d", "0x0a01", "USB 2.0");
+        assert_eq!(usb_multimedia_class, DeviceClassification::Multimedia);
+
+        // Test USB security device classification
+        let usb_security_class = manager.classify_usb_device("0x058f", "0x9540", "USB 2.0");
+        assert_eq!(usb_security_class, DeviceClassification::SecurityDevice);
+
+        // Test USB docking station classification
+        let usb_dock_class = manager.classify_usb_device("0x05e3", "0x0610", "USB 3.0");
+        assert_eq!(usb_dock_class, DeviceClassification::DockingStation);
+
+        // Test USB virtualization device classification
+        let usb_virt_class = manager.classify_usb_device("0x046d", "0xc532", "USB 2.0");
+        assert_eq!(usb_virt_class, DeviceClassification::VirtualizationDevice);
+
         // Test storage device classification
         let storage_class = manager.classify_storage_device("NVMe", "Samsung 980 PRO");
         assert_eq!(storage_class, DeviceClassification::NvmeStorage);
+    }
+
+    #[test]
+    fn test_usb_performance_category_determination() {
+        let manager = HardwareDeviceManager::new();
+
+        // Test high temperature USB device
+        let high_temp_usb = UsbDeviceMetrics {
+            device_id: "1-2.3".to_string(),
+            vendor_id: "0x1234".to_string(),
+            product_id: "0x5678".to_string(),
+            speed: "USB 3.0".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(500),
+            temperature_c: Some(75.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat = manager.determine_usb_performance_category(&high_temp_usb);
+        assert_eq!(perf_cat, PerformanceCategory::HighTemperature);
+
+        // Test very high power USB device
+        let very_high_power_usb = UsbDeviceMetrics {
+            device_id: "1-2.4".to_string(),
+            vendor_id: "0x1234".to_string(),
+            product_id: "0x5678".to_string(),
+            speed: "USB 3.0".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(2500),
+            temperature_c: Some(35.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat2 = manager.determine_usb_performance_category(&very_high_power_usb);
+        assert_eq!(perf_cat2, PerformanceCategory::VeryHighPower);
+
+        // Test high performance USB device
+        let high_perf_usb = UsbDeviceMetrics {
+            device_id: "1-2.5".to_string(),
+            vendor_id: "0x1234".to_string(),
+            product_id: "0x5678".to_string(),
+            speed: "USB 3.2 Gen 2".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(300),
+            temperature_c: Some(35.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat3 = manager.determine_usb_performance_category(&high_perf_usb);
+        assert_eq!(perf_cat3, PerformanceCategory::HighPerformance);
+
+        // Test good performance USB device
+        let good_perf_usb = UsbDeviceMetrics {
+            device_id: "1-2.6".to_string(),
+            vendor_id: "0x1234".to_string(),
+            product_id: "0x5678".to_string(),
+            speed: "USB 3.0".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(300),
+            temperature_c: Some(35.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat4 = manager.determine_usb_performance_category(&good_perf_usb);
+        assert_eq!(perf_cat4, PerformanceCategory::GoodPerformance);
+
+        // Test low performance USB device
+        let low_perf_usb = UsbDeviceMetrics {
+            device_id: "1-2.7".to_string(),
+            vendor_id: "0x1234".to_string(),
+            product_id: "0x5678".to_string(),
+            speed: "USB 1.0".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(100),
+            temperature_c: Some(35.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat5 = manager.determine_usb_performance_category(&low_perf_usb);
+        assert_eq!(perf_cat5, PerformanceCategory::LowPerformance);
+    }
+
+    #[test]
+    fn test_usb_device_detection_and_classification() {
+        let manager = HardwareDeviceManager::new();
+
+        // Create a test USB device
+        let test_usb_device = UsbDeviceMetrics {
+            device_id: "test-usb-device".to_string(),
+            vendor_id: "0x0bc2".to_string(), // Seagate storage
+            product_id: "0x2322".to_string(),
+            speed: "USB 3.0".to_string(),
+            status: "connected".to_string(),
+            power_mw: Some(800),
+            temperature_c: Some(45.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        // Test classification
+        let classification = manager.classify_usb_device(
+            &test_usb_device.vendor_id,
+            &test_usb_device.product_id,
+            &test_usb_device.speed,
+        );
+        assert_eq!(classification, DeviceClassification::StorageController);
+
+        // Test performance category
+        let performance = manager.determine_usb_performance_category(&test_usb_device);
+        assert_eq!(performance, PerformanceCategory::GoodPerformance);
     }
 
     #[test]
@@ -7151,7 +7400,8 @@ SwapFree:        4096000 kB
         assert_eq!(storage_class, DeviceClassification::StorageController);
 
         // Test Thunderbolt network classification
-        let network_class = manager.classify_thunderbolt_device("Thunderbolt Ethernet Bridge", &40.0);
+        let network_class =
+            manager.classify_thunderbolt_device("Thunderbolt Ethernet Bridge", &40.0);
         assert_eq!(network_class, DeviceClassification::Network);
 
         // Test high-speed device classification
@@ -8039,13 +8289,13 @@ mod hardware_sensor_tests {
 #[derive(Debug, Clone)]
 pub struct HardwareDeviceManager {
     /// Последние известные PCI устройства
-    last_known_pci_devices: Arc<Mutex<Vec<PciDeviceMetrics>>>, 
+    last_known_pci_devices: Arc<Mutex<Vec<PciDeviceMetrics>>>,
     /// Последние известные USB устройства
-    last_known_usb_devices: Arc<Mutex<Vec<UsbDeviceMetrics>>>, 
+    last_known_usb_devices: Arc<Mutex<Vec<UsbDeviceMetrics>>>,
     /// Последние известные Thunderbolt устройства
-    last_known_thunderbolt_devices: Arc<Mutex<Vec<ThunderboltDeviceMetrics>>>, 
+    last_known_thunderbolt_devices: Arc<Mutex<Vec<ThunderboltDeviceMetrics>>>,
     /// Последние известные устройства хранения
-    last_known_storage_devices: Arc<Mutex<Vec<StorageDeviceMetrics>>>, 
+    last_known_storage_devices: Arc<Mutex<Vec<StorageDeviceMetrics>>>,
     /// Время последнего сканирования
     last_scan_time: Arc<Mutex<SystemTime>>,
 }
@@ -8072,14 +8322,16 @@ impl HardwareDeviceManager {
             &mut self.last_known_pci_devices.lock().unwrap(),
             &current_pci_devices,
         );
-        
+
         // Добавить новые устройства в результат
         for device in new_pci_devices {
-            result.new_pci_devices.push(PciDeviceMetricsWithClassification {
-                device_metrics: device,
-                device_classification: DeviceClassification::Other,
-                performance_category: PerformanceCategory::Normal,
-            });
+            result
+                .new_pci_devices
+                .push(PciDeviceMetricsWithClassification {
+                    device_metrics: device,
+                    device_classification: DeviceClassification::Other,
+                    performance_category: PerformanceCategory::Normal,
+                });
         }
 
         // Обнаружить новые USB устройства
@@ -8088,14 +8340,23 @@ impl HardwareDeviceManager {
             &mut self.last_known_usb_devices.lock().unwrap(),
             &current_usb_devices,
         );
-        
-        // Добавить новые устройства в результат
+
+        // Добавить новые устройства в результат с классификацией
         for device in new_usb_devices {
-            result.new_usb_devices.push(UsbDeviceMetricsWithClassification {
-                device_metrics: device,
-                device_classification: DeviceClassification::Other,
-                performance_category: PerformanceCategory::Normal,
-            });
+            let device_classification = self.classify_usb_device(
+                &device.vendor_id,
+                &device.product_id,
+                &device.speed,
+            );
+            let performance_category = self.determine_usb_performance_category(&device);
+
+            result
+                .new_usb_devices
+                .push(UsbDeviceMetricsWithClassification {
+                    device_metrics: device,
+                    device_classification,
+                    performance_category,
+                });
         }
 
         // Обнаружить новые Thunderbolt устройства
@@ -8104,14 +8365,16 @@ impl HardwareDeviceManager {
             &mut self.last_known_thunderbolt_devices.lock().unwrap(),
             &current_thunderbolt_devices,
         );
-        
+
         // Добавить новые устройства в результат
         for device in new_thunderbolt_devices {
-            result.new_thunderbolt_devices.push(ThunderboltDeviceMetricsWithClassification {
-                device_metrics: device,
-                device_classification: DeviceClassification::Other,
-                performance_category: PerformanceCategory::Normal,
-            });
+            result
+                .new_thunderbolt_devices
+                .push(ThunderboltDeviceMetricsWithClassification {
+                    device_metrics: device,
+                    device_classification: DeviceClassification::Other,
+                    performance_category: PerformanceCategory::Normal,
+                });
         }
 
         // Обнаружить новые устройства хранения
@@ -8120,14 +8383,16 @@ impl HardwareDeviceManager {
             &mut self.last_known_storage_devices.lock().unwrap(),
             &current_storage_devices,
         );
-        
+
         // Добавить новые устройства в результат
         for device in new_storage_devices {
-            result.new_storage_devices.push(StorageDeviceMetricsWithClassification {
-                device_metrics: device,
-                device_classification: DeviceClassification::Other,
-                performance_category: PerformanceCategory::Normal,
-            });
+            result
+                .new_storage_devices
+                .push(StorageDeviceMetricsWithClassification {
+                    device_metrics: device,
+                    device_classification: DeviceClassification::Other,
+                    performance_category: PerformanceCategory::Normal,
+                });
         }
 
         // Классифицировать новые устройства
@@ -8147,7 +8412,7 @@ impl HardwareDeviceManager {
     ) -> Vec<T> {
         let last_known_set: std::collections::HashSet<_> = last_known.iter().collect();
         let mut new_devices = Vec::new();
-        
+
         for device in current_devices {
             if !last_known_set.contains(device) {
                 new_devices.push(device.clone());
@@ -8163,72 +8428,136 @@ impl HardwareDeviceManager {
     fn classify_new_devices(&self, result: &mut HardwareDeviceDetectionResult) {
         // Классифицировать PCI устройства
         for device in &mut result.new_pci_devices {
-            device.device_classification = self.classify_pci_device(&device.device_metrics.vendor_id, &device.device_metrics.device_class);
-            device.performance_category = self.determine_pci_performance_category(&device.device_metrics);
+            device.device_classification = self.classify_pci_device(
+                &device.device_metrics.vendor_id,
+                &device.device_metrics.device_class,
+                device.device_metrics.is_pcie,
+            );
+            device.performance_category =
+                self.determine_pci_performance_category(&device.device_metrics);
         }
 
         // Классифицировать USB устройства
         for device in &mut result.new_usb_devices {
-            device.device_classification = self.classify_usb_device(&device.device_metrics.vendor_id, &device.device_metrics.product_id, &device.device_metrics.speed);
-            device.performance_category = self.determine_usb_performance_category(&device.device_metrics);
+            device.device_classification = self.classify_usb_device(
+                &device.device_metrics.vendor_id,
+                &device.device_metrics.product_id,
+                &device.device_metrics.speed,
+            );
+            device.performance_category =
+                self.determine_usb_performance_category(&device.device_metrics);
         }
 
         // Классифицировать Thunderbolt устройства
         for device in &mut result.new_thunderbolt_devices {
-            device.device_classification = self.classify_thunderbolt_device(&device.device_metrics.device_name, &device.device_metrics.connection_speed_gbps);
-            device.performance_category = self.determine_thunderbolt_performance_category(&device.device_metrics);
+            device.device_classification = self.classify_thunderbolt_device(
+                &device.device_metrics.device_name,
+                &device.device_metrics.connection_speed_gbps,
+            );
+            device.performance_category =
+                self.determine_thunderbolt_performance_category(&device.device_metrics);
         }
 
         // Классифицировать устройства хранения
         for device in &mut result.new_storage_devices {
-            device.device_classification = self.classify_storage_device(&device.device_metrics.device_type, &device.device_metrics.model);
-            device.performance_category = self.determine_storage_performance_category(&device.device_metrics);
+            device.device_classification = self.classify_storage_device(
+                &device.device_metrics.device_type,
+                &device.device_metrics.model,
+            );
+            device.performance_category =
+                self.determine_storage_performance_category(&device.device_metrics);
         }
     }
 
     /// Классифицировать PCI устройство
-    fn classify_pci_device(&self, vendor_id: &str, device_class: &str) -> DeviceClassification {
-        // Основные классы PCI устройств
-        if device_class.starts_with("0x03") { // Display controller
-            if vendor_id.contains("10de") || vendor_id.contains("1002") { // NVIDIA or AMD
-                DeviceClassification::HighPerformanceGpu
+    fn classify_pci_device(&self, vendor_id: &str, device_class: &str, is_pcie: bool) -> DeviceClassification {
+        // Если это PCIe устройство, используем специальную классификацию
+        if is_pcie {
+            if device_class.starts_with("0x03") {
+                // Display controller (PCIe)
+                if vendor_id.contains("10de") || vendor_id.contains("1002") {
+                    // NVIDIA or AMD
+                    DeviceClassification::HighPerformanceGpu
+                } else {
+                    DeviceClassification::Graphics
+                }
+            } else if device_class.starts_with("0x01") {
+                // Mass storage controller (PCIe)
+                // Check for NVMe controllers (always PCIe)
+                if device_class == "0x0108" {
+                    // NVMe controller
+                    DeviceClassification::NvmeStorage
+                } else {
+                    DeviceClassification::StorageController
+                }
+            } else if device_class.starts_with("0x02") {
+                // Network controller (PCIe)
+                DeviceClassification::Network
+            } else if device_class.starts_with("0x04") {
+                // Multimedia (PCIe)
+                DeviceClassification::Multimedia
+            } else if device_class.starts_with("0x06") {
+                // Bridge device (PCIe)
+                // PCIe bridges
+                if device_class.starts_with("0x0604") {
+                    // PCIe bridge
+                    DeviceClassification::PcieDevice
+                } else {
+                    DeviceClassification::Other
+                }
+            } else if device_class.starts_with("0x08") {
+                // System peripheral (PCIe)
+                // Security devices
+                if device_class.starts_with("0x0880") {
+                    // Security device
+                    DeviceClassification::SecurityDevice
+                } else {
+                    DeviceClassification::Other
+                }
+            } else if device_class.starts_with("0x0C") {
+                // Serial bus controller (PCIe)
+                // USB controllers (often PCIe)
+                if device_class.starts_with("0x0C03") {
+                    // USB controller
+                    DeviceClassification::HighSpeedDevice
+                } else {
+                    DeviceClassification::Other
+                }
             } else {
-                DeviceClassification::Graphics
-            }
-        } else if device_class.starts_with("0x01") { // Mass storage controller
-            // Check for NVMe controllers (PCIe)
-            if device_class == "0x0108" { // NVMe controller
-                DeviceClassification::NvmeStorage
-            } else {
-                DeviceClassification::StorageController
-            }
-        } else if device_class.starts_with("0x02") { // Network controller
-            DeviceClassification::Network
-        } else if device_class.starts_with("0x04") { // Multimedia
-            DeviceClassification::Multimedia
-        } else if device_class.starts_with("0x06") { // Bridge device
-            // PCIe bridges
-            if device_class.starts_with("0x0604") { // PCIe bridge
+                // Общий класс для PCIe устройств
                 DeviceClassification::PcieDevice
-            } else {
-                DeviceClassification::Other
-            }
-        } else if device_class.starts_with("0x08") { // System peripheral
-            // Security devices
-            if device_class.starts_with("0x0880") { // Security device
-                DeviceClassification::SecurityDevice
-            } else {
-                DeviceClassification::Other
-            }
-        } else if device_class.starts_with("0x0C") { // Serial bus controller
-            // USB controllers (often PCIe)
-            if device_class.starts_with("0x0C03") { // USB controller
-                DeviceClassification::HighSpeedDevice
-            } else {
-                DeviceClassification::Other
             }
         } else {
-            DeviceClassification::Other
+            // Обычные PCI устройства
+            if device_class.starts_with("0x03") {
+                // Display controller
+                if vendor_id.contains("10de") || vendor_id.contains("1002") {
+                    // NVIDIA or AMD
+                    DeviceClassification::HighPerformanceGpu
+                } else {
+                    DeviceClassification::Graphics
+                }
+            } else if device_class.starts_with("0x01") {
+                // Mass storage controller
+                DeviceClassification::StorageController
+            } else if device_class.starts_with("0x02") {
+                // Network controller
+                DeviceClassification::Network
+            } else if device_class.starts_with("0x04") {
+                // Multimedia
+                DeviceClassification::Multimedia
+            } else if device_class.starts_with("0x06") {
+                // Bridge device
+                DeviceClassification::Other
+            } else if device_class.starts_with("0x08") {
+                // System peripheral
+                DeviceClassification::Other
+            } else if device_class.starts_with("0x0C") {
+                // Serial bus controller
+                DeviceClassification::Other
+            } else {
+                DeviceClassification::Other
+            }
         }
     }
 
@@ -8250,7 +8579,81 @@ impl HardwareDeviceManager {
     }
 
     /// Классифицировать USB устройство
-    fn classify_usb_device(&self, _vendor_id: &str, _product_id: &str, speed: &str) -> DeviceClassification {
+    fn classify_usb_device(
+        &self,
+        vendor_id: &str,
+        product_id: &str,
+        speed: &str,
+    ) -> DeviceClassification {
+        // First, try to classify based on known vendor/product combinations
+        let vendor_id_upper = vendor_id.to_uppercase();
+        let product_id_upper = product_id.to_uppercase();
+
+        // Storage devices
+        if (vendor_id_upper == "0X0BC2" && product_id_upper == "0X2322") || // Seagate
+           (vendor_id_upper == "0X1058" && product_id_upper == "0X25A2") || // Western Digital
+           (vendor_id_upper == "0X152D" && product_id_upper == "0X0578") || // SanDisk
+           (vendor_id_upper == "0X090C" && product_id_upper == "0X1000") || // Silicon Power
+           (vendor_id_upper == "0X0951" && product_id_upper == "0X1666")    // Kingston
+        {
+            return DeviceClassification::StorageController;
+        }
+
+        // Network devices
+        if (vendor_id_upper == "0X0B95" && product_id_upper == "0X1790") || // ASIX Ethernet
+           (vendor_id_upper == "0X0BDA" && product_id_upper == "0X8153") || // Realtek USB Ethernet
+           (vendor_id_upper == "0X2357" && product_id_upper == "0X010C") || // TP-Link WiFi
+           (vendor_id_upper == "0X0BD3" && product_id_upper == "0X0507")    // D-Link WiFi
+        {
+            return DeviceClassification::Network;
+        }
+
+        // Graphics devices
+        if (vendor_id_upper == "0X046D" && product_id_upper == "0XC52B") || // Logitech Webcam
+           (vendor_id_upper == "0X046D" && product_id_upper == "0X082D") || // Logitech HD Webcam
+           (vendor_id_upper == "0X045E" && product_id_upper == "0X0779") || // Microsoft LifeCam
+           (vendor_id_upper == "0X05A3" && product_id_upper == "0X9330")    // Genius Webcam
+        {
+            return DeviceClassification::Graphics;
+        }
+
+        // Multimedia devices
+        if (vendor_id_upper == "0X046D" && product_id_upper == "0X0A01") || // Logitech Headset
+           (vendor_id_upper == "0X046D" && product_id_upper == "0X0A1D") || // Logitech Speaker
+           (vendor_id_upper == "0X0D8C" && product_id_upper == "0X0014") || // Creative Sound Card
+           (vendor_id_upper == "0X041E" && product_id_upper == "0X3237")    // Creative Webcam
+        {
+            return DeviceClassification::Multimedia;
+        }
+
+        // Security devices
+        if (vendor_id_upper == "0X058F" && product_id_upper == "0X9540") || // Yubikey
+           (vendor_id_upper == "0X046A" && product_id_upper == "0X0023") || // Cherry SmartCard Reader
+           (vendor_id_upper == "0X08E6" && product_id_upper == "0X3437") || // Gemalto SmartCard
+           (vendor_id_upper == "0X076B" && product_id_upper == "0X3021")    // Omnikey Card Reader
+        {
+            return DeviceClassification::SecurityDevice;
+        }
+
+        // Docking stations and hubs
+        if (vendor_id_upper == "0X05E3" && product_id_upper == "0X0610") || // Genesys Hub
+           (vendor_id_upper == "0X0424" && product_id_upper == "0X2744") || // Microchip Hub
+           (vendor_id_upper == "0X0424" && product_id_upper == "0X274D") || // Microchip Dock
+           (vendor_id_upper == "0X1A40" && product_id_upper == "0X0101")    // Terminus Hub
+        {
+            return DeviceClassification::DockingStation;
+        }
+
+        // Virtualization devices
+        if (vendor_id_upper == "0X056A" && product_id_upper == "0X0353") || // Wacom Tablet
+           (vendor_id_upper == "0X046D" && product_id_upper == "0XC532") || // Logitech Unifying Receiver
+           (vendor_id_upper == "0X045E" && product_id_upper == "0X07FD") || // Microsoft Wireless Adapter
+           (vendor_id_upper == "0X046D" && product_id_upper == "0XC52F")    // Logitech Wireless Receiver
+        {
+            return DeviceClassification::VirtualizationDevice;
+        }
+
+        // Fall back to speed-based classification
         if speed.contains("4.0") || speed.contains("3.2") || speed.contains("3.1") {
             DeviceClassification::HighSpeedDevice
         } else if speed.contains("3.0") {
@@ -8264,53 +8667,97 @@ impl HardwareDeviceManager {
 
     /// Определить категорию производительности для USB устройства
     fn determine_usb_performance_category(&self, device: &UsbDeviceMetrics) -> PerformanceCategory {
-        if let Some(power) = device.power_mw {
-            if power > 900 {
-                return PerformanceCategory::HighPower;
+        // Check for high temperature first (critical)
+        if let Some(temp) = device.temperature_c {
+            if temp > 70.0 {
+                return PerformanceCategory::HighTemperature;
+            } else if temp > 50.0 {
+                return PerformanceCategory::ModerateTemperature;
             }
         }
 
-        PerformanceCategory::Normal
+        // Check power consumption
+        if let Some(power) = device.power_mw {
+            if power > 2000 {
+                return PerformanceCategory::VeryHighPower;
+            } else if power > 1500 {
+                return PerformanceCategory::HighPower;
+            } else if power > 900 {
+                return PerformanceCategory::ModeratePower;
+            }
+        }
+
+        // Check device speed and classify performance
+        if device.speed.contains("4.0") || device.speed.contains("3.2") || device.speed.contains("3.1") {
+            return PerformanceCategory::HighPerformance;
+        } else if device.speed.contains("3.0") {
+            return PerformanceCategory::GoodPerformance;
+        } else if device.speed.contains("2.0") {
+            return PerformanceCategory::Normal;
+        } else {
+            return PerformanceCategory::LowPerformance;
+        }
     }
 
     /// Классифицировать Thunderbolt устройство
-    fn classify_thunderbolt_device(&self, device_name: &str, connection_speed: &f32) -> DeviceClassification {
+    fn classify_thunderbolt_device(
+        &self,
+        device_name: &str,
+        connection_speed: &f32,
+    ) -> DeviceClassification {
         // Classify based on device name and connection speed
         let device_name_lower = device_name.to_lowercase();
 
         // External GPUs
-        if device_name_lower.contains("gpu") || device_name_lower.contains("graphics") ||
-           device_name_lower.contains("radeon") || device_name_lower.contains("geforce") ||
-           device_name_lower.contains("quadro") || device_name_lower.contains("rtx") ||
-           device_name_lower.contains("external") && device_name_lower.contains("graphics") {
+        if device_name_lower.contains("gpu")
+            || device_name_lower.contains("graphics")
+            || device_name_lower.contains("radeon")
+            || device_name_lower.contains("geforce")
+            || device_name_lower.contains("quadro")
+            || device_name_lower.contains("rtx")
+            || device_name_lower.contains("external") && device_name_lower.contains("graphics")
+        {
             DeviceClassification::ExternalGpu
         }
         // Docking stations
-        else if device_name_lower.contains("dock") || device_name_lower.contains("station") ||
-                device_name_lower.contains("hub") || device_name_lower.contains("thunderbolt") &&
-                device_name_lower.contains("dock") {
+        else if device_name_lower.contains("dock")
+            || device_name_lower.contains("station")
+            || device_name_lower.contains("hub")
+            || device_name_lower.contains("thunderbolt") && device_name_lower.contains("dock")
+        {
             DeviceClassification::DockingStation
         }
         // Storage devices
-        else if device_name_lower.contains("ssd") || device_name_lower.contains("storage") ||
-                device_name_lower.contains("drive") || device_name_lower.contains("disk") ||
-                device_name_lower.contains("nvme") {
+        else if device_name_lower.contains("ssd")
+            || device_name_lower.contains("storage")
+            || device_name_lower.contains("drive")
+            || device_name_lower.contains("disk")
+            || device_name_lower.contains("nvme")
+        {
             DeviceClassification::StorageController
         }
         // Network devices
-        else if device_name_lower.contains("network") || device_name_lower.contains("ethernet") ||
-                device_name_lower.contains("thunderbolt") && device_name_lower.contains("bridge") ||
-                device_name_lower.contains("adapter") {
+        else if device_name_lower.contains("network")
+            || device_name_lower.contains("ethernet")
+            || device_name_lower.contains("thunderbolt") && device_name_lower.contains("bridge")
+            || device_name_lower.contains("adapter")
+        {
             DeviceClassification::Network
         }
         // Virtualization devices
-        else if device_name_lower.contains("virtual") || device_name_lower.contains("vm") ||
-                device_name_lower.contains("kvm") || device_name_lower.contains("hypervisor") {
+        else if device_name_lower.contains("virtual")
+            || device_name_lower.contains("vm")
+            || device_name_lower.contains("kvm")
+            || device_name_lower.contains("hypervisor")
+        {
             DeviceClassification::VirtualizationDevice
         }
         // Security devices
-        else if device_name_lower.contains("security") || device_name_lower.contains("encryption") ||
-                device_name_lower.contains("tpm") || device_name_lower.contains("trusted") {
+        else if device_name_lower.contains("security")
+            || device_name_lower.contains("encryption")
+            || device_name_lower.contains("tpm")
+            || device_name_lower.contains("trusted")
+        {
             DeviceClassification::SecurityDevice
         }
         // Thunderbolt-specific devices
@@ -8328,17 +8775,22 @@ impl HardwareDeviceManager {
     }
 
     /// Определить категорию производительности для Thunderbolt устройства
-    fn determine_thunderbolt_performance_category(&self, device: &ThunderboltDeviceMetrics) -> PerformanceCategory {
+    fn determine_thunderbolt_performance_category(
+        &self,
+        device: &ThunderboltDeviceMetrics,
+    ) -> PerformanceCategory {
         // Check for high temperature
         if let Some(temp) = device.temperature_c {
-            if temp > 75.0 { // Thunderbolt devices typically run cooler than PCI devices
+            if temp > 75.0 {
+                // Thunderbolt devices typically run cooler than PCI devices
                 return PerformanceCategory::HighTemperature;
             }
         }
 
         // Check for high power consumption
         if let Some(power) = device.power_w {
-            if power > 50.0 { // Thunderbolt devices typically consume less power
+            if power > 50.0 {
+                // Thunderbolt devices typically consume less power
                 return PerformanceCategory::HighPower;
             }
         }
@@ -8367,7 +8819,10 @@ impl HardwareDeviceManager {
     }
 
     /// Определить категорию производительности для устройства хранения
-    fn determine_storage_performance_category(&self, device: &StorageDeviceMetrics) -> PerformanceCategory {
+    fn determine_storage_performance_category(
+        &self,
+        device: &StorageDeviceMetrics,
+    ) -> PerformanceCategory {
         if let Some(temp) = device.temperature_c {
             if temp > 60.0 {
                 return PerformanceCategory::HighTemperature;
@@ -8547,8 +9002,18 @@ pub enum PerformanceCategory {
     Normal,
     /// Высокая температура
     HighTemperature,
+    /// Умеренная температура
+    ModerateTemperature,
+    /// Очень высокое энергопотребление
+    VeryHighPower,
+    /// Умеренное энергопотребление
+    ModeratePower,
     /// Высокое энергопотребление
     HighPower,
+    /// Хорошая производительность
+    GoodPerformance,
+    /// Высокая производительность
+    HighPerformance,
     /// Низкая производительность
     LowPerformance,
 }
@@ -8564,6 +9029,14 @@ pub struct PciDeviceMetrics {
     pub device_class: String,
     /// Состояние устройства (активно/неактивно)
     pub status: String,
+    /// Является ли устройство PCIe
+    pub is_pcie: bool,
+    /// Максимальная скорость PCIe (если доступна)
+    pub pcie_max_link_speed: Option<String>,
+    /// Максимальная ширина PCIe (если доступна)
+    pub pcie_max_link_width: Option<u32>,
+    /// Текущая скорость PCIe (если доступна)
+    pub pcie_current_link_speed: Option<u32>,
     /// Использование пропускной способности (в %)
     pub bandwidth_usage_percent: Option<f32>,
     /// Температура устройства (если доступна)
@@ -8629,21 +9102,27 @@ fn collect_cpu_frequency_info() -> Result<CpuFrequencyInfo> {
     };
 
     // Пробуем прочитать текущую частоту из /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
-    if let Ok(current_freq) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq") {
+    if let Ok(current_freq) =
+        fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq")
+    {
         if let Ok(freq_khz) = current_freq.trim().parse::<u64>() {
             info.current_frequency_mhz = freq_khz as f64 / 1000.0;
         }
     }
 
     // Пробуем прочитать максимальную частоту
-    if let Ok(max_freq) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq") {
+    if let Ok(max_freq) =
+        fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_max_freq")
+    {
         if let Ok(freq_khz) = max_freq.trim().parse::<u64>() {
             info.max_frequency_mhz = freq_khz as f64 / 1000.0;
         }
     }
 
     // Пробуем прочитать минимальную частоту
-    if let Ok(min_freq) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq") {
+    if let Ok(min_freq) =
+        fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/cpuinfo_min_freq")
+    {
         if let Ok(freq_khz) = min_freq.trim().parse::<u64>() {
             info.min_frequency_mhz = freq_khz as f64 / 1000.0;
         }
@@ -8760,7 +9239,7 @@ fn collect_cpu_cache_info() -> Result<Vec<CpuCacheInfo>> {
                             level: level.trim().parse::<u32>().unwrap_or(0),
                             cache_type: cache_type.trim().to_string(),
                             size_kb: size.trim().parse::<u32>().unwrap_or(0) / 1024,
-                            ways: 0, // Не собираем информацию о путях
+                            ways: 0,      // Не собираем информацию о путях
                             line_size: 0, // Не собираем информацию о размере линии
                         });
                     }
@@ -8782,7 +9261,8 @@ fn collect_numa_info() -> Result<Vec<NumaNodeInfo>> {
             if let Ok(entry) = entry {
                 if let Some(node_id_str) = entry.file_name().to_str() {
                     if node_id_str.starts_with("node") {
-                        if let Ok(node_id) = node_id_str.trim_start_matches("node").parse::<usize>() {
+                        if let Ok(node_id) = node_id_str.trim_start_matches("node").parse::<usize>()
+                        {
                             let meminfo_path = entry.path().join("meminfo");
                             let distance_path = entry.path().join("distance");
 
@@ -8794,11 +9274,23 @@ fn collect_numa_info() -> Result<Vec<NumaNodeInfo>> {
                                 for line in meminfo.lines() {
                                     if line.starts_with("MemTotal") {
                                         if let Some(value) = line.split(":").nth(1) {
-                                            total_mem = value.trim().split_whitespace().next().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                                            total_mem = value
+                                                .trim()
+                                                .split_whitespace()
+                                                .next()
+                                                .unwrap_or("0")
+                                                .parse::<u64>()
+                                                .unwrap_or(0);
                                         }
                                     } else if line.starts_with("MemFree") {
                                         if let Some(value) = line.split(":").nth(1) {
-                                            free_mem = value.trim().split_whitespace().next().unwrap_or("0").parse::<u64>().unwrap_or(0);
+                                            free_mem = value
+                                                .trim()
+                                                .split_whitespace()
+                                                .next()
+                                                .unwrap_or("0")
+                                                .parse::<u64>()
+                                                .unwrap_or(0);
                                         }
                                     }
                                 }
@@ -8810,7 +9302,9 @@ fn collect_numa_info() -> Result<Vec<NumaNodeInfo>> {
                                 for line in distance.lines() {
                                     let parts: Vec<&str> = line.split_whitespace().collect();
                                     if parts.len() >= 2 {
-                                        if let (Ok(target_node), Ok(dist)) = (parts[0].parse::<usize>(), parts[1].parse::<u32>()) {
+                                        if let (Ok(target_node), Ok(dist)) =
+                                            (parts[0].parse::<usize>(), parts[1].parse::<u32>())
+                                        {
                                             distances.push((target_node, dist));
                                         }
                                     }
@@ -8826,7 +9320,10 @@ fn collect_numa_info() -> Result<Vec<NumaNodeInfo>> {
                                     if part.contains("-") {
                                         let range_parts: Vec<&str> = part.split("-").collect();
                                         if range_parts.len() == 2 {
-                                            if let (Ok(start), Ok(end)) = (range_parts[0].parse::<usize>(), range_parts[1].parse::<usize>()) {
+                                            if let (Ok(start), Ok(end)) = (
+                                                range_parts[0].parse::<usize>(),
+                                                range_parts[1].parse::<usize>(),
+                                            ) {
                                                 for core in start..=end {
                                                     cpu_cores.push(core);
                                                 }
@@ -8865,7 +9362,8 @@ fn collect_turbo_boost_info() -> Result<TurboBoostInfo> {
     info.supported = true;
 
     // Пробуем получить информацию о частоте турбо буста
-    if let Ok(max_freq) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/turbo_max_freq") {
+    if let Ok(max_freq) = fs::read_to_string("/sys/devices/system/cpu/cpu0/cpufreq/turbo_max_freq")
+    {
         if let Ok(freq_khz) = max_freq.trim().parse::<u64>() {
             info.max_turbo_frequency_mhz = freq_khz as f64 / 1000.0;
             info.current_turbo_frequency_mhz = info.max_turbo_frequency_mhz; // Упрощение
@@ -8920,8 +9418,10 @@ pub fn collect_memory_performance_metrics() -> Result<MemoryPerformanceMetrics> 
     if let Ok(system_metrics) = collect_system_metrics(&paths) {
         // Calculate memory usage percentage manually
         if system_metrics.memory.mem_total_kb > 0 {
-            let used_memory = system_metrics.memory.mem_total_kb - system_metrics.memory.mem_available_kb;
-            metrics.memory_usage_percent = (used_memory as f64 / system_metrics.memory.mem_total_kb as f64) * 100.0;
+            let used_memory =
+                system_metrics.memory.mem_total_kb - system_metrics.memory.mem_available_kb;
+            metrics.memory_usage_percent =
+                (used_memory as f64 / system_metrics.memory.mem_total_kb as f64) * 100.0;
         } else {
             metrics.memory_usage_percent = 0.0;
         }
@@ -8953,7 +9453,7 @@ fn collect_numa_memory_performance() -> Result<Vec<NumaMemoryPerformance>> {
             performance_info.push(NumaMemoryPerformance {
                 node_id: node.node_id,
                 bandwidth_mbps: 8000.0, // Типичное значение
-                latency_ns: 120.0, // Типичное значение
+                latency_ns: 120.0,      // Типичное значение
                 usage_percent: if node.total_memory_mb > 0 {
                     (1.0 - node.free_memory_mb as f64 / node.total_memory_mb as f64) * 100.0
                 } else {
@@ -9241,20 +9741,20 @@ fn collect_tcp_performance() -> Result<TcpPerformanceInfo> {
                                 // Упрощение: активные соединения = активные открытия
                                 info.active_connections = value;
                             }
-                        },
+                        }
                         "PassiveOpens" => {
                             // Игнорируем пассивные открытия
-                        },
+                        }
                         "AttemptFails" => {
                             if let Ok(value) = parts[1].parse::<u32>() {
                                 info.connection_errors = value;
                             }
-                        },
+                        }
                         "EstabResets" => {
                             if let Ok(value) = parts[1].parse::<u32>() {
                                 info.connection_errors += value;
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }
@@ -9295,22 +9795,22 @@ fn collect_udp_performance() -> Result<UdpPerformanceInfo> {
                             if let Ok(value) = parts[1].parse::<u32>() {
                                 info.packets_per_second = value as f64;
                             }
-                        },
+                        }
                         "InErrors" => {
                             if let Ok(value) = parts[1].parse::<u32>() {
                                 info.errors = value;
                             }
-                        },
+                        }
                         "NoPorts" => {
                             if let Ok(value) = parts[1].parse::<u32>() {
                                 info.error_packets = value;
                             }
-                        },
+                        }
                         "RcvbufErrors" => {
                             if let Ok(value) = parts[1].parse::<u32>() {
                                 info.buffer_errors = value;
                             }
-                        },
+                        }
                         _ => {}
                     }
                 }

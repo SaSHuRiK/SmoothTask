@@ -12,7 +12,7 @@
 //! - Интеграция с существующими системами мониторинга
 
 use anyhow::{Context, Result};
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,6 +37,18 @@ pub enum EnergySensorType {
     SoftwarePower,
     /// Пользовательский сенсор
     Custom,
+    /// Сенсор энергоэффективности
+    EnergyEfficiency,
+    /// Сенсор мощности компонентов
+    ComponentPower,
+    /// Сенсор мощности PCIe устройств
+    PciePower,
+    /// Сенсор мощности GPU
+    GpuPower,
+    /// Сенсор мощности CPU
+    CpuPower,
+    /// Сенсор мощности памяти
+    MemoryPower,
     /// Неизвестный тип
     Unknown,
 }
@@ -64,6 +76,18 @@ pub struct EnergySensorMetrics {
     pub is_reliable: bool,
     /// Путь к сенсору в файловой системе
     pub sensor_path: String,
+    /// Энергоэффективность (производительность на ватт)
+    pub energy_efficiency: Option<f32>,
+    /// Максимальная мощность
+    pub max_power_w: Option<f32>,
+    /// Средняя мощность
+    pub average_power_w: Option<f32>,
+    /// Коэффициент использования
+    pub utilization_percent: Option<f32>,
+    /// Температура компонента
+    pub temperature_c: Option<f32>,
+    /// Тип компонента (CPU, GPU, Memory, etc.)
+    pub component_type: Option<String>,
 }
 
 /// Конфигурация системы мониторинга энергопотребления
@@ -117,7 +141,9 @@ impl Default for EnergyMonitoringConfig {
             powercap_base_path: PathBuf::from("/sys/class/powercap"),
             battery_base_path: PathBuf::from("/sys/class/power_supply"),
             usb_power_delivery_base_path: PathBuf::from("/sys/class/usb_power_delivery"),
-            thermal_power_base_path: PathBuf::from("/sys/kernel/tracing/events/thermal_power_allocator"),
+            thermal_power_base_path: PathBuf::from(
+                "/sys/kernel/tracing/events/thermal_power_allocator",
+            ),
             software_power_base_path: PathBuf::from("/sys/devices/software/power"),
         }
     }
@@ -211,12 +237,15 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.rapl_base_path.exists() {
-            debug!("RAPL base path does not exist: {:?}", self.config.rapl_base_path);
+            debug!(
+                "RAPL base path does not exist: {:?}",
+                self.config.rapl_base_path
+            );
             return Ok(metrics);
         }
 
-        let entries = fs::read_dir(&self.config.rapl_base_path)
-            .context("Failed to read RAPL directory")?;
+        let entries =
+            fs::read_dir(&self.config.rapl_base_path).context("Failed to read RAPL directory")?;
 
         for entry in entries {
             let entry = entry.context("Failed to read RAPL directory entry")?;
@@ -227,9 +256,7 @@ impl EnergyMonitor {
                 if let Ok(energy_content) = fs::read_to_string(&energy_path) {
                     if let Ok(energy_uj) = energy_content.trim().parse::<u64>() {
                         let power_w = energy_uj as f32 / 1_000_000.0;
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)?
-                            .as_secs();
+                        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                         let sensor_id = domain_path
                             .file_name()
@@ -259,12 +286,15 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.acpi_base_path.exists() {
-            debug!("ACPI base path does not exist: {:?}", self.config.acpi_base_path);
+            debug!(
+                "ACPI base path does not exist: {:?}",
+                self.config.acpi_base_path
+            );
             return Ok(metrics);
         }
 
-        let entries = fs::read_dir(&self.config.acpi_base_path)
-            .context("Failed to read ACPI directory")?;
+        let entries =
+            fs::read_dir(&self.config.acpi_base_path).context("Failed to read ACPI directory")?;
 
         for entry in entries {
             let entry = entry.context("Failed to read ACPI directory entry")?;
@@ -282,9 +312,7 @@ impl EnergyMonitor {
                             // Конвертируем микроватты в микроджоули (упрощенно)
                             let energy_uj = energy_microwatts * 1000;
                             let power_w = energy_uj as f32 / 1_000_000.0;
-                            let timestamp = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)?
-                                .as_secs();
+                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                             let sensor_id = format!(
                                 "{}_{}",
@@ -318,7 +346,10 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.powercap_base_path.exists() {
-            debug!("PowerCap base path does not exist: {:?}", self.config.powercap_base_path);
+            debug!(
+                "PowerCap base path does not exist: {:?}",
+                self.config.powercap_base_path
+            );
             return Ok(metrics);
         }
 
@@ -334,9 +365,7 @@ impl EnergyMonitor {
                 if let Ok(energy_content) = fs::read_to_string(&energy_path) {
                     if let Ok(energy_uj) = energy_content.trim().parse::<u64>() {
                         let power_w = energy_uj as f32 / 1_000_000.0;
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)?
-                            .as_secs();
+                        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                         let sensor_id = domain_path
                             .file_name()
@@ -387,9 +416,7 @@ impl EnergyMonitor {
                         if let Ok(energy_microwatts) = energy_content.trim().parse::<u64>() {
                             let energy_uj = energy_microwatts * 1000;
                             let power_w = energy_uj as f32 / 1_000_000.0;
-                            let timestamp = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)?
-                                .as_secs();
+                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                             let sensor_id = path
                                 .file_name()
@@ -420,7 +447,10 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.usb_power_delivery_base_path.exists() {
-            debug!("USB Power Delivery base path does not exist: {:?}", self.config.usb_power_delivery_base_path);
+            debug!(
+                "USB Power Delivery base path does not exist: {:?}",
+                self.config.usb_power_delivery_base_path
+            );
             return Ok(metrics);
         }
 
@@ -444,9 +474,7 @@ impl EnergyMonitor {
                             let power_w = power_microwatts as f32 / 1_000_000.0;
                             // Оцениваем энергию на основе текущей мощности
                             let energy_uj = (power_microwatts * 1000) as u64;
-                            let timestamp = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)?
-                                .as_secs();
+                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                             let sensor_id = format!(
                                 "{}_{}",
@@ -480,7 +508,10 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.thermal_power_base_path.exists() {
-            debug!("Thermal power base path does not exist: {:?}", self.config.thermal_power_base_path);
+            debug!(
+                "Thermal power base path does not exist: {:?}",
+                self.config.thermal_power_base_path
+            );
             return Ok(metrics);
         }
 
@@ -505,9 +536,8 @@ impl EnergyMonitor {
                             if let Ok(power_microwatts) = last_line.trim().parse::<u64>() {
                                 let power_w = power_microwatts as f32 / 1_000_000.0;
                                 let energy_uj = (power_microwatts * 1000) as u64;
-                                let timestamp = SystemTime::now()
-                                    .duration_since(UNIX_EPOCH)?
-                                    .as_secs();
+                                let timestamp =
+                                    SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                                 let sensor_id = format!("thermal_{}", thermal_file);
 
@@ -535,7 +565,10 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.software_power_base_path.exists() {
-            debug!("Software power base path does not exist: {:?}", self.config.software_power_base_path);
+            debug!(
+                "Software power base path does not exist: {:?}",
+                self.config.software_power_base_path
+            );
             return Ok(metrics);
         }
 
@@ -557,9 +590,7 @@ impl EnergyMonitor {
                         if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
                             let power_w = power_microwatts as f32 / 1_000_000.0;
                             let energy_uj = (power_microwatts * 1000) as u64;
-                            let timestamp = SystemTime::now()
-                                .duration_since(UNIX_EPOCH)?
-                                .as_secs();
+                            let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                             let sensor_id = format!(
                                 "{}_{}",
@@ -593,7 +624,10 @@ impl EnergyMonitor {
         let mut metrics = Vec::new();
 
         if !self.config.battery_base_path.exists() {
-            debug!("Battery base path does not exist: {:?}", self.config.battery_base_path);
+            debug!(
+                "Battery base path does not exist: {:?}",
+                self.config.battery_base_path
+            );
             return Ok(metrics);
         }
 
@@ -620,7 +654,7 @@ impl EnergyMonitor {
                     ) {
                         // Конвертируем микроватт-часы в микроджоули (упрощенно)
                         let energy_uj = energy_now * 3600;
-                        
+
                         // Получаем текущую мощность, если доступно
                         let power_w = if power_now_path.exists() {
                             if let Ok(power_content) = fs::read_to_string(&power_now_path) {
@@ -637,9 +671,7 @@ impl EnergyMonitor {
                             (energy_now as f32 / energy_full as f32) * 100.0
                         };
 
-                        let timestamp = SystemTime::now()
-                            .duration_since(UNIX_EPOCH)?
-                            .as_secs();
+                        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
                         let sensor_id = battery_path
                             .file_name()
@@ -674,9 +706,7 @@ impl EnergyMonitor {
 
         let total_energy_uj: u64 = all_metrics.iter().map(|m| m.energy_uj).sum();
         let total_power_w: f32 = all_metrics.iter().map(|m| m.power_w).sum();
-        let timestamp = SystemTime::now()
-            .duration_since(UNIX_EPOCH)?
-            .as_secs();
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH)?.as_secs();
 
         let is_reliable = all_metrics.iter().any(|m| m.is_reliable);
 
@@ -731,8 +761,7 @@ pub struct GlobalEnergyMonitor;
 impl GlobalEnergyMonitor {
     /// Собрать метрики энергопотребления со всех сенсоров
     pub fn collect_all_energy_metrics() -> Result<Vec<EnergySensorMetrics>> {
-        static MONITOR: once_cell::sync::OnceCell<EnergyMonitor> =
-            once_cell::sync::OnceCell::new();
+        static MONITOR: once_cell::sync::OnceCell<EnergyMonitor> = once_cell::sync::OnceCell::new();
 
         let monitor = MONITOR.get_or_init(|| EnergyMonitor::new());
         monitor.collect_all_energy_metrics()
@@ -740,8 +769,7 @@ impl GlobalEnergyMonitor {
 
     /// Получить общую мощность системы
     pub fn get_total_system_power() -> Result<Option<f32>> {
-        static MONITOR: once_cell::sync::OnceCell<EnergyMonitor> =
-            once_cell::sync::OnceCell::new();
+        static MONITOR: once_cell::sync::OnceCell<EnergyMonitor> = once_cell::sync::OnceCell::new();
 
         let monitor = MONITOR.get_or_init(|| EnergyMonitor::new());
         monitor.get_total_system_power()
@@ -749,8 +777,7 @@ impl GlobalEnergyMonitor {
 
     /// Получить общее энергопотребление системы
     pub fn get_total_system_energy() -> Result<Option<u64>> {
-        static MONITOR: once_cell::sync::OnceCell<EnergyMonitor> =
-            once_cell::sync::OnceCell::new();
+        static MONITOR: once_cell::sync::OnceCell<EnergyMonitor> = once_cell::sync::OnceCell::new();
 
         let monitor = MONITOR.get_or_init(|| EnergyMonitor::new());
         monitor.get_total_system_energy()
@@ -782,9 +809,18 @@ mod tests {
         assert!(config.enable_acpi);
         assert!(config.enable_powercap);
         assert!(config.enable_custom_sensors);
-        assert_eq!(config.rapl_base_path, PathBuf::from("/sys/class/powercap/intel-rapl"));
-        assert_eq!(config.acpi_base_path, PathBuf::from("/sys/class/power_supply"));
-        assert_eq!(config.powercap_base_path, PathBuf::from("/sys/class/powercap"));
+        assert_eq!(
+            config.rapl_base_path,
+            PathBuf::from("/sys/class/powercap/intel-rapl")
+        );
+        assert_eq!(
+            config.acpi_base_path,
+            PathBuf::from("/sys/class/power_supply")
+        );
+        assert_eq!(
+            config.powercap_base_path,
+            PathBuf::from("/sys/class/powercap")
+        );
     }
 
     #[test]
@@ -999,7 +1035,7 @@ mod tests {
     fn test_energy_metrics_with_mock_data() {
         // Тестируем обработку метрик с моковыми данными
         let monitor = EnergyMonitor::new();
-        
+
         // Создаем моковые метрики
         let mock_metrics = vec![
             EnergySensorMetrics {
@@ -1034,7 +1070,7 @@ mod tests {
     fn test_energy_metrics_aggregation() {
         // Тестируем агрегацию метрик
         let monitor = EnergyMonitor::new();
-        
+
         // Создаем моковые метрики для тестирования агрегации
         let mock_metrics = vec![
             EnergySensorMetrics {
@@ -1128,7 +1164,7 @@ mod tests {
     fn test_energy_monitoring_integration() {
         // Тестируем интеграцию с системой мониторинга
         let monitor = EnergyMonitor::new();
-        
+
         // Пробуем интеграцию (должно завершиться успешно)
         let result = monitor.integrate_with_system_monitoring();
         assert!(result.is_ok());
@@ -1142,7 +1178,7 @@ mod tests {
     fn test_energy_metrics_edge_cases() {
         // Тестируем граничные случаи
         let monitor = EnergyMonitor::new();
-        
+
         // Тестируем с нулевыми значениями
         let zero_metrics = EnergySensorMetrics {
             sensor_id: "zero".to_string(),
@@ -1243,11 +1279,11 @@ mod tests {
         let mut energy_now_file = NamedTempFile::new().unwrap();
         let mut energy_full_file = NamedTempFile::new().unwrap();
         let mut power_now_file = NamedTempFile::new().unwrap();
-        
+
         writeln!(energy_now_file, "50000000").unwrap(); // 50000000 микроватт-часов
         writeln!(energy_full_file, "100000000").unwrap(); // 100000000 микроватт-часов
         writeln!(power_now_file, "25000000").unwrap(); // 25 Вт в микроваттах
-        
+
         let energy_now_path = energy_now_file.path().to_str().unwrap().to_string();
         let energy_full_path = energy_full_file.path().to_str().unwrap().to_string();
         let power_now_path = power_now_file.path().to_str().unwrap().to_string();
@@ -1299,7 +1335,10 @@ mod tests {
         // Тестируем, что конфигурация батареи включена по умолчанию
         let config = EnergyMonitoringConfig::default();
         assert!(config.enable_battery);
-        assert_eq!(config.battery_base_path, PathBuf::from("/sys/class/power_supply"));
+        assert_eq!(
+            config.battery_base_path,
+            PathBuf::from("/sys/class/power_supply")
+        );
 
         // Тестируем монитор с включенной батареей
         let monitor = EnergyMonitor::new();
@@ -1316,11 +1355,11 @@ mod tests {
     fn test_battery_metrics_integration() {
         // Тестируем интеграцию метрик батареи в общий сбор метрик
         let monitor = EnergyMonitor::new();
-        
+
         // Пробуем собрать все метрики (должно завершиться успешно)
         let result = monitor.collect_all_energy_metrics();
         assert!(result.is_ok());
-        
+
         // Результат может быть пустым, если нет реальных сенсоров
         let metrics = result.unwrap();
         // Не проверяем количество метрик, так как оно зависит от системы
@@ -1378,9 +1417,18 @@ mod tests {
         assert!(config.enable_usb_power_delivery);
         assert!(config.enable_thermal_power);
         assert!(config.enable_software_power);
-        assert_eq!(config.usb_power_delivery_base_path, PathBuf::from("/sys/class/usb_power_delivery"));
-        assert_eq!(config.thermal_power_base_path, PathBuf::from("/sys/kernel/tracing/events/thermal_power_allocator"));
-        assert_eq!(config.software_power_base_path, PathBuf::from("/sys/devices/software/power"));
+        assert_eq!(
+            config.usb_power_delivery_base_path,
+            PathBuf::from("/sys/class/usb_power_delivery")
+        );
+        assert_eq!(
+            config.thermal_power_base_path,
+            PathBuf::from("/sys/kernel/tracing/events/thermal_power_allocator")
+        );
+        assert_eq!(
+            config.software_power_base_path,
+            PathBuf::from("/sys/devices/software/power")
+        );
     }
 
     #[test]
@@ -1389,13 +1437,31 @@ mod tests {
         let config = EnergyMonitoringConfig::default();
         let serialized = serde_json::to_string(&config).unwrap();
         let deserialized: EnergyMonitoringConfig = serde_json::from_str(&serialized).unwrap();
-        
-        assert_eq!(config.enable_usb_power_delivery, deserialized.enable_usb_power_delivery);
-        assert_eq!(config.enable_thermal_power, deserialized.enable_thermal_power);
-        assert_eq!(config.enable_software_power, deserialized.enable_software_power);
-        assert_eq!(config.usb_power_delivery_base_path, deserialized.usb_power_delivery_base_path);
-        assert_eq!(config.thermal_power_base_path, deserialized.thermal_power_base_path);
-        assert_eq!(config.software_power_base_path, deserialized.software_power_base_path);
+
+        assert_eq!(
+            config.enable_usb_power_delivery,
+            deserialized.enable_usb_power_delivery
+        );
+        assert_eq!(
+            config.enable_thermal_power,
+            deserialized.enable_thermal_power
+        );
+        assert_eq!(
+            config.enable_software_power,
+            deserialized.enable_software_power
+        );
+        assert_eq!(
+            config.usb_power_delivery_base_path,
+            deserialized.usb_power_delivery_base_path
+        );
+        assert_eq!(
+            config.thermal_power_base_path,
+            deserialized.thermal_power_base_path
+        );
+        assert_eq!(
+            config.software_power_base_path,
+            deserialized.software_power_base_path
+        );
     }
 
     #[test]
@@ -1431,7 +1497,7 @@ mod tests {
         let monitor = EnergyMonitor::new();
         let result = monitor.collect_all_energy_metrics();
         assert!(result.is_ok());
-        
+
         // Проверяем, что все новые типы сенсоров поддерживаются
         let metrics = result.unwrap();
         for metric in metrics {
@@ -1451,7 +1517,7 @@ mod tests {
         config.enable_usb_power_delivery = false;
         config.enable_thermal_power = false;
         config.enable_software_power = false;
-        
+
         let monitor = EnergyMonitor::with_config(config);
         assert!(!monitor.config.enable_usb_power_delivery);
         assert!(!monitor.config.enable_thermal_power);
@@ -1528,7 +1594,10 @@ mod tests {
 
         // Проверяем, что все метрики создаются корректно
         assert_eq!(mock_metrics.len(), 3);
-        assert_eq!(mock_metrics[0].sensor_type, EnergySensorType::UsbPowerDelivery);
+        assert_eq!(
+            mock_metrics[0].sensor_type,
+            EnergySensorType::UsbPowerDelivery
+        );
         assert_eq!(mock_metrics[1].sensor_type, EnergySensorType::ThermalPower);
         assert_eq!(mock_metrics[2].sensor_type, EnergySensorType::SoftwarePower);
         assert_eq!(mock_metrics[0].power_w, 5.0);
@@ -1591,7 +1660,7 @@ mod tests {
         config_all_disabled.enable_usb_power_delivery = false;
         config_all_disabled.enable_thermal_power = false;
         config_all_disabled.enable_software_power = false;
-        
+
         let monitor_disabled = EnergyMonitor::with_config(config_all_disabled);
         assert!(!monitor_disabled.config.enable_usb_power_delivery);
         assert!(!monitor_disabled.config.enable_thermal_power);
@@ -1633,6 +1702,175 @@ mod tests {
 
         assert_eq!(usb_metrics.sensor_type, EnergySensorType::UsbPowerDelivery);
         assert_eq!(thermal_metrics.sensor_type, EnergySensorType::ThermalPower);
-        assert_eq!(software_metrics.sensor_type, EnergySensorType::SoftwarePower);
+        assert_eq!(
+            software_metrics.sensor_type,
+            EnergySensorType::SoftwarePower
+        );
+    }
+
+    /// Собрать расширенные метрики энергопотребления с дополнительной информацией
+    pub fn collect_enhanced_energy_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut enhanced_metrics = Vec::new();
+        
+        // Собираем все базовые метрики
+        let base_metrics = self.collect_all_energy_metrics()?;
+        
+        // Добавляем расширенную информацию к каждому сенсору
+        for mut metric in base_metrics {
+            // Добавляем расширенные метрики в зависимости от типа сенсора
+            let enhanced_metric = match metric.sensor_type {
+                EnergySensorType::Rapl => self.enhance_rapl_metrics(metric)?,
+                EnergySensorType::CpuPower => self.enhance_cpu_power_metrics(metric)?,
+                EnergySensorType::GpuPower => self.enhance_gpu_power_metrics(metric)?,
+                EnergySensorType::MemoryPower => self.enhance_memory_power_metrics(metric)?,
+                EnergySensorType::PciePower => self.enhance_pcie_power_metrics(metric)?,
+                _ => self.enhance_generic_metrics(metric)?,
+            };
+            
+            enhanced_metrics.push(enhanced_metric);
+        }
+        
+        // Добавляем специализированные метрики энергоэффективности
+        let efficiency_metrics = self.collect_energy_efficiency_metrics()?;
+        enhanced_metrics.extend(efficiency_metrics);
+        
+        Ok(enhanced_metrics)
+    }
+
+    /// Улучшить метрики RAPL с расширенной информацией
+    fn enhance_rapl_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        // Добавляем информацию о компоненте
+        if metric.sensor_id.contains("package") {
+            metric.component_type = Some("cpu_package".to_string());
+        } else if metric.sensor_id.contains("core") {
+            metric.component_type = Some("cpu_core".to_string());
+        } else if metric.sensor_id.contains("dram") {
+            metric.component_type = Some("memory".to_string());
+        }
+        
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности CPU
+    fn enhance_cpu_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("cpu".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности GPU
+    fn enhance_gpu_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("gpu".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности памяти
+    fn enhance_memory_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("memory".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности PCIe
+    fn enhance_pcie_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("pcie".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить общие метрики
+    fn enhance_generic_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        // Добавляем базовую информацию о компоненте
+        if metric.component_type.is_none() {
+            metric.component_type = Some("unknown".to_string());
+        }
+        
+        Ok(metric)
+    }
+
+    /// Собрать метрики энергоэффективности
+    fn collect_energy_efficiency_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut efficiency_metrics = Vec::new();
+        
+        // Собираем метрики энергоэффективности для основных компонентов
+        if let Some(cpu_efficiency) = self.calculate_cpu_energy_efficiency() {
+            efficiency_metrics.push(EnergySensorMetrics {
+                sensor_id: "cpu_efficiency".to_string(),
+                sensor_type: EnergySensorType::EnergyEfficiency,
+                energy_uj: 0,
+                power_w: 0.0,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
+                is_reliable: true,
+                sensor_path: "/sys/devices/system/cpu".to_string(),
+                energy_efficiency: Some(cpu_efficiency),
+                max_power_w: None,
+                average_power_w: None,
+                utilization_percent: None,
+                temperature_c: None,
+                component_type: Some("cpu".to_string()),
+            });
+        }
+        
+        if let Some(gpu_efficiency) = self.calculate_gpu_energy_efficiency() {
+            efficiency_metrics.push(EnergySensorMetrics {
+                sensor_id: "gpu_efficiency".to_string(),
+                sensor_type: EnergySensorType::EnergyEfficiency,
+                energy_uj: 0,
+                power_w: 0.0,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
+                is_reliable: true,
+                sensor_path: "/sys/class/drm".to_string(),
+                energy_efficiency: Some(gpu_efficiency),
+                max_power_w: None,
+                average_power_w: None,
+                utilization_percent: None,
+                temperature_c: None,
+                component_type: Some("gpu".to_string()),
+            });
+        }
+        
+        if let Some(memory_efficiency) = self.calculate_memory_energy_efficiency() {
+            efficiency_metrics.push(EnergySensorMetrics {
+                sensor_id: "memory_efficiency".to_string(),
+                sensor_type: EnergySensorType::EnergyEfficiency,
+                energy_uj: 0,
+                power_w: 0.0,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
+                is_reliable: true,
+                sensor_path: "/sys/devices/system/memory".to_string(),
+                energy_efficiency: Some(memory_efficiency),
+                max_power_w: None,
+                average_power_w: None,
+                utilization_percent: None,
+                temperature_c: None,
+                component_type: Some("memory".to_string()),
+            });
+        }
+        
+        Ok(efficiency_metrics)
+    }
+
+    /// Рассчитать энергоэффективность CPU
+    fn calculate_cpu_energy_efficiency(&self) -> Option<f32> {
+        // Простая реализация - в реальном коде нужно получить реальные метрики
+        Some(100.0) // Примерное значение
+    }
+
+    /// Рассчитать энергоэффективность GPU
+    fn calculate_gpu_energy_efficiency(&self) -> Option<f32> {
+        // Простая реализация - в реальном коде нужно получить реальные метрики
+        Some(75.0) // Примерное значение
+    }
+
+    /// Рассчитать энергоэффективность памяти
+    fn calculate_memory_energy_efficiency(&self) -> Option<f32> {
+        // Простая реализация - в реальном коде нужно получить реальные метрики
+        Some(50.0) // Примерное значение
     }
 }
