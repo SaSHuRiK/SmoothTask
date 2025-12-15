@@ -25,6 +25,7 @@
 //! - **gpu**: Мониторинг GPU устройств и их метрик
 //! - **ebpf**: Высокопроизводительный сбор метрик через eBPF
 //! - **filesystem_monitor**: Мониторинг файловой системы в реальном времени
+//! - **storage**: Обнаружение и мониторинг SATA устройств
 //! - **extended_hardware_sensors**: Расширенный мониторинг аппаратных сенсоров
 //! - **app_performance**: Метрики производительности приложений
 //! - **ml_performance**: Метрики производительности ML-моделей и экспорт в Prometheus
@@ -41,15 +42,18 @@ pub mod audio;
 pub mod audio_pipewire;
 pub mod batch_processor;
 pub mod cache;
+pub mod cache_monitor;
 pub mod container;
 pub mod custom;
 pub mod ebpf;
 pub mod energy_monitoring;
 pub mod extended_hardware_sensors;
 pub mod filesystem_monitor;
+pub mod storage;
 pub mod gpu;
 pub mod hardware_acceleration;
 pub mod input;
+pub mod io_monitor;
 pub mod ml_performance;
 pub mod network;
 pub mod nvml_wrapper;
@@ -61,15 +65,16 @@ pub mod process_network;
 pub mod prometheus_exporter;
 pub mod scheduling_latency;
 pub mod system;
+pub mod thunderbolt_monitor;
 pub mod vm;
 pub mod windows;
 pub mod windows_wayland;
 pub mod windows_x11;
 
 /// Интеграция асинхронного логирования в модуль метрик
-use crate::logging::async_logging::{write_log_entry_async, write_log_batch_async};
-use std::path::Path;
+use crate::logging::async_logging::{write_log_batch_async, write_log_entry_async};
 use anyhow::Result;
+use std::path::Path;
 
 /// Асинхронное логирование метрик
 pub async fn log_metrics_async(log_path: &Path, metrics_data: &str) -> Result<()> {
