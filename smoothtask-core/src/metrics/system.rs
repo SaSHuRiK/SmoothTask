@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime};
 use tracing::{info, warn};
 
 // Импорты для оптимизированного сбора метрик
@@ -430,68 +430,11 @@ pub struct PowerMetrics {
     pub gpu_power_w: Option<f32>,
 }
 
-/// Метрики PCI устройства
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct PciDeviceMetrics {
-    /// Идентификатор устройства
-    pub device_id: String,
-    /// Идентификатор вендора
-    pub vendor_id: String,
-    /// Класс устройства
-    pub device_class: String,
-    /// Состояние устройства (активно/неактивно)
-    pub status: String,
-    /// Использование пропускной способности (в %)
-    pub bandwidth_usage_percent: Option<f32>,
-    /// Температура устройства (если доступна)
-    pub temperature_c: Option<f32>,
-    /// Потребляемая мощность (если доступна)
-    pub power_w: Option<f32>,
-}
 
-/// Метрики USB устройства
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct UsbDeviceMetrics {
-    /// Идентификатор устройства
-    pub device_id: String,
-    /// Идентификатор вендора
-    pub vendor_id: String,
-    /// Идентификатор продукта
-    pub product_id: String,
-    /// Скорость USB (1.0, 2.0, 3.0, 3.1, 3.2, 4.0)
-    pub speed: String,
-    /// Состояние устройства (подключено/отключено)
-    pub status: String,
-    /// Потребляемая мощность (если доступна)
-    pub power_mw: Option<u32>,
-    /// Температура устройства (если доступна)
-    pub temperature_c: Option<f32>,
-}
 
-/// Метрики SATA/NVMe устройства
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
-pub struct StorageDeviceMetrics {
-    /// Идентификатор устройства
-    pub device_id: String,
-    /// Тип устройства (SATA, NVMe)
-    pub device_type: String,
-    /// Модель устройства
-    pub model: String,
-    /// Серийный номер
-    pub serial_number: String,
-    /// Температура устройства (если доступна)
-    pub temperature_c: Option<f32>,
-    /// Состояние здоровья (если доступно)
-    pub health_status: Option<String>,
-    /// Общий объем устройства (в байтах)
-    pub total_capacity_bytes: Option<u64>,
-    /// Используемый объем (в байтах)
-    pub used_capacity_bytes: Option<u64>,
-    /// Скорость чтения (в байтах/сек)
-    pub read_speed_bps: Option<u64>,
-    /// Скорость записи (в байтах/сек)
-    pub write_speed_bps: Option<u64>,
-}
+
+
+
 
 /// Метрики аппаратных сенсоров (вентиляторы, напряжение и т.д.)
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
@@ -4272,6 +4215,8 @@ pub fn collect_pci_device_metrics() -> Result<Vec<PciDeviceMetrics>> {
             bandwidth_usage_percent: None, // Would require more advanced monitoring
             temperature_c: temperature,
             power_w: power,
+            device_classification: None,
+            performance_category: None,
         });
     }
 
@@ -4397,6 +4342,8 @@ pub fn collect_usb_device_metrics() -> Result<Vec<UsbDeviceMetrics>> {
             status,
             power_mw: power,
             temperature_c: temperature,
+            device_classification: None,
+            performance_category: None,
         });
     }
 
@@ -4558,6 +4505,8 @@ fn collect_sata_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
             used_capacity_bytes: None, // Would require filesystem info
             read_speed_bps: None,      // Would require performance monitoring
             write_speed_bps: None,     // Would require performance monitoring
+            device_classification: None,
+            performance_category: None,
         });
     }
 
@@ -4605,6 +4554,8 @@ fn collect_nvme_devices(devices: &mut Vec<StorageDeviceMetrics>) -> Result<()> {
             used_capacity_bytes: None, // Would require filesystem info
             read_speed_bps: None,      // Would require performance monitoring
             write_speed_bps: None,     // Would require performance monitoring
+            device_classification: None,
+            performance_category: None,
         });
     }
 
@@ -6596,6 +6547,54 @@ SwapFree:        4096000 kB
             temp_metrics.gpu_temperature_c.is_none() || temp_metrics.gpu_temperature_c.is_some()
         );
     }
+
+    #[test]
+    fn test_hardware_device_manager_creation() {
+        let manager = HardwareDeviceManager::new();
+        assert!(manager.last_known_pci_devices.lock().unwrap().is_empty());
+        assert!(manager.last_known_usb_devices.lock().unwrap().is_empty());
+        assert!(manager.last_known_storage_devices.lock().unwrap().is_empty());
+    }
+
+    #[test]
+    fn test_device_classification() {
+        let manager = HardwareDeviceManager::new();
+
+        // Test PCI device classification
+        let pci_class = manager.classify_pci_device("0x10de", "0x0300");
+        assert_eq!(pci_class, DeviceClassification::HighPerformanceGpu);
+
+        let pci_class2 = manager.classify_pci_device("0x8086", "0x0106");
+        assert_eq!(pci_class2, DeviceClassification::StorageController);
+
+        // Test USB device classification
+        let usb_class = manager.classify_usb_device("0x046d", "0xc52b", "USB 3.2 Gen 2");
+        assert_eq!(usb_class, DeviceClassification::HighSpeedDevice);
+
+        // Test storage device classification
+        let storage_class = manager.classify_storage_device("NVMe", "Samsung 980 PRO");
+        assert_eq!(storage_class, DeviceClassification::NvmeStorage);
+    }
+
+    #[test]
+    fn test_performance_category_determination() {
+        let manager = HardwareDeviceManager::new();
+
+        let pci_device = PciDeviceMetrics {
+            device_id: "0000:01:00.0".to_string(),
+            vendor_id: "0x10de".to_string(),
+            device_class: "0x0300".to_string(),
+            status: "active".to_string(),
+            bandwidth_usage_percent: Some(45.5),
+            temperature_c: Some(85.0),
+            power_w: Some(75.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat = manager.determine_pci_performance_category(&pci_device);
+        assert_eq!(perf_cat, PerformanceCategory::HighTemperature);
+    }
 }
 
 /// Кэш для системных метрик
@@ -7456,4 +7455,432 @@ mod hardware_sensor_tests {
         assert_eq!(optimized.pci_devices.len(), 1);
         assert_eq!(optimized.pci_devices[0].device_id, "0000:01:00.0");
     }
+}
+
+/// Система автоматического обнаружения и классификации аппаратных устройств
+#[derive(Debug, Clone)]
+pub struct HardwareDeviceManager {
+    /// Последние известные PCI устройства
+    last_known_pci_devices: Arc<Mutex<Vec<PciDeviceMetrics>>>, 
+    /// Последние известные USB устройства
+    last_known_usb_devices: Arc<Mutex<Vec<UsbDeviceMetrics>>>, 
+    /// Последние известные устройства хранения
+    last_known_storage_devices: Arc<Mutex<Vec<StorageDeviceMetrics>>>, 
+    /// Время последнего сканирования
+    last_scan_time: Arc<Mutex<SystemTime>>,
+}
+
+impl HardwareDeviceManager {
+    /// Создать новый HardwareDeviceManager
+    pub fn new() -> Self {
+        Self {
+            last_known_pci_devices: Arc::new(Mutex::new(Vec::new())),
+            last_known_usb_devices: Arc::new(Mutex::new(Vec::new())),
+            last_known_storage_devices: Arc::new(Mutex::new(Vec::new())),
+            last_scan_time: Arc::new(Mutex::new(SystemTime::now())),
+        }
+    }
+
+    /// Обнаружить новые устройства и классифицировать их
+    pub fn detect_and_classify_devices(&self) -> Result<HardwareDeviceDetectionResult> {
+        let mut result = HardwareDeviceDetectionResult::default();
+
+        // Обнаружить новые PCI устройства
+        let current_pci_devices = collect_pci_device_metrics()?;
+        let new_pci_devices = self.detect_new_devices(
+            &mut self.last_known_pci_devices.lock().unwrap(),
+            &current_pci_devices,
+        );
+        
+        // Добавить новые устройства в результат
+        for device in new_pci_devices {
+            result.new_pci_devices.push(PciDeviceMetricsWithClassification {
+                device_metrics: device,
+                device_classification: DeviceClassification::Other,
+                performance_category: PerformanceCategory::Normal,
+            });
+        }
+
+        // Обнаружить новые USB устройства
+        let current_usb_devices = collect_usb_device_metrics()?;
+        let new_usb_devices = self.detect_new_devices(
+            &mut self.last_known_usb_devices.lock().unwrap(),
+            &current_usb_devices,
+        );
+        
+        // Добавить новые устройства в результат
+        for device in new_usb_devices {
+            result.new_usb_devices.push(UsbDeviceMetricsWithClassification {
+                device_metrics: device,
+                device_classification: DeviceClassification::Other,
+                performance_category: PerformanceCategory::Normal,
+            });
+        }
+
+        // Обнаружить новые устройства хранения
+        let current_storage_devices = collect_storage_device_metrics()?;
+        let new_storage_devices = self.detect_new_devices(
+            &mut self.last_known_storage_devices.lock().unwrap(),
+            &current_storage_devices,
+        );
+        
+        // Добавить новые устройства в результат
+        for device in new_storage_devices {
+            result.new_storage_devices.push(StorageDeviceMetricsWithClassification {
+                device_metrics: device,
+                device_classification: DeviceClassification::Other,
+                performance_category: PerformanceCategory::Normal,
+            });
+        }
+
+        // Классифицировать новые устройства
+        self.classify_new_devices(&mut result);
+
+        // Обновить время последнего сканирования
+        *self.last_scan_time.lock().unwrap() = SystemTime::now();
+
+        Ok(result)
+    }
+
+    /// Обнаружить новые устройства по сравнению с последними известными
+    fn detect_new_devices<T: DeviceMetrics + Clone + PartialEq>(
+        &self,
+        last_known: &mut Vec<T>,
+        current_devices: &[T],
+    ) -> Vec<T> {
+        let last_known_set: std::collections::HashSet<_> = last_known.iter().collect();
+        let mut new_devices = Vec::new();
+        
+        for device in current_devices {
+            if !last_known_set.contains(device) {
+                new_devices.push(device.clone());
+            }
+        }
+
+        // Обновить последние известные устройства
+        *last_known = current_devices.to_vec();
+        new_devices
+    }
+
+    /// Классифицировать новые устройства
+    fn classify_new_devices(&self, result: &mut HardwareDeviceDetectionResult) {
+        // Классифицировать PCI устройства
+        for device in &mut result.new_pci_devices {
+            device.device_classification = self.classify_pci_device(&device.device_metrics.vendor_id, &device.device_metrics.device_class);
+            device.performance_category = self.determine_pci_performance_category(&device.device_metrics);
+        }
+
+        // Классифицировать USB устройства
+        for device in &mut result.new_usb_devices {
+            device.device_classification = self.classify_usb_device(&device.device_metrics.vendor_id, &device.device_metrics.product_id, &device.device_metrics.speed);
+            device.performance_category = self.determine_usb_performance_category(&device.device_metrics);
+        }
+
+        // Классифицировать устройства хранения
+        for device in &mut result.new_storage_devices {
+            device.device_classification = self.classify_storage_device(&device.device_metrics.device_type, &device.device_metrics.model);
+            device.performance_category = self.determine_storage_performance_category(&device.device_metrics);
+        }
+    }
+
+    /// Классифицировать PCI устройство
+    fn classify_pci_device(&self, vendor_id: &str, device_class: &str) -> DeviceClassification {
+        // Основные классы PCI устройств
+        if device_class.starts_with("0x03") { // Display controller
+            if vendor_id.contains("10de") || vendor_id.contains("1002") { // NVIDIA or AMD
+                DeviceClassification::HighPerformanceGpu
+            } else {
+                DeviceClassification::Graphics
+            }
+        } else if device_class.starts_with("0x01") { // Mass storage controller
+            DeviceClassification::StorageController
+        } else if device_class.starts_with("0x02") { // Network controller
+            DeviceClassification::Network
+        } else if device_class.starts_with("0x04") { // Multimedia
+            DeviceClassification::Multimedia
+        } else {
+            DeviceClassification::Other
+        }
+    }
+
+    /// Определить категорию производительности для PCI устройства
+    fn determine_pci_performance_category(&self, device: &PciDeviceMetrics) -> PerformanceCategory {
+        if let Some(temp) = device.temperature_c {
+            if temp > 80.0 {
+                return PerformanceCategory::HighTemperature;
+            }
+        }
+
+        if let Some(power) = device.power_w {
+            if power > 100.0 {
+                return PerformanceCategory::HighPower;
+            }
+        }
+
+        PerformanceCategory::Normal
+    }
+
+    /// Классифицировать USB устройство
+    fn classify_usb_device(&self, _vendor_id: &str, _product_id: &str, speed: &str) -> DeviceClassification {
+        if speed.contains("4.0") || speed.contains("3.2") || speed.contains("3.1") {
+            DeviceClassification::HighSpeedDevice
+        } else if speed.contains("3.0") {
+            DeviceClassification::Usb3Device
+        } else if speed.contains("2.0") {
+            DeviceClassification::Usb2Device
+        } else {
+            DeviceClassification::Usb1Device
+        }
+    }
+
+    /// Определить категорию производительности для USB устройства
+    fn determine_usb_performance_category(&self, device: &UsbDeviceMetrics) -> PerformanceCategory {
+        if let Some(power) = device.power_mw {
+            if power > 900 {
+                return PerformanceCategory::HighPower;
+            }
+        }
+
+        PerformanceCategory::Normal
+    }
+
+    /// Классифицировать устройство хранения
+    fn classify_storage_device(&self, device_type: &str, model: &str) -> DeviceClassification {
+        if device_type == "NVMe" {
+            DeviceClassification::NvmeStorage
+        } else if device_type == "SATA" {
+            if model.contains("SSD") || model.contains("Solid State") {
+                DeviceClassification::SsdStorage
+            } else {
+                DeviceClassification::HddStorage
+            }
+        } else {
+            DeviceClassification::OtherStorage
+        }
+    }
+
+    /// Определить категорию производительности для устройства хранения
+    fn determine_storage_performance_category(&self, device: &StorageDeviceMetrics) -> PerformanceCategory {
+        if let Some(temp) = device.temperature_c {
+            if temp > 60.0 {
+                return PerformanceCategory::HighTemperature;
+            }
+        }
+
+        PerformanceCategory::Normal
+    }
+}
+
+/// Результат обнаружения новых аппаратных устройств
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HardwareDeviceDetectionResult {
+    /// Новые PCI устройства
+    pub new_pci_devices: Vec<PciDeviceMetricsWithClassification>,
+    /// Новые USB устройства
+    pub new_usb_devices: Vec<UsbDeviceMetricsWithClassification>,
+    /// Новые устройства хранения
+    pub new_storage_devices: Vec<StorageDeviceMetricsWithClassification>,
+    /// Время обнаружения
+    pub detection_time: SystemTime,
+}
+
+impl Default for HardwareDeviceDetectionResult {
+    fn default() -> Self {
+        Self {
+            new_pci_devices: Vec::new(),
+            new_usb_devices: Vec::new(),
+            new_storage_devices: Vec::new(),
+            detection_time: SystemTime::now(),
+        }
+    }
+}
+
+/// Трейт для устройств с метриками
+pub trait DeviceMetrics: Clone + PartialEq + Eq + std::hash::Hash {}
+
+impl DeviceMetrics for PciDeviceMetrics {}
+impl DeviceMetrics for UsbDeviceMetrics {}
+impl DeviceMetrics for StorageDeviceMetrics {}
+
+// Implement Eq and Hash for device metrics structures
+impl Eq for PciDeviceMetrics {}
+impl Eq for UsbDeviceMetrics {}
+impl Eq for StorageDeviceMetrics {}
+
+impl std::hash::Hash for PciDeviceMetrics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.device_id.hash(state);
+        self.vendor_id.hash(state);
+        self.device_class.hash(state);
+    }
+}
+
+impl std::hash::Hash for UsbDeviceMetrics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.device_id.hash(state);
+        self.vendor_id.hash(state);
+        self.product_id.hash(state);
+    }
+}
+
+impl std::hash::Hash for StorageDeviceMetrics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.device_id.hash(state);
+        self.device_type.hash(state);
+        self.model.hash(state);
+    }
+}
+
+/// PCI устройство с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PciDeviceMetricsWithClassification {
+    /// Метрики устройства
+    pub device_metrics: PciDeviceMetrics,
+    /// Классификация устройства
+    pub device_classification: DeviceClassification,
+    /// Категория производительности
+    pub performance_category: PerformanceCategory,
+}
+
+/// USB устройство с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsbDeviceMetricsWithClassification {
+    /// Метрики устройства
+    pub device_metrics: UsbDeviceMetrics,
+    /// Классификация устройства
+    pub device_classification: DeviceClassification,
+    /// Категория производительности
+    pub performance_category: PerformanceCategory,
+}
+
+/// Устройство хранения с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct StorageDeviceMetricsWithClassification {
+    /// Метрики устройства
+    pub device_metrics: StorageDeviceMetrics,
+    /// Классификация устройства
+    pub device_classification: DeviceClassification,
+    /// Категория производительности
+    pub performance_category: PerformanceCategory,
+}
+
+/// Классификация устройств
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum DeviceClassification {
+    /// Высокопроизводительное GPU
+    HighPerformanceGpu,
+    /// Графическое устройство
+    Graphics,
+    /// Контроллер хранения
+    StorageController,
+    /// Сетевое устройство
+    Network,
+    /// Мультимедийное устройство
+    Multimedia,
+    /// Высокоскоростное устройство
+    HighSpeedDevice,
+    /// USB 3 устройство
+    Usb3Device,
+    /// USB 2 устройство
+    Usb2Device,
+    /// USB 1 устройство
+    Usb1Device,
+    /// NVMe хранилище
+    NvmeStorage,
+    /// SSD хранилище
+    SsdStorage,
+    /// HDD хранилище
+    HddStorage,
+    /// Другое хранилище
+    OtherStorage,
+    /// Другое устройство
+    Other,
+}
+
+/// Категория производительности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PerformanceCategory {
+    /// Нормальная производительность
+    Normal,
+    /// Высокая температура
+    HighTemperature,
+    /// Высокое энергопотребление
+    HighPower,
+    /// Низкая производительность
+    LowPerformance,
+}
+
+/// Расширенные метрики PCI устройства с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PciDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Идентификатор вендора
+    pub vendor_id: String,
+    /// Класс устройства
+    pub device_class: String,
+    /// Состояние устройства (активно/неактивно)
+    pub status: String,
+    /// Использование пропускной способности (в %)
+    pub bandwidth_usage_percent: Option<f32>,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+    /// Потребляемая мощность (если доступна)
+    pub power_w: Option<f32>,
+    /// Классификация устройства
+    pub device_classification: Option<DeviceClassification>,
+    /// Категория производительности
+    pub performance_category: Option<PerformanceCategory>,
+}
+
+/// Расширенные метрики USB устройства с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct UsbDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Идентификатор вендора
+    pub vendor_id: String,
+    /// Идентификатор продукта
+    pub product_id: String,
+    /// Скорость USB (1.0, 2.0, 3.0, 3.1, 3.2, 4.0)
+    pub speed: String,
+    /// Состояние устройства (подключено/отключено)
+    pub status: String,
+    /// Потребляемая мощность (если доступна)
+    pub power_mw: Option<u32>,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+    /// Классификация устройства
+    pub device_classification: Option<DeviceClassification>,
+    /// Категория производительности
+    pub performance_category: Option<PerformanceCategory>,
+}
+
+/// Расширенные метрики SATA/NVMe устройства с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct StorageDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Тип устройства (SATA, NVMe)
+    pub device_type: String,
+    /// Модель устройства
+    pub model: String,
+    /// Серийный номер
+    pub serial_number: String,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+    /// Состояние здоровья (если доступно)
+    pub health_status: Option<String>,
+    /// Общая ёмкость в байтах
+    pub total_capacity_bytes: Option<u64>,
+    /// Использованная ёмкость в байтах
+    pub used_capacity_bytes: Option<u64>,
+    /// Скорость чтения в байтах/сек
+    pub read_speed_bps: Option<u64>,
+    /// Скорость записи в байтах/сек
+    pub write_speed_bps: Option<u64>,
+    /// Классификация устройства
+    pub device_classification: Option<DeviceClassification>,
+    /// Категория производительности
+    pub performance_category: Option<PerformanceCategory>,
 }

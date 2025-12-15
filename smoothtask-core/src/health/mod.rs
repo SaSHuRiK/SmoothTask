@@ -17,11 +17,13 @@ pub mod container_health;
 pub mod diagnostics;
 pub mod monitoring;
 pub mod notifications;
+pub mod security_monitoring;
 
 pub use container_health::*;
 pub use diagnostics::*;
 pub use monitoring::*;
 pub use notifications::*;
+pub use security_monitoring::*;
 
 #[cfg(test)]
 pub mod tests;

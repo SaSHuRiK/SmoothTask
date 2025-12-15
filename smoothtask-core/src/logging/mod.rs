@@ -20,8 +20,11 @@ pub mod integration;
 pub mod log_storage;
 pub mod rotation;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
+use serde_json;
+use std::io::Write;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::logging::log_storage::{LogEntry, LogLevel};
@@ -1608,3 +1611,519 @@ pub use integration::{
     create_default_async_logging_integration, create_default_classify_logger,
     create_default_metrics_logger, create_default_policy_logger,
 };
+
+/// Структурированный логгер с поддержкой JSON и других форматов
+#[derive(Debug)]
+pub struct StructuredLogger {
+    /// Формат вывода (JSON, Text, etc.)
+    output_format: StructuredLogFormat,
+    /// Уровень логирования
+    log_level: LogLevel,
+    /// Дополнительные метаданные для каждого лога
+    global_metadata: serde_json::Value,
+    /// Включить отладочную информацию в структурированных логах
+    include_debug_info: bool,
+}
+
+impl Clone for StructuredLogger {
+    fn clone(&self) -> Self {
+        Self {
+            output_format: self.output_format,
+            log_level: self.log_level,
+            global_metadata: self.global_metadata.clone(),
+            include_debug_info: self.include_debug_info,
+        }
+    }
+}
+
+impl StructuredLogger {
+    /// Создать новый StructuredLogger
+    pub fn new(output_format: StructuredLogFormat, log_level: LogLevel) -> Self {
+        Self {
+            output_format,
+            log_level,
+            global_metadata: serde_json::json!({}),
+            include_debug_info: false,
+        }
+    }
+
+    /// Установить глобальные метаданные
+    pub fn with_global_metadata(mut self, metadata: serde_json::Value) -> Self {
+        self.global_metadata = metadata;
+        self
+    }
+
+    /// Включить отладочную информацию
+    pub fn with_debug_info(mut self) -> Self {
+        self.include_debug_info = true;
+        self
+    }
+
+    /// Записать структурированный лог
+    pub fn log(&self, level: LogLevel, message: &str, fields: serde_json::Value) -> String {
+        if level.as_numeric() < self.log_level.as_numeric() {
+            return String::new();
+        }
+
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+
+        let mut log_data = serde_json::json!({
+            "timestamp": timestamp,
+            "level": format!("{:?}", level),
+            "message": message,
+            "fields": fields,
+        });
+
+        // Добавить глобальные метаданные
+        if !self.global_metadata.is_null() {
+            for (key, value) in self.global_metadata.as_object().unwrap() {
+                log_data[key] = value.clone();
+            }
+        }
+
+        // Добавить отладочную информацию
+        if self.include_debug_info {
+            log_data["debug"] = serde_json::json!({
+                "thread_id": format!("{:?}", std::thread::current().id()),
+                "process_id": std::process::id(),
+            });
+        }
+
+        // Форматировать в соответствии с выбранным форматом
+        match self.output_format {
+            StructuredLogFormat::Json => serde_json::to_string_pretty(&log_data).unwrap_or_default(),
+            StructuredLogFormat::JsonCompact => serde_json::to_string(&log_data).unwrap_or_default(),
+            StructuredLogFormat::Text => self.format_as_text(&log_data),
+        }
+    }
+
+    /// Форматировать как текст
+    fn format_as_text(&self, log_data: &serde_json::Value) -> String {
+        let timestamp = log_data["timestamp"].as_u64().unwrap_or(0);
+        let level = log_data["level"].as_str().unwrap_or("INFO");
+        let message = log_data["message"].as_str().unwrap_or("");
+        
+        let datetime = DateTime::<Utc>::from_timestamp(timestamp as i64, 0).unwrap();
+        
+        format!("[{}] {} - {}", datetime.format("%Y-%m-%d %H:%M:%S"), level, message)
+    }
+
+    /// Записать лог в файл
+    pub fn log_to_file(&self, level: LogLevel, message: &str, fields: serde_json::Value, file_path: &Path) -> Result<()> {
+        let log_output = self.log(level, message, fields);
+        if log_output.is_empty() {
+            return Ok(());
+        }
+
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(file_path)
+            .context("Failed to open log file")?;
+
+        writeln!(file, "{}", log_output).context("Failed to write to log file")?;
+        
+        Ok(())
+    }
+
+    /// Записать лог в stdout
+    pub fn log_to_stdout(&self, level: LogLevel, message: &str, fields: serde_json::Value) {
+        let log_output = self.log(level, message, fields);
+        if !log_output.is_empty() {
+            println!("{}", log_output);
+        }
+    }
+}
+
+/// Формат структурированного лога
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructuredLogFormat {
+    /// JSON с отступами (для отладки)
+    Json,
+    /// Компактный JSON (для производства)
+    JsonCompact,
+    /// Текстовый формат (человеко-читаемый)
+    Text,
+}
+
+/// Улучшенный фильтр логов с поддержкой JSON полей
+#[derive(Debug, Clone)]
+pub struct EnhancedLogFilter {
+    /// Базовый фильтр
+    pub base_filter: LogFilterConfig,
+    /// Фильтрация по JSON полям
+    pub json_field_filters: Vec<JsonFieldFilter>,
+    /// Фильтрация по метаданным
+    pub metadata_filters: Vec<MetadataFilter>,
+}
+
+impl EnhancedLogFilter {
+    /// Создать новый улучшенный фильтр
+    pub fn new() -> Self {
+        Self {
+            base_filter: LogFilterConfig::default(),
+            json_field_filters: Vec::new(),
+            metadata_filters: Vec::new(),
+        }
+    }
+
+    /// Добавить фильтр по JSON полю
+    pub fn with_json_field_filter(mut self, field_filter: JsonFieldFilter) -> Self {
+        self.json_field_filters.push(field_filter);
+        self
+    }
+
+    /// Добавить фильтр по метаданным
+    pub fn with_metadata_filter(mut self, metadata_filter: MetadataFilter) -> Self {
+        self.metadata_filters.push(metadata_filter);
+        self
+    }
+
+    /// Применить фильтр к структурированному логу
+    pub fn apply_filter(&self, log_data: &serde_json::Value) -> bool {
+        // Применить базовый фильтр (если возможно)
+        if let (Some(timestamp), Some(level)) = (
+            log_data["timestamp"].as_u64(),
+            log_data["level"].as_str()
+        ) {
+            let log_level = match level {
+                "TRACE" => LogLevel::Trace,
+                "DEBUG" => LogLevel::Debug,
+                "INFO" => LogLevel::Info,
+                "WARN" => LogLevel::Warn,
+                "ERROR" => LogLevel::Error,
+                _ => LogLevel::Info,
+            };
+
+            // Проверка уровня лога
+            if log_level.as_numeric() < self.base_filter.min_level.as_numeric() ||
+               log_level.as_numeric() > self.base_filter.max_level.as_numeric() {
+                return false;
+            }
+
+            // Проверка временного диапазона
+            if let Some((start, end)) = self.base_filter.time_range {
+                if timestamp < start || timestamp > end {
+                    return false;
+                }
+            }
+        }
+
+        // Применить фильтры JSON полей
+        for field_filter in &self.json_field_filters {
+            if !field_filter.apply(log_data) {
+                return false;
+            }
+        }
+
+        // Применить фильтры метаданных
+        for metadata_filter in &self.metadata_filters {
+            if !metadata_filter.apply(log_data) {
+                return false;
+            }
+        }
+
+        true
+    }
+}
+
+/// Фильтр по JSON полю
+#[derive(Debug, Clone)]
+pub struct JsonFieldFilter {
+    /// Имя поля
+    pub field_name: String,
+    /// Оператор сравнения
+    pub operator: JsonFieldOperator,
+    /// Значение для сравнения
+    pub value: serde_json::Value,
+}
+
+impl JsonFieldFilter {
+    /// Создать новый фильтр по JSON полю
+    pub fn new(field_name: String, operator: JsonFieldOperator, value: serde_json::Value) -> Self {
+        Self {
+            field_name,
+            operator,
+            value,
+        }
+    }
+
+    /// Применить фильтр к JSON данным
+    pub fn apply(&self, log_data: &serde_json::Value) -> bool {
+        let field_value = log_data.get(&self.field_name);
+        
+        match (&self.operator, field_value) {
+            (JsonFieldOperator::Equals, Some(val)) => val == &self.value,
+            (JsonFieldOperator::NotEquals, Some(val)) => val != &self.value,
+            (JsonFieldOperator::Contains, Some(val)) if val.is_string() => {
+                val.as_str().map_or(false, |s| s.contains(self.value.as_str().unwrap_or("")))
+            }
+            (JsonFieldOperator::GreaterThan, Some(val)) if val.is_number() && self.value.is_number() => {
+                val.as_f64().map_or(false, |v| v > self.value.as_f64().unwrap_or(0.0))
+            }
+            (JsonFieldOperator::LessThan, Some(val)) if val.is_number() && self.value.is_number() => {
+                val.as_f64().map_or(false, |v| v < self.value.as_f64().unwrap_or(0.0))
+            }
+            (JsonFieldOperator::Exists, _) => field_value.is_some(),
+            (JsonFieldOperator::NotExists, _) => field_value.is_none(),
+            _ => false,
+        }
+    }
+}
+
+/// Оператор для фильтрации JSON полей
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JsonFieldOperator {
+    /// Равно
+    Equals,
+    /// Не равно
+    NotEquals,
+    /// Содержит (для строк)
+    Contains,
+    /// Больше чем (для чисел)
+    GreaterThan,
+    /// Меньше чем (для чисел)
+    LessThan,
+    /// Существует
+    Exists,
+    /// Не существует
+    NotExists,
+}
+
+/// Фильтр по метаданным
+#[derive(Debug, Clone)]
+pub struct MetadataFilter {
+    /// Имя метаданных
+    pub metadata_name: String,
+    /// Оператор сравнения
+    pub operator: MetadataOperator,
+    /// Значение для сравнения
+    pub value: String,
+}
+
+impl MetadataFilter {
+    /// Создать новый фильтр по метаданным
+    pub fn new(metadata_name: String, operator: MetadataOperator, value: String) -> Self {
+        Self {
+            metadata_name,
+            operator,
+            value,
+        }
+    }
+
+    /// Применить фильтр к JSON данным
+    pub fn apply(&self, log_data: &serde_json::Value) -> bool {
+        let metadata_value = log_data.get(&self.metadata_name);
+        
+        match (&self.operator, metadata_value) {
+            (MetadataOperator::Equals, Some(val)) if val.is_string() => {
+                val.as_str().map_or(false, |s| s == &self.value)
+            }
+            (MetadataOperator::NotEquals, Some(val)) if val.is_string() => {
+                val.as_str().map_or(false, |s| s != &self.value)
+            }
+            (MetadataOperator::Contains, Some(val)) if val.is_string() => {
+                val.as_str().map_or(false, |s| s.contains(&self.value))
+            }
+            (MetadataOperator::Exists, _) => metadata_value.is_some(),
+            (MetadataOperator::NotExists, _) => metadata_value.is_none(),
+            _ => false,
+        }
+    }
+}
+
+/// Оператор для фильтрации метаданных
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MetadataOperator {
+    /// Равно
+    Equals,
+    /// Не равно
+    NotEquals,
+    /// Содержит
+    Contains,
+    /// Существует
+    Exists,
+    /// Не существует
+    NotExists,
+}
+
+/// Структурированный логгер с асинхронной поддержкой
+#[derive(Debug, Clone)]
+pub struct AsyncStructuredLogger {
+    /// Базовый структурированный логгер
+    inner: StructuredLogger,
+    /// Канал для асинхронной отправки логов
+    sender: tokio::sync::mpsc::Sender<StructuredLogMessage>,
+}
+
+impl AsyncStructuredLogger {
+    /// Создать новый асинхронный структурированный логгер
+    pub fn new(output_format: StructuredLogFormat, log_level: LogLevel, buffer_size: usize) -> Self {
+        let (sender, mut receiver) = tokio::sync::mpsc::channel(buffer_size);
+        
+        let inner_logger = StructuredLogger::new(output_format, log_level);
+        let async_inner = inner_logger.clone();
+        
+        // Запустить фоновую задачу для обработки логов
+        tokio::spawn(async move {
+            while let Some(message) = receiver.recv().await {
+                match message {
+                    StructuredLogMessage::LogToFile { level, message, fields, file_path, responder } => {
+                        let result = async_inner.log_to_file(level, &message, fields, &file_path);
+                        let _ = responder.send(result);
+                    }
+                    StructuredLogMessage::LogToStdout { level, message, fields } => {
+                        async_inner.log_to_stdout(level, &message, fields);
+                    }
+                }
+            }
+        });
+        
+        Self { inner: inner_logger, sender }
+    }
+
+    /// Асинхронно записать лог в файл
+    pub async fn log_to_file_async(
+        &self,
+        level: LogLevel,
+        message: &str,
+        fields: serde_json::Value,
+        file_path: PathBuf,
+    ) -> Result<()> {
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        
+        self.sender.send(StructuredLogMessage::LogToFile {
+            level,
+            message: message.to_string(),
+            fields,
+            file_path,
+            responder: sender,
+        }).await.context("Failed to send log message")?;
+        
+        receiver.await.context("Failed to receive log result")?
+    }
+
+    /// Асинхронно записать лог в stdout
+    pub async fn log_to_stdout_async(
+        &self,
+        level: LogLevel,
+        message: &str,
+        fields: serde_json::Value,
+    ) {
+        let _ = self.sender.send(StructuredLogMessage::LogToStdout {
+            level,
+            message: message.to_string(),
+            fields,
+        }).await;
+    }
+}
+
+/// Сообщение для асинхронного структурированного логгера
+#[derive(Debug)]
+enum StructuredLogMessage {
+    /// Записать лог в файл
+    LogToFile {
+        level: LogLevel,
+        message: String,
+        fields: serde_json::Value,
+        file_path: PathBuf,
+        responder: tokio::sync::oneshot::Sender<Result<()>>,
+    },
+    /// Записать лог в stdout
+    LogToStdout {
+        level: LogLevel,
+        message: String,
+        fields: serde_json::Value,
+    },
+}
+
+#[cfg(test)]
+mod structured_logging_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_structured_logger_json_output() {
+        let logger = StructuredLogger::new(StructuredLogFormat::Json, LogLevel::Info);
+        
+        let fields = json!({
+            "user_id": "12345",
+            "action": "login",
+            "status": "success"
+        });
+        
+        let output = logger.log(LogLevel::Info, "User logged in", fields);
+        
+        assert!(output.contains("User logged in"));
+        assert!(output.contains("user_id"));
+        assert!(output.contains("12345"));
+    }
+
+    #[test]
+    fn test_structured_logger_text_output() {
+        let logger = StructuredLogger::new(StructuredLogFormat::Text, LogLevel::Info);
+        
+        let fields = json!({
+            "user_id": "12345",
+            "action": "login"
+        });
+        
+        let output = logger.log(LogLevel::Info, "User logged in", fields);
+        
+        assert!(output.contains("User logged in"));
+        assert!(output.contains("INFO"));
+    }
+
+    #[test]
+    fn test_json_field_filter() {
+        let log_data = json!({
+            "level": "INFO",
+            "message": "Test message",
+            "user_id": "12345",
+            "status": "success"
+        });
+        
+        let filter = JsonFieldFilter::new(
+            "status".to_string(),
+            JsonFieldOperator::Equals,
+            json!("success")
+        );
+        
+        assert!(filter.apply(&log_data));
+        
+        let filter2 = JsonFieldFilter::new(
+            "status".to_string(),
+            JsonFieldOperator::NotEquals,
+            json!("failed")
+        );
+        
+        assert!(filter2.apply(&log_data));
+    }
+
+    #[test]
+    fn test_enhanced_log_filter() {
+        let log_data = json!({
+            "timestamp": 1234567890,
+            "level": "INFO",
+            "message": "Test message",
+            "user_id": "12345",
+            "status": "success"
+        });
+        
+        let mut filter = EnhancedLogFilter::new();
+        filter.base_filter = LogFilterConfig::default().with_min_level(LogLevel::Info);
+        
+        let json_filter = JsonFieldFilter::new(
+            "status".to_string(),
+            JsonFieldOperator::Equals,
+            json!("success")
+        );
+        
+        filter = filter.with_json_field_filter(json_filter);
+        
+        assert!(filter.apply_filter(&log_data));
+    }
+}

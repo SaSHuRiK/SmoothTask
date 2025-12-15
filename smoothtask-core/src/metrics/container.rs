@@ -779,33 +779,76 @@ pub fn apply_advanced_auto_scaling(
     Ok(())
 }
 
-/// Predict future resource usage based on historical data
+/// Predict future resource usage based on historical data using enhanced algorithm
 fn predict_resource_usage(
     historical_data: &[ContainerMetrics],
     current_metric: &ContainerMetrics,
 ) -> (f64, f64) {
-    // Simple moving average prediction for demonstration
-    // In production, this would use more sophisticated algorithms
+    // Enhanced prediction algorithm with trend analysis and exponential smoothing
     
     if historical_data.is_empty() {
         return (current_metric.cpu_usage.usage_percent, current_metric.memory_usage.usage_percent);
     }
     
-    // Calculate average CPU usage from historical data
-    let avg_cpu_usage = historical_data.iter()
+    // Extract historical CPU and memory usage data
+    let cpu_history: Vec<f64> = historical_data.iter()
         .map(|m| m.cpu_usage.usage_percent)
-        .sum::<f64>() / historical_data.len() as f64;
+        .collect();
     
-    // Calculate average memory usage from historical data
-    let avg_memory_usage = historical_data.iter()
+    let memory_history: Vec<f64> = historical_data.iter()
         .map(|m| m.memory_usage.usage_percent)
-        .sum::<f64>() / historical_data.len() as f64;
+        .collect();
     
-    // Weighted prediction: 70% current usage, 30% historical average
-    let predicted_cpu = 0.7 * current_metric.cpu_usage.usage_percent + 0.3 * avg_cpu_usage;
-    let predicted_memory = 0.7 * current_metric.memory_usage.usage_percent + 0.3 * avg_memory_usage;
+    // Calculate exponential moving averages with trend analysis
+    let predicted_cpu = predict_with_trend_analysis(&cpu_history, current_metric.cpu_usage.usage_percent);
+    let predicted_memory = predict_with_trend_analysis(&memory_history, current_metric.memory_usage.usage_percent);
     
     (predicted_cpu, predicted_memory)
+}
+
+/// Enhanced prediction with trend analysis and exponential smoothing
+fn predict_with_trend_analysis(historical_data: &[f64], current_value: f64) -> f64 {
+    // Use exponential smoothing with trend component for better predictions
+    
+    if historical_data.len() < 2 {
+        // Not enough data for trend analysis, use simple weighted average
+        let avg = historical_data.iter().sum::<f64>() / historical_data.len() as f64;
+        return 0.6 * current_value + 0.4 * avg;
+    }
+    
+    // Calculate exponential moving average (EMA) - gives more weight to recent data
+    let alpha = 0.3; // Smoothing factor
+    let mut ema = historical_data[0];
+    
+    for &value in &historical_data[1..] {
+        ema = alpha * value + (1.0 - alpha) * ema;
+    }
+    
+    // Calculate trend component (linear regression on recent data)
+    let trend_window = historical_data.len().min(5); // Use last 5 data points for trend
+    let recent_data = &historical_data[historical_data.len() - trend_window..];
+    
+    let n = recent_data.len() as f64;
+    let sum_x: f64 = (0..recent_data.len()).map(|i| i as f64).sum();
+    let sum_y: f64 = recent_data.iter().sum();
+    let sum_xy: f64 = recent_data.iter().enumerate().map(|(i, &y)| (i as f64) * y).sum();
+    let sum_x2: f64 = (0..recent_data.len()).map(|i| (i as f64).powi(2)).sum();
+    
+    // Calculate slope (trend)
+    let slope = (n * sum_xy - sum_x * sum_y) / (n * sum_x2 - sum_x.powi(2));
+    
+    // Calculate intercept
+    let intercept = (sum_y - slope * sum_x) / n;
+    
+    // Predict next value based on trend
+    let trend_prediction = intercept + slope * n;
+    
+    // Combine EMA and trend prediction with current value
+    // Weight: 50% current, 30% EMA, 20% trend
+    let final_prediction = 0.5 * current_value + 0.3 * ema + 0.2 * trend_prediction;
+    
+    // Ensure prediction is within reasonable bounds
+    final_prediction.clamp(0.0, 100.0)
 }
 
 /// Calculate scaled resource with bounds checking
@@ -2398,5 +2441,169 @@ mod tests {
         
         let result = apply_container_security_monitoring("nonexistent", &security_config);
         assert!(result.is_err());
+    }
+    
+    #[test]
+    fn test_enhanced_prediction_algorithm() {
+        // Test the enhanced prediction algorithm with trend analysis
+        
+        // Test case 1: Increasing trend
+        let increasing_data = vec![10.0, 15.0, 20.0, 25.0, 30.0];
+        let prediction = predict_with_trend_analysis(&increasing_data, 35.0);
+        // Should predict higher than current due to increasing trend
+        assert!(prediction > 35.0, "Should predict increasing trend");
+        
+        // Test case 2: Decreasing trend
+        let decreasing_data = vec![50.0, 45.0, 40.0, 35.0, 30.0];
+        let prediction = predict_with_trend_analysis(&decreasing_data, 25.0);
+        // Should predict lower than current due to decreasing trend
+        assert!(prediction < 25.0, "Should predict decreasing trend");
+        
+        // Test case 3: Stable trend
+        let stable_data = vec![25.0, 25.0, 25.0, 25.0, 25.0];
+        let prediction = predict_with_trend_analysis(&stable_data, 25.0);
+        // Should predict close to current value for stable trend
+        assert!((prediction - 25.0).abs() < 5.0, "Should predict stable trend");
+        
+        // Test case 4: Insufficient data
+        let minimal_data = vec![20.0];
+        let prediction = predict_with_trend_analysis(&minimal_data, 25.0);
+        // Should use weighted average for insufficient data
+        assert!(prediction > 20.0 && prediction < 25.0, "Should handle insufficient data");
+        
+        // Test case 5: Boundary conditions
+        let edge_data = vec![0.0, 0.0, 0.0, 0.0, 0.0];
+        let prediction = predict_with_trend_analysis(&edge_data, 0.0);
+        assert_eq!(prediction, 0.0, "Should handle zero boundary");
+        
+        let max_data = vec![100.0, 100.0, 100.0, 100.0, 100.0];
+        let prediction = predict_with_trend_analysis(&max_data, 100.0);
+        assert_eq!(prediction, 100.0, "Should handle max boundary");
+    }
+    
+    #[test]
+    fn test_auto_scaling_with_enhanced_prediction() {
+        // Test auto-scaling with the enhanced prediction algorithm
+        
+        // Create test container metrics with increasing CPU usage trend
+        let historical_data = vec![
+            create_test_container_metric("test123", 10.0, 20.0, 1000, 2048),
+            create_test_container_metric("test123", 15.0, 25.0, 1000, 2048),
+            create_test_container_metric("test123", 20.0, 30.0, 1000, 2048),
+            create_test_container_metric("test123", 25.0, 35.0, 1000, 2048),
+            create_test_container_metric("test123", 30.0, 40.0, 1000, 2048),
+        ];
+        
+        // Create auto-scaling config
+        let auto_scaling_config = ContainerAutoScalingConfig {
+            enabled: true,
+            target_cpu_usage: 70.0,
+            target_memory_usage: 80.0,
+            cooldown_seconds: 300,
+            min_cpu_limit: 500.0,
+            max_cpu_limit: 4000.0,
+            min_memory_limit: 1024.0,
+            max_memory_limit: 8192.0,
+            last_scaling_timestamp: None,
+        };
+        
+        // Test prediction - should detect increasing trend
+        let current_metric = create_test_container_metric("test123", 35.0, 45.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&historical_data, &current_metric);
+        
+        // Predictions should be higher than current due to increasing trend
+        assert!(predicted_cpu > 35.0, "CPU prediction should detect increasing trend");
+        assert!(predicted_memory > 45.0, "Memory prediction should detect increasing trend");
+        
+        // Predictions should be within reasonable bounds
+        assert!(predicted_cpu <= 100.0, "CPU prediction should be bounded");
+        assert!(predicted_memory <= 100.0, "Memory prediction should be bounded");
+    }
+    
+    #[test]
+    fn test_auto_scaling_boundary_conditions() {
+        // Test auto-scaling with boundary conditions
+        
+        let historical_data = vec![
+            create_test_container_metric("test123", 5.0, 10.0, 1000, 2048),
+            create_test_container_metric("test123", 5.0, 10.0, 1000, 2048),
+        ];
+        
+        let auto_scaling_config = ContainerAutoScalingConfig {
+            enabled: true,
+            target_cpu_usage: 70.0,
+            target_memory_usage: 80.0,
+            cooldown_seconds: 300,
+            min_cpu_limit: 500.0,
+            max_cpu_limit: 4000.0,
+            min_memory_limit: 1024.0,
+            max_memory_limit: 8192.0,
+            last_scaling_timestamp: None,
+        };
+        
+        let current_metric = create_test_container_metric("test123", 5.0, 10.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&historical_data, &current_metric);
+        
+        // Should handle low usage gracefully
+        assert!(predicted_cpu >= 0.0 && predicted_cpu <= 100.0, "Should handle low CPU usage");
+        assert!(predicted_memory >= 0.0 && predicted_memory <= 100.0, "Should handle low memory usage");
+    }
+}
+
+// Helper function to create test container metrics
+fn create_test_container_metric(
+    container_id: &str,
+    cpu_usage: f64,
+    memory_usage: f64,
+    cpu_limit: f64,
+    memory_limit: f64,
+) -> ContainerMetrics {
+    ContainerMetrics {
+        id: container_id.to_string(),
+        name: format!("{}-name", container_id),
+        runtime: ContainerRuntime::Docker,
+        state: ContainerState::Running,
+        created_at: "2023-01-01T00:00:00Z".to_string(),
+        started_at: Some("2023-01-01T00:00:00Z".to_string()),
+        finished_at: None,
+        cpu_usage: ContainerCpuUsage {
+            total_usage: (cpu_limit * cpu_usage / 100.0 * 1_000_000_000.0) as u64, // Convert to nanoseconds
+            per_cpu_usage: vec![(cpu_limit * cpu_usage / 100.0 * 1_000_000_000.0 / 4.0) as u64; 4], // Distribute across 4 cores
+            system_cpu_usage: 0,
+            online_cpus: 4,
+            usage_percent: cpu_usage,
+        },
+        memory_usage: ContainerMemoryUsage {
+            usage: (memory_limit * memory_usage / 100.0) as u64,
+            max_usage: (memory_limit * memory_usage / 100.0) as u64,
+            limit: memory_limit as u64,
+            usage_percent: memory_usage,
+            cache: 0,
+            rss: (memory_limit * memory_usage / 100.0 * 0.8) as u64, // 80% of usage is RSS
+        },
+        network_stats: ContainerNetworkStats::default(),
+        storage_stats: ContainerStorageStats::default(),
+        process_count: 1,
+        health_status: None,
+        image_name: Some("test-image".to_string()),
+        image_id: Some("test-id".to_string()),
+        labels: HashMap::new(),
+        env_vars_count: 0,
+        restart_count: 0,
+        uptime_seconds: Some(100),
+        network_mode: Some("bridge".to_string()),
+        ip_addresses: vec!["172.17.0.2".to_string()],
+        mounted_volumes: vec!["/var/lib/docker/volumes/test".to_string()],
+        resource_limits: ContainerResourceLimits {
+            cpu_limit: Some(cpu_limit),
+            memory_limit: Some(memory_limit as u64),
+            pids_limit: Some(1024),
+            disk_io_limit: Some(1048576), // 1MB/s
+            network_bandwidth_limit: Some(1048576), // 1MB/s
+            cpu_shares: Some(1024),
+            cpu_quota: Some(100000),
+            cpu_period: Some(100000),
+        },
+        security_options: vec!["seccomp=default".to_string()],
     }
 }
