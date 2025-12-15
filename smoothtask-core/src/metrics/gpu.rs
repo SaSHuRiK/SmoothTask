@@ -119,6 +119,20 @@ pub struct GpuPerformanceMetrics {
     pub efficiency_ratio: Option<f32>,
     /// GPU workload type detection (compute, graphics, video, etc.)
     pub workload_type: Option<String>,
+    /// GPU performance stability score (0.0 to 1.0)
+    pub stability_score: Option<f32>,
+    /// GPU memory efficiency score (0.0 to 1.0)
+    pub memory_efficiency: Option<f32>,
+    /// GPU compute efficiency score (0.0 to 1.0)
+    pub compute_efficiency: Option<f32>,
+    /// GPU overall performance score (0.0 to 1.0)
+    pub overall_performance_score: Option<f32>,
+    /// GPU performance trend (improving, stable, degrading)
+    pub performance_trend: Option<String>,
+    /// GPU bottleneck detection (memory, compute, power, thermal, none)
+    pub bottleneck_type: Option<String>,
+    /// GPU performance optimization recommendations
+    pub optimization_recommendations: Option<Vec<String>>,
 }
 
 /// Complete GPU metrics for a single device
@@ -1236,26 +1250,26 @@ fn collect_comprehensive_amdgpu_temperature(
     temperature: &mut GpuTemperature,
 ) -> Result<()> {
     let hwmon_dir = device_path.join("hwmon");
-    
+
     if !hwmon_dir.exists() {
         debug!("  AMDGPU hwmon directory not found - temperature monitoring not available");
         return Ok(());
     }
-    
+
     if let Ok(entries) = fs::read_dir(&hwmon_dir) {
         for entry in entries.flatten() {
             let hwmon_path = entry.path();
-            
+
             if let Ok(temp_files) = fs::read_dir(&hwmon_path) {
                 for temp_file in temp_files.flatten() {
                     let temp_path = temp_file.path();
                     let file_name = temp_path.file_name().and_then(|s| s.to_str()).unwrap_or("");
-                    
+
                     if file_name.ends_with("_input") && file_name.contains("temp") {
                         if let Ok(temp_content) = fs::read_to_string(&temp_path) {
                             if let Ok(temp_millidegrees) = temp_content.trim().parse::<u64>() {
                                 let temp_c = temp_millidegrees as f32 / 1000.0;
-                                
+
                                 // Validate temperature reading
                                 if temp_c < 0.0 || temp_c > 150.0 {
                                     warn!(
@@ -1266,7 +1280,7 @@ fn collect_comprehensive_amdgpu_temperature(
                                     );
                                     continue;
                                 }
-                                
+
                                 // Try to determine which temperature this is
                                 if file_name.contains("temp1") || file_name.contains("edge") {
                                     // Main GPU temperature
@@ -1300,7 +1314,7 @@ fn collect_comprehensive_amdgpu_temperature(
             }
         }
     }
-    
+
     // Log summary of collected temperature data
     if let Some(temp) = temperature.temperature_c {
         debug!("  AMDGPU temperature summary: {:.1}°C (main)", temp);
@@ -1311,7 +1325,7 @@ fn collect_comprehensive_amdgpu_temperature(
     if let Some(mem_temp) = temperature.memory_c {
         debug!("  AMDGPU temperature summary: {:.1}°C (memory)", mem_temp);
     }
-    
+
     Ok(())
 }
 
@@ -1690,14 +1704,17 @@ fn calculate_performance_metrics(metrics: &mut GpuMetrics) {
     if let Some(core_clock) = metrics.clocks.core_clock_mhz {
         let utilization_factor = metrics.utilization.gpu_util as f32;
         let clock_factor = core_clock as f32 / 2000.0; // Normalize to 2GHz baseline
-        metrics.performance.compute_score = Some((utilization_factor * clock_factor).min(1.0).max(0.0));
+        metrics.performance.compute_score =
+            Some((utilization_factor * clock_factor).min(1.0).max(0.0));
     }
 
     // Calculate memory bandwidth score
     if metrics.memory.total_bytes > 0 {
         let memory_util = metrics.utilization.memory_util as f32;
-        let memory_factor = (metrics.memory.used_bytes as f32 / metrics.memory.total_bytes as f32).min(1.0);
-        metrics.performance.memory_bandwidth_score = Some((memory_util * memory_factor).min(1.0).max(0.0));
+        let memory_factor =
+            (metrics.memory.used_bytes as f32 / metrics.memory.total_bytes as f32).min(1.0);
+        metrics.performance.memory_bandwidth_score =
+            Some((memory_util * memory_factor).min(1.0).max(0.0));
     }
 
     // Calculate thermal throttling based on temperature
@@ -1711,7 +1728,9 @@ fn calculate_performance_metrics(metrics: &mut GpuMetrics) {
     }
 
     // Calculate power throttling based on power usage vs limit
-    if let (Some(power_w), Some(power_limit_w)) = (metrics.power.power_w, metrics.power.power_limit_w) {
+    if let (Some(power_w), Some(power_limit_w)) =
+        (metrics.power.power_w, metrics.power.power_limit_w)
+    {
         if power_limit_w > 0.0 {
             let power_ratio = power_w / power_limit_w;
             let power_throttling = if power_ratio > 0.9 {
@@ -1724,10 +1743,97 @@ fn calculate_performance_metrics(metrics: &mut GpuMetrics) {
     }
 
     // Calculate efficiency ratio (performance per watt)
-    if let (Some(compute_score), Some(power_w)) = (metrics.performance.compute_score, metrics.power.power_w) {
+    if let (Some(compute_score), Some(power_w)) =
+        (metrics.performance.compute_score, metrics.power.power_w)
+    {
         if power_w > 0.0 {
-            metrics.performance.efficiency_ratio = Some((compute_score / power_w * 100.0).min(10.0));
+            metrics.performance.efficiency_ratio =
+                Some((compute_score / power_w * 100.0).min(10.0));
         }
+    }
+
+    // Calculate memory efficiency score
+    if metrics.memory.total_bytes > 0 && metrics.memory.used_bytes > 0 {
+        let memory_usage_ratio = metrics.memory.used_bytes as f32 / metrics.memory.total_bytes as f32;
+        let memory_util = metrics.utilization.memory_util as f32;
+        // Memory efficiency is higher when usage is balanced with utilization
+        let memory_efficiency = (memory_util * (1.0 - (memory_usage_ratio - 0.5).abs())).min(1.0).max(0.0);
+        metrics.performance.memory_efficiency = Some(memory_efficiency);
+    }
+
+    // Calculate compute efficiency score
+    if let Some(compute_score) = metrics.performance.compute_score {
+        let gpu_util = metrics.utilization.gpu_util as f32;
+        // Compute efficiency is higher when performance is good relative to utilization
+        let compute_efficiency = (compute_score / (gpu_util + 0.1)).min(1.0).max(0.0);
+        metrics.performance.compute_efficiency = Some(compute_efficiency);
+    }
+
+    // Calculate stability score based on throttling factors
+    let thermal_throttling = metrics.performance.thermal_throttling.unwrap_or(0.0);
+    let power_throttling = metrics.performance.power_throttling.unwrap_or(0.0);
+    let stability_score = 1.0 - (thermal_throttling * 0.5 + power_throttling * 0.5);
+    metrics.performance.stability_score = Some(stability_score);
+
+    // Calculate overall performance score
+    let compute_score = metrics.performance.compute_score.unwrap_or(0.0);
+    let memory_score = metrics.performance.memory_bandwidth_score.unwrap_or(0.0);
+    let stability_score = metrics.performance.stability_score.unwrap_or(1.0);
+    let overall_score = (compute_score * 0.4 + memory_score * 0.3 + stability_score * 0.3).min(1.0);
+    metrics.performance.overall_performance_score = Some(overall_score);
+
+    // Determine performance trend based on current metrics
+    if overall_score > 0.8 {
+        metrics.performance.performance_trend = Some("improving".to_string());
+    } else if overall_score > 0.5 {
+        metrics.performance.performance_trend = Some("stable".to_string());
+    } else {
+        metrics.performance.performance_trend = Some("degrading".to_string());
+    }
+
+    // Detect bottleneck type
+    let gpu_util = metrics.utilization.gpu_util;
+    let memory_util = metrics.utilization.memory_util;
+    let thermal_throttling = metrics.performance.thermal_throttling.unwrap_or(0.0);
+    let power_throttling = metrics.performance.power_throttling.unwrap_or(0.0);
+
+    if thermal_throttling > 0.3 {
+        metrics.performance.bottleneck_type = Some("thermal".to_string());
+    } else if power_throttling > 0.3 {
+        metrics.performance.bottleneck_type = Some("power".to_string());
+    } else if memory_util > 0.9 && gpu_util < 0.5 {
+        metrics.performance.bottleneck_type = Some("memory".to_string());
+    } else if gpu_util > 0.9 && memory_util < 0.5 {
+        metrics.performance.bottleneck_type = Some("compute".to_string());
+    } else {
+        metrics.performance.bottleneck_type = Some("none".to_string());
+    }
+
+    // Generate optimization recommendations based on current state
+    let mut recommendations = Vec::new();
+    
+    if thermal_throttling > 0.3 {
+        recommendations.push("Improve cooling or reduce GPU load to prevent thermal throttling".to_string());
+    }
+    
+    if power_throttling > 0.3 {
+        recommendations.push("Check power supply or reduce GPU load to prevent power throttling".to_string());
+    }
+    
+    if memory_util > 0.9 {
+        recommendations.push("Optimize memory usage or consider GPU with more memory".to_string());
+    }
+    
+    if gpu_util > 0.9 {
+        recommendations.push("Consider load balancing or GPU with higher compute capacity".to_string());
+    }
+    
+    if overall_score < 0.5 {
+        recommendations.push("Investigate system performance issues - overall score is low".to_string());
+    }
+    
+    if !recommendations.is_empty() {
+        metrics.performance.optimization_recommendations = Some(recommendations);
     }
 
     // Detect workload type based on utilization patterns
@@ -2096,6 +2202,31 @@ mod tests {
         let efficiency = metrics.performance.efficiency_ratio.unwrap();
         assert!(efficiency > 0.0);
 
+        // Verify new performance metrics
+        assert!(metrics.performance.memory_efficiency.is_some());
+        let memory_efficiency = metrics.performance.memory_efficiency.unwrap();
+        assert!(memory_efficiency > 0.0 && memory_efficiency <= 1.0);
+
+        assert!(metrics.performance.compute_efficiency.is_some());
+        let compute_efficiency = metrics.performance.compute_efficiency.unwrap();
+        assert!(compute_efficiency > 0.0 && compute_efficiency <= 1.0);
+
+        assert!(metrics.performance.stability_score.is_some());
+        let stability_score = metrics.performance.stability_score.unwrap();
+        assert!(stability_score > 0.0 && stability_score <= 1.0);
+
+        assert!(metrics.performance.overall_performance_score.is_some());
+        let overall_score = metrics.performance.overall_performance_score.unwrap();
+        assert!(overall_score > 0.0 && overall_score <= 1.0);
+
+        assert!(metrics.performance.performance_trend.is_some());
+        let trend = metrics.performance.performance_trend.as_ref().unwrap();
+        assert!(trend == "improving" || trend == "stable" || trend == "degrading");
+
+        assert!(metrics.performance.bottleneck_type.is_some());
+        let bottleneck = metrics.performance.bottleneck_type.as_ref().unwrap();
+        assert!(bottleneck == "thermal" || bottleneck == "power" || bottleneck == "memory" || bottleneck == "compute" || bottleneck == "none");
+
         // Verify workload type detection (should be "compute" for high GPU and memory utilization)
         assert!(metrics.performance.workload_type.is_some());
         assert_eq!(metrics.performance.workload_type.unwrap(), "compute");
@@ -2172,6 +2303,88 @@ mod tests {
         // Verify workload type detection (should be "video" for high encoder utilization)
         assert!(metrics.performance.workload_type.is_some());
         assert_eq!(metrics.performance.workload_type.unwrap(), "video");
+    }
+
+    #[test]
+    fn test_enhanced_performance_metrics() {
+        // Test with high performance scenario
+        let mut metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization {
+                gpu_util: 0.9,
+                memory_util: 0.8,
+                encoder_util: Some(0.1),
+                decoder_util: Some(0.1),
+            },
+            memory: GpuMemory {
+                total_bytes: 16_000_000_000,
+                used_bytes: 12_000_000_000,
+                free_bytes: 4_000_000_000,
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(65.0), // Good temperature
+                hotspot_c: Some(70.0),
+                memory_c: Some(60.0),
+            },
+            power: GpuPower {
+                power_w: Some(150.0),
+                power_limit_w: Some(300.0),
+                power_cap_w: Some(250.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(2000),
+                memory_clock_mhz: Some(1800),
+                shader_clock_mhz: Some(1900),
+            },
+            performance: GpuPerformanceMetrics::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        calculate_performance_metrics(&mut metrics);
+
+        // Test new performance metrics
+        assert!(metrics.performance.memory_efficiency.is_some());
+        assert!(metrics.performance.compute_efficiency.is_some());
+        assert!(metrics.performance.stability_score.is_some());
+        assert!(metrics.performance.overall_performance_score.is_some());
+        assert!(metrics.performance.performance_trend.is_some());
+        assert!(metrics.performance.bottleneck_type.is_some());
+
+        // Verify values are in expected ranges
+        let memory_efficiency = metrics.performance.memory_efficiency.unwrap();
+        let compute_efficiency = metrics.performance.compute_efficiency.unwrap();
+        let stability_score = metrics.performance.stability_score.unwrap();
+        let overall_score = metrics.performance.overall_performance_score.unwrap();
+
+        assert!(memory_efficiency > 0.0 && memory_efficiency <= 1.0);
+        assert!(compute_efficiency > 0.0 && compute_efficiency <= 1.0);
+        assert!(stability_score > 0.0 && stability_score <= 1.0);
+        assert!(overall_score > 0.0 && overall_score <= 1.0);
+
+        // Test bottleneck detection with thermal throttling
+        let mut thermal_metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization::default(),
+            memory: GpuMemory::default(),
+            temperature: GpuTemperature {
+                temperature_c: Some(100.0), // High temperature
+                hotspot_c: None,
+                memory_c: None,
+            },
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            performance: GpuPerformanceMetrics::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        calculate_performance_metrics(&mut thermal_metrics);
+        assert_eq!(thermal_metrics.performance.bottleneck_type, Some("thermal".to_string()));
+
+        // Test optimization recommendations
+        if let Some(recommendations) = &thermal_metrics.performance.optimization_recommendations {
+            assert!(!recommendations.is_empty());
+            assert!(recommendations.contains(&"Improve cooling or reduce GPU load to prevent thermal throttling".to_string()));
+        }
     }
 
     #[test]
@@ -3499,8 +3712,8 @@ fn test_gpu_improved_error_messages() {
         // Test temperature validation logic
         let mut temperature = GpuTemperature {
             temperature_c: Some(180.0), // Invalid high temperature
-            hotspot_c: Some(-10.0),    // Invalid low temperature
-            memory_c: Some(85.0),      // Valid temperature
+            hotspot_c: Some(-10.0),     // Invalid low temperature
+            memory_c: Some(85.0),       // Valid temperature
         };
 
         // Validate and correct temperatures
@@ -3534,15 +3747,15 @@ fn test_gpu_improved_error_messages() {
         assert!(temperature.temperature_c.is_some());
         assert!(temperature.hotspot_c.is_some());
         assert!(temperature.memory_c.is_some());
-        
+
         if let Some(temp) = temperature.temperature_c {
             assert!(temp > 0.0 && temp < 150.0);
         }
-        
+
         if let Some(hotspot) = temperature.hotspot_c {
             assert!(hotspot > 0.0 && hotspot < 150.0);
         }
-        
+
         if let Some(mem_temp) = temperature.memory_c {
             assert!(mem_temp > 0.0 && mem_temp < 150.0);
         }
@@ -3557,8 +3770,10 @@ fn test_gpu_improved_error_messages() {
             memory_c: Some(60.1),
         };
 
-        let serialized = serde_json::to_string(&temperature).expect("Temperature serialization failed");
-        let deserialized: GpuTemperature = serde_json::from_str(&serialized).expect("Temperature deserialization failed");
+        let serialized =
+            serde_json::to_string(&temperature).expect("Temperature serialization failed");
+        let deserialized: GpuTemperature =
+            serde_json::from_str(&serialized).expect("Temperature deserialization failed");
 
         assert_eq!(deserialized.temperature_c, Some(65.5));
         assert_eq!(deserialized.hotspot_c, Some(72.3));
@@ -3569,21 +3784,21 @@ fn test_gpu_improved_error_messages() {
     fn test_temperature_edge_cases() {
         // Test edge cases for temperature monitoring
         let mut temperature = GpuTemperature {
-            temperature_c: Some(0.0),   // Minimum valid temperature
-            hotspot_c: Some(150.0),  // Maximum valid temperature
-            memory_c: Some(75.0),    // Mid-range temperature
+            temperature_c: Some(0.0), // Minimum valid temperature
+            hotspot_c: Some(150.0),   // Maximum valid temperature
+            memory_c: Some(75.0),     // Mid-range temperature
         };
 
         // These should all be valid
         assert!(temperature.temperature_c.is_some());
         assert!(temperature.hotspot_c.is_some());
         assert!(temperature.memory_c.is_some());
-        
+
         // Test boundary conditions
         if let Some(temp) = temperature.temperature_c {
             assert!(temp >= 0.0 && temp <= 150.0);
         }
-        
+
         if let Some(hotspot) = temperature.hotspot_c {
             assert!(hotspot >= 0.0 && hotspot <= 150.0);
         }
@@ -3610,10 +3825,12 @@ fn test_gpu_improved_error_messages() {
         assert!(metrics.temperature.temperature_c.is_some());
         assert!(metrics.temperature.hotspot_c.is_some());
         assert!(metrics.temperature.memory_c.is_some());
-        
+
         // Test serialization of comprehensive metrics
-        let serialized = serde_json::to_string(&metrics).expect("Comprehensive metrics serialization failed");
-        let deserialized: GpuMetrics = serde_json::from_str(&serialized).expect("Comprehensive metrics deserialization failed");
+        let serialized =
+            serde_json::to_string(&metrics).expect("Comprehensive metrics serialization failed");
+        let deserialized: GpuMetrics = serde_json::from_str(&serialized)
+            .expect("Comprehensive metrics deserialization failed");
 
         assert_eq!(deserialized.temperature.temperature_c, Some(65.5));
         assert_eq!(deserialized.temperature.hotspot_c, Some(72.3));
@@ -3625,8 +3842,8 @@ fn test_gpu_improved_error_messages() {
         // Test that temperature monitoring can recover from errors
         let mut temperature = GpuTemperature {
             temperature_c: Some(200.0), // Invalid temperature
-            hotspot_c: Some(-50.0),    // Invalid temperature
-            memory_c: Some(180.0),     // Invalid temperature
+            hotspot_c: Some(-50.0),     // Invalid temperature
+            memory_c: Some(180.0),      // Invalid temperature
         };
 
         // Apply validation
@@ -3667,10 +3884,12 @@ fn test_gpu_improved_error_messages() {
         assert!(temperature.temperature_c.is_some());
         assert!(temperature.hotspot_c.is_none());
         assert!(temperature.memory_c.is_none());
-        
+
         // Test serialization with partial data
-        let serialized = serde_json::to_string(&temperature).expect("Partial temperature serialization failed");
-        let deserialized: GpuTemperature = serde_json::from_str(&serialized).expect("Partial temperature deserialization failed");
+        let serialized =
+            serde_json::to_string(&temperature).expect("Partial temperature serialization failed");
+        let deserialized: GpuTemperature =
+            serde_json::from_str(&serialized).expect("Partial temperature deserialization failed");
 
         assert_eq!(deserialized.temperature_c, Some(65.5));
         assert_eq!(deserialized.hotspot_c, None);
