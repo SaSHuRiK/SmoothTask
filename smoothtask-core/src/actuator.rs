@@ -13,6 +13,7 @@ use libc;
 use tracing::{debug, warn};
 
 use crate::logging::snapshots::Snapshot;
+use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
 use crate::policy::classes::{CgroupParams, IoNiceParams, PriorityClass, PriorityParams};
 use crate::policy::engine::PolicyResult;
 
