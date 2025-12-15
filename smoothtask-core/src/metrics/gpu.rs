@@ -133,6 +133,57 @@ pub struct GpuPerformanceMetrics {
     pub bottleneck_type: Option<String>,
     /// GPU performance optimization recommendations
     pub optimization_recommendations: Option<Vec<String>>,
+    /// GPU process usage analysis
+    pub process_usage: Option<Vec<GpuProcessUsage>>,
+    /// GPU memory usage by process
+    pub process_memory_usage: Option<Vec<GpuProcessMemoryUsage>>,
+    /// GPU compute usage by process
+    pub process_compute_usage: Option<Vec<GpuProcessComputeUsage>>,
+}
+
+/// GPU process usage information
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GpuProcessUsage {
+    /// Process ID
+    pub pid: u32,
+    /// Process name
+    pub process_name: String,
+    /// GPU utilization percentage (0.0 to 1.0)
+    pub gpu_utilization: f32,
+    /// GPU memory usage in bytes
+    pub memory_usage_bytes: u64,
+    /// GPU compute usage percentage (0.0 to 1.0)
+    pub compute_utilization: f32,
+    /// GPU encoder usage percentage (0.0 to 1.0)
+    pub encoder_utilization: Option<f32>,
+    /// GPU decoder usage percentage (0.0 to 1.0)
+    pub decoder_utilization: Option<f32>,
+}
+
+/// GPU process memory usage information
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GpuProcessMemoryUsage {
+    /// Process ID
+    pub pid: u32,
+    /// Process name
+    pub process_name: String,
+    /// GPU memory usage in bytes
+    pub memory_usage_bytes: u64,
+    /// GPU memory usage percentage (0.0 to 1.0)
+    pub memory_usage_percentage: f32,
+}
+
+/// GPU process compute usage information
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GpuProcessComputeUsage {
+    /// Process ID
+    pub pid: u32,
+    /// Process name
+    pub process_name: String,
+    /// GPU compute utilization percentage (0.0 to 1.0)
+    pub compute_utilization: f32,
+    /// GPU compute time in milliseconds
+    pub compute_time_ms: u64,
 }
 
 /// Complete GPU metrics for a single device
@@ -440,10 +491,217 @@ fn collect_gpu_device_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
 
     debug!("Метрики GPU для устройства {} собраны успешно", device.name);
 
+    // Collect process-level GPU usage
+    collect_process_gpu_usage(&mut metrics);
+
     // Calculate performance metrics
     calculate_performance_metrics(&mut metrics);
 
     Ok(metrics)
+}
+
+/// Collect process-level GPU usage information
+fn collect_process_gpu_usage(metrics: &mut GpuMetrics) {
+    debug!("Сбор информации об использовании GPU по процессам");
+
+    let mut process_usage = Vec::new();
+    let mut process_memory_usage = Vec::new();
+    let mut process_compute_usage = Vec::new();
+
+    // Try to read process GPU usage from sysfs (NVIDIA)
+    if let Ok(nvidia_processes) = collect_nvidia_process_gpu_usage() {
+        for process in nvidia_processes {
+            process_usage.push(GpuProcessUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                gpu_utilization: process.gpu_utilization,
+                memory_usage_bytes: process.memory_usage_bytes,
+                compute_utilization: process.compute_utilization,
+                encoder_utilization: process.encoder_utilization,
+                decoder_utilization: process.decoder_utilization,
+            });
+
+            process_memory_usage.push(GpuProcessMemoryUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                memory_usage_bytes: process.memory_usage_bytes,
+                memory_usage_percentage: if metrics.memory.total_bytes > 0 {
+                    process.memory_usage_bytes as f32 / metrics.memory.total_bytes as f32
+                } else {
+                    0.0
+                },
+            });
+
+            process_compute_usage.push(GpuProcessComputeUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                compute_utilization: process.compute_utilization,
+                compute_time_ms: (process.compute_utilization * 1000.0) as u64,
+            });
+        }
+    }
+
+    // Try to read process GPU usage from AMDGPU
+    if let Ok(amdgpu_processes) = collect_amdgpu_process_gpu_usage() {
+        for process in amdgpu_processes {
+            process_usage.push(GpuProcessUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                gpu_utilization: process.gpu_utilization,
+                memory_usage_bytes: process.memory_usage_bytes,
+                compute_utilization: process.compute_utilization,
+                encoder_utilization: process.encoder_utilization,
+                decoder_utilization: process.decoder_utilization,
+            });
+
+            process_memory_usage.push(GpuProcessMemoryUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                memory_usage_bytes: process.memory_usage_bytes,
+                memory_usage_percentage: if metrics.memory.total_bytes > 0 {
+                    process.memory_usage_bytes as f32 / metrics.memory.total_bytes as f32
+                } else {
+                    0.0
+                },
+            });
+
+            process_compute_usage.push(GpuProcessComputeUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                compute_utilization: process.compute_utilization,
+                compute_time_ms: (process.compute_utilization * 1000.0) as u64,
+            });
+        }
+    }
+
+    // Try to read process GPU usage from Intel
+    if let Ok(intel_processes) = collect_intel_process_gpu_usage() {
+        for process in intel_processes {
+            process_usage.push(GpuProcessUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                gpu_utilization: process.gpu_utilization,
+                memory_usage_bytes: process.memory_usage_bytes,
+                compute_utilization: process.compute_utilization,
+                encoder_utilization: process.encoder_utilization,
+                decoder_utilization: process.decoder_utilization,
+            });
+
+            process_memory_usage.push(GpuProcessMemoryUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                memory_usage_bytes: process.memory_usage_bytes,
+                memory_usage_percentage: if metrics.memory.total_bytes > 0 {
+                    process.memory_usage_bytes as f32 / metrics.memory.total_bytes as f32
+                } else {
+                    0.0
+                },
+            });
+
+            process_compute_usage.push(GpuProcessComputeUsage {
+                pid: process.pid,
+                process_name: process.process_name,
+                compute_utilization: process.compute_utilization,
+                compute_time_ms: (process.compute_utilization * 1000.0) as u64,
+            });
+        }
+    }
+
+    if !process_usage.is_empty() {
+        metrics.performance.process_usage = Some(process_usage);
+        metrics.performance.process_memory_usage = Some(process_memory_usage);
+        metrics.performance.process_compute_usage = Some(process_compute_usage);
+        debug!("Собрана информация об использовании GPU для {} процессов", process_usage.len());
+    } else {
+        debug!("Не удалось собрать информацию об использовании GPU по процессам");
+    }
+}
+
+/// NVIDIA process GPU usage information
+#[derive(Debug, Clone)]
+struct NvidiaProcessGpuUsage {
+    pid: u32,
+    process_name: String,
+    gpu_utilization: f32,
+    memory_usage_bytes: u64,
+    compute_utilization: f32,
+    encoder_utilization: Option<f32>,
+    decoder_utilization: Option<f32>,
+}
+
+/// Collect NVIDIA process GPU usage
+fn collect_nvidia_process_gpu_usage() -> Result<Vec<NvidiaProcessGpuUsage>> {
+    let mut processes = Vec::new();
+
+    // Try to read from NVIDIA sysfs
+    let nvidia_dir = Path::new("/sys/class/drm");
+    if !nvidia_dir.exists() {
+        return Ok(processes);
+    }
+
+    // This is a simplified implementation
+    // In a real system, we would use NVML or parse /proc/driver/nvidia/gpus/*/processes
+    debug!("NVIDIA process GPU usage collection not fully implemented - would require NVML");
+
+    Ok(processes)
+}
+
+/// AMDGPU process GPU usage information
+#[derive(Debug, Clone)]
+struct AmdgpuProcessGpuUsage {
+    pid: u32,
+    process_name: String,
+    gpu_utilization: f32,
+    memory_usage_bytes: u64,
+    compute_utilization: f32,
+    encoder_utilization: Option<f32>,
+    decoder_utilization: Option<f32>,
+}
+
+/// Collect AMDGPU process GPU usage
+fn collect_amdgpu_process_gpu_usage() -> Result<Vec<AmdgpuProcessGpuUsage>> {
+    let mut processes = Vec::new();
+
+    // Try to read from AMDGPU sysfs
+    let amdgpu_dir = Path::new("/sys/class/drm");
+    if !amdgpu_dir.exists() {
+        return Ok(processes);
+    }
+
+    // This is a simplified implementation
+    // In a real system, we would parse /sys/kernel/debug/dri/*/amdgpu_gpu_utilization
+    debug!("AMDGPU process GPU usage collection not fully implemented - would require AMDGPU debugfs");
+
+    Ok(processes)
+}
+
+/// Intel process GPU usage information
+#[derive(Debug, Clone)]
+struct IntelProcessGpuUsage {
+    pid: u32,
+    process_name: String,
+    gpu_utilization: f32,
+    memory_usage_bytes: u64,
+    compute_utilization: f32,
+    encoder_utilization: Option<f32>,
+    decoder_utilization: Option<f32>,
+}
+
+/// Collect Intel process GPU usage
+fn collect_intel_process_gpu_usage() -> Result<Vec<IntelProcessGpuUsage>> {
+    let mut processes = Vec::new();
+
+    // Try to read from Intel sysfs
+    let intel_dir = Path::new("/sys/class/drm");
+    if !intel_dir.exists() {
+        return Ok(processes);
+    }
+
+    // This is a simplified implementation
+    // In a real system, we would parse /sys/kernel/debug/dri/*/i915_gem_objects
+    debug!("Intel process GPU usage collection not fully implemented - would require Intel debugfs");
+
+    Ok(processes)
 }
 
 /// Collect GPU utilization metrics
@@ -1809,6 +2067,9 @@ fn calculate_performance_metrics(metrics: &mut GpuMetrics) {
         metrics.performance.bottleneck_type = Some("none".to_string());
     }
 
+    // Analyze process-level GPU usage and generate recommendations
+    analyze_process_gpu_usage(&mut metrics.performance);
+
     // Generate optimization recommendations based on current state
     let mut recommendations = Vec::new();
     
@@ -1852,6 +2113,96 @@ fn calculate_performance_metrics(metrics: &mut GpuMetrics) {
         metrics.performance.workload_type = Some("memory".to_string());
     } else {
         metrics.performance.workload_type = Some("idle".to_string());
+    }
+}
+
+/// Analyze process-level GPU usage and generate recommendations
+fn analyze_process_gpu_usage(performance: &mut GpuPerformanceMetrics) {
+    debug!("Анализ использования GPU по процессам");
+
+    if let Some(process_usage) = &performance.process_usage {
+        if process_usage.is_empty() {
+            debug!("Нет данных об использовании GPU по процессам");
+            return;
+        }
+
+        // Find top GPU-consuming processes
+        let mut high_gpu_processes = Vec::new();
+        let mut high_memory_processes = Vec::new();
+        let mut high_compute_processes = Vec::new();
+
+        for process in process_usage {
+            if process.gpu_utilization > 0.3 {
+                high_gpu_processes.push(process);
+            }
+            if process.memory_usage_bytes > 100_000_000 { // > 100MB
+                high_memory_processes.push(process);
+            }
+            if process.compute_utilization > 0.3 {
+                high_compute_processes.push(process);
+            }
+        }
+
+        // Generate recommendations based on process analysis
+        let mut recommendations = performance.optimization_recommendations
+            .clone().unwrap_or_default();
+
+        if !high_gpu_processes.is_empty() {
+            let top_processes: Vec<_> = high_gpu_processes.iter()
+                .take(3)
+                .map(|p| format!("{} (PID: {}, GPU: {:.1}%)", p.process_name, p.pid, p.gpu_utilization * 100.0))
+                .collect();
+            recommendations.push(format!(
+                "High GPU usage detected in processes: {}. Consider optimizing these processes.",
+                top_processes.join(", ")
+            ));
+        }
+
+        if !high_memory_processes.is_empty() {
+            let top_processes: Vec<_> = high_memory_processes.iter()
+                .take(3)
+                .map(|p| format!("{} (PID: {}, Mem: {}MB)", p.process_name, p.pid, p.memory_usage_bytes / 1024 / 1024))
+                .collect();
+            recommendations.push(format!(
+                "High GPU memory usage detected in processes: {}. Consider reducing memory usage.",
+                top_processes.join(", ")
+            ));
+        }
+
+        if !high_compute_processes.is_empty() {
+            let top_processes: Vec<_> = high_compute_processes.iter()
+                .take(3)
+                .map(|p| format!("{} (PID: {}, Compute: {:.1}%)", p.process_name, p.pid, p.compute_utilization * 100.0))
+                .collect();
+            recommendations.push(format!(
+                "High GPU compute usage detected in processes: {}. Consider load balancing.",
+                top_processes.join(", ")
+            ));
+        }
+
+        // Calculate total GPU usage by processes
+        let total_gpu_usage: f32 = process_usage.iter()
+            .map(|p| p.gpu_utilization)
+            .sum();
+        let total_memory_usage: u64 = process_usage.iter()
+            .map(|p| p.memory_usage_bytes)
+            .sum();
+        let total_compute_usage: f32 = process_usage.iter()
+            .map(|p| p.compute_utilization)
+            .sum();
+
+        debug!(
+            "Общее использование GPU по процессам: GPU={:.1}%, Memory={}MB, Compute={:.1}%",
+            total_gpu_usage * 100.0,
+            total_memory_usage / 1024 / 1024,
+            total_compute_usage * 100.0
+        );
+
+        if !recommendations.is_empty() {
+            performance.optimization_recommendations = Some(recommendations);
+        }
+    } else {
+        debug!("Нет данных об использовании GPU по процессам для анализа");
     }
 }
 
@@ -2124,6 +2475,102 @@ mod tests {
         // This should recalculate free_bytes correctly
         memory.free_bytes = memory.total_bytes.saturating_sub(memory.used_bytes);
         assert_eq!(memory.free_bytes, 1_500_000_000);
+    }
+
+    #[test]
+    fn test_gpu_process_usage_structures() {
+        // Test GpuProcessUsage structure
+        let process_usage = GpuProcessUsage {
+            pid: 1234,
+            process_name: "test_process".to_string(),
+            gpu_utilization: 0.45,
+            memory_usage_bytes: 500_000_000,
+            compute_utilization: 0.35,
+            encoder_utilization: Some(0.1),
+            decoder_utilization: Some(0.2),
+        };
+
+        assert_eq!(process_usage.pid, 1234);
+        assert_eq!(process_usage.process_name, "test_process");
+        assert_eq!(process_usage.gpu_utilization, 0.45);
+        assert_eq!(process_usage.memory_usage_bytes, 500_000_000);
+        assert_eq!(process_usage.compute_utilization, 0.35);
+
+        // Test serialization
+        let serialized = serde_json::to_string(&process_usage).expect("Serialization failed");
+        let deserialized: GpuProcessUsage =
+            serde_json::from_str(&serialized).expect("Deserialization failed");
+
+        assert_eq!(deserialized.pid, 1234);
+        assert_eq!(deserialized.gpu_utilization, 0.45);
+    }
+
+    #[test]
+    fn test_gpu_process_memory_usage() {
+        let memory_usage = GpuProcessMemoryUsage {
+            pid: 5678,
+            process_name: "memory_intensive_process".to_string(),
+            memory_usage_bytes: 1_000_000_000,
+            memory_usage_percentage: 0.25,
+        };
+
+        assert_eq!(memory_usage.pid, 5678);
+        assert_eq!(memory_usage.memory_usage_bytes, 1_000_000_000);
+        assert_eq!(memory_usage.memory_usage_percentage, 0.25);
+    }
+
+    #[test]
+    fn test_gpu_process_compute_usage() {
+        let compute_usage = GpuProcessComputeUsage {
+            pid: 9012,
+            process_name: "compute_intensive_process".to_string(),
+            compute_utilization: 0.6,
+            compute_time_ms: 1500,
+        };
+
+        assert_eq!(compute_usage.pid, 9012);
+        assert_eq!(compute_usage.compute_utilization, 0.6);
+        assert_eq!(compute_usage.compute_time_ms, 1500);
+    }
+
+    #[test]
+    fn test_process_usage_analysis() {
+        let mut performance = GpuPerformanceMetrics::default();
+
+        // Create test process usage data
+        let process_usage = vec![
+            GpuProcessUsage {
+                pid: 1001,
+                process_name: "high_gpu_process".to_string(),
+                gpu_utilization: 0.8,
+                memory_usage_bytes: 800_000_000,
+                compute_utilization: 0.7,
+                encoder_utilization: Some(0.0),
+                decoder_utilization: Some(0.0),
+            },
+            GpuProcessUsage {
+                pid: 1002,
+                process_name: "high_memory_process".to_string(),
+                gpu_utilization: 0.2,
+                memory_usage_bytes: 1_500_000_000,
+                compute_utilization: 0.1,
+                encoder_utilization: Some(0.0),
+                decoder_utilization: Some(0.0),
+            },
+        ];
+
+        performance.process_usage = Some(process_usage);
+
+        // Test the analysis function
+        analyze_process_gpu_usage(&mut performance);
+
+        // Check that recommendations were generated
+        if let Some(recommendations) = &performance.optimization_recommendations {
+            assert!(!recommendations.is_empty(), "Should have generated recommendations");
+            assert!(recommendations.len() >= 2, "Should have at least 2 recommendations");
+        } else {
+            panic!("No recommendations were generated");
+        }
     }
 
     #[test]
