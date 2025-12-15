@@ -388,6 +388,75 @@ pub struct ProcessRecord {
     pub gpu_last_update_ns: Option<u64>,
     /// Источник данных GPU (drm, nvidia, amd, или none)
     pub gpu_data_source: Option<String>,
+    /// Расширенные метрики использования памяти процессом
+    pub memory_usage_details: Option<ProcessMemoryUsage>,
+    /// Метрики производительности процесса
+    pub performance_metrics: Option<ProcessPerformanceMetrics>,
+    /// Метрики использования ресурсов процессом
+    pub resource_utilization: Option<ProcessResourceUtilization>,
+}
+
+/// Расширенные метрики использования памяти процессом
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProcessMemoryUsage {
+    /// Общее использование памяти (RSS) в байтах
+    pub total_rss_bytes: u64,
+    /// Использование кучи в байтах
+    pub heap_usage_bytes: Option<u64>,
+    /// Использование стека в байтах
+    pub stack_usage_bytes: Option<u64>,
+    /// Использование shared memory в байтах
+    pub shared_memory_bytes: Option<u64>,
+    /// Использование private memory в байтах
+    pub private_memory_bytes: Option<u64>,
+    /// Количество страниц памяти
+    pub memory_pages: Option<u64>,
+    /// Количество мажорных page faults
+    pub major_page_faults: Option<u64>,
+    /// Количество минорных page faults
+    pub minor_page_faults: Option<u64>,
+    /// Давление памяти процесса (0.0 - 1.0)
+    pub memory_pressure: Option<f64>,
+}
+
+/// Метрики производительности процесса
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProcessPerformanceMetrics {
+    /// Среднее использование CPU за последние 10 секунд
+    pub cpu_usage_10s: Option<f64>,
+    /// Среднее использование CPU за последние 60 секунд
+    pub cpu_usage_60s: Option<f64>,
+    /// Среднее использование CPU за последние 300 секунд
+    pub cpu_usage_300s: Option<f64>,
+    /// Количество системных вызовов в секунду
+    pub syscalls_per_second: Option<f64>,
+    /// Количество контекстных переключений в секунду
+    pub context_switches_per_second: Option<f64>,
+    /// Среднее время выполнения системных вызовов (микросекунды)
+    pub avg_syscall_time_us: Option<f64>,
+    /// Среднее время контекстных переключений (микросекунды)
+    pub avg_context_switch_time_us: Option<f64>,
+    /// Оценка производительности процесса (0.0 - 1.0)
+    pub performance_score: Option<f64>,
+}
+
+/// Метрики использования ресурсов процессом
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ProcessResourceUtilization {
+    /// Общее использование ресурсов (0.0 - 1.0)
+    pub overall_utilization: Option<f64>,
+    /// Использование CPU (0.0 - 1.0)
+    pub cpu_utilization: Option<f64>,
+    /// Использование памяти (0.0 - 1.0)
+    pub memory_utilization: Option<f64>,
+    /// Использование ввода-вывода (0.0 - 1.0)
+    pub io_utilization: Option<f64>,
+    /// Использование сети (0.0 - 1.0)
+    pub network_utilization: Option<f64>,
+    /// Использование GPU (0.0 - 1.0)
+    pub gpu_utilization: Option<f64>,
+    /// Оценка эффективности использования ресурсов (0.0 - 1.0)
+    pub efficiency_score: Option<f64>,
 }
 
 impl Default for ProcessRecord {
@@ -453,6 +522,9 @@ impl Default for ProcessRecord {
             gpu_api_calls: None,
             gpu_last_update_ns: None,
             gpu_data_source: None,
+            memory_usage_details: None,
+            performance_metrics: None,
+            resource_utilization: None,
         }
     }
 }

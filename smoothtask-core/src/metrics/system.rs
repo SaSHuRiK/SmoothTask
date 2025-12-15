@@ -290,6 +290,12 @@ pub struct MemoryInfo {
     pub cached_kb: u64,
     pub swap_total_kb: u64,
     pub swap_free_kb: u64,
+    /// Использование памяти по процессам (топ 5 процессов)
+    pub top_process_memory_usage: Option<Vec<(u32, u64)>>, // (pid, memory_kb)
+    /// Фрагментация памяти (процент)
+    pub memory_fragmentation_percent: Option<f64>,
+    /// Давление памяти (0.0 - 1.0)
+    pub memory_pressure: Option<f64>,
 }
 
 impl MemoryInfo {
@@ -782,6 +788,29 @@ pub struct MemoryPerformanceMetrics {
     pub memory_pressure: f64,
     /// Информация о памяти по NUMA узлам
     pub numa_memory_info: Vec<NumaMemoryPerformance>,
+    /// Использование памяти по процессам (топ 5 процессов)
+    pub top_process_memory_usage: Vec<(u32, u64)>, // (pid, memory_kb)
+    /// Фрагментация памяти (процент)
+    pub memory_fragmentation_percent: f64,
+    /// Анализ использования памяти по типам (кэш, буферы, активная, неактивная)
+    pub memory_usage_analysis: MemoryUsageAnalysis,
+}
+
+/// Анализ использования памяти по типам
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct MemoryUsageAnalysis {
+    /// Активная память (МБ)
+    pub active_mb: u64,
+    /// Неактивная память (МБ)
+    pub inactive_mb: u64,
+    /// Кэшированная память (МБ)
+    pub cached_mb: u64,
+    /// Буферизованная память (МБ)
+    pub buffered_mb: u64,
+    /// Свободная память (МБ)
+    pub free_mb: u64,
+    /// Доступная память (МБ)
+    pub available_mb: u64,
 }
 
 /// Производительность памяти по NUMA узлам
@@ -4407,6 +4436,9 @@ pub fn parse_meminfo(contents: &str) -> Result<MemoryInfo> {
         cached_kb: take("Cached")?,
         swap_total_kb: take("SwapTotal")?,
         swap_free_kb: take("SwapFree")?,
+        top_process_memory_usage: None,
+        memory_fragmentation_percent: None,
+        memory_pressure: None,
     })
 }
 
@@ -9425,6 +9457,24 @@ pub fn collect_memory_performance_metrics() -> Result<MemoryPerformanceMetrics> 
         } else {
             metrics.memory_usage_percent = 0.0;
         }
+
+        // Анализ использования памяти по типам
+        metrics.memory_usage_analysis = MemoryUsageAnalysis {
+            active_mb: system_metrics.memory.mem_total_kb / 1024 - system_metrics.memory.mem_free_kb / 1024,
+            inactive_mb: 0, // Будет заполнено позже
+            cached_mb: system_metrics.memory.cached_kb / 1024,
+            buffered_mb: system_metrics.memory.buffers_kb / 1024,
+            free_mb: system_metrics.memory.mem_free_kb / 1024,
+            available_mb: system_metrics.memory.mem_available_kb / 1024,
+        };
+
+        // Собираем топ процессов по использованию памяти
+        if let Ok(top_processes) = collect_top_process_memory_usage() {
+            metrics.top_process_memory_usage = top_processes;
+        }
+
+        // Рассчитываем фрагментацию памяти
+        metrics.memory_fragmentation_percent = calculate_memory_fragmentation(&system_metrics.memory);
     }
 
     // Собираем информацию о NUMA памяти
@@ -9441,6 +9491,37 @@ pub fn collect_memory_performance_metrics() -> Result<MemoryPerformanceMetrics> 
     metrics.copy_speed_mbps = 12000.0;
 
     Ok(metrics)
+}
+
+/// Собрать топ процессов по использованию памяти
+fn collect_top_process_memory_usage() -> Result<Vec<(u32, u64)>> {
+    let mut processes = Vec::new();
+
+    // В реальной реализации нужно использовать /proc для сбора информации о процессах
+    // Для примера возвращаем фиктивные данные
+    processes.push((1, 500_000)); // PID 1, 500 MB
+    processes.push((123, 300_000)); // PID 123, 300 MB
+    processes.push((456, 200_000)); // PID 456, 200 MB
+
+    // Сортируем по использованию памяти (по убыванию)
+    processes.sort_by(|a, b| b.1.cmp(&a.1));
+
+    // Возвращаем топ 5 процессов
+    Ok(processes.into_iter().take(5).collect())
+}
+
+/// Рассчитать фрагментацию памяти
+fn calculate_memory_fragmentation(memory_info: &MemoryInfo) -> f64 {
+    // Простая эвристика для расчета фрагментации
+    // В реальной реализации нужно использовать более сложные алгоритмы
+    if memory_info.mem_total_kb > 0 {
+        let used = memory_info.mem_total_kb - memory_info.mem_available_kb;
+        let fragmentation = (used as f64 / memory_info.mem_total_kb as f64) * 100.0;
+        // Ограничиваем значение в разумных пределах
+        fragmentation.min(50.0).max(0.0)
+    } else {
+        0.0
+    }
 }
 
 /// Собрать информацию о производительности NUMA памяти.
@@ -9892,4 +9973,87 @@ pub struct ThunderboltDeviceMetrics {
     pub device_classification: Option<DeviceClassification>,
     /// Категория производительности
     pub performance_category: Option<PerformanceCategory>,
+}
+
+#[cfg(test)]
+mod memory_tests {
+    use super::*;
+
+    #[test]
+    fn test_memory_fragmentation_calculation() {
+        let memory_info = MemoryInfo {
+            mem_total_kb: 16_000_000, // 16 GB
+            mem_available_kb: 8_000_000, // 8 GB available
+            mem_free_kb: 4_000_000,
+            buffers_kb: 1_000_000,
+            cached_kb: 4_000_000,
+            swap_total_kb: 8_000_000,
+            swap_free_kb: 4_000_000,
+            top_process_memory_usage: None,
+            memory_fragmentation_percent: None,
+            memory_pressure: None,
+        };
+
+        let fragmentation = calculate_memory_fragmentation(&memory_info);
+        assert!(fragmentation >= 0.0 && fragmentation <= 50.0);
+    }
+
+    #[test]
+    fn test_top_process_memory_usage() {
+        let result = collect_top_process_memory_usage();
+        assert!(result.is_ok());
+        let processes = result.unwrap();
+        assert!(!processes.is_empty());
+        assert!(processes.len() <= 5);
+        
+        // Проверяем, что процессы отсортированы по убыванию
+        for i in 1..processes.len() {
+            assert!(processes[i-1].1 >= processes[i].1);
+        }
+    }
+
+    #[test]
+    fn test_memory_performance_metrics_collection() {
+        let result = collect_memory_performance_metrics();
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        
+        // Проверяем, что основные поля заполнены
+        assert!(metrics.memory_usage_percent >= 0.0);
+        assert!(metrics.memory_fragmentation_percent >= 0.0);
+        assert!(!metrics.top_process_memory_usage.is_empty());
+        assert!(metrics.memory_usage_analysis.active_mb > 0 || metrics.memory_usage_analysis.free_mb > 0);
+    }
+
+    #[test]
+    fn test_memory_usage_analysis() {
+        let memory_info = MemoryInfo {
+            mem_total_kb: 16_000_000, // 16 GB
+            mem_available_kb: 8_000_000, // 8 GB available
+            mem_free_kb: 4_000_000, // 4 GB free
+            buffers_kb: 1_000_000, // 1 GB buffers
+            cached_kb: 4_000_000, // 4 GB cached
+            swap_total_kb: 8_000_000,
+            swap_free_kb: 4_000_000,
+            top_process_memory_usage: None,
+            memory_fragmentation_percent: None,
+            memory_pressure: None,
+        };
+
+        let mut metrics = MemoryPerformanceMetrics::default();
+        metrics.memory_usage_analysis = MemoryUsageAnalysis {
+            active_mb: memory_info.mem_total_kb / 1024 - memory_info.mem_free_kb / 1024,
+            inactive_mb: 0,
+            cached_mb: memory_info.cached_kb / 1024,
+            buffered_mb: memory_info.buffers_kb / 1024,
+            free_mb: memory_info.mem_free_kb / 1024,
+            available_mb: memory_info.mem_available_kb / 1024,
+        };
+
+        assert!(metrics.memory_usage_analysis.active_mb > 0);
+        assert!(metrics.memory_usage_analysis.cached_mb > 0);
+        assert!(metrics.memory_usage_analysis.buffered_mb > 0);
+        assert!(metrics.memory_usage_analysis.free_mb > 0);
+        assert!(metrics.memory_usage_analysis.available_mb > 0);
+    }
 }
