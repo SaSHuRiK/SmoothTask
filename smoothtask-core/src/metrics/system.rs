@@ -461,6 +461,8 @@ pub struct HardwareMetrics {
     pub pci_devices: Vec<PciDeviceMetrics>,
     /// Метрики использования USB устройств
     pub usb_devices: Vec<UsbDeviceMetrics>,
+    /// Метрики использования Thunderbolt устройств
+    pub thunderbolt_devices: Vec<ThunderboltDeviceMetrics>,
     /// Метрики использования SATA/NVMe устройств
     pub storage_devices: Vec<StorageDeviceMetrics>,
 }
@@ -487,6 +489,12 @@ impl HardwareMetrics {
             Vec::new()
         } else {
             self.usb_devices
+        };
+
+        let thunderbolt_devices = if self.thunderbolt_devices.is_empty() {
+            Vec::new()
+        } else {
+            self.thunderbolt_devices
         };
 
         let storage_devices = if self.storage_devices.is_empty() {
@@ -531,6 +539,7 @@ impl HardwareMetrics {
             chassis_fan_speed_rpm: self.chassis_fan_speed_rpm,
             pci_devices,
             usb_devices,
+            thunderbolt_devices,
             storage_devices,
         }
     }
@@ -3418,6 +3427,20 @@ fn collect_hardware_metrics() -> HardwareMetrics {
         }
     }
 
+    // Собираем метрики Thunderbolt устройств
+    match collect_thunderbolt_device_metrics() {
+        Ok(thunderbolt_devices) => {
+            hardware.thunderbolt_devices = thunderbolt_devices;
+            tracing::info!(
+                "Thunderbolt device metrics collection completed: {} devices found",
+                hardware.thunderbolt_devices.len()
+            );
+        }
+        Err(e) => {
+            tracing::warn!("Failed to collect Thunderbolt device metrics: {}", e);
+        }
+    }
+
     // Собираем метрики устройств хранения
     match collect_storage_device_metrics() {
         Ok(storage_devices) => {
@@ -4807,6 +4830,163 @@ pub fn collect_storage_device_metrics() -> Result<Vec<StorageDeviceMetrics>> {
     collect_nvme_devices(&mut devices)?;
 
     Ok(devices)
+}
+
+/// Собрать метрики Thunderbolt устройств
+///
+/// Читает информацию о Thunderbolt устройствах из `/sys/bus/thunderbolt/devices/`
+/// и возвращает вектор с метриками для каждого устройства.
+#[allow(dead_code)]
+pub fn collect_thunderbolt_device_metrics() -> Result<Vec<ThunderboltDeviceMetrics>> {
+    let mut devices = Vec::new();
+    let thunderbolt_devices_path = Path::new("/sys/bus/thunderbolt/devices");
+
+    if !thunderbolt_devices_path.exists() {
+        warn!("Thunderbolt devices path not found: {}", thunderbolt_devices_path.display());
+        return Ok(devices);
+    }
+
+    let entries = fs::read_dir(thunderbolt_devices_path).context("Failed to read Thunderbolt devices directory")?;
+
+    for entry in entries {
+        let entry = entry.context("Error reading Thunderbolt device entry")?;
+        let device_path = entry.path();
+
+        // Skip non-device directories
+        if !device_path.is_dir() {
+            continue;
+        }
+
+        let device_id = device_path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("unknown")
+            .to_string();
+
+        // Read device information
+        let device_name = read_thunderbolt_device_name(&device_path);
+        let connection_speed = read_thunderbolt_connection_speed(&device_path);
+        let status = read_thunderbolt_device_status(&device_path);
+        let temperature = read_thunderbolt_device_temperature(&device_path);
+        let power = read_thunderbolt_device_power(&device_path);
+
+        devices.push(ThunderboltDeviceMetrics {
+            device_id,
+            device_name,
+            connection_speed_gbps: connection_speed,
+            status,
+            temperature_c: temperature,
+            power_w: power,
+            device_classification: None,
+            performance_category: None,
+        });
+    }
+
+    Ok(devices)
+}
+
+/// Прочитать имя Thunderbolt устройства
+fn read_thunderbolt_device_name(device_path: &Path) -> String {
+    // Try to read device name from various possible locations
+    let possible_names = [
+        "device_name",
+        "name",
+        "product_name",
+    ];
+
+    for name_file in &possible_names {
+        let name_path = device_path.join(name_file);
+        if let Ok(name_content) = fs::read_to_string(&name_path) {
+            return name_content.trim().to_string();
+        }
+    }
+
+    // If no name found, use device ID as fallback
+    device_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}
+
+/// Прочитать скорость соединения Thunderbolt устройства
+fn read_thunderbolt_connection_speed(device_path: &Path) -> f32 {
+    // Try to read connection speed from various possible locations
+    let possible_speed_files = [
+        "link_speed",
+        "speed",
+        "connection_speed",
+    ];
+
+    for speed_file in &possible_speed_files {
+        let speed_path = device_path.join(speed_file);
+        if let Ok(speed_content) = fs::read_to_string(&speed_path) {
+            if let Ok(speed_gbps) = speed_content.trim().parse::<f32>() {
+                return speed_gbps;
+            }
+        }
+    }
+
+    // Default to Thunderbolt 3 speed (40 Gbps) if unknown
+    40.0
+}
+
+/// Прочитать статус Thunderbolt устройства
+fn read_thunderbolt_device_status(device_path: &Path) -> String {
+    // Try to read authorized status
+    let authorized_path = device_path.join("authorized");
+    if let Ok(authorized_content) = fs::read_to_string(&authorized_path) {
+        if authorized_content.trim() == "1" {
+            return "connected".to_string();
+        } else {
+            return "disconnected".to_string();
+        }
+    }
+
+    // If authorized file not found, assume connected
+    "connected".to_string()
+}
+
+/// Прочитать температуру Thunderbolt устройства (если доступна)
+fn read_thunderbolt_device_temperature(device_path: &Path) -> Option<f32> {
+    // Try to read temperature from hwmon interface if available
+    let hwmon_path = device_path.join("hwmon");
+    if hwmon_path.exists() {
+        if let Ok(hwmon_entries) = fs::read_dir(&hwmon_path) {
+            for hwmon_entry in hwmon_entries {
+                if let Ok(entry) = hwmon_entry {
+                    let temp_input = entry.path().join("temp1_input");
+                    if let Ok(temp_str) = fs::read_to_string(&temp_input) {
+                        if let Ok(temp_millidegrees) = temp_str.trim().parse::<i32>() {
+                            return Some(temp_millidegrees as f32 / 1000.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Прочитать потребляемую мощность Thunderbolt устройства (если доступна)
+fn read_thunderbolt_device_power(device_path: &Path) -> Option<f32> {
+    // Try to read power from various possible locations
+    let possible_power_files = [
+        "power",
+        "current_power",
+        "power_consumption",
+    ];
+
+    for power_file in &possible_power_files {
+        let power_path = device_path.join(power_file);
+        if let Ok(power_content) = fs::read_to_string(&power_path) {
+            if let Ok(power_mw) = power_content.trim().parse::<u32>() {
+                return Some(power_mw as f32 / 1000.0); // Convert mW to W
+            }
+        }
+    }
+
+    None
 }
 
 /// Собрать метрики SATA устройств
@@ -6921,6 +7101,14 @@ SwapFree:        4096000 kB
         let pci_class2 = manager.classify_pci_device("0x8086", "0x0106");
         assert_eq!(pci_class2, DeviceClassification::StorageController);
 
+        // Test PCIe NVMe classification
+        let pcie_nvme_class = manager.classify_pci_device("0x144d", "0x0108");
+        assert_eq!(pcie_nvme_class, DeviceClassification::NvmeStorage);
+
+        // Test PCIe bridge classification
+        let pcie_bridge_class = manager.classify_pci_device("0x8086", "0x0604");
+        assert_eq!(pcie_bridge_class, DeviceClassification::PcieDevice);
+
         // Test USB device classification
         let usb_class = manager.classify_usb_device("0x046d", "0xc52b", "USB 3.2 Gen 2");
         assert_eq!(usb_class, DeviceClassification::HighSpeedDevice);
@@ -6947,6 +7135,42 @@ SwapFree:        4096000 kB
         };
 
         let perf_cat = manager.determine_pci_performance_category(&pci_device);
+        assert_eq!(perf_cat, PerformanceCategory::HighTemperature);
+    }
+
+    #[test]
+    fn test_thunderbolt_device_classification() {
+        let manager = HardwareDeviceManager::new();
+
+        // Test Thunderbolt GPU classification
+        let gpu_class = manager.classify_thunderbolt_device("NVIDIA RTX 4090 External GPU", &40.0);
+        assert_eq!(gpu_class, DeviceClassification::HighPerformanceGpu);
+
+        // Test Thunderbolt storage classification
+        let storage_class = manager.classify_thunderbolt_device("Samsung X5 SSD", &40.0);
+        assert_eq!(storage_class, DeviceClassification::StorageController);
+
+        // Test Thunderbolt network classification
+        let network_class = manager.classify_thunderbolt_device("Thunderbolt Ethernet Bridge", &40.0);
+        assert_eq!(network_class, DeviceClassification::Network);
+
+        // Test high-speed device classification
+        let high_speed_class = manager.classify_thunderbolt_device("High-Speed Dock", &40.0);
+        assert_eq!(high_speed_class, DeviceClassification::HighSpeedDevice);
+
+        // Test Thunderbolt performance category
+        let thunderbolt_device = ThunderboltDeviceMetrics {
+            device_id: "0-1".to_string(),
+            device_name: "Test Device".to_string(),
+            connection_speed_gbps: 40.0,
+            status: "connected".to_string(),
+            temperature_c: Some(80.0),
+            power_w: Some(60.0),
+            device_classification: None,
+            performance_category: None,
+        };
+
+        let perf_cat = manager.determine_thunderbolt_performance_category(&thunderbolt_device);
         assert_eq!(perf_cat, PerformanceCategory::HighTemperature);
     }
 }
@@ -7818,6 +8042,8 @@ pub struct HardwareDeviceManager {
     last_known_pci_devices: Arc<Mutex<Vec<PciDeviceMetrics>>>, 
     /// Последние известные USB устройства
     last_known_usb_devices: Arc<Mutex<Vec<UsbDeviceMetrics>>>, 
+    /// Последние известные Thunderbolt устройства
+    last_known_thunderbolt_devices: Arc<Mutex<Vec<ThunderboltDeviceMetrics>>>, 
     /// Последние известные устройства хранения
     last_known_storage_devices: Arc<Mutex<Vec<StorageDeviceMetrics>>>, 
     /// Время последнего сканирования
@@ -7830,6 +8056,7 @@ impl HardwareDeviceManager {
         Self {
             last_known_pci_devices: Arc::new(Mutex::new(Vec::new())),
             last_known_usb_devices: Arc::new(Mutex::new(Vec::new())),
+            last_known_thunderbolt_devices: Arc::new(Mutex::new(Vec::new())),
             last_known_storage_devices: Arc::new(Mutex::new(Vec::new())),
             last_scan_time: Arc::new(Mutex::new(SystemTime::now())),
         }
@@ -7865,6 +8092,22 @@ impl HardwareDeviceManager {
         // Добавить новые устройства в результат
         for device in new_usb_devices {
             result.new_usb_devices.push(UsbDeviceMetricsWithClassification {
+                device_metrics: device,
+                device_classification: DeviceClassification::Other,
+                performance_category: PerformanceCategory::Normal,
+            });
+        }
+
+        // Обнаружить новые Thunderbolt устройства
+        let current_thunderbolt_devices = collect_thunderbolt_device_metrics()?;
+        let new_thunderbolt_devices = self.detect_new_devices(
+            &mut self.last_known_thunderbolt_devices.lock().unwrap(),
+            &current_thunderbolt_devices,
+        );
+        
+        // Добавить новые устройства в результат
+        for device in new_thunderbolt_devices {
+            result.new_thunderbolt_devices.push(ThunderboltDeviceMetricsWithClassification {
                 device_metrics: device,
                 device_classification: DeviceClassification::Other,
                 performance_category: PerformanceCategory::Normal,
@@ -7930,6 +8173,12 @@ impl HardwareDeviceManager {
             device.performance_category = self.determine_usb_performance_category(&device.device_metrics);
         }
 
+        // Классифицировать Thunderbolt устройства
+        for device in &mut result.new_thunderbolt_devices {
+            device.device_classification = self.classify_thunderbolt_device(&device.device_metrics.device_name, &device.device_metrics.connection_speed_gbps);
+            device.performance_category = self.determine_thunderbolt_performance_category(&device.device_metrics);
+        }
+
         // Классифицировать устройства хранения
         for device in &mut result.new_storage_devices {
             device.device_classification = self.classify_storage_device(&device.device_metrics.device_type, &device.device_metrics.model);
@@ -7947,11 +8196,37 @@ impl HardwareDeviceManager {
                 DeviceClassification::Graphics
             }
         } else if device_class.starts_with("0x01") { // Mass storage controller
-            DeviceClassification::StorageController
+            // Check for NVMe controllers (PCIe)
+            if device_class == "0x0108" { // NVMe controller
+                DeviceClassification::NvmeStorage
+            } else {
+                DeviceClassification::StorageController
+            }
         } else if device_class.starts_with("0x02") { // Network controller
             DeviceClassification::Network
         } else if device_class.starts_with("0x04") { // Multimedia
             DeviceClassification::Multimedia
+        } else if device_class.starts_with("0x06") { // Bridge device
+            // PCIe bridges
+            if device_class.starts_with("0x0604") { // PCIe bridge
+                DeviceClassification::PcieDevice
+            } else {
+                DeviceClassification::Other
+            }
+        } else if device_class.starts_with("0x08") { // System peripheral
+            // Security devices
+            if device_class.starts_with("0x0880") { // Security device
+                DeviceClassification::SecurityDevice
+            } else {
+                DeviceClassification::Other
+            }
+        } else if device_class.starts_with("0x0C") { // Serial bus controller
+            // USB controllers (often PCIe)
+            if device_class.starts_with("0x0C03") { // USB controller
+                DeviceClassification::HighSpeedDevice
+            } else {
+                DeviceClassification::Other
+            }
         } else {
             DeviceClassification::Other
         }
@@ -7998,6 +8273,84 @@ impl HardwareDeviceManager {
         PerformanceCategory::Normal
     }
 
+    /// Классифицировать Thunderbolt устройство
+    fn classify_thunderbolt_device(&self, device_name: &str, connection_speed: &f32) -> DeviceClassification {
+        // Classify based on device name and connection speed
+        let device_name_lower = device_name.to_lowercase();
+
+        // External GPUs
+        if device_name_lower.contains("gpu") || device_name_lower.contains("graphics") ||
+           device_name_lower.contains("radeon") || device_name_lower.contains("geforce") ||
+           device_name_lower.contains("quadro") || device_name_lower.contains("rtx") ||
+           device_name_lower.contains("external") && device_name_lower.contains("graphics") {
+            DeviceClassification::ExternalGpu
+        }
+        // Docking stations
+        else if device_name_lower.contains("dock") || device_name_lower.contains("station") ||
+                device_name_lower.contains("hub") || device_name_lower.contains("thunderbolt") &&
+                device_name_lower.contains("dock") {
+            DeviceClassification::DockingStation
+        }
+        // Storage devices
+        else if device_name_lower.contains("ssd") || device_name_lower.contains("storage") ||
+                device_name_lower.contains("drive") || device_name_lower.contains("disk") ||
+                device_name_lower.contains("nvme") {
+            DeviceClassification::StorageController
+        }
+        // Network devices
+        else if device_name_lower.contains("network") || device_name_lower.contains("ethernet") ||
+                device_name_lower.contains("thunderbolt") && device_name_lower.contains("bridge") ||
+                device_name_lower.contains("adapter") {
+            DeviceClassification::Network
+        }
+        // Virtualization devices
+        else if device_name_lower.contains("virtual") || device_name_lower.contains("vm") ||
+                device_name_lower.contains("kvm") || device_name_lower.contains("hypervisor") {
+            DeviceClassification::VirtualizationDevice
+        }
+        // Security devices
+        else if device_name_lower.contains("security") || device_name_lower.contains("encryption") ||
+                device_name_lower.contains("tpm") || device_name_lower.contains("trusted") {
+            DeviceClassification::SecurityDevice
+        }
+        // Thunderbolt-specific devices
+        else if device_name_lower.contains("thunderbolt") || device_name_lower.contains("usb4") {
+            DeviceClassification::ThunderboltDevice
+        }
+        // High-speed devices (Thunderbolt 3/4 with 40 Gbps or higher)
+        else if *connection_speed >= 40.0 {
+            DeviceClassification::HighSpeedDevice
+        }
+        // Default classification
+        else {
+            DeviceClassification::Other
+        }
+    }
+
+    /// Определить категорию производительности для Thunderbolt устройства
+    fn determine_thunderbolt_performance_category(&self, device: &ThunderboltDeviceMetrics) -> PerformanceCategory {
+        // Check for high temperature
+        if let Some(temp) = device.temperature_c {
+            if temp > 75.0 { // Thunderbolt devices typically run cooler than PCI devices
+                return PerformanceCategory::HighTemperature;
+            }
+        }
+
+        // Check for high power consumption
+        if let Some(power) = device.power_w {
+            if power > 50.0 { // Thunderbolt devices typically consume less power
+                return PerformanceCategory::HighPower;
+            }
+        }
+
+        // Check for low performance based on connection speed
+        if device.connection_speed_gbps < 20.0 {
+            return PerformanceCategory::LowPerformance;
+        }
+
+        PerformanceCategory::Normal
+    }
+
     /// Классифицировать устройство хранения
     fn classify_storage_device(&self, device_type: &str, model: &str) -> DeviceClassification {
         if device_type == "NVMe" {
@@ -8032,6 +8385,8 @@ pub struct HardwareDeviceDetectionResult {
     pub new_pci_devices: Vec<PciDeviceMetricsWithClassification>,
     /// Новые USB устройства
     pub new_usb_devices: Vec<UsbDeviceMetricsWithClassification>,
+    /// Новые Thunderbolt устройства
+    pub new_thunderbolt_devices: Vec<ThunderboltDeviceMetricsWithClassification>,
     /// Новые устройства хранения
     pub new_storage_devices: Vec<StorageDeviceMetricsWithClassification>,
     /// Время обнаружения
@@ -8043,6 +8398,7 @@ impl Default for HardwareDeviceDetectionResult {
         Self {
             new_pci_devices: Vec::new(),
             new_usb_devices: Vec::new(),
+            new_thunderbolt_devices: Vec::new(),
             new_storage_devices: Vec::new(),
             detection_time: SystemTime::now(),
         }
@@ -8054,12 +8410,14 @@ pub trait DeviceMetrics: Clone + PartialEq + Eq + std::hash::Hash {}
 
 impl DeviceMetrics for PciDeviceMetrics {}
 impl DeviceMetrics for UsbDeviceMetrics {}
+impl DeviceMetrics for ThunderboltDeviceMetrics {}
 impl DeviceMetrics for StorageDeviceMetrics {}
 
 // Implement Eq and Hash for device metrics structures
 impl Eq for PciDeviceMetrics {}
 impl Eq for UsbDeviceMetrics {}
 impl Eq for StorageDeviceMetrics {}
+impl Eq for ThunderboltDeviceMetrics {}
 
 impl std::hash::Hash for PciDeviceMetrics {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
@@ -8074,6 +8432,14 @@ impl std::hash::Hash for UsbDeviceMetrics {
         self.device_id.hash(state);
         self.vendor_id.hash(state);
         self.product_id.hash(state);
+    }
+}
+
+impl std::hash::Hash for ThunderboltDeviceMetrics {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.device_id.hash(state);
+        self.device_name.hash(state);
+        self.connection_speed_gbps.to_bits().hash(state);
     }
 }
 
@@ -8118,6 +8484,17 @@ pub struct StorageDeviceMetricsWithClassification {
     pub performance_category: PerformanceCategory,
 }
 
+/// Thunderbolt устройство с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ThunderboltDeviceMetricsWithClassification {
+    /// Метрики устройства
+    pub device_metrics: ThunderboltDeviceMetrics,
+    /// Классификация устройства
+    pub device_classification: DeviceClassification,
+    /// Категория производительности
+    pub performance_category: PerformanceCategory,
+}
+
 /// Классификация устройств
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum DeviceClassification {
@@ -8139,6 +8516,18 @@ pub enum DeviceClassification {
     Usb2Device,
     /// USB 1 устройство
     Usb1Device,
+    /// Thunderbolt устройство
+    ThunderboltDevice,
+    /// PCIe устройство
+    PcieDevice,
+    /// Внешнее GPU
+    ExternalGpu,
+    /// Док-станция
+    DockingStation,
+    /// Устройство виртуализации
+    VirtualizationDevice,
+    /// Устройство безопасности
+    SecurityDevice,
     /// NVMe хранилище
     NvmeStorage,
     /// SSD хранилище
@@ -8978,6 +9367,27 @@ pub struct StorageDeviceMetrics {
     pub read_speed_bps: Option<u64>,
     /// Скорость записи в байтах/сек
     pub write_speed_bps: Option<u64>,
+    /// Классификация устройства
+    pub device_classification: Option<DeviceClassification>,
+    /// Категория производительности
+    pub performance_category: Option<PerformanceCategory>,
+}
+
+/// Расширенные метрики Thunderbolt устройства с классификацией
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ThunderboltDeviceMetrics {
+    /// Идентификатор устройства
+    pub device_id: String,
+    /// Имя устройства
+    pub device_name: String,
+    /// Скорость соединения в Гбит/с
+    pub connection_speed_gbps: f32,
+    /// Состояние устройства (активно/неактивно)
+    pub status: String,
+    /// Температура устройства (если доступна)
+    pub temperature_c: Option<f32>,
+    /// Потребляемая мощность (если доступна)
+    pub power_w: Option<f32>,
     /// Классификация устройства
     pub device_classification: Option<DeviceClassification>,
     /// Категория производительности

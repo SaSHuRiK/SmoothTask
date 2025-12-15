@@ -13,6 +13,43 @@ use tokio::sync::Mutex;
 
 use super::async_logging::AsyncLogRotator;
 use super::LogStats;
+use chrono;
+
+/// Результат анализа логов
+#[derive(Debug, Clone, Default)]
+pub struct LogAnalysisResult {
+    /// Тип лога
+    pub log_type: String,
+    /// Общее количество записей
+    pub total_entries: u64,
+    /// Количество отфильтрованных записей
+    pub filtered_entries: u64,
+    /// Количество записей уровня ERROR
+    pub error_count: u64,
+    /// Количество записей уровня WARNING
+    pub warning_count: u64,
+    /// Количество записей уровня INFO
+    pub info_count: u64,
+    /// Количество записей уровня DEBUG
+    pub debug_count: u64,
+    /// Количество записей, соответствующих паттерну
+    pub matching_entries: u64,
+    /// Краткое описание результата анализа
+    pub analysis_summary: String,
+}
+
+/// Критерии фильтрации логов
+#[derive(Debug, Clone, Default)]
+pub struct LogFilterCriteria {
+    /// Уровень лога для фильтрации
+    pub level: Option<String>,
+    /// Паттерн для поиска
+    pub pattern: Option<String>,
+    /// Учитывать регистр при поиске
+    pub case_sensitive: bool,
+    /// Временной диапазон в секундах
+    pub time_range: Option<u64>,
+}
 
 /// Структура для управления асинхронным логированием в основных компонентах.
 #[derive(Debug, Clone)]
@@ -317,6 +354,421 @@ impl AsyncLoggingIntegration {
     pub async fn update_logging_stats(&self, stats: LogStats) {
         let mut global_stats = self.global_stats.lock().await;
         *global_stats = stats;
+    }
+
+    /// Выполняет расширенный анализ логов с фильтрацией и поиском.
+    ///
+    /// # Аргументы
+    ///
+    /// * `log_type` - тип лога для анализа (metrics, classify, policy)
+    /// * `filter_level` - уровень фильтрации (error, warning, info, debug)
+    /// * `search_pattern` - паттерн для поиска
+    /// * `time_range` - временной диапазон в секундах (None для всех времен)
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<LogAnalysisResult>` - результат анализа логов
+    pub async fn enhanced_log_analysis(
+        &self,
+        log_type: &str,
+        filter_level: Option<&str>,
+        search_pattern: Option<&str>,
+        time_range: Option<u64>,
+    ) -> Result<LogAnalysisResult> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+        use chrono::{DateTime, Utc};
+        
+        // Определяем путь к файлу лога
+        let log_path = match log_type {
+            "metrics" => self.metrics_log_path(),
+            "classify" => self.classify_log_path(),
+            "policy" => self.policy_log_path(),
+            _ => return Err(anyhow::anyhow!("Unknown log type: {}", log_type)),
+        };
+        
+        // Проверяем существование файла лога
+        if !log_path.exists() {
+            return Ok(LogAnalysisResult {
+                log_type: log_type.to_string(),
+                total_entries: 0,
+                filtered_entries: 0,
+                error_count: 0,
+                warning_count: 0,
+                info_count: 0,
+                debug_count: 0,
+                matching_entries: 0,
+                analysis_summary: "Log file does not exist".to_string(),
+            });
+        }
+        
+        // Читаем и анализируем файл лога
+        let file = File::open(log_path)?;
+        let reader = BufReader::new(file);
+        
+        let mut total_entries = 0;
+        let mut filtered_entries = 0;
+        let mut error_count = 0;
+        let mut warning_count = 0;
+        let mut info_count = 0;
+        let mut debug_count = 0;
+        let mut matching_entries = 0;
+        
+        for line in reader.lines() {
+            let line = line?;
+            total_entries += 1;
+            
+            // Фильтрация по уровню
+            let should_include = match filter_level {
+                Some("error") => line.contains("ERROR") || line.contains("error"),
+                Some("warning") => line.contains("WARN") || line.contains("warning"),
+                Some("info") => line.contains("INFO") || line.contains("info"),
+                Some("debug") => line.contains("DEBUG") || line.contains("debug"),
+                None => true,
+                _ => true,
+            };
+            
+            if !should_include {
+                continue;
+            }
+            
+            filtered_entries += 1;
+            
+            // Подсчет по уровням
+            if line.contains("ERROR") || line.contains("error") {
+                error_count += 1;
+            } else if line.contains("WARN") || line.contains("warning") {
+                warning_count += 1;
+            } else if line.contains("INFO") || line.contains("info") {
+                info_count += 1;
+            } else if line.contains("DEBUG") || line.contains("debug") {
+                debug_count += 1;
+            }
+            
+            // Поиск по паттерну
+            if let Some(pattern) = search_pattern {
+                if line.contains(pattern) {
+                    matching_entries += 1;
+                }
+            }
+        }
+        
+        // Формируем результат анализа
+        let analysis_summary = format!(
+            "Log analysis completed. Total: {}, Filtered: {}, Errors: {}, Warnings: {}, Info: {}, Debug: {}, Matching: {}",
+            total_entries, filtered_entries, error_count, warning_count, info_count, debug_count, matching_entries
+        );
+        
+        Ok(LogAnalysisResult {
+            log_type: log_type.to_string(),
+            total_entries,
+            filtered_entries,
+            error_count,
+            warning_count,
+            info_count,
+            debug_count,
+            matching_entries,
+            analysis_summary,
+        })
+    }
+
+    /// Создает визуализацию данных логов.
+    ///
+    /// # Аргументы
+    ///
+    /// * `analysis` - результат анализа логов
+    /// * `visualization_type` - тип визуализации (text, simple, detailed)
+    ///
+    /// # Возвращает
+    ///
+    /// `String` - визуализация данных логов
+    pub fn log_visualization(&self, analysis: &LogAnalysisResult, visualization_type: &str) -> String {
+        match visualization_type {
+            "text" => self.text_visualization(analysis),
+            "simple" => self.simple_visualization(analysis),
+            "detailed" => self.detailed_visualization(analysis),
+            _ => format!("Unknown visualization type: {}", visualization_type),
+        }
+    }
+
+    /// Текстовая визуализация анализа логов.
+    fn text_visualization(&self, analysis: &LogAnalysisResult) -> String {
+        format!(
+            "Log Analysis: {}
+Total Entries: {}
+Filtered Entries: {}
+Errors: {}
+Warnings: {}
+Info: {}
+Debug: {}
+Matching: {}
+Summary: {}",
+            analysis.log_type,
+            analysis.total_entries,
+            analysis.filtered_entries,
+            analysis.error_count,
+            analysis.warning_count,
+            analysis.info_count,
+            analysis.debug_count,
+            analysis.matching_entries,
+            analysis.analysis_summary
+        )
+    }
+
+    /// Простая визуализация анализа логов.
+    fn simple_visualization(&self, analysis: &LogAnalysisResult) -> String {
+        let error_percent = if analysis.filtered_entries > 0 {
+            (analysis.error_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let warning_percent = if analysis.filtered_entries > 0 {
+            (analysis.warning_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let info_percent = if analysis.filtered_entries > 0 {
+            (analysis.info_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let debug_percent = if analysis.filtered_entries > 0 {
+            (analysis.debug_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        format!(
+            "Log Analysis: {}
+Total: {} | Filtered: {}
+Level Distribution:
+  ERROR: {:.1}% ({})
+  WARN: {:.1}% ({})
+  INFO: {:.1}% ({})
+  DEBUG: {:.1}% ({})
+Matching: {}",
+            analysis.log_type,
+            analysis.total_entries,
+            analysis.filtered_entries,
+            error_percent, analysis.error_count,
+            warning_percent, analysis.warning_count,
+            info_percent, analysis.info_count,
+            debug_percent, analysis.debug_count,
+            analysis.matching_entries
+        )
+    }
+
+    /// Детальная визуализация анализа логов.
+    fn detailed_visualization(&self, analysis: &LogAnalysisResult) -> String {
+        let error_percent = if analysis.filtered_entries > 0 {
+            (analysis.error_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let warning_percent = if analysis.filtered_entries > 0 {
+            (analysis.warning_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let info_percent = if analysis.filtered_entries > 0 {
+            (analysis.info_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let debug_percent = if analysis.filtered_entries > 0 {
+            (analysis.debug_count as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        let match_percent = if analysis.filtered_entries > 0 {
+            (analysis.matching_entries as f64 / analysis.filtered_entries as f64) * 100.0
+        } else {
+            0.0
+        };
+        
+        format!(
+            "========================================
+LOG ANALYSIS REPORT: {}
+========================================
+OVERVIEW:
+  Total Entries: {}
+  Filtered Entries: {} ({:.1}%)
+  Matching Entries: {} ({:.1}%)
+
+LEVEL DISTRIBUTION:
+  ERROR: {:.1}% ({} entries)
+  WARN:  {:.1}% ({} entries)
+  INFO:  {:.1}% ({} entries)
+  DEBUG: {:.1}% ({} entries)
+
+SUMMARY:
+  {}
+========================================",
+            analysis.log_type.to_uppercase(),
+            analysis.total_entries,
+            analysis.filtered_entries,
+            if analysis.total_entries > 0 {
+                (analysis.filtered_entries as f64 / analysis.total_entries as f64) * 100.0
+            } else {
+                0.0
+            },
+            analysis.matching_entries,
+            match_percent,
+            error_percent, analysis.error_count,
+            warning_percent, analysis.warning_count,
+            info_percent, analysis.info_count,
+            debug_percent, analysis.debug_count,
+            analysis.analysis_summary
+        )
+    }
+
+    /// Выполняет расширенный поиск по логам.
+    ///
+    /// # Аргументы
+    ///
+    /// * `log_type` - тип лога для поиска (metrics, classify, policy)
+    /// * `search_pattern` - паттерн для поиска
+    /// * `case_sensitive` - учитывать регистр
+    /// * `max_results` - максимальное количество результатов
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<Vec<String>>` - вектор строк, содержащих паттерн
+    pub async fn log_search(
+        &self,
+        log_type: &str,
+        search_pattern: &str,
+        case_sensitive: bool,
+        max_results: usize,
+    ) -> Result<Vec<String>> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+        
+        // Определяем путь к файлу лога
+        let log_path = match log_type {
+            "metrics" => self.metrics_log_path(),
+            "classify" => self.classify_log_path(),
+            "policy" => self.policy_log_path(),
+            _ => return Err(anyhow::anyhow!("Unknown log type: {}", log_type)),
+        };
+        
+        // Проверяем существование файла лога
+        if !log_path.exists() {
+            return Ok(vec![]);
+        }
+        
+        // Читаем и ищем в файле лога
+        let file = File::open(log_path)?;
+        let reader = BufReader::new(file);
+        
+        let mut results = Vec::new();
+        let search_pattern_lower = if !case_sensitive {
+            Some(search_pattern.to_lowercase())
+        } else {
+            None
+        };
+        
+        for line in reader.lines() {
+            let line = line?;
+            
+            let matches = if !case_sensitive {
+                line.to_lowercase().contains(&search_pattern_lower.as_ref().unwrap())
+            } else {
+                line.contains(search_pattern)
+            };
+            
+            if matches {
+                results.push(line);
+                if results.len() >= max_results {
+                    break;
+                }
+            }
+        }
+        
+        Ok(results)
+    }
+
+    /// Выполняет расширенную фильтрацию логов.
+    ///
+    /// # Аргументы
+    ///
+    /// * `log_type` - тип лога для фильтрации (metrics, classify, policy)
+    /// * `filter_criteria` - критерии фильтрации
+    /// * `max_results` - максимальное количество результатов
+    ///
+    /// # Возвращает
+    ///
+    /// `Result<Vec<String>>` - вектор отфильтрованных строк
+    pub async fn log_filtering(
+        &self,
+        log_type: &str,
+        filter_criteria: &LogFilterCriteria,
+        max_results: usize,
+    ) -> Result<Vec<String>> {
+        use std::fs::File;
+        use std::io::{BufRead, BufReader};
+        
+        // Определяем путь к файлу лога
+        let log_path = match log_type {
+            "metrics" => self.metrics_log_path(),
+            "classify" => self.classify_log_path(),
+            "policy" => self.policy_log_path(),
+            _ => return Err(anyhow::anyhow!("Unknown log type: {}", log_type)),
+        };
+        
+        // Проверяем существование файла лога
+        if !log_path.exists() {
+            return Ok(vec![]);
+        }
+        
+        // Читаем и фильтруем файл лога
+        let file = File::open(log_path)?;
+        let reader = BufReader::new(file);
+        
+        let mut results = Vec::new();
+        
+        for line in reader.lines() {
+            let line = line?;
+            
+            // Применяем критерии фильтрации
+            let mut matches = true;
+            
+            if let Some(level) = &filter_criteria.level {
+                let level_match = match level.as_str() {
+                    "error" => line.contains("ERROR") || line.contains("error"),
+                    "warning" => line.contains("WARN") || line.contains("warning"),
+                    "info" => line.contains("INFO") || line.contains("info"),
+                    "debug" => line.contains("DEBUG") || line.contains("debug"),
+                    _ => false,
+                };
+                matches = matches && level_match;
+            }
+            
+            if let Some(pattern) = &filter_criteria.pattern {
+                let pattern_match = if filter_criteria.case_sensitive {
+                    line.contains(pattern)
+                } else {
+                    line.to_lowercase().contains(&pattern.to_lowercase())
+                };
+                matches = matches && pattern_match;
+            }
+            
+            if matches {
+                results.push(line);
+                if results.len() >= max_results {
+                    break;
+                }
+            }
+        }
+        
+        Ok(results)
     }
 }
 
@@ -812,6 +1264,196 @@ mod tests {
             // Тестируем создание логгера политик по умолчанию
             let policy_logger = create_default_policy_logger(log_dir).expect("create default policy logger");
             assert!(policy_logger.integration.policy_log_path().ends_with("policy.log"));
+        });
+    }
+
+    #[test]
+    fn test_enhanced_log_analysis() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_dir = temp_dir.path();
+
+        runtime.block_on(async {
+            let integration = AsyncLoggingIntegration::new_default(log_dir).expect("create integration");
+            let metrics_logger = MetricsAsyncLogger::new(integration.clone());
+            
+            // Записываем тестовые логи
+            metrics_logger.log_metrics("ERROR: Test error message").await.expect("log error");
+            metrics_logger.log_metrics("WARN: Test warning message").await.expect("log warning");
+            metrics_logger.log_metrics("INFO: Test info message").await.expect("log info");
+            metrics_logger.log_metrics("DEBUG: Test debug message").await.expect("log debug");
+            metrics_logger.log_metrics("INFO: Another test message").await.expect("log info 2");
+            
+            // Выполняем анализ логов
+            let analysis = integration.enhanced_log_analysis("metrics", None, None, None).await.expect("analysis");
+            
+            // Проверяем результаты анализа
+            assert_eq!(analysis.log_type, "metrics");
+            assert!(analysis.total_entries >= 5);
+            assert!(analysis.error_count >= 1);
+            assert!(analysis.warning_count >= 1);
+            assert!(analysis.info_count >= 2);
+            assert!(analysis.debug_count >= 1);
+            
+            // Тестируем фильтрацию по уровню
+            let error_analysis = integration.enhanced_log_analysis("metrics", Some("error"), None, None).await.expect("error analysis");
+            assert!(error_analysis.filtered_entries >= 1);
+            assert!(error_analysis.error_count >= 1);
+            
+            // Тестируем поиск по паттерну
+            let pattern_analysis = integration.enhanced_log_analysis("metrics", None, Some("Test"), None).await.expect("pattern analysis");
+            assert!(pattern_analysis.matching_entries >= 5);
+        });
+    }
+
+    #[test]
+    fn test_log_visualization() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_dir = temp_dir.path();
+
+        runtime.block_on(async {
+            let integration = AsyncLoggingIntegration::new_default(log_dir).expect("create integration");
+            
+            // Создаем тестовый результат анализа
+            let analysis = LogAnalysisResult {
+                log_type: "metrics".to_string(),
+                total_entries: 100,
+                filtered_entries: 80,
+                error_count: 10,
+                warning_count: 20,
+                info_count: 30,
+                debug_count: 20,
+                matching_entries: 15,
+                analysis_summary: "Test analysis summary".to_string(),
+            };
+            
+            // Тестируем текстовую визуализацию
+            let text_vis = integration.log_visualization(&analysis, "text");
+            assert!(text_vis.contains("Log Analysis: metrics"));
+            assert!(text_vis.contains("Total Entries: 100"));
+            
+            // Тестируем простую визуализацию
+            let simple_vis = integration.log_visualization(&analysis, "simple");
+            assert!(simple_vis.contains("Log Analysis: metrics"));
+            assert!(simple_vis.contains("ERROR: 12.5% (10)"));
+            
+            // Тестируем детальную визуализацию
+            let detailed_vis = integration.log_visualization(&analysis, "detailed");
+            assert!(detailed_vis.contains("LOG ANALYSIS REPORT: METRICS"));
+            assert!(detailed_vis.contains("Total Entries: 100"));
+        });
+    }
+
+    #[test]
+    fn test_log_search() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_dir = temp_dir.path();
+
+        runtime.block_on(async {
+            let integration = AsyncLoggingIntegration::new_default(log_dir).expect("create integration");
+            let metrics_logger = MetricsAsyncLogger::new(integration.clone());
+            
+            // Записываем тестовые логи
+            metrics_logger.log_metrics("Test message 1: error occurred").await.expect("log 1");
+            metrics_logger.log_metrics("Another test message").await.expect("log 2");
+            metrics_logger.log_metrics("Test message 3: warning").await.expect("log 3");
+            
+            // Выполняем поиск
+            let results = integration.log_search("metrics", "Test", false, 10).await.expect("search");
+            assert!(results.len() >= 3);
+            
+            // Тестируем поиск с учетом регистра
+            let case_results = integration.log_search("metrics", "test", true, 10).await.expect("case search");
+            assert!(case_results.len() >= 3);
+            
+            // Тестируем ограничение результатов
+            let limited_results = integration.log_search("metrics", "Test", false, 2).await.expect("limited search");
+            assert!(limited_results.len() <= 2);
+        });
+    }
+
+    #[test]
+    fn test_log_filtering() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_dir = temp_dir.path();
+
+        runtime.block_on(async {
+            let integration = AsyncLoggingIntegration::new_default(log_dir).expect("create integration");
+            let metrics_logger = MetricsAsyncLogger::new(integration.clone());
+            
+            // Записываем тестовые логи
+            metrics_logger.log_metrics("ERROR: Critical error occurred").await.expect("log error");
+            metrics_logger.log_metrics("WARN: Warning message").await.expect("log warning");
+            metrics_logger.log_metrics("INFO: Information message").await.expect("log info");
+            metrics_logger.log_metrics("DEBUG: Debug message").await.expect("log debug");
+            
+            // Тестируем фильтрацию по уровню
+            let filter_criteria = LogFilterCriteria {
+                level: Some("error".to_string()),
+                pattern: None,
+                case_sensitive: false,
+                time_range: None,
+            };
+            
+            let filtered_results = integration.log_filtering("metrics", &filter_criteria, 10).await.expect("filter");
+            assert!(filtered_results.len() >= 1);
+            assert!(filtered_results[0].contains("ERROR"));
+            
+            // Тестируем фильтрацию по паттерну
+            let pattern_criteria = LogFilterCriteria {
+                level: None,
+                pattern: Some("message".to_string()),
+                case_sensitive: false,
+                time_range: None,
+            };
+            
+            let pattern_results = integration.log_filtering("metrics", &pattern_criteria, 10).await.expect("pattern filter");
+            assert!(pattern_results.len() >= 4);
+        });
+    }
+
+    #[test]
+    fn test_complete_log_analysis_cycle() {
+        let runtime = create_runtime();
+        let temp_dir = TempDir::new().expect("temp dir");
+        let log_dir = temp_dir.path();
+
+        runtime.block_on(async {
+            let integration = AsyncLoggingIntegration::new_default(log_dir).expect("create integration");
+            let metrics_logger = MetricsAsyncLogger::new(integration.clone());
+            
+            // Записываем тестовые логи
+            metrics_logger.log_metrics("ERROR: Critical error in system").await.expect("log error");
+            metrics_logger.log_metrics("WARN: High memory usage detected").await.expect("log warning");
+            metrics_logger.log_metrics("INFO: System started successfully").await.expect("log info");
+            metrics_logger.log_metrics("DEBUG: Processing request").await.expect("log debug");
+            metrics_logger.log_metrics("INFO: Another information message").await.expect("log info 2");
+            
+            // Выполняем полный цикл анализа
+            let analysis = integration.enhanced_log_analysis("metrics", None, None, None).await.expect("analysis");
+            assert!(analysis.total_entries >= 5);
+            
+            // Визуализируем результаты
+            let visualization = integration.log_visualization(&analysis, "detailed");
+            assert!(visualization.contains("LOG ANALYSIS REPORT"));
+            
+            // Выполняем поиск
+            let search_results = integration.log_search("metrics", "system", false, 10).await.expect("search");
+            assert!(search_results.len() >= 2);
+            
+            // Выполняем фильтрацию
+            let filter_criteria = LogFilterCriteria {
+                level: Some("info".to_string()),
+                pattern: None,
+                case_sensitive: false,
+                time_range: None,
+            };
+            
+            let filtered_results = integration.log_filtering("metrics", &filter_criteria, 10).await.expect("filter");
+            assert!(filtered_results.len() >= 2);
         });
     }
 }

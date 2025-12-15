@@ -417,6 +417,7 @@ pub struct SecurityMonitorImpl {
     security_state: Arc<tokio::sync::RwLock<SecurityMonitor>>,
     config: SecurityMonitorConfig,
     stats: Arc<tokio::sync::RwLock<SecurityStats>>,
+    notifier: Option<Arc<dyn crate::notifications::Notifier>>,
 }
 
 #[async_trait::async_trait]
@@ -457,12 +458,20 @@ impl SecurityMonitorTrait for SecurityMonitorImpl {
             state.event_history.remove(0); // Удаляем самое старое событие
         }
 
-        state.event_history.push(event);
+        // Проверяем, нужно ли отправлять уведомление для этого события
+        let should_notify = self.should_send_notification_for_event(&event);
+
+        state.event_history.push(event.clone());
 
         // Обновляем статистику
         let mut stats = self.stats.write().await;
         stats.total_events += 1;
         stats.last_event_time = Some(Utc::now());
+
+        // Отправляем уведомление, если нужно
+        if should_notify {
+            self.send_security_notification(&event).await?;
+        }
 
         Ok(())
     }
@@ -524,12 +533,23 @@ impl SecurityMonitorImpl {
             security_state: Arc::new(tokio::sync::RwLock::new(SecurityMonitor::default())),
             config,
             stats: Arc::new(tokio::sync::RwLock::new(SecurityStats::default())),
+            notifier: None,
         }
     }
 
     /// Создать новый SecurityMonitorImpl с конфигурацией по умолчанию.
     pub fn new_default() -> Self {
         Self::new(SecurityMonitorConfig::default())
+    }
+
+    /// Создать новый SecurityMonitorImpl с уведомителем.
+    pub fn new_with_notifier(config: SecurityMonitorConfig, notifier: Arc<dyn crate::notifications::Notifier>) -> Self {
+        Self {
+            security_state: Arc::new(tokio::sync::RwLock::new(SecurityMonitor::default())),
+            config,
+            stats: Arc::new(tokio::sync::RwLock::new(SecurityStats::default())),
+            notifier: Some(notifier),
+        }
     }
 
     /// Выполнить проверку безопасности.
@@ -586,19 +606,76 @@ impl SecurityMonitorImpl {
         // Получаем информацию о процессах с высоким использованием ресурсов
         let high_resource_processes = self.get_high_resource_processes().await?;
 
+        // Анализируем процессы на предмет аномального поведения
         for process in high_resource_processes {
+            // Проверяем, является ли процесс известным системным процессом
+            let is_system_process = self.is_system_process(&process.name);
+            
+            // Определяем уровень серьезности на основе типа процесса и использования ресурсов
+            let (severity, description, recommendations) = if is_system_process {
+                // Системные процессы с высоким использованием ресурсов
+                if process.cpu_usage > 95.0 || process.memory_usage > 90.0 {
+                    (SecurityEventSeverity::High, 
+                     format!("Critical resource usage by system process: {} (CPU: {:.1}%, Memory: {:.1}%)", 
+                         process.name, process.cpu_usage, process.memory_usage),
+                     "Investigate immediately - this may indicate a system issue or resource exhaustion attack".to_string())
+                } else {
+                    (SecurityEventSeverity::Medium,
+                     format!("High resource usage by system process: {} (CPU: {:.1}%, Memory: {:.1}%)", 
+                         process.name, process.cpu_usage, process.memory_usage),
+                     "Monitor this system process - high resource usage may be legitimate but should be investigated".to_string())
+                }
+            } else {
+                // Пользовательские процессы с высоким использованием ресурсов
+                if process.cpu_usage > 95.0 || process.memory_usage > 90.0 {
+                    (SecurityEventSeverity::High,
+                     format!("Critical resource usage by user process: {} (CPU: {:.1}%, Memory: {:.1}%)", 
+                         process.name, process.cpu_usage, process.memory_usage),
+                     "Investigate immediately - this may indicate malicious activity or resource abuse".to_string())
+                } else {
+                    (SecurityEventSeverity::Medium,
+                     format!("High resource usage by user process: {} (CPU: {:.1}%, Memory: {:.1}%)", 
+                         process.name, process.cpu_usage, process.memory_usage),
+                     "Monitor this user process - high resource usage may be legitimate but should be investigated".to_string())
+                }
+            };
+
+            // Анализируем поведение процесса для более точной классификации
+            let behavior = self.analyze_process_behavior(process.pid).await?;
+            let anomaly_patterns = self.detect_resource_anomaly_patterns(&behavior).await?;
+
+            // Если обнаружены паттерны аномалий, повышаем серьезность
+            let final_severity = if !anomaly_patterns.is_empty() {
+                match severity {
+                    SecurityEventSeverity::High => SecurityEventSeverity::Critical,
+                    SecurityEventSeverity::Medium => SecurityEventSeverity::High,
+                    _ => SecurityEventSeverity::High,
+                }
+            } else {
+                severity
+            };
+
+            // Добавляем информацию о паттернах в детали
+            let mut details = format!("Process path: {}", process.exe_path.unwrap_or_default());
+            if !anomaly_patterns.is_empty() {
+                details.push_str("\nAnomaly patterns detected:");
+                for pattern in &anomaly_patterns {
+                    details.push_str(&format!("\n- {}: {} (threshold: {}, current: {})", 
+                        pattern.pattern_type, pattern.description, pattern.threshold, pattern.current_value));
+                }
+            }
+
             let event = SecurityEvent {
                 event_id: uuid::Uuid::new_v4().to_string(),
                 timestamp: Utc::now(),
                 event_type: SecurityEventType::AnomalousResourceUsage,
-                severity: SecurityEventSeverity::Medium,
+                severity: final_severity,
                 status: SecurityEventStatus::New,
                 process_name: Some(process.name.clone()),
                 process_id: Some(process.pid),
-                description: format!("High resource usage detected: {} (CPU: {:.1}%, Memory: {:.1}%)", 
-                    process.name, process.cpu_usage, process.memory_usage),
-                details: Some(format!("Process path: {}", process.exe_path.unwrap_or_default())),
-                recommendations: Some("Monitor this process and investigate if the high resource usage is justified".to_string()),
+                description,
+                details: Some(details),
+                recommendations: Some(recommendations),
                 resolved_time: None,
             };
 
@@ -606,6 +683,93 @@ impl SecurityMonitorImpl {
         }
 
         Ok(())
+    }
+
+    /// Проверка, является ли процесс системным.
+    fn is_system_process(&self, process_name: &str) -> bool {
+        let system_processes = [
+            "systemd", "init", "kthreadd", "ksoftirqd", "kworker", 
+            "rcu_sched", "rcu_bh", "migration", "watchdog", "idle",
+            "smoothtaskd", "dbus", "polkitd", "rsyslogd", "cron",
+            "sshd", "networkd", "udevd", "thermald", "bluetoothd",
+        ];
+
+        system_processes.contains(&process_name)
+    }
+
+    /// Обнаружение паттернов аномалий в использовании ресурсов.
+    async fn detect_resource_anomaly_patterns(&self, behavior: &ProcessBehavior) -> Result<Vec<SuspiciousBehaviorPattern>> {
+        let mut patterns = Vec::new();
+
+        // Паттерн 1: Аномально высокое количество дочерних процессов
+        if behavior.child_count > 20 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "anomalous_child_process_count".to_string(),
+                description: "Process has anomalously high number of child processes".to_string(),
+                severity: SecurityEventSeverity::High,
+                threshold: 20.0,
+                current_value: behavior.child_count as f32,
+            });
+        }
+
+        // Паттерн 2: Аномально высокое количество потоков
+        if behavior.thread_count > 200 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "anomalous_thread_count".to_string(),
+                description: "Process has anomalously high number of threads".to_string(),
+                severity: SecurityEventSeverity::High,
+                threshold: 200.0,
+                current_value: behavior.thread_count as f32,
+            });
+        }
+
+        // Паттерн 3: Аномально высокое количество открытых файлов
+        if behavior.open_files_count > 200 {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "anomalous_open_files_count".to_string(),
+                description: "Process has anomalously high number of open files".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                threshold: 200.0,
+                current_value: behavior.open_files_count as f32,
+            });
+        }
+
+        // Паттерн 4: Аномально высокое использование CPU для типа процесса
+        if behavior.cpu_usage > 95.0 && !behavior.device_name.to_lowercase().contains("render") && 
+           !behavior.device_name.to_lowercase().contains("gpu") {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "anomalous_cpu_usage".to_string(),
+                description: "Process has anomalously high CPU usage for its type".to_string(),
+                severity: SecurityEventSeverity::High,
+                threshold: 95.0,
+                current_value: behavior.cpu_usage,
+            });
+        }
+
+        // Паттерн 5: Аномально высокое использование памяти для типа процесса
+        if behavior.memory_usage > 85.0 && !behavior.device_name.to_lowercase().contains("database") && 
+           !behavior.device_name.to_lowercase().contains("java") {
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "anomalous_memory_usage".to_string(),
+                description: "Process has anomalously high memory usage for its type".to_string(),
+                severity: SecurityEventSeverity::High,
+                threshold: 85.0,
+                current_value: behavior.memory_usage,
+            });
+        }
+
+        // Паттерн 6: Аномально высокая частота создания дочерних процессов
+        if behavior.child_creation_rate > 5.0 { // более 5 процессов в минуту
+            patterns.push(SuspiciousBehaviorPattern {
+                pattern_type: "anomalous_child_creation_rate".to_string(),
+                description: "Process has anomalously high child process creation rate".to_string(),
+                severity: SecurityEventSeverity::Critical,
+                threshold: 5.0,
+                current_value: behavior.child_creation_rate,
+            });
+        }
+
+        Ok(patterns)
     }
 
     /// Проверка подозрительных сетевых соединений.
@@ -636,6 +800,46 @@ impl SecurityMonitorImpl {
             }
         }
 
+        Ok(())
+    }
+
+    /// Проверка, нужно ли отправлять уведомление для этого события.
+    fn should_send_notification_for_event(&self, event: &SecurityEvent) -> bool {
+        // Проверяем, включены ли уведомления в конфигурации
+        match event.severity {
+            SecurityEventSeverity::Critical => self.config.notification_settings.enable_critical_notifications,
+            SecurityEventSeverity::High => self.config.notification_settings.enable_high_notifications,
+            SecurityEventSeverity::Medium => self.config.notification_settings.enable_medium_notifications,
+            SecurityEventSeverity::Low => false, // Не отправляем уведомления для низкого уровня
+            SecurityEventSeverity::Info => false, // Не отправляем уведомления для информационного уровня
+        }
+    }
+
+    /// Отправить уведомление о событии безопасности.
+    async fn send_security_notification(&self, event: &SecurityEvent) -> Result<()> {
+        if let Some(notifier) = &self.notifier {
+            // Преобразуем уровень серьезности события безопасности в тип уведомления
+            let notification_type = match event.severity {
+                SecurityEventSeverity::Critical => crate::notifications::NotificationType::Critical,
+                SecurityEventSeverity::High => crate::notifications::NotificationType::Critical,
+                SecurityEventSeverity::Medium => crate::notifications::NotificationType::Warning,
+                SecurityEventSeverity::Low => crate::notifications::NotificationType::Info,
+                SecurityEventSeverity::Info => crate::notifications::NotificationType::Info,
+            };
+
+            // Создаем уведомление
+            let notification = crate::notifications::Notification::new(
+                notification_type,
+                format!("Security Event: {}", event.event_type),
+                event.description.clone(),
+            ).with_details(event.details.clone().unwrap_or_default());
+
+            // Отправляем уведомление
+            notifier.send_notification(&notification).await?;
+            
+            tracing::info!("Sent security notification for event: {}", event.event_id);
+        }
+        
         Ok(())
     }
 
@@ -1449,6 +1653,141 @@ mod tests {
 
         // Проверяем, что проверка завершилась успешно
         assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_resource_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовое поведение с аномальными значениями
+        let mut behavior = ProcessBehavior {
+            pid: 1234,
+            child_count: 25, // Выше порога
+            thread_count: 250, // Выше порога
+            open_files_count: 250, // Выше порога
+            network_connections_count: 0,
+            start_time: None,
+            parent_pid: None,
+            parent_name: None,
+            cpu_usage: 96.0, // Выше порога
+            memory_usage: 86.0, // Выше порога
+            child_creation_rate: 6.0, // Выше порога
+        };
+
+        // Проверяем обнаружение паттернов аномалий
+        let patterns = monitor.detect_resource_anomaly_patterns(&behavior).await.unwrap();
+
+        // Должны быть обнаружены несколько паттернов
+        assert!(!patterns.is_empty());
+        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_child_process_count"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_thread_count"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_open_files_count"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_cpu_usage"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_memory_usage"));
+        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_child_creation_rate"));
+    }
+
+    #[tokio::test]
+    async fn test_system_process_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Проверяем обнаружение системных процессов
+        assert!(monitor.is_system_process("systemd"));
+        assert!(monitor.is_system_process("kthreadd"));
+        assert!(monitor.is_system_process("smoothtaskd"));
+
+        // Проверяем, что пользовательские процессы не обнаруживаются как системные
+        assert!(!monitor.is_system_process("firefox"));
+        assert!(!monitor.is_system_process("chrome"));
+        assert!(!monitor.is_system_process("python"));
+    }
+
+    #[tokio::test]
+    async fn test_notification_integration() {
+        use crate::notifications::{NotificationType, StubNotifier};
+        use std::sync::Arc;
+
+        let config = SecurityMonitorConfig::default();
+        let notifier = Arc::new(StubNotifier::default());
+        let monitor = SecurityMonitorImpl::new_with_notifier(config, notifier);
+
+        // Создаем тестовое событие безопасности
+        let event = SecurityEvent {
+            event_id: "test-event-1".to_string(),
+            timestamp: Utc::now(),
+            event_type: SecurityEventType::SuspiciousProcess,
+            severity: SecurityEventSeverity::High,
+            status: SecurityEventStatus::New,
+            process_name: Some("test_process".to_string()),
+            process_id: Some(1234),
+            description: "Test suspicious process for notification".to_string(),
+            details: Some("Test details for notification".to_string()),
+            recommendations: Some("Test recommendations".to_string()),
+            resolved_time: None,
+        };
+
+        // Проверяем, что уведомление должно быть отправлено для высокого уровня серьезности
+        assert!(monitor.should_send_notification_for_event(&event));
+
+        // Добавляем событие (должно отправить уведомление)
+        let result = monitor.add_security_event(event).await;
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_notification_thresholds() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Проверяем пороги уведомлений
+        let critical_event = SecurityEvent {
+            event_id: "test-critical".to_string(),
+            timestamp: Utc::now(),
+            event_type: SecurityEventType::PotentialAttack,
+            severity: SecurityEventSeverity::Critical,
+            status: SecurityEventStatus::New,
+            process_name: None,
+            process_id: None,
+            description: "Critical test event".to_string(),
+            details: None,
+            recommendations: None,
+            resolved_time: None,
+        };
+
+        let medium_event = SecurityEvent {
+            event_id: "test-medium".to_string(),
+            timestamp: Utc::now(),
+            event_type: SecurityEventType::AnomalousResourceUsage,
+            severity: SecurityEventSeverity::Medium,
+            status: SecurityEventStatus::New,
+            process_name: None,
+            process_id: None,
+            description: "Medium test event".to_string(),
+            details: None,
+            recommendations: None,
+            resolved_time: None,
+        };
+
+        let low_event = SecurityEvent {
+            event_id: "test-low".to_string(),
+            timestamp: Utc::now(),
+            event_type: SecurityEventType::UnusualProcessActivity,
+            severity: SecurityEventSeverity::Low,
+            status: SecurityEventStatus::New,
+            process_name: None,
+            process_id: None,
+            description: "Low test event".to_string(),
+            details: None,
+            recommendations: None,
+            resolved_time: None,
+        };
+
+        // Проверяем пороги уведомлений
+        assert!(monitor.should_send_notification_for_event(&critical_event));
+        assert!(monitor.should_send_notification_for_event(&medium_event));
+        assert!(!monitor.should_send_notification_for_event(&low_event));
     }
 }
 

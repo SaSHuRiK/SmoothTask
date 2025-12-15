@@ -197,6 +197,46 @@ pub struct VmManagementResult {
     pub exit_code: i32,
 }
 
+/// VM resource utilization analysis
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VmResourceAnalysis {
+    /// VM ID
+    pub vm_id: String,
+    /// CPU utilization percentage (0-100)
+    pub cpu_utilization: f64,
+    /// Memory utilization percentage (0-100)
+    pub memory_utilization: f64,
+    /// Disk utilization percentage (0-100)
+    pub disk_utilization: f64,
+    /// Network utilization percentage (0-100)
+    pub network_utilization: f64,
+    /// Overall resource utilization percentage (0-100)
+    pub overall_utilization: f64,
+    /// Whether VM is overloaded (utilization > 80%)
+    pub is_overloaded: bool,
+    /// Whether VM is underutilized (utilization < 30%)
+    pub is_underutilized: bool,
+}
+
+/// VM scaling plan
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VmScalingPlan {
+    /// VM ID
+    pub vm_id: String,
+    /// CPU scaling factor
+    pub cpu_scaling_factor: f64,
+    /// Memory scaling factor
+    pub memory_scaling_factor: f64,
+    /// Disk I/O scaling factor
+    pub disk_scaling_factor: f64,
+    /// Network bandwidth scaling factor
+    pub network_scaling_factor: f64,
+    /// Whether scaling should be applied
+    pub should_scale: bool,
+    /// Human-readable recommendation
+    pub recommendation: String,
+}
+
 /// Simulated VM data for testing and fallback scenarios
 #[derive(Debug, Clone)]
 struct SimulatedVmData {
@@ -655,6 +695,151 @@ pub fn perform_vm_recovery(vm_id: &str) -> Result<VmManagementResult> {
     Ok(result)
 }
 
+/// Monitor VM load and resource usage patterns
+pub fn monitor_vm_load(vm_id: &str) -> Result<VmMetrics> {
+    debug!("Monitoring load for VM: {}", vm_id);
+    
+    let metrics = collect_vm_metrics(vm_id)?;
+    
+    info!("VM {} load monitoring: CPU={}%, Memory={}% ({} bytes), Disk IOPS={}, Network BW={} bytes/s",
+          vm_id,
+          metrics.cpu_usage.total_usage,
+          metrics.memory_usage.usage_percent,
+          metrics.memory_usage.usage,
+          metrics.disk_usage.iops,
+          metrics.network_stats.bandwidth);
+    
+    Ok(metrics)
+}
+
+/// Analyze VM resource usage patterns
+pub fn analyze_vm_resource_usage(metrics: &VmMetrics) -> Result<VmResourceAnalysis> {
+    debug!("Analyzing resource usage for VM: {}", metrics.id);
+    
+    let cpu_usage = metrics.cpu_usage.total_usage;
+    let memory_usage_percent = metrics.memory_usage.usage_percent;
+    let disk_iops = metrics.disk_usage.iops as f64;
+    let network_bandwidth = metrics.network_stats.bandwidth as f64;
+    
+    // Calculate resource utilization scores (0-100)
+    let cpu_score = cpu_usage;
+    let memory_score = memory_usage_percent;
+    let disk_score = (disk_iops / 1000.0).min(100.0); // Normalize to 0-100
+    let network_score = (network_bandwidth / 10_000_000.0).min(100.0); // Normalize to 0-100
+    
+    let overall_score = (cpu_score + memory_score + disk_score + network_score) / 4.0;
+    
+    let analysis = VmResourceAnalysis {
+        vm_id: metrics.id.clone(),
+        cpu_utilization: cpu_score,
+        memory_utilization: memory_score,
+        disk_utilization: disk_score,
+        network_utilization: network_score,
+        overall_utilization: overall_score,
+        is_overloaded: overall_score > 80.0,
+        is_underutilized: overall_score < 30.0,
+    };
+    
+    info!("VM {} resource analysis: Overall={:.1}%, CPU={:.1}%, Memory={:.1}%, Disk={:.1}%, Network={:.1}%",
+          metrics.id, analysis.overall_utilization, analysis.cpu_utilization,
+          analysis.memory_utilization, analysis.disk_utilization, analysis.network_utilization);
+    
+    Ok(analysis)
+}
+
+/// Calculate VM scaling needs based on resource analysis
+pub fn calculate_vm_scaling_needs(analysis: &VmResourceAnalysis) -> Result<VmScalingPlan> {
+    debug!("Calculating scaling needs for VM: {}", analysis.vm_id);
+    
+    let mut cpu_scaling = 1.0;
+    let mut memory_scaling = 1.0;
+    let mut disk_scaling = 1.0;
+    let mut network_scaling = 1.0;
+    
+    // Determine scaling factors based on utilization
+    if analysis.is_overloaded {
+        // Scale up if overloaded
+        cpu_scaling = 1.2;
+        memory_scaling = 1.2;
+        disk_scaling = 1.2;
+        network_scaling = 1.2;
+    } else if analysis.is_underutilized {
+        // Scale down if underutilized
+        cpu_scaling = 0.8;
+        memory_scaling = 0.8;
+        disk_scaling = 0.8;
+        network_scaling = 0.8;
+    }
+    
+    let scaling_plan = VmScalingPlan {
+        vm_id: analysis.vm_id.clone(),
+        cpu_scaling_factor: cpu_scaling,
+        memory_scaling_factor: memory_scaling,
+        disk_scaling_factor: disk_scaling,
+        network_scaling_factor: network_scaling,
+        should_scale: analysis.is_overloaded || analysis.is_underutilized,
+        recommendation: if analysis.is_overloaded {
+            "Scale up resources - VM is overloaded".to_string()
+        } else if analysis.is_underutilized {
+            "Scale down resources - VM is underutilized".to_string()
+        } else {
+            "No scaling needed - VM is optimally loaded".to_string()
+        },
+    };
+    
+    info!("VM {} scaling plan: CPU={:.1}x, Memory={:.1}x, Disk={:.1}x, Network={:.1}x - {}",
+          analysis.vm_id, scaling_plan.cpu_scaling_factor, scaling_plan.memory_scaling_factor,
+          scaling_plan.disk_scaling_factor, scaling_plan.network_scaling_factor,
+          scaling_plan.recommendation);
+    
+    Ok(scaling_plan)
+}
+
+/// Apply automatic scaling based on scaling plan
+pub fn apply_vm_auto_scaling(vm_id: &str, scaling_plan: &VmScalingPlan, current_metrics: &VmMetrics) -> Result<VmManagementResult> {
+    debug!("Applying auto-scaling for VM: {}", vm_id);
+    
+    if !scaling_plan.should_scale {
+        let result = VmManagementResult {
+            success: true,
+            output: "No scaling needed - VM is optimally loaded".to_string(),
+            error: None,
+            exit_code: 0,
+        };
+        info!("No scaling needed for VM {}: {}", vm_id, scaling_plan.recommendation);
+        return Ok(result);
+    }
+    
+    // Calculate new resource limits based on scaling factors
+    let current_cpu_limit = current_metrics.resource_limits.cpu_limit.unwrap_or(2.0);
+    let current_memory_limit = current_metrics.resource_limits.memory_limit.unwrap_or(2_147_483_648); // 2 GB
+    let current_disk_io_limit = current_metrics.resource_limits.disk_io_limit.unwrap_or(50_000_000); // 50 MB/s
+    let current_network_bw_limit = current_metrics.resource_limits.network_bandwidth_limit.unwrap_or(5_000_000); // 5 MB/s
+    
+    let new_cpu_limit = (current_cpu_limit * scaling_plan.cpu_scaling_factor) as f64;
+    let new_memory_limit = (current_memory_limit as f64 * scaling_plan.memory_scaling_factor) as u64;
+    let new_disk_io_limit = (current_disk_io_limit as f64 * scaling_plan.disk_scaling_factor) as u64;
+    let new_network_bw_limit = (current_network_bw_limit as f64 * scaling_plan.network_scaling_factor) as u64;
+    
+    // Apply the new resource limits
+    let result = update_vm_resource_limits(
+        vm_id,
+        Some(new_cpu_limit),
+        Some(new_memory_limit),
+        Some(new_disk_io_limit),
+        Some(new_network_bw_limit),
+    )?;
+    
+    if result.success {
+        info!("Successfully applied auto-scaling for VM {}: CPU={:.1}, Memory={}, Disk IO={}, Network BW={}",
+              vm_id, new_cpu_limit, new_memory_limit, new_disk_io_limit, new_network_bw_limit);
+    } else {
+        error!("Failed to apply auto-scaling for VM {}: {}", vm_id, result.output);
+    }
+    
+    Ok(result)
+}
+
 /// Apply dynamic resource management based on usage patterns
 pub fn apply_dynamic_resource_management(vm_id: &str, metrics: &VmMetrics) -> Result<VmManagementResult> {
     debug!("Applying dynamic resource management for VM: {}", vm_id);
@@ -815,6 +1000,63 @@ mod tests {
     }
 
     #[test]
+    fn test_monitor_vm_load() {
+        let result = monitor_vm_load("test_vm");
+        assert!(result.is_ok());
+        let metrics = result.unwrap();
+        assert_eq!(metrics.id, "test_vm");
+        assert_eq!(metrics.cpu_usage.total_usage, 25.5);
+    }
+
+    #[test]
+    fn test_analyze_vm_resource_usage() {
+        let metrics_result = collect_vm_metrics("test_vm");
+        assert!(metrics_result.is_ok());
+        let metrics = metrics_result.unwrap();
+        
+        let result = analyze_vm_resource_usage(&metrics);
+        assert!(result.is_ok());
+        let analysis = result.unwrap();
+        assert_eq!(analysis.vm_id, "test_vm");
+        assert!(analysis.cpu_utilization > 0.0);
+        assert!(analysis.overall_utilization >= 0.0 && analysis.overall_utilization <= 100.0);
+    }
+
+    #[test]
+    fn test_calculate_vm_scaling_needs() {
+        let metrics_result = collect_vm_metrics("test_vm");
+        assert!(metrics_result.is_ok());
+        let metrics = metrics_result.unwrap();
+        let analysis_result = analyze_vm_resource_usage(&metrics);
+        assert!(analysis_result.is_ok());
+        let analysis = analysis_result.unwrap();
+        
+        let result = calculate_vm_scaling_needs(&analysis);
+        assert!(result.is_ok());
+        let scaling_plan = result.unwrap();
+        assert_eq!(scaling_plan.vm_id, "test_vm");
+        assert!(!scaling_plan.recommendation.is_empty());
+    }
+
+    #[test]
+    fn test_apply_vm_auto_scaling() {
+        let metrics_result = collect_vm_metrics("test_vm");
+        assert!(metrics_result.is_ok());
+        let metrics = metrics_result.unwrap();
+        let analysis_result = analyze_vm_resource_usage(&metrics);
+        assert!(analysis_result.is_ok());
+        let analysis = analysis_result.unwrap();
+        let scaling_plan_result = calculate_vm_scaling_needs(&analysis);
+        assert!(scaling_plan_result.is_ok());
+        let scaling_plan = scaling_plan_result.unwrap();
+        
+        let result = apply_vm_auto_scaling("test_vm", &scaling_plan, &metrics);
+        assert!(result.is_ok());
+        let management_result = result.unwrap();
+        assert!(management_result.success);
+    }
+
+    #[test]
     fn test_vm_management_unknown_vm() {
         let cpu_result = collect_vm_cpu_metrics("unknown_vm");
         assert!(cpu_result.is_ok());
@@ -825,5 +1067,26 @@ mod tests {
         let start_management = start_result.unwrap();
         assert!(!start_management.success);
         assert_eq!(start_management.exit_code, 1);
+    }
+
+    #[test]
+    fn test_vm_auto_scaling_complete_cycle() {
+        // Test complete auto-scaling cycle: monitor -> analyze -> calculate -> apply
+        let monitor_result = monitor_vm_load("test_vm");
+        assert!(monitor_result.is_ok());
+        let metrics = monitor_result.unwrap();
+        
+        let analysis_result = analyze_vm_resource_usage(&metrics);
+        assert!(analysis_result.is_ok());
+        let analysis = analysis_result.unwrap();
+        
+        let scaling_plan_result = calculate_vm_scaling_needs(&analysis);
+        assert!(scaling_plan_result.is_ok());
+        let scaling_plan = scaling_plan_result.unwrap();
+        
+        let apply_result = apply_vm_auto_scaling("test_vm", &scaling_plan, &metrics);
+        assert!(apply_result.is_ok());
+        let management_result = apply_result.unwrap();
+        assert!(management_result.success);
     }
 }
