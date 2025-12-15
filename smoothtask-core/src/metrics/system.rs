@@ -13,7 +13,7 @@ use tracing::{info, warn};
 use rayon;
 
 // Импорты для типов метрик
-use crate::metrics::gpu::GpuMetricsCollection;
+use crate::metrics::gpu::{GpuMetricsCollection, GpuPerformanceMetrics};
 
 /// Безопасно разобрать строку в u32 с fallback значением.
 #[allow(dead_code)]
@@ -3860,6 +3860,7 @@ fn integrate_nvml_metrics(
                 memory_clock_mhz: Some(nvml_device.clocks.memory_clock_mhz),
                 shader_clock_mhz: nvml_device.clocks.shader_clock_mhz,
             },
+            performance: GpuPerformanceMetrics::default(),
             timestamp: nvml_device.timestamp,
         };
 
@@ -3919,6 +3920,7 @@ fn integrate_amdgpu_metrics(
                 memory_clock_mhz: Some(amdgpu_device.clocks.memory_clock_mhz),
                 shader_clock_mhz: amdgpu_device.clocks.shader_clock_mhz,
             },
+            performance: GpuPerformanceMetrics::default(),
             timestamp: amdgpu_device.timestamp,
         };
 

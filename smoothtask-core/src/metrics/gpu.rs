@@ -104,6 +104,23 @@ pub struct GpuClocks {
     pub shader_clock_mhz: Option<u32>,
 }
 
+/// GPU performance metrics (extended)
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct GpuPerformanceMetrics {
+    /// GPU compute performance score (0.0 to 1.0)
+    pub compute_score: Option<f32>,
+    /// GPU memory bandwidth score (0.0 to 1.0)
+    pub memory_bandwidth_score: Option<f32>,
+    /// GPU thermal throttling percentage (0.0 to 1.0)
+    pub thermal_throttling: Option<f32>,
+    /// GPU power throttling percentage (0.0 to 1.0)
+    pub power_throttling: Option<f32>,
+    /// GPU performance efficiency ratio
+    pub efficiency_ratio: Option<f32>,
+    /// GPU workload type detection (compute, graphics, video, etc.)
+    pub workload_type: Option<String>,
+}
+
 /// Complete GPU metrics for a single device
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GpuMetrics {
@@ -119,6 +136,8 @@ pub struct GpuMetrics {
     pub power: GpuPower,
     /// GPU clock metrics
     pub clocks: GpuClocks,
+    /// GPU performance metrics (extended)
+    pub performance: GpuPerformanceMetrics,
     /// Timestamp when metrics were collected
     pub timestamp: std::time::SystemTime,
 }
@@ -132,6 +151,7 @@ impl Default for GpuMetrics {
             temperature: GpuTemperature::default(),
             power: GpuPower::default(),
             clocks: GpuClocks::default(),
+            performance: GpuPerformanceMetrics::default(),
             timestamp: std::time::SystemTime::now(),
         }
     }
@@ -332,6 +352,7 @@ fn collect_gpu_device_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -404,6 +425,9 @@ fn collect_gpu_device_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     debug!("Метрики GPU для устройства {} собраны успешно", device.name);
+
+    // Calculate performance metrics
+    calculate_performance_metrics(&mut metrics);
 
     Ok(metrics)
 }
@@ -914,6 +938,7 @@ fn collect_nvml_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
             temperature: GpuTemperature::default(),
             power: GpuPower::default(),
             clocks: GpuClocks::default(),
+            performance: GpuPerformanceMetrics::default(),
             timestamp: std::time::SystemTime::now(),
         };
 
@@ -1058,6 +1083,7 @@ fn collect_amdgpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -1125,6 +1151,7 @@ fn collect_intel_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -1297,6 +1324,7 @@ fn collect_qualcomm_adreno_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -1398,6 +1426,7 @@ fn collect_arm_mali_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -1495,6 +1524,7 @@ fn collect_broadcom_videocore_metrics(device: &GpuDevice) -> Result<GpuMetrics> 
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -1595,6 +1625,7 @@ fn collect_virtio_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
         temperature: GpuTemperature::default(),
         power: GpuPower::default(),
         clocks: GpuClocks::default(),
+        performance: GpuPerformanceMetrics::default(),
         timestamp: std::time::SystemTime::now(),
     };
 
@@ -1651,6 +1682,71 @@ fn collect_virtio_gpu_metrics(device: &GpuDevice) -> Result<GpuMetrics> {
     }
 
     Ok(metrics)
+}
+
+/// Calculate performance metrics based on collected data
+fn calculate_performance_metrics(metrics: &mut GpuMetrics) {
+    // Calculate compute score based on utilization and clock speeds
+    if let Some(core_clock) = metrics.clocks.core_clock_mhz {
+        let utilization_factor = metrics.utilization.gpu_util as f32;
+        let clock_factor = core_clock as f32 / 2000.0; // Normalize to 2GHz baseline
+        metrics.performance.compute_score = Some((utilization_factor * clock_factor).min(1.0).max(0.0));
+    }
+
+    // Calculate memory bandwidth score
+    if metrics.memory.total_bytes > 0 {
+        let memory_util = metrics.utilization.memory_util as f32;
+        let memory_factor = (metrics.memory.used_bytes as f32 / metrics.memory.total_bytes as f32).min(1.0);
+        metrics.performance.memory_bandwidth_score = Some((memory_util * memory_factor).min(1.0).max(0.0));
+    }
+
+    // Calculate thermal throttling based on temperature
+    if let Some(temp) = metrics.temperature.temperature_c {
+        let thermal_factor = if temp > 85.0 {
+            ((temp - 85.0) / 20.0).min(1.0) // 85-105°C range for throttling
+        } else {
+            0.0
+        };
+        metrics.performance.thermal_throttling = Some(thermal_factor);
+    }
+
+    // Calculate power throttling based on power usage vs limit
+    if let (Some(power_w), Some(power_limit_w)) = (metrics.power.power_w, metrics.power.power_limit_w) {
+        if power_limit_w > 0.0 {
+            let power_ratio = power_w / power_limit_w;
+            let power_throttling = if power_ratio > 0.9 {
+                ((power_ratio - 0.9) / 0.1).min(1.0) // 90-100% range for throttling
+            } else {
+                0.0
+            };
+            metrics.performance.power_throttling = Some(power_throttling);
+        }
+    }
+
+    // Calculate efficiency ratio (performance per watt)
+    if let (Some(compute_score), Some(power_w)) = (metrics.performance.compute_score, metrics.power.power_w) {
+        if power_w > 0.0 {
+            metrics.performance.efficiency_ratio = Some((compute_score / power_w * 100.0).min(10.0));
+        }
+    }
+
+    // Detect workload type based on utilization patterns
+    let gpu_util = metrics.utilization.gpu_util;
+    let memory_util = metrics.utilization.memory_util;
+    let encoder_util = metrics.utilization.encoder_util.unwrap_or(0.0);
+    let decoder_util = metrics.utilization.decoder_util.unwrap_or(0.0);
+
+    if encoder_util > 0.5 || decoder_util > 0.5 {
+        metrics.performance.workload_type = Some("video".to_string());
+    } else if gpu_util > 0.7 && memory_util > 0.7 {
+        metrics.performance.workload_type = Some("compute".to_string());
+    } else if gpu_util > 0.5 && memory_util < 0.3 {
+        metrics.performance.workload_type = Some("graphics".to_string());
+    } else if gpu_util < 0.3 && memory_util > 0.5 {
+        metrics.performance.workload_type = Some("memory".to_string());
+    } else {
+        metrics.performance.workload_type = Some("idle".to_string());
+    }
 }
 
 /// Try to collect GPU metrics using vendor-specific APIs
@@ -1882,6 +1978,7 @@ mod tests {
                 memory_clock_mhz: Some(1500),
                 shader_clock_mhz: Some(1300),
             },
+            performance: GpuPerformanceMetrics::default(),
             timestamp: std::time::SystemTime::now(),
         };
 
@@ -1937,6 +2034,144 @@ mod tests {
         // Note: used_bytes is not automatically capped in this implementation
         // The test just verifies that free_bytes doesn't underflow
         assert_eq!(memory.used_bytes, 5_000_000_000);
+    }
+
+    #[test]
+    fn test_performance_metrics_calculation() {
+        let mut metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization {
+                gpu_util: 0.8,
+                memory_util: 0.6,
+                encoder_util: Some(0.1),
+                decoder_util: Some(0.2),
+            },
+            memory: GpuMemory {
+                total_bytes: 8_000_000_000,
+                used_bytes: 4_000_000_000,
+                free_bytes: 4_000_000_000,
+            },
+            temperature: GpuTemperature {
+                temperature_c: Some(75.0),
+                hotspot_c: Some(80.0),
+                memory_c: Some(70.0),
+            },
+            power: GpuPower {
+                power_w: Some(120.0),
+                power_limit_w: Some(200.0),
+                power_cap_w: Some(180.0),
+            },
+            clocks: GpuClocks {
+                core_clock_mhz: Some(1800),
+                memory_clock_mhz: Some(1600),
+                shader_clock_mhz: Some(1700),
+            },
+            performance: GpuPerformanceMetrics::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        // Test performance calculation
+        calculate_performance_metrics(&mut metrics);
+
+        // Verify compute score calculation
+        assert!(metrics.performance.compute_score.is_some());
+        let compute_score = metrics.performance.compute_score.unwrap();
+        assert!(compute_score > 0.0 && compute_score <= 1.0);
+
+        // Verify memory bandwidth score calculation
+        assert!(metrics.performance.memory_bandwidth_score.is_some());
+        let memory_score = metrics.performance.memory_bandwidth_score.unwrap();
+        assert!(memory_score > 0.0 && memory_score <= 1.0);
+
+        // Verify thermal throttling (should be 0 at 75°C)
+        assert!(metrics.performance.thermal_throttling.is_some());
+        assert_eq!(metrics.performance.thermal_throttling.unwrap(), 0.0);
+
+        // Verify power throttling (should be 0 at 120W/200W = 60%)
+        assert!(metrics.performance.power_throttling.is_some());
+        assert_eq!(metrics.performance.power_throttling.unwrap(), 0.0);
+
+        // Verify efficiency ratio calculation
+        assert!(metrics.performance.efficiency_ratio.is_some());
+        let efficiency = metrics.performance.efficiency_ratio.unwrap();
+        assert!(efficiency > 0.0);
+
+        // Verify workload type detection (should be "compute" for high GPU and memory utilization)
+        assert!(metrics.performance.workload_type.is_some());
+        assert_eq!(metrics.performance.workload_type.unwrap(), "compute");
+    }
+
+    #[test]
+    fn test_performance_metrics_high_temperature() {
+        let mut metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization::default(),
+            memory: GpuMemory::default(),
+            temperature: GpuTemperature {
+                temperature_c: Some(95.0), // High temperature
+                hotspot_c: None,
+                memory_c: None,
+            },
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            performance: GpuPerformanceMetrics::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        calculate_performance_metrics(&mut metrics);
+
+        // Verify thermal throttling at 95°C (should be 0.5 = (95-85)/20)
+        assert!(metrics.performance.thermal_throttling.is_some());
+        assert_eq!(metrics.performance.thermal_throttling.unwrap(), 0.5);
+    }
+
+    #[test]
+    fn test_performance_metrics_high_power() {
+        let mut metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization::default(),
+            memory: GpuMemory::default(),
+            temperature: GpuTemperature::default(),
+            power: GpuPower {
+                power_w: Some(195.0), // Close to limit
+                power_limit_w: Some(200.0),
+                power_cap_w: Some(180.0),
+            },
+            clocks: GpuClocks::default(),
+            performance: GpuPerformanceMetrics::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        calculate_performance_metrics(&mut metrics);
+
+        // Verify power throttling at 195W/200W (should be 0.5 = (195/200 - 0.9)/0.1)
+        assert!(metrics.performance.power_throttling.is_some());
+        assert_eq!(metrics.performance.power_throttling.unwrap(), 0.5);
+    }
+
+    #[test]
+    fn test_performance_metrics_video_workload() {
+        let mut metrics = GpuMetrics {
+            device: GpuDevice::default(),
+            utilization: GpuUtilization {
+                gpu_util: 0.3,
+                memory_util: 0.2,
+                encoder_util: Some(0.8), // High encoder utilization
+                decoder_util: Some(0.1),
+            },
+            memory: GpuMemory::default(),
+            temperature: GpuTemperature::default(),
+            power: GpuPower::default(),
+            clocks: GpuClocks::default(),
+            performance: GpuPerformanceMetrics::default(),
+            timestamp: std::time::SystemTime::now(),
+        };
+
+        calculate_performance_metrics(&mut metrics);
+
+        // Verify workload type detection (should be "video" for high encoder utilization)
+        assert!(metrics.performance.workload_type.is_some());
+        assert_eq!(metrics.performance.workload_type.unwrap(), "video");
     }
 
     #[test]
