@@ -429,6 +429,96 @@ pub struct NetworkQualityMetrics {
     pub stability_score: f64,
 }
 
+/// Network security metrics
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct NetworkSecurityMetrics {
+    /// Suspicious connection count
+    pub suspicious_connections: u64,
+    /// Malicious IP addresses detected
+    pub malicious_ips_detected: u64,
+    /// Port scan attempts detected
+    pub port_scan_attempts: u64,
+    /// DDoS attack indicators
+    pub ddos_indicators: u64,
+    /// Unusual traffic patterns detected
+    pub unusual_traffic_patterns: u64,
+    /// Encryption anomalies detected
+    pub encryption_anomalies: u64,
+    /// Authentication failures
+    pub authentication_failures: u64,
+    /// Security alerts triggered
+    pub security_alerts_triggered: u64,
+    /// Security score (0.0 to 1.0)
+    pub security_score: f64,
+    /// Threat level (0.0 to 1.0)
+    pub threat_level: f64,
+}
+
+/// Network connection security analysis
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkConnectionSecurityAnalysis {
+    /// Connection ID
+    pub connection_id: String,
+    /// Source IP address
+    pub src_ip: IpAddr,
+    /// Destination IP address
+    pub dst_ip: IpAddr,
+    /// Source port
+    pub src_port: u16,
+    /// Destination port
+    pub dst_port: u16,
+    /// Protocol
+    pub protocol: String,
+    /// Security risk level (0.0 to 1.0)
+    pub security_risk_level: f64,
+    /// Is suspicious connection
+    pub is_suspicious: bool,
+    /// Is malicious connection
+    pub is_malicious: bool,
+    /// Suspicious reasons
+    pub suspicious_reasons: Vec<String>,
+    /// Security recommendations
+    pub security_recommendations: Vec<String>,
+    /// Timestamp of analysis
+    pub timestamp: SystemTime,
+}
+
+impl Default for NetworkConnectionSecurityAnalysis {
+    fn default() -> Self {
+        Self {
+            connection_id: String::new(),
+            src_ip: "0.0.0.0".parse().unwrap(),
+            dst_ip: "0.0.0.0".parse().unwrap(),
+            src_port: 0,
+            dst_port: 0,
+            protocol: String::new(),
+            security_risk_level: 0.0,
+            is_suspicious: false,
+            is_malicious: false,
+            suspicious_reasons: Vec::new(),
+            security_recommendations: Vec::new(),
+            timestamp: SystemTime::UNIX_EPOCH,
+        }
+    }
+}
+
+/// Network threat intelligence
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct NetworkThreatIntelligence {
+    /// Known malicious IP addresses
+    pub known_malicious_ips: Vec<IpAddr>,
+    /// Known malicious domains
+    pub known_malicious_domains: Vec<String>,
+    /// Known malicious ports
+    pub known_malicious_ports: Vec<u16>,
+    /// Known attack patterns
+    pub known_attack_patterns: Vec<String>,
+    /// Threat intelligence last updated
+    pub last_updated: SystemTime,
+    /// Threat intelligence source
+    pub source: String,
+}
+
 /// IPv6 network statistics
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct IPv6NetworkStats {
@@ -1476,6 +1566,10 @@ pub struct ComprehensiveNetworkStats {
     pub ipv6_stats: IPv6NetworkStats,
     /// Network quality metrics
     pub quality: NetworkQualityMetrics,
+    /// Network security metrics
+    pub security: NetworkSecurityMetrics,
+    /// Security analysis for connections
+    pub security_analysis: Vec<NetworkConnectionSecurityAnalysis>,
     /// Total bytes received
     pub total_rx_bytes: u64,
     /// Total bytes transmitted
@@ -1503,6 +1597,10 @@ pub struct NetworkMonitorConfig {
     pub enable_qos_monitoring: bool,
     /// Enable Traffic Control (tc) monitoring
     pub enable_tc_monitoring: bool,
+    /// Enable network security monitoring
+    pub enable_security_monitoring: bool,
+    /// Enable threat intelligence integration
+    pub enable_threat_intelligence: bool,
     /// Maximum number of connections to track
     pub max_connections: usize,
     /// Update interval in seconds
@@ -1513,6 +1611,12 @@ pub struct NetworkMonitorConfig {
     pub monitored_protocols: Vec<String>,
     /// QoS classes to monitor specifically
     pub monitored_qos_classes: Vec<String>,
+    /// Known malicious IP addresses for security monitoring
+    pub known_malicious_ips: Vec<String>,
+    /// Known malicious ports for security monitoring
+    pub known_malicious_ports: Vec<u16>,
+    /// Security alert threshold (0.0 to 1.0)
+    pub security_alert_threshold: f64,
 }
 
 impl Default for NetworkMonitorConfig {
@@ -1525,6 +1629,8 @@ impl Default for NetworkMonitorConfig {
             enable_quality_monitoring: true,
             enable_qos_monitoring: true,
             enable_tc_monitoring: true,
+            enable_security_monitoring: true,
+            enable_threat_intelligence: true,
             max_connections: 1024,
             update_interval_secs: 60,
             monitored_ports: vec![80, 443, 22, 53, 8080],
@@ -1534,6 +1640,13 @@ impl Default for NetworkMonitorConfig {
                 "video".to_string(),
                 "voice".to_string(),
             ],
+            known_malicious_ips: vec![
+                "1.1.1.1".to_string(),
+                "2.2.2.2".to_string(),
+                "3.3.3.3".to_string(),
+            ],
+            known_malicious_ports: vec![4444, 5555, 6666],
+            security_alert_threshold: 0.7,
         }
     }
 }
@@ -1687,6 +1800,12 @@ impl NetworkMonitor {
         // Collect network quality metrics
         if self.config.enable_quality_monitoring {
             stats.quality = self.collect_network_quality_from_connections()?;
+        }
+
+        // Collect network security metrics
+        if self.config.enable_security_monitoring {
+            stats.security = self.collect_network_security_metrics()?;
+            stats.security_analysis = self.analyze_connection_security()?;
         }
 
         // Calculate totals
@@ -4256,6 +4375,515 @@ impl NetworkMonitor {
 
         Ok((ip_addr, port_value))
     }
+
+    /// Collect network security metrics
+    fn collect_network_security_metrics(&self) -> Result<NetworkSecurityMetrics> {
+        let mut security_metrics = NetworkSecurityMetrics::default();
+
+        // Analyze connections for security threats
+        let connections = self.collect_connection_stats()?;
+        let ipv6_connections = self.collect_ipv6_connection_stats()?;
+
+        // Check for suspicious connections
+        let suspicious_count = self.detect_suspicious_connections(&connections, &ipv6_connections)?;
+        security_metrics.suspicious_connections = suspicious_count;
+
+        // Check for malicious IP addresses
+        let malicious_ips = self.detect_malicious_ips(&connections, &ipv6_connections)?;
+        security_metrics.malicious_ips_detected = malicious_ips;
+
+        // Check for port scan attempts
+        let port_scan_attempts = self.detect_port_scan_attempts(&connections)?;
+        security_metrics.port_scan_attempts = port_scan_attempts;
+
+        // Check for DDoS indicators
+        let ddos_indicators = self.detect_ddos_indicators(&connections)?;
+        security_metrics.ddos_indicators = ddos_indicators;
+
+        // Check for unusual traffic patterns
+        let unusual_patterns = self.detect_unusual_traffic_patterns(&connections)?;
+        security_metrics.unusual_traffic_patterns = unusual_patterns;
+
+        // Calculate security score and threat level
+        let (security_score, threat_level) = self.calculate_security_metrics(&security_metrics);
+        security_metrics.security_score = security_score;
+        security_metrics.threat_level = threat_level;
+
+        tracing::debug!(
+            "Collected network security metrics: suspicious={}, malicious={}, port_scans={}, ddos={}, unusual={}, score={:.2}, threat={:.2}",
+            security_metrics.suspicious_connections,
+            security_metrics.malicious_ips_detected,
+            security_metrics.port_scan_attempts,
+            security_metrics.ddos_indicators,
+            security_metrics.unusual_traffic_patterns,
+            security_metrics.security_score,
+            security_metrics.threat_level
+        );
+
+        Ok(security_metrics)
+    }
+
+    /// Analyze connection security
+    fn analyze_connection_security(&self) -> Result<Vec<NetworkConnectionSecurityAnalysis>> {
+        let mut security_analysis = Vec::new();
+        let connections = self.collect_connection_stats()?;
+        let ipv6_connections = self.collect_ipv6_connection_stats()?;
+
+        // Analyze IPv4 connections
+        for conn in connections {
+            let analysis = self.analyze_single_connection_security(&conn)?;
+            security_analysis.push(analysis);
+        }
+
+        // Analyze IPv6 connections
+        for conn in ipv6_connections {
+            let analysis = self.analyze_single_ipv6_connection_security(&conn)?;
+            security_analysis.push(analysis);
+        }
+
+        tracing::debug!(
+            "Analyzed security for {} connections",
+            security_analysis.len()
+        );
+
+        Ok(security_analysis)
+    }
+
+    /// Analyze security for a single IPv4 connection
+    fn analyze_single_connection_security(
+        &self,
+        conn: &NetworkConnectionStats,
+    ) -> Result<NetworkConnectionSecurityAnalysis> {
+        let mut analysis = NetworkConnectionSecurityAnalysis::default();
+
+        // Set basic connection info
+        analysis.connection_id = format!(
+            "{}:{}:{}:{}",
+            conn.src_ip, conn.src_port, conn.dst_ip, conn.dst_port
+        );
+        analysis.src_ip = conn.src_ip;
+        analysis.dst_ip = conn.dst_ip;
+        analysis.src_port = conn.src_port;
+        analysis.dst_port = conn.dst_port;
+        analysis.protocol = conn.protocol.clone();
+        analysis.timestamp = SystemTime::now();
+
+        // Check if this is a suspicious connection
+        let (is_suspicious, suspicious_reasons) = 
+            self.check_connection_suspicious(conn, &self.config.known_malicious_ips)?;
+        analysis.is_suspicious = is_suspicious;
+        analysis.suspicious_reasons = suspicious_reasons;
+
+        // Check if this is a malicious connection
+        let is_malicious = self.check_connection_malicious(conn, &self.config.known_malicious_ips)?;
+        analysis.is_malicious = is_malicious;
+
+        // Calculate security risk level
+        analysis.security_risk_level = self.calculate_connection_risk_level(&analysis);
+
+        // Generate security recommendations
+        analysis.security_recommendations = 
+            self.generate_security_recommendations(&analysis);
+
+        Ok(analysis)
+    }
+
+    /// Analyze security for a single IPv6 connection
+    fn analyze_single_ipv6_connection_security(
+        &self,
+        conn: &IPv6ConnectionStats,
+    ) -> Result<NetworkConnectionSecurityAnalysis> {
+        let mut analysis = NetworkConnectionSecurityAnalysis::default();
+
+        // Set basic connection info
+        analysis.connection_id = format!(
+            "{}:{}:{}:{}",
+            conn.src_ip, conn.src_port, conn.dst_ip, conn.dst_port
+        );
+        analysis.src_ip = IpAddr::V6(conn.src_ip);
+        analysis.dst_ip = IpAddr::V6(conn.dst_ip);
+        analysis.src_port = conn.src_port;
+        analysis.dst_port = conn.dst_port;
+        analysis.protocol = conn.protocol.clone();
+        analysis.timestamp = SystemTime::now();
+
+        // Check if this is a suspicious connection
+        let (is_suspicious, suspicious_reasons) = 
+            self.check_ipv6_connection_suspicious(conn, &self.config.known_malicious_ips)?;
+        analysis.is_suspicious = is_suspicious;
+        analysis.suspicious_reasons = suspicious_reasons;
+
+        // Check if this is a malicious connection
+        let is_malicious = 
+            self.check_ipv6_connection_malicious(conn, &self.config.known_malicious_ips)?;
+        analysis.is_malicious = is_malicious;
+
+        // Calculate security risk level
+        analysis.security_risk_level = self.calculate_connection_risk_level(&analysis);
+
+        // Generate security recommendations
+        analysis.security_recommendations = 
+            self.generate_security_recommendations(&analysis);
+
+        Ok(analysis)
+    }
+
+    /// Detect suspicious connections
+    fn detect_suspicious_connections(
+        &self,
+        connections: &[NetworkConnectionStats],
+        ipv6_connections: &[IPv6ConnectionStats],
+    ) -> Result<u64> {
+        let mut suspicious_count = 0;
+
+        // Check IPv4 connections
+        for conn in connections {
+            let (is_suspicious, _) = 
+                self.check_connection_suspicious(conn, &self.config.known_malicious_ips)?;
+            if is_suspicious {
+                suspicious_count += 1;
+            }
+        }
+
+        // Check IPv6 connections
+        for conn in ipv6_connections {
+            let (is_suspicious, _) = 
+                self.check_ipv6_connection_suspicious(conn, &self.config.known_malicious_ips)?;
+            if is_suspicious {
+                suspicious_count += 1;
+            }
+        }
+
+        Ok(suspicious_count)
+    }
+
+    /// Check if a connection is suspicious
+    fn check_connection_suspicious(
+        &self,
+        conn: &NetworkConnectionStats,
+        known_malicious_ips: &[String],
+    ) -> Result<(bool, Vec<String>)> {
+        let mut is_suspicious = false;
+        let mut reasons = Vec::new();
+
+        // Check for known malicious ports
+        if self.config.known_malicious_ports.contains(&conn.dst_port) {
+            is_suspicious = true;
+            reasons.push(format!(
+                "Destination port {} is known to be malicious",
+                conn.dst_port
+            ));
+        }
+
+        // Check for connections to unusual ports
+        if conn.dst_port > 1024 && conn.dst_port < 32768 {
+            // These are registered ports, but could be suspicious depending on context
+            if conn.protocol == "TCP" && conn.dst_port % 100 == 0 {
+                is_suspicious = true;
+                reasons.push(format!(
+                    "Connection to unusual registered port {}",
+                    conn.dst_port
+                ));
+            }
+        }
+
+        // Check for connections from/to known malicious IPs
+        let src_ip_str = conn.src_ip.to_string();
+        let dst_ip_str = conn.dst_ip.to_string();
+        
+        if known_malicious_ips.contains(&src_ip_str) {
+            is_suspicious = true;
+            reasons.push(format!("Source IP {} is known to be malicious", src_ip_str));
+        }
+
+        if known_malicious_ips.contains(&dst_ip_str) {
+            is_suspicious = true;
+            reasons.push(format!("Destination IP {} is known to be malicious", dst_ip_str));
+        }
+
+        // Check for unusual connection patterns
+        if conn.bytes_transmitted > 1_000_000 && conn.bytes_received < 100 {
+            is_suspicious = true;
+            reasons.push("Unusual traffic pattern: high upload, low download".to_string());
+        }
+
+        Ok((is_suspicious, reasons))
+    }
+
+    /// Check if an IPv6 connection is suspicious
+    fn check_ipv6_connection_suspicious(
+        &self,
+        conn: &IPv6ConnectionStats,
+        known_malicious_ips: &[String],
+    ) -> Result<(bool, Vec<String>)> {
+        let mut is_suspicious = false;
+        let mut reasons = Vec::new();
+
+        // Check for known malicious ports
+        if self.config.known_malicious_ports.contains(&conn.dst_port) {
+            is_suspicious = true;
+            reasons.push(format!(
+                "Destination port {} is known to be malicious",
+                conn.dst_port
+            ));
+        }
+
+        // Check for connections to unusual ports
+        if conn.dst_port > 1024 && conn.dst_port < 32768 {
+            // These are registered ports, but could be suspicious depending on context
+            if conn.protocol == "TCP6" && conn.dst_port % 100 == 0 {
+                is_suspicious = true;
+                reasons.push(format!(
+                    "Connection to unusual registered port {}",
+                    conn.dst_port
+                ));
+            }
+        }
+
+        // Check for connections from/to known malicious IPs
+        let src_ip_str = conn.src_ip.to_string();
+        let dst_ip_str = conn.dst_ip.to_string();
+        
+        if known_malicious_ips.contains(&src_ip_str) {
+            is_suspicious = true;
+            reasons.push(format!("Source IP {} is known to be malicious", src_ip_str));
+        }
+
+        if known_malicious_ips.contains(&dst_ip_str) {
+            is_suspicious = true;
+            reasons.push(format!("Destination IP {} is known to be malicious", dst_ip_str));
+        }
+
+        Ok((is_suspicious, reasons))
+    }
+
+    /// Check if a connection is malicious
+    fn check_connection_malicious(
+        &self,
+        conn: &NetworkConnectionStats,
+        known_malicious_ips: &[String],
+    ) -> Result<bool> {
+        // Check if source or destination IP is in known malicious list
+        let src_ip_str = conn.src_ip.to_string();
+        let dst_ip_str = conn.dst_ip.to_string();
+        
+        if known_malicious_ips.contains(&src_ip_str) || known_malicious_ips.contains(&dst_ip_str) {
+            return Ok(true);
+        }
+
+        // Check if destination port is in known malicious ports
+        if self.config.known_malicious_ports.contains(&conn.dst_port) {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    /// Check if an IPv6 connection is malicious
+    fn check_ipv6_connection_malicious(
+        &self,
+        conn: &IPv6ConnectionStats,
+        known_malicious_ips: &[String],
+    ) -> Result<bool> {
+        // Check if source or destination IP is in known malicious list
+        let src_ip_str = conn.src_ip.to_string();
+        let dst_ip_str = conn.dst_ip.to_string();
+        
+        if known_malicious_ips.contains(&src_ip_str) || known_malicious_ips.contains(&dst_ip_str) {
+            return Ok(true);
+        }
+
+        // Check if destination port is in known malicious ports
+        if self.config.known_malicious_ports.contains(&conn.dst_port) {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    /// Detect malicious IP addresses
+    fn detect_malicious_ips(
+        &self,
+        connections: &[NetworkConnectionStats],
+        ipv6_connections: &[IPv6ConnectionStats],
+    ) -> Result<u64> {
+        let mut malicious_count = 0;
+        let known_malicious_ips = &self.config.known_malicious_ips;
+
+        // Check IPv4 connections
+        for conn in connections {
+            let src_ip_str = conn.src_ip.to_string();
+            let dst_ip_str = conn.dst_ip.to_string();
+            
+            if known_malicious_ips.contains(&src_ip_str) || known_malicious_ips.contains(&dst_ip_str) {
+                malicious_count += 1;
+            }
+        }
+
+        // Check IPv6 connections
+        for conn in ipv6_connections {
+            let src_ip_str = conn.src_ip.to_string();
+            let dst_ip_str = conn.dst_ip.to_string();
+            
+            if known_malicious_ips.contains(&src_ip_str) || known_malicious_ips.contains(&dst_ip_str) {
+                malicious_count += 1;
+            }
+        }
+
+        Ok(malicious_count)
+    }
+
+    /// Detect port scan attempts
+    fn detect_port_scan_attempts(&self, connections: &[NetworkConnectionStats]) -> Result<u64> {
+        let mut port_scan_count = 0;
+        let mut port_counts: HashMap<u16, u64> = HashMap::new();
+
+        // Count connections to each port
+        for conn in connections {
+            *port_counts.entry(conn.dst_port).or_insert(0) += 1;
+        }
+
+        // Check for ports with unusually high connection counts
+        for (port, count) in port_counts {
+            if count > 10 && !self.config.monitored_ports.contains(&port) {
+                // More than 10 connections to a non-monitored port could indicate scanning
+                port_scan_count += 1;
+            }
+        }
+
+        Ok(port_scan_count)
+    }
+
+    /// Detect DDoS indicators
+    fn detect_ddos_indicators(&self, connections: &[NetworkConnectionStats]) -> Result<u64> {
+        let mut ddos_indicators = 0;
+        let mut ip_counts: HashMap<String, u64> = HashMap::new();
+
+        // Count connections from each source IP
+        for conn in connections {
+            let ip_str = conn.src_ip.to_string();
+            *ip_counts.entry(ip_str).or_insert(0) += 1;
+        }
+
+        // Check for IPs with unusually high connection counts
+        for (ip, count) in ip_counts {
+            if count > 50 {
+                // More than 50 connections from a single IP could indicate DDoS
+                ddos_indicators += 1;
+                tracing::warn!("Potential DDoS detected from IP: {} with {} connections", ip, count);
+            }
+        }
+
+        Ok(ddos_indicators)
+    }
+
+    /// Detect unusual traffic patterns
+    fn detect_unusual_traffic_patterns(&self, connections: &[NetworkConnectionStats]) -> Result<u64> {
+        let mut unusual_patterns = 0;
+
+        for conn in connections {
+            // Check for unusual traffic patterns
+            if conn.bytes_transmitted > 10_000_000 && conn.bytes_received < 1_000 {
+                // Very high upload with almost no download
+                unusual_patterns += 1;
+            } else if conn.bytes_received > 10_000_000 && conn.bytes_transmitted < 1_000 {
+                // Very high download with almost no upload
+                unusual_patterns += 1;
+            } else if conn.packets_transmitted > 10_000 && conn.bytes_transmitted < 10_000 {
+                // Many small packets (could be ping flood or similar)
+                unusual_patterns += 1;
+            }
+        }
+
+        Ok(unusual_patterns)
+    }
+
+    /// Calculate security metrics
+    fn calculate_security_metrics(
+        &self,
+        security_metrics: &NetworkSecurityMetrics,
+    ) -> (f64, f64) {
+        // Calculate security score (0.0 to 1.0, higher is better)
+        let mut security_score = 1.0;
+        
+        // Reduce score based on security issues
+        if security_metrics.suspicious_connections > 0 {
+            security_score -= 0.1;
+        }
+        if security_metrics.malicious_ips_detected > 0 {
+            security_score -= 0.2;
+        }
+        if security_metrics.port_scan_attempts > 0 {
+            security_score -= 0.1;
+        }
+        if security_metrics.ddos_indicators > 0 {
+            security_score -= 0.2;
+        }
+        if security_metrics.unusual_traffic_patterns > 0 {
+            security_score -= 0.1;
+        }
+        
+        // Ensure score is within bounds
+        security_score = security_score.clamp(0.0, 1.0);
+
+        // Calculate threat level (0.0 to 1.0, higher is worse)
+        let threat_level = 1.0 - security_score;
+
+        (security_score, threat_level)
+    }
+
+    /// Calculate connection risk level
+    fn calculate_connection_risk_level(&self, analysis: &NetworkConnectionSecurityAnalysis) -> f64 {
+        let mut risk_level = 0.0;
+
+        // Base risk level
+        if analysis.is_malicious {
+            risk_level = 0.9; // High risk for malicious connections
+        } else if analysis.is_suspicious {
+            risk_level = 0.5; // Medium risk for suspicious connections
+        } else {
+            risk_level = 0.1; // Low risk for normal connections
+        }
+
+        // Adjust based on suspicious reasons
+        if !analysis.suspicious_reasons.is_empty() {
+            risk_level += analysis.suspicious_reasons.len() as f64 * 0.1;
+        }
+
+        // Ensure risk level is within bounds
+        risk_level = risk_level.clamp(0.0, 1.0);
+
+        risk_level
+    }
+
+    /// Generate security recommendations
+    fn generate_security_recommendations(
+        &self,
+        analysis: &NetworkConnectionSecurityAnalysis,
+    ) -> Vec<String> {
+        let mut recommendations = Vec::new();
+
+        if analysis.is_malicious {
+            recommendations.push("BLOCK this connection immediately".to_string());
+            recommendations.push("Add source IP to firewall block list".to_string());
+            recommendations.push("Investigate potential security breach".to_string());
+        } else if analysis.is_suspicious {
+            recommendations.push("MONITOR this connection closely".to_string());
+            recommendations.push("Consider adding rate limiting".to_string());
+            recommendations.push("Review connection patterns".to_string());
+        }
+
+        // Add specific recommendations based on suspicious reasons
+        for reason in &analysis.suspicious_reasons {
+            if reason.contains("malicious port") {
+                recommendations.push("Review port usage and consider blocking".to_string());
+            } else if reason.contains("unusual traffic pattern") {
+                recommendations.push("Analyze traffic patterns for anomalies".to_string());
+            }
+        }
+
+        recommendations
+    }
     /// Collect network quality metrics with enhanced tracking
     fn collect_network_quality_from_connections(&self) -> Result<NetworkQualityMetrics> {
         let mut metrics = NetworkQualityMetrics::default();
@@ -4753,5 +5381,208 @@ mod route_optimization_tests {
             0.0,
             "Non-existent interface should have zero load"
         );
+    }
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
+
+    #[test]
+    fn test_connection_suspicious_detection() {
+        let monitor = NetworkMonitor::new();
+        let known_malicious_ips = vec!["1.2.3.4".to_string(), "5.6.7.8".to_string()];
+
+        // Test normal connection
+        let normal_conn = NetworkConnectionStats {
+            src_ip: "192.168.1.1".parse().unwrap(),
+            dst_ip: "10.0.0.1".parse().unwrap(),
+            src_port: 12345,
+            dst_port: 80,
+            protocol: "TCP".to_string(),
+            state: "ESTABLISHED".to_string(),
+            pid: Some(1234),
+            process_name: Some("test".to_string()),
+            bytes_transmitted: 1000,
+            bytes_received: 2000,
+            packets_transmitted: 10,
+            packets_received: 20,
+            start_time: SystemTime::UNIX_EPOCH,
+            last_activity: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_secs(60),
+        };
+
+        let (is_suspicious, reasons) = monitor
+            .check_connection_suspicious(&normal_conn, &known_malicious_ips)
+            .unwrap();
+        assert!(!is_suspicious, "Normal connection should not be suspicious");
+        assert!(reasons.is_empty(), "Normal connection should have no suspicious reasons");
+
+        // Test connection to malicious IP
+        let malicious_conn = NetworkConnectionStats {
+            src_ip: "1.2.3.4".parse().unwrap(),
+            dst_ip: "10.0.0.1".parse().unwrap(),
+            ..normal_conn.clone()
+        };
+
+        let (is_suspicious, reasons) = monitor
+            .check_connection_suspicious(&malicious_conn, &known_malicious_ips)
+            .unwrap();
+        assert!(is_suspicious, "Connection to malicious IP should be suspicious");
+        assert!(!reasons.is_empty(), "Malicious connection should have suspicious reasons");
+    }
+
+    #[test]
+    fn test_malicious_connection_detection() {
+        let monitor = NetworkMonitor::new();
+        let known_malicious_ips = vec!["1.2.3.4".to_string(), "5.6.7.8".to_string()];
+
+        // Test normal connection
+        let normal_conn = NetworkConnectionStats {
+            src_ip: "192.168.1.1".parse().unwrap(),
+            dst_ip: "10.0.0.1".parse().unwrap(),
+            src_port: 12345,
+            dst_port: 80,
+            protocol: "TCP".to_string(),
+            state: "ESTABLISHED".to_string(),
+            pid: Some(1234),
+            process_name: Some("test".to_string()),
+            bytes_transmitted: 1000,
+            bytes_received: 2000,
+            packets_transmitted: 10,
+            packets_received: 20,
+            start_time: SystemTime::UNIX_EPOCH,
+            last_activity: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_secs(60),
+        };
+
+        let is_malicious = monitor
+            .check_connection_malicious(&normal_conn, &known_malicious_ips)
+            .unwrap();
+        assert!(!is_malicious, "Normal connection should not be malicious");
+
+        // Test connection to malicious IP
+        let malicious_conn = NetworkConnectionStats {
+            src_ip: "1.2.3.4".parse().unwrap(),
+            dst_ip: "10.0.0.1".parse().unwrap(),
+            ..normal_conn.clone()
+        };
+
+        let is_malicious = monitor
+            .check_connection_malicious(&malicious_conn, &known_malicious_ips)
+            .unwrap();
+        assert!(is_malicious, "Connection to malicious IP should be malicious");
+    }
+
+    #[test]
+    fn test_security_metrics_calculation() {
+        let monitor = NetworkMonitor::new();
+
+        // Test with no security issues
+        let clean_metrics = NetworkSecurityMetrics {
+            suspicious_connections: 0,
+            malicious_ips_detected: 0,
+            port_scan_attempts: 0,
+            ddos_indicators: 0,
+            unusual_traffic_patterns: 0,
+            ..Default::default()
+        };
+
+        let (security_score, threat_level) = monitor.calculate_security_metrics(&clean_metrics);
+        assert_eq!(security_score, 1.0, "Clean system should have perfect security score");
+        assert_eq!(threat_level, 0.0, "Clean system should have zero threat level");
+
+        // Test with multiple security issues
+        let compromised_metrics = NetworkSecurityMetrics {
+            suspicious_connections: 5,
+            malicious_ips_detected: 3,
+            port_scan_attempts: 2,
+            ddos_indicators: 1,
+            unusual_traffic_patterns: 4,
+            ..Default::default()
+        };
+
+        let (security_score, threat_level) = monitor.calculate_security_metrics(&compromised_metrics);
+        assert!(security_score < 0.5, "Compromised system should have low security score");
+        assert!(threat_level > 0.5, "Compromised system should have high threat level");
+    }
+
+    #[test]
+    fn test_connection_risk_level_calculation() {
+        let monitor = NetworkMonitor::new();
+
+        // Test normal connection
+        let normal_analysis = NetworkConnectionSecurityAnalysis {
+            is_suspicious: false,
+            is_malicious: false,
+            suspicious_reasons: Vec::new(),
+            ..Default::default()
+        };
+
+        let risk_level = monitor.calculate_connection_risk_level(&normal_analysis);
+        assert_eq!(risk_level, 0.1, "Normal connection should have low risk level");
+
+        // Test suspicious connection
+        let suspicious_analysis = NetworkConnectionSecurityAnalysis {
+            is_suspicious: true,
+            is_malicious: false,
+            suspicious_reasons: vec!["Test reason".to_string()],
+            ..Default::default()
+        };
+
+        let risk_level = monitor.calculate_connection_risk_level(&suspicious_analysis);
+        assert!(risk_level > 0.5, "Suspicious connection should have medium risk level");
+
+        // Test malicious connection
+        let malicious_analysis = NetworkConnectionSecurityAnalysis {
+            is_suspicious: true,
+            is_malicious: true,
+            suspicious_reasons: vec!["Test reason 1".to_string(), "Test reason 2".to_string()],
+            ..Default::default()
+        };
+
+        let risk_level = monitor.calculate_connection_risk_level(&malicious_analysis);
+        assert!(risk_level > 0.8, "Malicious connection should have high risk level");
+    }
+
+    #[test]
+    fn test_security_recommendations_generation() {
+        let monitor = NetworkMonitor::new();
+
+        // Test normal connection
+        let normal_analysis = NetworkConnectionSecurityAnalysis {
+            is_suspicious: false,
+            is_malicious: false,
+            suspicious_reasons: Vec::new(),
+            ..Default::default()
+        };
+
+        let recommendations = monitor.generate_security_recommendations(&normal_analysis);
+        assert!(recommendations.is_empty(), "Normal connection should have no recommendations");
+
+        // Test suspicious connection
+        let suspicious_analysis = NetworkConnectionSecurityAnalysis {
+            is_suspicious: true,
+            is_malicious: false,
+            suspicious_reasons: vec!["malicious port".to_string()],
+            ..Default::default()
+        };
+
+        let recommendations = monitor.generate_security_recommendations(&suspicious_analysis);
+        assert!(!recommendations.is_empty(), "Suspicious connection should have recommendations");
+        assert!(recommendations.len() >= 3, "Suspicious connection should have multiple recommendations");
+
+        // Test malicious connection
+        let malicious_analysis = NetworkConnectionSecurityAnalysis {
+            is_suspicious: true,
+            is_malicious: true,
+            suspicious_reasons: vec!["malicious port".to_string(), "unusual traffic pattern".to_string()],
+            ..Default::default()
+        };
+
+        let recommendations = monitor.generate_security_recommendations(&malicious_analysis);
+        assert!(!recommendations.is_empty(), "Malicious connection should have recommendations");
+        assert!(recommendations.len() >= 3, "Malicious connection should have multiple recommendations");
     }
 }

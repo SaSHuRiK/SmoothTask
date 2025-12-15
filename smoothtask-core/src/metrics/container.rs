@@ -218,6 +218,277 @@ pub struct ContainerAutoScalingConfig {
     pub cooldown_seconds: u32,
     /// Last scaling timestamp
     pub last_scaling_timestamp: Option<u64>,
+    /// Enable ML-based prediction
+    pub enable_ml_prediction: bool,
+    /// Prediction window size (number of historical data points)
+    pub prediction_window_size: usize,
+    /// Scaling aggressiveness (0.0 to 1.0)
+    pub scaling_aggressiveness: f64,
+    /// Enable adaptive scaling thresholds
+    pub enable_adaptive_thresholds: bool,
+    /// Enable resource usage pattern analysis
+    pub enable_pattern_analysis: bool,
+    /// Enable workload classification
+    pub enable_workload_classification: bool,
+}
+
+/// Enhanced container auto-scaling configuration with ML algorithms
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct EnhancedContainerAutoScalingConfig {
+    /// Base auto-scaling configuration
+    pub base_config: ContainerAutoScalingConfig,
+    /// ML model type for prediction
+    pub ml_model_type: String,
+    /// Prediction confidence threshold
+    pub prediction_confidence_threshold: f64,
+    /// Enable anomaly detection
+    pub enable_anomaly_detection: bool,
+    /// Anomaly detection sensitivity (0.0 to 1.0)
+    pub anomaly_detection_sensitivity: f64,
+    /// Enable seasonal pattern detection
+    pub enable_seasonal_patterns: bool,
+    /// Seasonal pattern detection window (hours)
+    pub seasonal_window_hours: u32,
+    /// Enable workload classification
+    pub enable_workload_classification: bool,
+    /// Workload classification thresholds
+    pub workload_classification_thresholds: WorkloadClassificationThresholds,
+    /// Enable adaptive resource allocation
+    pub enable_adaptive_allocation: bool,
+    /// Adaptive allocation parameters
+    pub adaptive_allocation_params: AdaptiveAllocationParameters,
+    /// Enable predictive scaling
+    pub enable_predictive_scaling: bool,
+    /// Predictive scaling horizon (minutes)
+    pub predictive_scaling_horizon: u32,
+    /// Enable multi-metric scaling
+    pub enable_multi_metric_scaling: bool,
+    /// Multi-metric scaling weights
+    pub multi_metric_weights: MultiMetricScalingWeights,
+}
+
+impl Default for EnhancedContainerAutoScalingConfig {
+    fn default() -> Self {
+        Self {
+            base_config: ContainerAutoScalingConfig::default(),
+            ml_model_type: "linear_regression".to_string(),
+            prediction_confidence_threshold: 0.7,
+            enable_anomaly_detection: true,
+            anomaly_detection_sensitivity: 0.8,
+            enable_seasonal_patterns: true,
+            seasonal_window_hours: 24,
+            enable_workload_classification: true,
+            workload_classification_thresholds: WorkloadClassificationThresholds::default(),
+            enable_adaptive_allocation: true,
+            adaptive_allocation_params: AdaptiveAllocationParameters::default(),
+            enable_predictive_scaling: true,
+            predictive_scaling_horizon: 30,
+            enable_multi_metric_scaling: true,
+            multi_metric_weights: MultiMetricScalingWeights::default(),
+        }
+    }
+}
+
+/// Workload classification thresholds
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct WorkloadClassificationThresholds {
+    /// CPU usage threshold for high workload
+    pub high_cpu_threshold: f64,
+    /// Memory usage threshold for high workload
+    pub high_memory_threshold: f64,
+    /// Network usage threshold for high workload (bytes per second)
+    pub high_network_threshold: u64,
+    /// Storage usage threshold for high workload (bytes per second)
+    pub high_storage_threshold: u64,
+    /// CPU usage threshold for low workload
+    pub low_cpu_threshold: f64,
+    /// Memory usage threshold for low workload
+    pub low_memory_threshold: f64,
+    /// Network usage threshold for low workload (bytes per second)
+    pub low_network_threshold: u64,
+    /// Storage usage threshold for low workload (bytes per second)
+    pub low_storage_threshold: u64,
+}
+
+impl Default for WorkloadClassificationThresholds {
+    fn default() -> Self {
+        Self {
+            high_cpu_threshold: 80.0,
+            high_memory_threshold: 85.0,
+            high_network_threshold: 10_000_000, // 10 MB/s
+            high_storage_threshold: 5_000_000,  // 5 MB/s
+            low_cpu_threshold: 20.0,
+            low_memory_threshold: 30.0,
+            low_network_threshold: 1_000_000,   // 1 MB/s
+            low_storage_threshold: 500_000,     // 0.5 MB/s
+        }
+    }
+}
+
+/// Adaptive allocation parameters
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AdaptiveAllocationParameters {
+    /// Adaptive CPU allocation factor
+    pub cpu_allocation_factor: f64,
+    /// Adaptive memory allocation factor
+    pub memory_allocation_factor: f64,
+    /// Adaptive network allocation factor
+    pub network_allocation_factor: f64,
+    /// Adaptive storage allocation factor
+    pub storage_allocation_factor: f64,
+    /// Adaptive allocation learning rate
+    pub learning_rate: f64,
+    /// Adaptive allocation momentum
+    pub momentum: f64,
+    /// Adaptive allocation decay rate
+    pub decay_rate: f64,
+}
+
+impl Default for AdaptiveAllocationParameters {
+    fn default() -> Self {
+        Self {
+            cpu_allocation_factor: 1.2,
+            memory_allocation_factor: 1.3,
+            network_allocation_factor: 1.1,
+            storage_allocation_factor: 1.1,
+            learning_rate: 0.1,
+            momentum: 0.9,
+            decay_rate: 0.99,
+        }
+    }
+}
+
+/// Multi-metric scaling weights
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MultiMetricScalingWeights {
+    /// CPU usage weight
+    pub cpu_weight: f64,
+    /// Memory usage weight
+    pub memory_weight: f64,
+    /// Network usage weight
+    pub network_weight: f64,
+    /// Storage usage weight
+    pub storage_weight: f64,
+    /// Process count weight
+    pub process_count_weight: f64,
+}
+
+impl Default for MultiMetricScalingWeights {
+    fn default() -> Self {
+        Self {
+            cpu_weight: 0.4,
+            memory_weight: 0.3,
+            network_weight: 0.1,
+            storage_weight: 0.1,
+            process_count_weight: 0.1,
+        }
+    }
+}
+
+/// Container workload classification
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ContainerWorkloadClassification {
+    /// Low workload
+    Low,
+    /// Medium workload
+    Medium,
+    /// High workload
+    High,
+    /// Burst workload
+    Burst,
+    /// Unknown workload
+    Unknown,
+}
+
+/// Container resource prediction
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContainerResourcePrediction {
+    /// Predicted CPU usage percentage
+    pub predicted_cpu_usage: f64,
+    /// Predicted memory usage percentage
+    pub predicted_memory_usage: f64,
+    /// Predicted network usage (bytes per second)
+    pub predicted_network_usage: u64,
+    /// Predicted storage usage (bytes per second)
+    pub predicted_storage_usage: u64,
+    /// Prediction confidence (0.0 to 1.0)
+    pub prediction_confidence: f64,
+    /// Prediction timestamp
+    pub prediction_timestamp: u64,
+    /// Prediction horizon (seconds)
+    pub prediction_horizon: u32,
+}
+
+/// Container scaling recommendation
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContainerScalingRecommendation {
+    /// Container ID
+    pub container_id: String,
+    /// Current CPU usage percentage
+    pub current_cpu_usage: f64,
+    /// Recommended CPU limit
+    pub recommended_cpu_limit: f64,
+    /// Current memory usage percentage
+    pub current_memory_usage: f64,
+    /// Recommended memory limit (bytes)
+    pub recommended_memory_limit: u64,
+    /// Scaling confidence (0.0 to 1.0)
+    pub scaling_confidence: f64,
+    /// Scaling reason
+    pub scaling_reason: String,
+    /// Scaling priority
+    pub scaling_priority: ScalingPriority,
+    /// Scaling timestamp
+    pub scaling_timestamp: u64,
+}
+
+/// Scaling priority
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ScalingPriority {
+    /// Low priority scaling
+    Low,
+    /// Medium priority scaling
+    Medium,
+    /// High priority scaling
+    High,
+    /// Critical priority scaling
+    Critical,
+}
+
+/// Container scaling decision
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContainerScalingDecision {
+    /// Container ID
+    pub container_id: String,
+    /// Scaling action
+    pub scaling_action: ScalingAction,
+    /// Current resource limits
+    pub current_limits: ContainerResourceLimits,
+    /// New resource limits
+    pub new_limits: ContainerResourceLimits,
+    /// Scaling confidence
+    pub scaling_confidence: f64,
+    /// Scaling reason
+    pub scaling_reason: String,
+    /// Scaling timestamp
+    pub scaling_timestamp: u64,
+    /// Scaling success status
+    pub scaling_success: bool,
+    /// Scaling error message (if any)
+    pub scaling_error: Option<String>,
+}
+
+/// Scaling action
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ScalingAction {
+    /// Scale up resources
+    ScaleUp,
+    /// Scale down resources
+    ScaleDown,
+    /// No scaling needed
+    NoScaling,
+    /// Manual override
+    ManualOverride,
 }
 
 /// Container health monitoring configuration
@@ -3346,4 +3617,196 @@ fn create_test_container_metric(
         },
         security_options: vec!["seccomp=default".to_string()],
     }
+}
+
+/// Apply enhanced auto-scaling with ML-based prediction and adaptive algorithms
+pub fn apply_enhanced_auto_scaling(
+    container_id: &str,
+    config: &EnhancedContainerAutoScalingConfig,
+    historical_data: &[ContainerMetrics],
+) -> Result<ContainerScalingDecision> {
+    if !config.base_config.enabled {
+        return Ok(ContainerScalingDecision {
+            container_id: container_id.to_string(),
+            scaling_action: ScalingAction::NoScaling,
+            current_limits: ContainerResourceLimits::default(),
+            new_limits: ContainerResourceLimits::default(),
+            scaling_confidence: 0.0,
+            scaling_reason: "Auto-scaling disabled".to_string(),
+            scaling_timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)?
+                .as_secs(),
+            scaling_success: false,
+            scaling_error: None,
+        });
+    }
+
+    // Check cooldown period
+    if let Some(last_timestamp) = config.base_config.last_scaling_timestamp {
+        let current_time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+        if current_time - last_timestamp < config.base_config.cooldown_seconds as u64 {
+            return Ok(ContainerScalingDecision {
+                container_id: container_id.to_string(),
+                scaling_action: ScalingAction::NoScaling,
+                current_limits: ContainerResourceLimits::default(),
+                new_limits: ContainerResourceLimits::default(),
+                scaling_confidence: 0.0,
+                scaling_reason: "Cooldown period active".to_string(),
+                scaling_timestamp: current_time,
+                scaling_success: false,
+                scaling_error: None,
+            });
+        }
+    }
+
+    // Get current container metrics
+    let current_metrics = collect_container_metrics()?;
+    let current_metric = current_metrics
+        .into_iter()
+        .find(|m| m.id == container_id)
+        .ok_or_else(|| anyhow::anyhow!("Container not found"))?;
+
+    // Classify workload
+    let workload_classification = classify_container_workload(&current_metric, config);
+
+    // Analyze historical data and predict future resource needs using enhanced ML algorithm
+    let resource_prediction = predict_resource_usage_with_enhanced_ml(
+        historical_data,
+        &current_metric,
+        config,
+        &workload_classification,
+    );
+
+    // Calculate enhanced scaling confidence with multi-factor analysis
+    let scaling_confidence = calculate_enhanced_scaling_confidence_with_ml(
+        historical_data,
+        &current_metric,
+        &resource_prediction,
+        config,
+    );
+
+    // Apply adaptive scaling thresholds based on workload classification
+    let (adaptive_cpu_target, adaptive_memory_target) = apply_adaptive_scaling_thresholds(
+        config.base_config.target_cpu_usage,
+        config.base_config.target_memory_usage,
+        &workload_classification,
+        config.base_config.scaling_aggressiveness,
+    );
+
+    // Calculate multi-metric scaling score
+    let scaling_score = calculate_multi_metric_scaling_score(
+        &current_metric,
+        &resource_prediction,
+        &config.multi_metric_weights,
+    );
+
+    // Apply confidence-based scaling adjustment with adaptive factors
+    let (cpu_adjustment_factor, memory_adjustment_factor) = calculate_adaptive_scaling_factors(
+        scaling_confidence,
+        config.base_config.scaling_aggressiveness,
+        &workload_classification,
+    );
+
+    let adjusted_cpu_usage = current_metric.cpu_usage.usage_percent * (1.0 - cpu_adjustment_factor)
+        + resource_prediction.predicted_cpu_usage * cpu_adjustment_factor;
+    let adjusted_memory_usage = current_metric.memory_usage.usage_percent
+        * (1.0 - memory_adjustment_factor)
+        + resource_prediction.predicted_memory_usage * memory_adjustment_factor;
+
+    // Calculate new resource limits with enhanced bounds checking and adaptive allocation
+    let new_cpu_limit = calculate_scaled_resource_with_adaptive_allocation(
+        current_metric.cpu_usage.usage_percent,
+        adjusted_cpu_usage,
+        adaptive_cpu_target,
+        current_metric.resource_limits.cpu_limit,
+        config.base_config.min_cpu_limit,
+        config.base_config.max_cpu_limit,
+        &config.adaptive_allocation_params,
+    );
+
+    let new_memory_limit = current_metric
+        .resource_limits
+        .memory_limit
+        .map(|limit| limit as f64)
+        .and_then(|limit| {
+            calculate_scaled_resource_with_adaptive_allocation(
+                current_metric.memory_usage.usage_percent,
+                adjusted_memory_usage,
+                adaptive_memory_target,
+                Some(limit),
+                config.base_config.min_memory_limit as f64,
+                config.base_config.max_memory_limit as f64,
+                &config.adaptive_allocation_params,
+            )
+        })
+        .map(|v| v as u64);
+
+    // Determine scaling action and priority
+    let (scaling_action, scaling_priority) = determine_scaling_action_and_priority(
+        &current_metric,
+        new_cpu_limit,
+        new_memory_limit,
+        scaling_confidence,
+        &workload_classification,
+    );
+
+    // Create scaling recommendation
+    let scaling_recommendation = create_scaling_recommendation(
+        container_id,
+        &current_metric,
+        new_cpu_limit,
+        new_memory_limit,
+        scaling_confidence,
+        scaling_action.clone(),
+        scaling_priority.clone(),
+        &workload_classification,
+    );
+
+    // Log enhanced scaling decision with detailed information
+    tracing::info!(
+        "Enhanced auto-scaling container {}: Workload={:?}, CPU {}% -> {}%, Memory {}MB -> {}MB, Confidence={:.2}%, Action={:?}, Priority={:?}",
+        container_id,
+        workload_classification,
+        current_metric.cpu_usage.usage_percent,
+        adjusted_cpu_usage,
+        current_metric.memory_usage.usage / (1024 * 1024),
+        new_memory_limit.unwrap_or(0) / (1024 * 1024),
+        scaling_confidence * 100.0,
+        scaling_action,
+        scaling_priority
+    );
+
+    // Apply the new resource limits
+    let scaling_result = update_container_resource_limits(
+        container_id,
+        new_cpu_limit,
+        new_memory_limit,
+        None, // Keep PIDs limit unchanged
+    );
+
+    // Create scaling decision
+    let scaling_decision = ContainerScalingDecision {
+        container_id: container_id.to_string(),
+        scaling_action: scaling_action,
+        current_limits: current_metric.resource_limits.clone(),
+        new_limits: ContainerResourceLimits {
+            cpu_limit: new_cpu_limit,
+            memory_limit: new_memory_limit,
+            ..current_metric.resource_limits.clone()
+        },
+        scaling_confidence: scaling_confidence,
+        scaling_reason: format!(
+            "Enhanced ML-based auto-scaling with workload classification: {:?}",
+            workload_classification
+        ),
+        scaling_timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs(),
+        scaling_success: scaling_result.is_ok(),
+        scaling_error: scaling_result.err().map(|e| e.to_string()),
+    };
+
+    Ok(scaling_decision)
 }
