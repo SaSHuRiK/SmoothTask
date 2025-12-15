@@ -85,9 +85,9 @@ pub mod pattern_watcher;
 pub mod rules;
 
 /// Интеграция асинхронного логирования в модуль классификации
-use crate::logging::async_logging::{write_log_entry_async, write_log_batch_async};
-use std::path::Path;
+use crate::logging::async_logging::{write_log_batch_async, write_log_entry_async};
 use anyhow::Result;
+use std::path::Path;
 
 /// Асинхронное логирование классификации
 pub async fn log_classification_async(log_path: &Path, classification_data: &str) -> Result<()> {
@@ -95,7 +95,10 @@ pub async fn log_classification_async(log_path: &Path, classification_data: &str
 }
 
 /// Асинхронное пакетное логирование классификации
-pub async fn log_classification_batch_async(log_path: &Path, classification_batch: &[String]) -> Result<()> {
+pub async fn log_classification_batch_async(
+    log_path: &Path,
+    classification_batch: &[String],
+) -> Result<()> {
     write_log_batch_async(log_path, classification_batch).await
 }
 
@@ -138,7 +141,10 @@ mod tests {
             ];
 
             let result = log_classification_batch_async(&log_path, &classification_batch).await;
-            assert!(result.is_ok(), "Batch classification logging should succeed");
+            assert!(
+                result.is_ok(),
+                "Batch classification logging should succeed"
+            );
         });
     }
 }

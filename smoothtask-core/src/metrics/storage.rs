@@ -84,7 +84,7 @@ pub fn detect_sata_devices() -> io::Result<Vec<SataDeviceInfo>> {
     for entry in fs::read_dir(sys_block_path)? {
         let entry = entry?;
         let device_name = entry.file_name();
-        let device_name_str = device_name.to_string_lossy();
+        let device_name_str = device_name.to_string_lossy().into_owned();
         
         // Проверяем, является ли устройство SATA (проверяем наличие директории device)
         let device_path = sys_block_path.join(&device_name_str);

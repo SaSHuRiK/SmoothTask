@@ -207,7 +207,8 @@ pub trait ContainerHealthMonitorTrait: Send + Sync {
     async fn check_container_health(&self) -> Result<HashMap<String, ContainerHealthInfo>>;
 
     /// Получить информацию о здоровье конкретного контейнера.
-    async fn get_container_health(&self, container_id: &str) -> Result<Option<ContainerHealthInfo>>;
+    async fn get_container_health(&self, container_id: &str)
+        -> Result<Option<ContainerHealthInfo>>;
 
     /// Обновить конфигурацию мониторинга контейнеров.
     async fn update_container_health_config(&self, config: ContainerHealthConfig) -> Result<()>;
@@ -232,7 +233,7 @@ pub trait ContainerHealthMonitorTrait: Send + Sync {
 #[derive(Debug, Clone)]
 pub struct ContainerHealthMonitorImpl {
     config: ContainerHealthConfig,
-    container_health_cache: Arc<tokio::sync::RwLock<HashMap<String, ContainerHealthInfo>>>, 
+    container_health_cache: Arc<tokio::sync::RwLock<HashMap<String, ContainerHealthInfo>>>,
 }
 
 use std::sync::Arc;
@@ -264,7 +265,10 @@ impl ContainerHealthMonitorTrait for ContainerHealthMonitorImpl {
         Ok(health_info_map)
     }
 
-    async fn get_container_health(&self, container_id: &str) -> Result<Option<ContainerHealthInfo>> {
+    async fn get_container_health(
+        &self,
+        container_id: &str,
+    ) -> Result<Option<ContainerHealthInfo>> {
         // Сначала пытаемся получить из кэша
         let cache = self.container_health_cache.read().await;
         if let Some(health_info) = cache.get(container_id) {
@@ -415,16 +419,28 @@ impl ContainerHealthMonitorImpl {
         }
 
         // Проверяем, не игнорируется ли контейнер
-        if self.config.ignored_containers.contains(&container_id.to_string())
-            || self.config.ignored_containers.contains(&container_name.to_string())
+        if self
+            .config
+            .ignored_containers
+            .contains(&container_id.to_string())
+            || self
+                .config
+                .ignored_containers
+                .contains(&container_name.to_string())
         {
             return false;
         }
 
         // Проверяем, входит ли контейнер в список мониторинга
         if !self.config.monitored_containers.is_empty()
-            && !self.config.monitored_containers.contains(&container_id.to_string())
-            && !self.config.monitored_containers.contains(&container_name.to_string())
+            && !self
+                .config
+                .monitored_containers
+                .contains(&container_id.to_string())
+            && !self
+                .config
+                .monitored_containers
+                .contains(&container_name.to_string())
         {
             return false;
         }
@@ -433,7 +449,10 @@ impl ContainerHealthMonitorImpl {
     }
 
     /// Проверить здоровье одного контейнера.
-    async fn check_single_container_health(&self, container: &ContainerInfo) -> Result<ContainerHealthInfo> {
+    async fn check_single_container_health(
+        &self,
+        container: &ContainerInfo,
+    ) -> Result<ContainerHealthInfo> {
         let mut health_info = ContainerHealthInfo {
             container_id: container.id.clone(),
             container_name: container.name.clone(),
@@ -491,13 +510,22 @@ impl ContainerHealthMonitorImpl {
             return Ok(stats);
         }
 
-        Err(anyhow::anyhow!("Failed to get container stats for {}", container_id))
+        Err(anyhow::anyhow!(
+            "Failed to get container stats for {}",
+            container_id
+        ))
     }
 
     /// Получить статистику контейнера Docker.
     async fn get_docker_container_stats(&self, container_id: &str) -> Result<ContainerStats> {
         let output = Command::new("docker")
-            .args(["stats", "--no-stream", "--format", "{{.CPUPerc}}:{{.MemUsage}}:{{.MemPerc}}", container_id])
+            .args([
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{.CPUPerc}}:{{.MemUsage}}:{{.MemPerc}}",
+                container_id,
+            ])
             .output()
             .context("Failed to execute docker stats command")?;
 
@@ -513,9 +541,10 @@ impl ContainerHealthMonitorImpl {
 
         if parts.len() >= 3 {
             let cpu_usage = parts[0].trim_end_matches('%').parse::<f32>().ok();
-            let mem_usage = parts[1].split('/').next().and_then(|s| {
-                s.trim().parse::<u64>().ok()
-            });
+            let mem_usage = parts[1]
+                .split('/')
+                .next()
+                .and_then(|s| s.trim().parse::<u64>().ok());
             let mem_percent = parts[2].trim_end_matches('%').parse::<f32>().ok();
 
             return Ok(ContainerStats {
@@ -531,7 +560,13 @@ impl ContainerHealthMonitorImpl {
     /// Получить статистику контейнера Podman.
     async fn get_podman_container_stats(&self, container_id: &str) -> Result<ContainerStats> {
         let output = Command::new("podman")
-            .args(["stats", "--no-stream", "--format", "{{.CPUPerc}}:{{.MemUsage}}:{{.MemPerc}}", container_id])
+            .args([
+                "stats",
+                "--no-stream",
+                "--format",
+                "{{.CPUPerc}}:{{.MemUsage}}:{{.MemPerc}}",
+                container_id,
+            ])
             .output()
             .context("Failed to execute podman stats command")?;
 
@@ -547,9 +582,10 @@ impl ContainerHealthMonitorImpl {
 
         if parts.len() >= 3 {
             let cpu_usage = parts[0].trim_end_matches('%').parse::<f32>().ok();
-            let mem_usage = parts[1].split('/').next().and_then(|s| {
-                s.trim().parse::<u64>().ok()
-            });
+            let mem_usage = parts[1]
+                .split('/')
+                .next()
+                .and_then(|s| s.trim().parse::<u64>().ok());
             let mem_percent = parts[2].trim_end_matches('%').parse::<f32>().ok();
 
             return Ok(ContainerStats {
@@ -572,7 +608,9 @@ impl ContainerHealthMonitorImpl {
                     "High CPU usage: {:.1}% (threshold: {:.1}%)",
                     cpu_usage, self.config.critical_thresholds.max_cpu_usage_percent
                 ));
-            } else if cpu_usage > 80.0 && health_info.health_status == ContainerHealthStatus::Healthy {
+            } else if cpu_usage > 80.0
+                && health_info.health_status == ContainerHealthStatus::Healthy
+            {
                 health_info.health_status = ContainerHealthStatus::Warning;
             }
         }
@@ -585,7 +623,9 @@ impl ContainerHealthMonitorImpl {
                     "High memory usage: {:.1}% (threshold: {:.1}%)",
                     mem_usage, self.config.critical_thresholds.max_memory_usage_percent
                 ));
-            } else if mem_usage > 75.0 && health_info.health_status == ContainerHealthStatus::Healthy {
+            } else if mem_usage > 75.0
+                && health_info.health_status == ContainerHealthStatus::Healthy
+            {
                 health_info.health_status = ContainerHealthStatus::Warning;
             }
         }
@@ -609,7 +649,9 @@ struct ContainerStats {
 }
 
 /// Вспомогательная функция для создания ContainerHealthMonitor.
-pub fn create_container_health_monitor(config: ContainerHealthConfig) -> ContainerHealthMonitorImpl {
+pub fn create_container_health_monitor(
+    config: ContainerHealthConfig,
+) -> ContainerHealthMonitorImpl {
     ContainerHealthMonitorImpl::new(config)
 }
 
@@ -728,4 +770,3 @@ mod tests {
         assert!(health_info.error_details.is_some());
     }
 }
-

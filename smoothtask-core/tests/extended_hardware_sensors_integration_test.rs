@@ -121,11 +121,14 @@ async fn test_thunderbolt6_device_detection() {
     // Проверяем, что Thunderbolt 6 устройства могут быть обнаружены
     // В реальной системе это будет зависеть от наличия соответствующего оборудования
     assert!(sensors.thunderbolt6_devices.len() >= 0);
-    
+
     // Проверяем, что все устройства имеют корректные скорости (если они есть)
     for (device_name, speed) in &sensors.thunderbolt6_devices {
         assert!(!device_name.is_empty());
-        assert!(speed >= &160.0, "Thunderbolt 6 devices should have speeds >= 160 Gbps");
+        assert!(
+            speed >= &160.0,
+            "Thunderbolt 6 devices should have speeds >= 160 Gbps"
+        );
     }
 }
 
@@ -141,18 +144,21 @@ async fn test_pcie7_device_detection() {
     // Проверяем, что PCIe 7.0 устройства могут быть обнаружены
     // В реальной системе это будет зависеть от наличия соответствующего оборудования
     assert!(sensors.pcie7_devices.len() >= 0);
-    
+
     // Проверяем, что все устройства имеют корректные скорости (если они есть)
     for (device_name, speed) in &sensors.pcie7_devices {
         assert!(!device_name.is_empty());
-        assert!(speed >= &128.0, "PCIe 7.0 devices should have speeds >= 128 Gbps");
+        assert!(
+            speed >= &128.0,
+            "PCIe 7.0 devices should have speeds >= 128 Gbps"
+        );
     }
 }
 
 #[tokio::test]
 async fn test_config_struct_completeness() {
     let config = ExtendedHardwareSensorsConfig::default();
-    
+
     // Проверяем, что все новые поля конфигурации присутствуют и имеют значения по умолчанию
     assert!(config.enable_thunderbolt5_monitoring);
     assert!(config.enable_pcie6_monitoring);
@@ -165,7 +171,7 @@ async fn test_config_struct_completeness() {
 #[tokio::test]
 async fn test_sensor_struct_completeness() {
     let sensors = ExtendedHardwareSensors::default();
-    
+
     // Проверяем, что все новые поля структуры присутствуют
     assert!(sensors.thunderbolt5_devices.is_empty());
     assert!(sensors.pcie6_devices.is_empty());

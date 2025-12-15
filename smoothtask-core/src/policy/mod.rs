@@ -15,9 +15,9 @@ pub mod dynamic;
 pub mod engine;
 
 /// Интеграция асинхронного логирования в модуль политик
-use crate::logging::async_logging::{write_log_entry_async, write_log_batch_async};
-use std::path::Path;
+use crate::logging::async_logging::{write_log_batch_async, write_log_entry_async};
 use anyhow::Result;
+use std::path::Path;
 
 /// Асинхронное логирование политик
 pub async fn log_policy_async(log_path: &Path, policy_data: &str) -> Result<()> {

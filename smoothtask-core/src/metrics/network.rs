@@ -111,94 +111,136 @@ impl Default for NetworkInterfaceStats {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{Ipv6Addr, IpAddr};
-    
+    use std::net::{IpAddr, Ipv6Addr};
+
     #[test]
     fn test_ipv6_address_conversion() {
         // Test valid IPv6 address conversion
         let hex_ip = "20010DB8000000000000000000000001";
         let network_monitor = NetworkMonitor::new();
         let result = network_monitor.hex_ipv6_to_std(hex_ip);
-        
-        assert!(result.is_ok(), "Should successfully convert valid IPv6 hex address");
+
+        assert!(
+            result.is_ok(),
+            "Should successfully convert valid IPv6 hex address"
+        );
         let addr = result.unwrap();
         assert_eq!(addr, Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x1));
     }
-    
+
     #[test]
     fn test_ipv6_address_conversion_invalid_length() {
         // Test invalid IPv6 address with wrong length
         let hex_ip = "20010DB8"; // Too short
         let network_monitor = NetworkMonitor::new();
         let result = network_monitor.hex_ipv6_to_std(hex_ip);
-        
+
         assert!(result.is_err(), "Should fail with invalid IPv6 hex length");
     }
-    
+
     #[test]
     fn test_ipv6_address_conversion_invalid_hex() {
         // Test invalid IPv6 address with non-hex characters
         let hex_ip = "20010DB800000000000000000000000Z"; // Contains 'Z'
         let network_monitor = NetworkMonitor::new();
         let result = network_monitor.hex_ipv6_to_std(hex_ip);
-        
+
         assert!(result.is_err(), "Should fail with invalid hex characters");
     }
-    
+
     #[test]
     fn test_ipv6_loopback_address() {
         // Test IPv6 loopback address conversion
         let hex_ip = "00000000000000000000000000000001";
         let network_monitor = NetworkMonitor::new();
         let result = network_monitor.hex_ipv6_to_std(hex_ip);
-        
-        assert!(result.is_ok(), "Should successfully convert IPv6 loopback address");
+
+        assert!(
+            result.is_ok(),
+            "Should successfully convert IPv6 loopback address"
+        );
         let addr = result.unwrap();
-        assert!(addr.is_loopback(), "Should be recognized as loopback address");
+        assert!(
+            addr.is_loopback(),
+            "Should be recognized as loopback address"
+        );
     }
-    
+
     #[test]
     fn test_ipv6_unspecified_address() {
         // Test IPv6 unspecified address conversion
         let hex_ip = "00000000000000000000000000000000";
         let network_monitor = NetworkMonitor::new();
         let result = network_monitor.hex_ipv6_to_std(hex_ip);
-        
-        assert!(result.is_ok(), "Should successfully convert IPv6 unspecified address");
+
+        assert!(
+            result.is_ok(),
+            "Should successfully convert IPv6 unspecified address"
+        );
         let addr = result.unwrap();
-        assert!(addr.is_unspecified(), "Should be recognized as unspecified address");
+        assert!(
+            addr.is_unspecified(),
+            "Should be recognized as unspecified address"
+        );
     }
-    
+
     #[test]
     fn test_ipv6_stats_struct_default() {
         // Test IPv6NetworkStats default values
         let stats = IPv6NetworkStats::default();
-        
+
         assert_eq!(stats.rx_packets, 0, "Default rx_packets should be 0");
         assert_eq!(stats.tx_packets, 0, "Default tx_packets should be 0");
         assert_eq!(stats.rx_bytes, 0, "Default rx_bytes should be 0");
         assert_eq!(stats.tx_bytes, 0, "Default tx_bytes should be 0");
         assert_eq!(stats.rx_errors, 0, "Default rx_errors should be 0");
         assert_eq!(stats.tx_errors, 0, "Default tx_errors should be 0");
-        assert_eq!(stats.rx_too_big_errors, 0, "Default rx_too_big_errors should be 0");
+        assert_eq!(
+            stats.rx_too_big_errors, 0,
+            "Default rx_too_big_errors should be 0"
+        );
         assert_eq!(stats.rx_no_routes, 0, "Default rx_no_routes should be 0");
-        assert_eq!(stats.rx_addr_errors, 0, "Default rx_addr_errors should be 0");
-        assert_eq!(stats.rx_unknown_protos, 0, "Default rx_unknown_protos should be 0");
-        assert_eq!(stats.forwarding_enabled, false, "Default forwarding_enabled should be false");
-        assert_eq!(stats.default_hop_limit, 0, "Default default_hop_limit should be 0");
-        assert_eq!(stats.neighbor_cache_entries, 0, "Default neighbor_cache_entries should be 0");
-        assert_eq!(stats.destination_cache_entries, 0, "Default destination_cache_entries should be 0");
+        assert_eq!(
+            stats.rx_addr_errors, 0,
+            "Default rx_addr_errors should be 0"
+        );
+        assert_eq!(
+            stats.rx_unknown_protos, 0,
+            "Default rx_unknown_protos should be 0"
+        );
+        assert_eq!(
+            stats.forwarding_enabled, false,
+            "Default forwarding_enabled should be false"
+        );
+        assert_eq!(
+            stats.default_hop_limit, 0,
+            "Default default_hop_limit should be 0"
+        );
+        assert_eq!(
+            stats.neighbor_cache_entries, 0,
+            "Default neighbor_cache_entries should be 0"
+        );
+        assert_eq!(
+            stats.destination_cache_entries, 0,
+            "Default destination_cache_entries should be 0"
+        );
         assert_eq!(stats.mtu, 0, "Default mtu should be 0");
-        assert_eq!(stats.accept_router_advertisements, false, "Default accept_router_advertisements should be false");
-        assert_eq!(stats.accept_redirects, false, "Default accept_redirects should be false");
+        assert_eq!(
+            stats.accept_router_advertisements, false,
+            "Default accept_router_advertisements should be false"
+        );
+        assert_eq!(
+            stats.accept_redirects, false,
+            "Default accept_redirects should be false"
+        );
     }
-    
+
     #[test]
     fn test_ipv6_connection_stats_struct() {
         // Test IPv6ConnectionStats creation
         let src_ip = Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x1);
         let dst_ip = Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x2);
-        
+
         let connection = IPv6ConnectionStats {
             src_ip,
             dst_ip,
@@ -216,22 +258,32 @@ mod tests {
             last_activity: SystemTime::UNIX_EPOCH,
             duration: Duration::from_secs(60),
         };
-        
+
         assert_eq!(connection.src_port, 12345, "Source port should match");
         assert_eq!(connection.dst_port, 80, "Destination port should match");
         assert_eq!(connection.protocol, "TCP6", "Protocol should match");
         assert_eq!(connection.state, "ESTABLISHED", "State should match");
         assert_eq!(connection.pid, Some(1234), "PID should match");
-        assert_eq!(connection.process_name, Some("test_process".to_string()), "Process name should match");
-        assert_eq!(connection.bytes_transmitted, 1024, "Bytes transmitted should match");
-        assert_eq!(connection.bytes_received, 2048, "Bytes received should match");
+        assert_eq!(
+            connection.process_name,
+            Some("test_process".to_string()),
+            "Process name should match"
+        );
+        assert_eq!(
+            connection.bytes_transmitted, 1024,
+            "Bytes transmitted should match"
+        );
+        assert_eq!(
+            connection.bytes_received, 2048,
+            "Bytes received should match"
+        );
     }
-    
+
     #[test]
     fn test_ipv6_address_validation() {
         // Test various IPv6 address formats
         let network_monitor = NetworkMonitor::new();
-        
+
         // Test valid addresses
         let valid_addresses = vec![
             "20010DB8000000000000000000000001", // Global unicast
@@ -240,10 +292,14 @@ mod tests {
             "00000000000000000000000000000001", // Loopback
             "00000000000000000000000000000000", // Unspecified
         ];
-        
+
         for addr in valid_addresses {
             let result = network_monitor.hex_ipv6_to_std(addr);
-            assert!(result.is_ok(), "Should successfully convert valid IPv6 address: {}", addr);
+            assert!(
+                result.is_ok(),
+                "Should successfully convert valid IPv6 address: {}",
+                addr
+            );
         }
     }
 }
@@ -1473,7 +1529,11 @@ impl Default for NetworkMonitorConfig {
             update_interval_secs: 60,
             monitored_ports: vec![80, 443, 22, 53, 8080],
             monitored_protocols: vec!["TCP".to_string(), "UDP".to_string()],
-            monitored_qos_classes: vec!["best-effort".to_string(), "video".to_string(), "voice".to_string()],
+            monitored_qos_classes: vec![
+                "best-effort".to_string(),
+                "video".to_string(),
+                "voice".to_string(),
+            ],
         }
     }
 }
@@ -1626,7 +1686,7 @@ impl NetworkMonitor {
 
         // Collect network quality metrics
         if self.config.enable_quality_monitoring {
-            stats.quality = self.collect_network_quality_metrics()?;
+            stats.quality = self.collect_network_quality_from_connections()?;
         }
 
         // Calculate totals
@@ -1682,7 +1742,7 @@ impl NetworkMonitor {
 
         // Collect network quality metrics
         if self.config.enable_quality_monitoring {
-            stats.quality = self.collect_network_quality_metrics()?;
+            stats.quality = self.collect_network_quality_from_connections()?;
         }
 
         // Calculate totals from interfaces with QoS
@@ -1771,7 +1831,8 @@ impl NetworkMonitor {
 
             // Collect QoS queue statistics if enabled
             if self.config.enable_qos_monitoring {
-                interface_with_qos.qos_queue_stats = self.collect_qos_queue_stats(&basic_iface.name)?;
+                interface_with_qos.qos_queue_stats =
+                    self.collect_qos_queue_stats(&basic_iface.name)?;
             }
 
             interfaces_with_qos.push(interface_with_qos);
@@ -1815,50 +1876,98 @@ impl NetworkMonitor {
             // Add technology-specific capabilities based on interface type
             match basic_iface.base_stats.interface_type {
                 NetworkInterfaceType::Wifi6 | NetworkInterfaceType::Wifi6E => {
-                    extended_iface.wifi6_stats = Some(self.collect_wifi6_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("Wi-Fi 6/6E".to_string());
-                    extended_iface.technology_capabilities.push("MU-MIMO".to_string());
-                    extended_iface.technology_capabilities.push("OFDMA".to_string());
+                    extended_iface.wifi6_stats =
+                        Some(self.collect_wifi6_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi 6/6E".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("MU-MIMO".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("OFDMA".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                     if basic_iface.base_stats.interface_type == NetworkInterfaceType::Wifi6E {
                         extended_iface.supported_bands.push("6GHz".to_string());
-                        extended_iface.technology_capabilities.push("6GHz support".to_string());
+                        extended_iface
+                            .technology_capabilities
+                            .push("6GHz support".to_string());
                     }
                 }
                 NetworkInterfaceType::Wifi7 => {
-                    extended_iface.wifi7_stats = Some(self.collect_wifi7_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("Wi-Fi 7".to_string());
-                    extended_iface.technology_capabilities.push("EHT".to_string());
-                    extended_iface.technology_capabilities.push("MLO".to_string());
-                    extended_iface.technology_capabilities.push("4K-QAM".to_string());
-                    extended_iface.technology_capabilities.push("320MHz channels".to_string());
+                    extended_iface.wifi7_stats =
+                        Some(self.collect_wifi7_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi 7".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("EHT".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("MLO".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("4K-QAM".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("320MHz channels".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                     extended_iface.supported_bands.push("6GHz".to_string());
                 }
                 NetworkInterfaceType::Wifi8 => {
-                    extended_iface.wifi8_stats = Some(self.collect_wifi8_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("Wi-Fi 8".to_string());
-                    extended_iface.technology_capabilities.push("EHT+".to_string());
-                    extended_iface.technology_capabilities.push("Advanced MLO".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz Communication".to_string());
+                    extended_iface.wifi8_stats =
+                        Some(self.collect_wifi8_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi 8".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("EHT+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Advanced MLO".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz Communication".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                     extended_iface.supported_bands.push("6GHz".to_string());
                     extended_iface.supported_bands.push("7GHz".to_string());
                 }
                 NetworkInterfaceType::Wifi9 => {
-                    extended_iface.wifi9_stats = Some(self.collect_wifi9_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("Wi-Fi 9".to_string());
-                    extended_iface.technology_capabilities.push("EHT++".to_string());
-                    extended_iface.technology_capabilities.push("Ultra MLO".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization+".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption+".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz Communication+".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Beamforming".to_string());
+                    extended_iface.wifi9_stats =
+                        Some(self.collect_wifi9_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi 9".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("EHT++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Ultra MLO".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz Communication+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Beamforming".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                     extended_iface.supported_bands.push("6GHz".to_string());
@@ -1866,61 +1975,145 @@ impl NetworkMonitor {
                     extended_iface.supported_bands.push("8GHz".to_string());
                 }
                 NetworkInterfaceType::Cellular5G => {
-                    extended_iface.cellular5g_stats = Some(self.collect_cellular5g_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("5G NR".to_string());
-                    extended_iface.technology_capabilities.push("Carrier Aggregation".to_string());
-                    extended_iface.technology_capabilities.push("MIMO".to_string());
-                    extended_iface.technology_capabilities.push("Network Slicing".to_string());
+                    extended_iface.cellular5g_stats =
+                        Some(self.collect_cellular5g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("5G NR".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Carrier Aggregation".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("MIMO".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Network Slicing".to_string());
                 }
                 NetworkInterfaceType::Cellular6G => {
-                    extended_iface.cellular6g_stats = Some(self.collect_cellular6g_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("6G".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption".to_string());
-                    extended_iface.technology_capabilities.push("Dynamic Spectrum Sharing".to_string());
+                    extended_iface.cellular6g_stats =
+                        Some(self.collect_cellular6g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("6G".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Dynamic Spectrum Sharing".to_string());
                 }
                 NetworkInterfaceType::Cellular7G => {
-                    extended_iface.cellular7g_stats = Some(self.collect_cellular7g_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("7G".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz+".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization+".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption+".to_string());
-                    extended_iface.technology_capabilities.push("Dynamic Spectrum Sharing+".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Communication".to_string());
-                    extended_iface.technology_capabilities.push("Neural Interface".to_string());
+                    extended_iface.cellular7g_stats =
+                        Some(self.collect_cellular7g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("7G".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Dynamic Spectrum Sharing+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Communication".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Neural Interface".to_string());
                 }
                 NetworkInterfaceType::Cellular8G => {
-                    extended_iface.cellular8g_stats = Some(self.collect_cellular8g_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("8G".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz++".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization++".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption++".to_string());
-                    extended_iface.technology_capabilities.push("Dynamic Spectrum Sharing++".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Communication+".to_string());
-                    extended_iface.technology_capabilities.push("Neural Interface+".to_string());
-                    extended_iface.technology_capabilities.push("Holographic MIMO".to_string());
+                    extended_iface.cellular8g_stats =
+                        Some(self.collect_cellular8g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("8G".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Dynamic Spectrum Sharing++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Communication+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Neural Interface+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic MIMO".to_string());
                 }
                 NetworkInterfaceType::Cellular9G => {
-                    extended_iface.cellular9g_stats = Some(self.collect_cellular9g_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("9G".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz+++".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization+++".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption+++".to_string());
-                    extended_iface.technology_capabilities.push("Dynamic Spectrum Sharing+++".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Communication++".to_string());
-                    extended_iface.technology_capabilities.push("Neural Interface++".to_string());
-                    extended_iface.technology_capabilities.push("Holographic MIMO+".to_string());
+                    extended_iface.cellular9g_stats =
+                        Some(self.collect_cellular9g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("9G".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Dynamic Spectrum Sharing+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Communication++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Neural Interface++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic MIMO+".to_string());
                 }
                 NetworkInterfaceType::Wifi10 => {
-                    extended_iface.wifi10_stats = Some(self.collect_wifi10_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("Wi-Fi 10".to_string());
-                    extended_iface.technology_capabilities.push("EHT++".to_string());
-                    extended_iface.technology_capabilities.push("Ultra-MLO".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization+".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption+".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz Communication+".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Beamforming".to_string());
+                    extended_iface.wifi10_stats =
+                        Some(self.collect_wifi10_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi 10".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("EHT++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Ultra-MLO".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz Communication+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Beamforming".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                     extended_iface.supported_bands.push("6GHz".to_string());
@@ -1929,14 +2122,29 @@ impl NetworkMonitor {
                     extended_iface.supported_bands.push("9GHz".to_string());
                 }
                 NetworkInterfaceType::Wifi11 => {
-                    extended_iface.wifi11_stats = Some(self.collect_wifi11_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("Wi-Fi 11".to_string());
-                    extended_iface.technology_capabilities.push("EHT+++".to_string());
-                    extended_iface.technology_capabilities.push("Ultra-MLO+".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization++".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption++".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz Communication++".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Beamforming+".to_string());
+                    extended_iface.wifi11_stats =
+                        Some(self.collect_wifi11_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi 11".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("EHT+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Ultra-MLO+".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz Communication++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Beamforming+".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                     extended_iface.supported_bands.push("6GHz".to_string());
@@ -1946,39 +2154,78 @@ impl NetworkMonitor {
                     extended_iface.supported_bands.push("10GHz".to_string());
                 }
                 NetworkInterfaceType::Cellular10G => {
-                    extended_iface.cellular10g_stats = Some(self.collect_cellular10g_stats(&basic_iface.base_stats.name)?);
-                    extended_iface.technology_capabilities.push("10G".to_string());
-                    extended_iface.technology_capabilities.push("Terahertz++++".to_string());
-                    extended_iface.technology_capabilities.push("AI Optimization++++".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Encryption++++".to_string());
-                    extended_iface.technology_capabilities.push("Dynamic Spectrum Sharing++++".to_string());
-                    extended_iface.technology_capabilities.push("Holographic Communication+++".to_string());
-                    extended_iface.technology_capabilities.push("Neural Interface+++".to_string());
-                    extended_iface.technology_capabilities.push("Holographic MIMO++".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Computing".to_string());
-                    extended_iface.technology_capabilities.push("Quantum AI".to_string());
-                    extended_iface.technology_capabilities.push("Quantum Holographic".to_string());
+                    extended_iface.cellular10g_stats =
+                        Some(self.collect_cellular10g_stats(&basic_iface.base_stats.name)?);
+                    extended_iface
+                        .technology_capabilities
+                        .push("10G".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Terahertz++++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("AI Optimization++++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Encryption++++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Dynamic Spectrum Sharing++++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic Communication+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Neural Interface+++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Holographic MIMO++".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Computing".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum AI".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Quantum Holographic".to_string());
                 }
                 NetworkInterfaceType::Wifi => {
-                    extended_iface.technology_capabilities.push("Wi-Fi".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Wi-Fi".to_string());
                     extended_iface.supported_bands.push("2.4GHz".to_string());
                     extended_iface.supported_bands.push("5GHz".to_string());
                 }
                 NetworkInterfaceType::Cellular => {
-                    extended_iface.technology_capabilities.push("Cellular".to_string());
-                    extended_iface.technology_capabilities.push("4G LTE".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Cellular".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("4G LTE".to_string());
                 }
                 NetworkInterfaceType::Ethernet => {
-                    extended_iface.technology_capabilities.push("Ethernet".to_string());
-                    extended_iface.technology_capabilities.push("Full Duplex".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Ethernet".to_string());
+                    extended_iface
+                        .technology_capabilities
+                        .push("Full Duplex".to_string());
                 }
                 _ => {}
             }
 
             // Add power saving mode based on interface capabilities
-            if extended_iface.technology_capabilities.contains(&"Wi-Fi 6/6E".to_string()) {
+            if extended_iface
+                .technology_capabilities
+                .contains(&"Wi-Fi 6/6E".to_string())
+            {
                 extended_iface.power_saving_mode = Some("TWT".to_string()); // Target Wake Time
-            } else if extended_iface.technology_capabilities.contains(&"Wi-Fi".to_string()) {
+            } else if extended_iface
+                .technology_capabilities
+                .contains(&"Wi-Fi".to_string())
+            {
                 extended_iface.power_saving_mode = Some("Legacy".to_string());
             }
 
@@ -1992,15 +2239,16 @@ impl NetworkMonitor {
     fn collect_wifi6_stats(&self, interface_name: &str) -> Result<Wifi6Stats> {
         // In a real implementation, this would use iw, iwconfig, or nl80211
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut wifi6_stats = Wifi6Stats::default();
 
         // Determine Wi-Fi standard based on interface type
-        wifi6_stats.wifi_standard = if interface_name.contains("wlan") || interface_name.contains("wifi") {
-            "Wi-Fi 6".to_string()
-        } else {
-            "Wi-Fi 6E".to_string()
-        };
+        wifi6_stats.wifi_standard =
+            if interface_name.contains("wlan") || interface_name.contains("wifi") {
+                "Wi-Fi 6".to_string()
+            } else {
+                "Wi-Fi 6E".to_string()
+            };
 
         // Set reasonable defaults for Wi-Fi 6/6E
         wifi6_stats.channel_bandwidth_mhz = 160; // 160MHz channel
@@ -2039,7 +2287,7 @@ impl NetworkMonitor {
     fn collect_wifi7_stats(&self, _interface_name: &str) -> Result<Wifi7Stats> {
         // In a real implementation, this would use iw, iwconfig, or nl80211
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut wifi7_stats = Wifi7Stats::default();
 
         // Set Wi-Fi 7 specific parameters
@@ -2079,7 +2327,7 @@ impl NetworkMonitor {
     fn collect_cellular5g_stats(&self, _interface_name: &str) -> Result<Cellular5GStats> {
         // In a real implementation, this would use mmcli, qmicli, or AT commands
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut cellular5g_stats = Cellular5GStats::default();
 
         // Set 5G specific parameters
@@ -2113,7 +2361,7 @@ impl NetworkMonitor {
     fn collect_cellular6g_stats(&self, _interface_name: &str) -> Result<Cellular6GStats> {
         // In a real implementation, this would use future 6G APIs
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut cellular6g_stats = Cellular6GStats::default();
 
         // Set 6G specific parameters
@@ -2153,7 +2401,7 @@ impl NetworkMonitor {
     fn collect_wifi8_stats(&self, _interface_name: &str) -> Result<Wifi8Stats> {
         // In a real implementation, this would use iw, iwconfig, or nl80211
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut wifi8_stats = Wifi8Stats::default();
 
         // Set Wi-Fi 8 specific parameters
@@ -2182,7 +2430,9 @@ impl NetworkMonitor {
         wifi8_stats.capabilities.push("MLO".to_string()); // Multi-Link Operation
         wifi8_stats.capabilities.push("4K-QAM".to_string()); // 4K QAM support
         wifi8_stats.capabilities.push("AI-Optimization".to_string()); // AI-based optimization
-        wifi8_stats.capabilities.push("Quantum-Encryption".to_string()); // Quantum encryption
+        wifi8_stats
+            .capabilities
+            .push("Quantum-Encryption".to_string()); // Quantum encryption
         wifi8_stats.mlo_links_count = 4; // 4 simultaneous links
         wifi8_stats.max_spatial_streams = 8;
         wifi8_stats.preamble_puncturing_support = true;
@@ -2199,7 +2449,7 @@ impl NetworkMonitor {
     fn collect_wifi9_stats(&self, _interface_name: &str) -> Result<Wifi9Stats> {
         // In a real implementation, this would use iw, iwconfig, or nl80211
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut wifi9_stats = Wifi9Stats::default();
 
         // Set Wi-Fi 9 specific parameters
@@ -2245,7 +2495,7 @@ impl NetworkMonitor {
     fn collect_cellular7g_stats(&self, _interface_name: &str) -> Result<Cellular7GStats> {
         // In a real implementation, this would use future 7G APIs
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut cellular7g_stats = Cellular7GStats::default();
 
         // Set 7G specific parameters
@@ -2289,7 +2539,7 @@ impl NetworkMonitor {
     fn collect_cellular8g_stats(&self, _interface_name: &str) -> Result<Cellular8GStats> {
         // In a real implementation, this would use future 8G APIs
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut cellular8g_stats = Cellular8GStats::default();
 
         // Set 8G specific parameters
@@ -2329,7 +2579,7 @@ impl NetworkMonitor {
     fn collect_wifi10_stats(&self, _interface_name: &str) -> Result<Wifi10Stats> {
         // In a real implementation, this would use iw, iwconfig, or nl80211
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut wifi10_stats = Wifi10Stats::default();
 
         // Set Wi-Fi 10 specific parameters
@@ -2357,8 +2607,12 @@ impl NetworkMonitor {
         wifi10_stats.capabilities.push("EHT++".to_string()); // Extremely High Throughput++
         wifi10_stats.capabilities.push("Ultra-MLO".to_string()); // Ultra Multi-Link Operation
         wifi10_stats.capabilities.push("4K-QAM".to_string()); // 4K QAM support
-        wifi10_stats.capabilities.push("AI-Optimization+".to_string()); // AI-based optimization+
-        wifi10_stats.capabilities.push("Quantum-Encryption+".to_string()); // Quantum encryption+
+        wifi10_stats
+            .capabilities
+            .push("AI-Optimization+".to_string()); // AI-based optimization+
+        wifi10_stats
+            .capabilities
+            .push("Quantum-Encryption+".to_string()); // Quantum encryption+
         wifi10_stats.mlo_links_count = 8; // 8 simultaneous links
         wifi10_stats.max_spatial_streams = 32;
         wifi10_stats.preamble_puncturing_support = true;
@@ -2386,7 +2640,7 @@ impl NetworkMonitor {
     fn collect_wifi11_stats(&self, _interface_name: &str) -> Result<Wifi11Stats> {
         // In a real implementation, this would use future Wi-Fi 11 APIs
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut wifi11_stats = Wifi11Stats::default();
 
         // Set Wi-Fi 11 specific parameters
@@ -2414,8 +2668,12 @@ impl NetworkMonitor {
         wifi11_stats.capabilities.push("EHT+++".to_string()); // Extremely High Throughput+++
         wifi11_stats.capabilities.push("Ultra-MLO+".to_string()); // Ultra Multi-Link Operation+
         wifi11_stats.capabilities.push("8K-QAM".to_string()); // 8K QAM support
-        wifi11_stats.capabilities.push("AI-Optimization++".to_string()); // AI-based optimization++
-        wifi11_stats.capabilities.push("Quantum-Encryption++".to_string()); // Quantum encryption++
+        wifi11_stats
+            .capabilities
+            .push("AI-Optimization++".to_string()); // AI-based optimization++
+        wifi11_stats
+            .capabilities
+            .push("Quantum-Encryption++".to_string()); // Quantum encryption++
         wifi11_stats.mlo_links_count = 16; // 16 simultaneous links
         wifi11_stats.max_spatial_streams = 64;
         wifi11_stats.preamble_puncturing_support = true;
@@ -2445,7 +2703,7 @@ impl NetworkMonitor {
     fn collect_cellular9g_stats(&self, _interface_name: &str) -> Result<Cellular9GStats> {
         // In a real implementation, this would use future 9G APIs
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut cellular9g_stats = Cellular9GStats::default();
 
         // Set 9G specific parameters
@@ -2492,7 +2750,7 @@ impl NetworkMonitor {
     fn collect_cellular10g_stats(&self, _interface_name: &str) -> Result<Cellular10GStats> {
         // In a real implementation, this would use future 10G APIs
         // For now, we'll return mock data with reasonable defaults
-        
+
         let mut cellular10g_stats = Cellular10GStats::default();
 
         // Set 10G specific parameters
@@ -2535,7 +2793,6 @@ impl NetworkMonitor {
         cellular10g_stats.neural_interface_plus_support = true;
         cellular10g_stats.holographic_mimo_plus_support = true;
 
-
         Ok(cellular10g_stats)
     }
 
@@ -2564,7 +2821,11 @@ impl NetworkMonitor {
                 Ok(None)
             }
             Err(e) => {
-                tracing::debug!("Failed to execute tc configuration command for {}: {}", interface_name, e);
+                tracing::debug!(
+                    "Failed to execute tc configuration command for {}: {}",
+                    interface_name,
+                    e
+                );
                 Ok(None)
             }
         }
@@ -2670,7 +2931,11 @@ impl NetworkMonitor {
                 );
             }
             Err(e) => {
-                tracing::debug!("Failed to execute tc queue stats command for {}: {}", interface_name, e);
+                tracing::debug!(
+                    "Failed to execute tc queue stats command for {}: {}",
+                    interface_name,
+                    e
+                );
             }
         }
 
@@ -3073,7 +3338,11 @@ impl NetworkMonitor {
                 );
             }
             Err(e) => {
-                tracing::debug!("Failed to execute tc class command for {}: {}", interface_name, e);
+                tracing::debug!(
+                    "Failed to execute tc class command for {}: {}",
+                    interface_name,
+                    e
+                );
             }
         }
 
@@ -3108,7 +3377,11 @@ impl NetworkMonitor {
                 );
             }
             Err(e) => {
-                tracing::debug!("Failed to execute tc filter command for {}: {}", interface_name, e);
+                tracing::debug!(
+                    "Failed to execute tc filter command for {}: {}",
+                    interface_name,
+                    e
+                );
             }
         }
 
@@ -3154,7 +3427,10 @@ impl NetworkMonitor {
                 // Look for DSCP information in output
                 for line in output_str.lines() {
                     if line.contains("dscp") || line.contains("DSCP") {
-                        if let Some(dscp_str) = line.split_whitespace().find(|s| s.contains("dscp") || s.contains("DSCP")) {
+                        if let Some(dscp_str) = line
+                            .split_whitespace()
+                            .find(|s| s.contains("dscp") || s.contains("DSCP"))
+                        {
                             if let Some(dscp_value) = dscp_str.split('=').nth(1) {
                                 if let Ok(dscp) = dscp_value.parse::<u8>() {
                                     return Ok(Some(dscp));
@@ -3205,10 +3481,14 @@ impl NetworkMonitor {
                 // Look for rate information
                 for line in output_str.lines() {
                     if line.contains("rate") || line.contains("Rate") {
-                        if let Some(rate_str) = line.split_whitespace().find(|s| s.contains("rate") || s.contains("Rate")) {
+                        if let Some(rate_str) = line
+                            .split_whitespace()
+                            .find(|s| s.contains("rate") || s.contains("Rate"))
+                        {
                             if let Some(rate_value) = rate_str.split(':').nth(1) {
                                 // Parse rate value (could be in various formats like "100mbit", "1gbit", etc.)
-                                let rate_value = rate_value.trim_end_matches(|c: char| !c.is_ascii_digit());
+                                let rate_value =
+                                    rate_value.trim_end_matches(|c: char| !c.is_ascii_digit());
                                 if let Ok(rate) = rate_value.parse::<u64>() {
                                     // Convert to bytes per second (approximate)
                                     if line.contains("mbit") || line.contains("Mbit") {
@@ -3236,7 +3516,11 @@ impl NetworkMonitor {
                 Ok(None)
             }
             Err(e) => {
-                tracing::debug!("Failed to execute tc command for shaping rate {}: {}", interface_name, e);
+                tracing::debug!(
+                    "Failed to execute tc command for shaping rate {}: {}",
+                    interface_name,
+                    e
+                );
                 Ok(None)
             }
         }
@@ -3255,10 +3539,14 @@ impl NetworkMonitor {
                 // Look for police or policing information
                 for line in output_str.lines() {
                     if line.contains("police") || line.contains("Police") {
-                        if let Some(rate_str) = line.split_whitespace().find(|s| s.contains("rate") || s.contains("Rate")) {
+                        if let Some(rate_str) = line
+                            .split_whitespace()
+                            .find(|s| s.contains("rate") || s.contains("Rate"))
+                        {
                             if let Some(rate_value) = rate_str.split(':').nth(1) {
                                 // Parse rate value (could be in various formats)
-                                let rate_value = rate_value.trim_end_matches(|c: char| !c.is_ascii_digit());
+                                let rate_value =
+                                    rate_value.trim_end_matches(|c: char| !c.is_ascii_digit());
                                 if let Ok(rate) = rate_value.parse::<u64>() {
                                     // Convert to bytes per second (approximate)
                                     if line.contains("mbit") || line.contains("Mbit") {
@@ -3286,7 +3574,11 @@ impl NetworkMonitor {
                 Ok(None)
             }
             Err(e) => {
-                tracing::debug!("Failed to execute tc command for policing rate {}: {}", interface_name, e);
+                tracing::debug!(
+                    "Failed to execute tc command for policing rate {}: {}",
+                    interface_name,
+                    e
+                );
                 Ok(None)
             }
         }
@@ -3313,7 +3605,10 @@ impl NetworkMonitor {
                         let output_str = String::from_utf8_lossy(&output.stdout);
                         for line in output_str.lines() {
                             if line.contains("limit") || line.contains("Limit") {
-                                if let Some(limit_str) = line.split_whitespace().find(|s| s.contains("limit") || s.contains("Limit")) {
+                                if let Some(limit_str) = line
+                                    .split_whitespace()
+                                    .find(|s| s.contains("limit") || s.contains("Limit"))
+                                {
                                     if let Some(limit_value) = limit_str.split(':').nth(1) {
                                         if let Ok(limit) = limit_value.parse::<u32>() {
                                             return Ok(Some(limit));
@@ -3331,7 +3626,11 @@ impl NetworkMonitor {
                         );
                     }
                     Err(e) => {
-                        tracing::debug!("Failed to execute tc command for queue length {}: {}", interface_name, e);
+                        tracing::debug!(
+                            "Failed to execute tc command for queue length {}: {}",
+                            interface_name,
+                            e
+                        );
                     }
                 }
             }
@@ -3581,15 +3880,19 @@ impl NetworkMonitor {
                     // Parse IPv6 addresses and ports
                     let src_ip_hex = parts[1];
                     let dst_ip_hex = parts[2];
-                    
+
                     // Convert hex IPv6 addresses to standard format
                     let src_ip = self.hex_ipv6_to_std(src_ip_hex)?;
                     let dst_ip = self.hex_ipv6_to_std(dst_ip_hex)?;
-                    
+
                     // Parse ports (hex to decimal)
-                    let src_port = u16::from_str_radix(parts[1].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
-                    let dst_port = u16::from_str_radix(parts[2].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
-                    
+                    let src_port =
+                        u16::from_str_radix(parts[1].split(':').last().unwrap_or("0"), 16)
+                            .unwrap_or(0);
+                    let dst_port =
+                        u16::from_str_radix(parts[2].split(':').last().unwrap_or("0"), 16)
+                            .unwrap_or(0);
+
                     // Parse connection state
                     let state = match parts[3] {
                         "01" => "ESTABLISHED",
@@ -3620,7 +3923,7 @@ impl NetworkMonitor {
                         pid: pid,
                         process_name: process_name,
                         bytes_transmitted: 0, // Would need to track this separately
-                        bytes_received: 0,   // Would need to track this separately
+                        bytes_received: 0,    // Would need to track this separately
                         packets_transmitted: 0,
                         packets_received: 0,
                         start_time: SystemTime::now(),
@@ -3639,14 +3942,18 @@ impl NetworkMonitor {
                     // Parse IPv6 addresses and ports
                     let src_ip_hex = parts[1];
                     let dst_ip_hex = parts[2];
-                    
+
                     // Convert hex IPv6 addresses to standard format
                     let src_ip = self.hex_ipv6_to_std(src_ip_hex)?;
                     let dst_ip = self.hex_ipv6_to_std(dst_ip_hex)?;
-                    
+
                     // Parse ports (hex to decimal)
-                    let src_port = u16::from_str_radix(parts[1].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
-                    let dst_port = u16::from_str_radix(parts[2].split(':').last().unwrap_or("0"), 16).unwrap_or(0);
+                    let src_port =
+                        u16::from_str_radix(parts[1].split(':').last().unwrap_or("0"), 16)
+                            .unwrap_or(0);
+                    let dst_port =
+                        u16::from_str_radix(parts[2].split(':').last().unwrap_or("0"), 16)
+                            .unwrap_or(0);
 
                     ipv6_connections.push(IPv6ConnectionStats {
                         src_ip,
@@ -3721,9 +4028,14 @@ impl NetworkMonitor {
     }
 
     /// Collect additional IPv6 statistics
-    fn collect_additional_ipv6_stats(&self, mut stats: IPv6NetworkStats) -> Result<IPv6NetworkStats> {
+    fn collect_additional_ipv6_stats(
+        &self,
+        mut stats: IPv6NetworkStats,
+    ) -> Result<IPv6NetworkStats> {
         // Read IPv6 neighbor cache entries
-        if let Ok(neighbor_cache) = fs::read_to_string("/proc/sys/net/ipv6/neigh/default/gc_thresh1") {
+        if let Ok(neighbor_cache) =
+            fs::read_to_string("/proc/sys/net/ipv6/neigh/default/gc_thresh1")
+        {
             if let Ok(entries) = neighbor_cache.trim().parse::<u32>() {
                 stats.neighbor_cache_entries = entries;
             }
@@ -3749,7 +4061,9 @@ impl NetworkMonitor {
         }
 
         // Read IPv6 accept_redirects setting
-        if let Ok(accept_redirects) = fs::read_to_string("/proc/sys/net/ipv6/conf/all/accept_redirects") {
+        if let Ok(accept_redirects) =
+            fs::read_to_string("/proc/sys/net/ipv6/conf/all/accept_redirects")
+        {
             stats.accept_redirects = accept_redirects.trim() == "1";
         }
 
@@ -3943,7 +4257,7 @@ impl NetworkMonitor {
         Ok((ip_addr, port_value))
     }
     /// Collect network quality metrics with enhanced tracking
-    fn collect_network_quality_metrics(&self) -> Result<NetworkQualityMetrics> {
+    fn collect_network_quality_from_connections(&self) -> Result<NetworkQualityMetrics> {
         let mut metrics = NetworkQualityMetrics::default();
 
         // Calculate packet loss based on connection statistics
@@ -3991,7 +4305,7 @@ impl NetworkMonitor {
     fn hex_ipv6_to_std(&self, hex_ip: &str) -> Result<Ipv6Addr> {
         // Split into IP and port parts
         let ip_part = hex_ip.split(':').next().unwrap_or(hex_ip);
-        
+
         // Validate input length (should be 32 characters for full IPv6)
         if ip_part.len() != 32 {
             return Err(anyhow::anyhow!(
@@ -3999,29 +4313,31 @@ impl NetworkMonitor {
                 ip_part.len()
             ));
         }
-        
+
         // Convert hex string to bytes with validation
         let mut bytes = [0u8; 16];
         for (i, chunk) in ip_part.as_bytes().chunks(2).enumerate() {
-            if i >= 16 { break; }
+            if i >= 16 {
+                break;
+            }
             let hex_str = std::str::from_utf8(chunk)
                 .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in IPv6 address: {}", e))?;
             bytes[i] = u8::from_str_radix(hex_str, 16)
                 .map_err(|e| anyhow::anyhow!("Invalid hex digit in IPv6 address: {}", e))?;
         }
-        
+
         // Reverse bytes for network byte order
         let mut final_bytes = [0u8; 16];
         for i in 0..16 {
             final_bytes[i] = bytes[15 - i];
         }
-        
+
         // Validate the resulting IPv6 address
         let addr = Ipv6Addr::from(final_bytes);
         if addr.is_unspecified() && ip_part != "00000000000000000000000000000000" {
             return Err(anyhow::anyhow!("Invalid IPv6 address conversion result"));
         }
-        
+
         Ok(addr)
     }
 
@@ -4029,7 +4345,7 @@ impl NetworkMonitor {
     fn get_process_info_from_inode(&self, _inode: &str) -> Result<(Option<u32>, Option<String>)> {
         // This is a simplified version - in a real implementation, you'd need to
         // parse /proc/net/tcp6 and /proc/net/udp6 to find the process info
-        
+
         // For now, return default values
         Ok((Some(0), Some("unknown".to_string())))
     }
@@ -4037,27 +4353,29 @@ impl NetworkMonitor {
     /// Discover network routes and analyze their performance
     pub fn discover_and_analyze_network_routes(&mut self) -> Result<Vec<NetworkRouteAnalysis>> {
         let mut routes = Vec::new();
-        
+
         // Read routing table from /proc/net/route
-        let route_info = fs::read_to_string("/proc/net/route")
-            .context("Failed to read /proc/net/route")?;
-        
+        let route_info =
+            fs::read_to_string("/proc/net/route").context("Failed to read /proc/net/route")?;
+
         // Parse routing table (skip header line)
         for line in route_info.lines().skip(1) {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() < 8 { continue; }
-            
+            if parts.len() < 8 {
+                continue;
+            }
+
             let destination = parts[1].parse::<u32>().unwrap_or(0);
             let gateway = parts[2].parse::<u32>().unwrap_or(0);
             let interface = parts[0].to_string();
             let metric = parts[7].parse::<u32>().unwrap_or(0);
-            
+
             // Get current network load for this interface
             let network_load = self.get_network_load_for_interface(&interface)?;
-            
+
             // Analyze route quality
             let quality_score = self.calculate_route_quality(metric, network_load);
-            
+
             routes.push(NetworkRouteAnalysis {
                 destination: Ipv4Addr::from(destination.to_be_bytes()),
                 gateway: Ipv4Addr::from(gateway.to_be_bytes()),
@@ -4068,7 +4386,7 @@ impl NetworkMonitor {
                 is_optimal: quality_score > 0.7, // Threshold for optimal routes
             });
         }
-        
+
         Ok(routes)
     }
 
@@ -4076,20 +4394,20 @@ impl NetworkMonitor {
     fn get_network_load_for_interface(&mut self, interface_name: &str) -> Result<f32> {
         // Get current interface stats
         let interfaces = self.collect_interface_stats_optimized()?;
-        
+
         // Find the specific interface
         for iface in interfaces {
             if iface.name == interface_name {
                 // Calculate load based on recent traffic
                 let total_traffic = iface.rx_bytes + iface.tx_bytes;
                 let max_capacity = iface.speed_mbps.unwrap_or(1000) * 125_000; // Convert Mbps to bytes/s
-                
+
                 // Calculate load percentage (0.0 - 1.0)
                 let load = (total_traffic as f32 / max_capacity as f32).min(1.0);
                 return Ok(load);
             }
         }
-        
+
         Ok(0.0) // Default load if interface not found
     }
 
@@ -4097,10 +4415,10 @@ impl NetworkMonitor {
     fn calculate_route_quality(&self, metric: u32, network_load: f32) -> f32 {
         // Normalize metric (lower is better)
         let metric_score = 1.0 / (1.0 + metric as f32 * 0.1);
-        
+
         // Network load impact (lower is better)
         let load_impact = 1.0 - network_load;
-        
+
         // Combined quality score
         (metric_score * 0.6 + load_impact * 0.4).clamp(0.0, 1.0)
     }
@@ -4109,13 +4427,13 @@ impl NetworkMonitor {
     pub fn optimize_network_routes(&mut self) -> Result<Vec<RouteOptimizationRecommendation>> {
         let routes = self.discover_and_analyze_network_routes()?;
         let mut recommendations = Vec::new();
-        
+
         // Analyze each route and suggest optimizations
         for route in routes {
             if route.is_optimal {
                 continue; // Skip already optimal routes
             }
-            
+
             // Suggest route optimization based on quality score
             if route.quality_score < 0.5 {
                 recommendations.push(RouteOptimizationRecommendation {
@@ -4137,10 +4455,175 @@ impl NetworkMonitor {
                 });
             }
         }
-        
+
         Ok(recommendations)
     }
 
+    /// Measure network latency using ping command
+    pub fn measure_network_latency(&self, target: &str, count: u32) -> Result<f64> {
+        // Use ping command to measure latency
+        let output = std::process::Command::new("ping")
+            .args(["-c", &count.to_string(), target])
+            .output()
+            .context(format!("Failed to execute ping command for target: {}", target))?;
+
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Ping failed: {}", error_msg));
+        }
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        
+        // Parse ping output to extract average latency
+        // Example output: "rtt min/avg/max/mdev = 1.234/5.678/9.012/1.345 ms"
+        for line in output_str.lines() {
+            if line.contains("rtt") && line.contains("min/avg/max") {
+                let parts: Vec<&str> = line.split_whitespace().collect();
+                if parts.len() >= 4 {
+                    // Extract the avg value (second part after =)
+                    let rtt_part = parts[3];
+                    let values: Vec<&str> = rtt_part.split('/').collect();
+                    if values.len() >= 2 {
+                        if let Ok(avg_latency) = values[1].parse::<f64>() {
+                            return Ok(avg_latency);
+                        }
+                    }
+                }
+            }
+        }
+
+        Err(anyhow::anyhow!("Could not parse latency from ping output"))
+    }
+
+    /// Measure network packet loss using ping command
+    pub fn measure_network_packet_loss(&self, target: &str, count: u32) -> Result<f64> {
+        // Use ping command to measure packet loss
+        let output = std::process::Command::new("ping")
+            .args(["-c", &count.to_string(), target])
+            .output()
+            .context(format!("Failed to execute ping command for target: {}", target))?;
+
+        if !output.status.success() {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow::anyhow!("Ping failed: {}", error_msg));
+        }
+
+        let output_str = String::from_utf8_lossy(&output.stdout);
+        
+        // Parse ping output to extract packet loss
+        // Example output: "10 packets transmitted, 8 received, 20% packet loss"
+        for line in output_str.lines() {
+            if line.contains("packets transmitted") && line.contains("packet loss") {
+                let parts: Vec<&str> = line.split(',').collect();
+                if parts.len() >= 3 {
+                    let loss_part = parts[2].trim();
+                    // Extract percentage from "20% packet loss"
+                    let loss_parts: Vec<&str> = loss_part.split_whitespace().collect();
+                    if loss_parts.len() >= 2 {
+                        let loss_str = loss_parts[0].trim_end_matches('%');
+                        if let Ok(packet_loss) = loss_str.parse::<f64>() {
+                            return Ok(packet_loss);
+                        }
+                    }
+                }
+            }
+        }
+
+        // If no packet loss found, return 0%
+        Ok(0.0)
+    }
+
+    /// Collect comprehensive network quality metrics including latency and packet loss
+    pub fn collect_network_quality_metrics(&self, target: &str) -> Result<NetworkQualityMetrics> {
+        let mut metrics = NetworkQualityMetrics::default();
+        
+        // Measure latency (use 5 packets for quick measurement)
+        match self.measure_network_latency(target, 5) {
+            Ok(latency) => {
+                metrics.latency_ms = latency;
+                // Add some jitter based on latency (simple estimation)
+                metrics.jitter_ms = latency * 0.1; // 10% of latency as jitter
+            }
+            Err(e) => {
+                tracing::warn!("Failed to measure latency to {}: {}", target, e);
+                // Use default values
+                metrics.latency_ms = 50.0; // Default latency
+                metrics.jitter_ms = 5.0;  // Default jitter
+            }
+        }
+
+        // Measure packet loss (use 10 packets for better accuracy)
+        match self.measure_network_packet_loss(target, 10) {
+            Ok(loss) => {
+                metrics.packet_loss = loss;
+            }
+            Err(e) => {
+                tracing::warn!("Failed to measure packet loss to {}: {}", target, e);
+                metrics.packet_loss = 0.0; // Default to 0% loss
+            }
+        }
+
+        // Calculate stability score based on latency and packet loss
+        // Higher score means more stable connection
+        let latency_factor = if metrics.latency_ms < 50.0 {
+            1.0
+        } else if metrics.latency_ms < 100.0 {
+            0.8
+        } else if metrics.latency_ms < 200.0 {
+            0.6
+        } else {
+            0.4
+        };
+
+        let loss_factor = if metrics.packet_loss < 1.0 {
+            1.0
+        } else if metrics.packet_loss < 5.0 {
+            0.8
+        } else if metrics.packet_loss < 10.0 {
+            0.6
+        } else {
+            0.4
+        };
+
+        metrics.stability_score = latency_factor * loss_factor;
+
+        // Calculate bandwidth utilization (placeholder - would need actual measurement)
+        metrics.bandwidth_utilization = 0.5; // Default 50% utilization
+
+        Ok(metrics)
+    }
+
+    /// Analyze network QoS with comprehensive metrics including latency and packet loss
+    pub fn analyze_network_qos_with_performance(&self, interface_name: &str, target: &str) -> Result<NetworkQoSMetrics> {
+        let mut qos_metrics = self.collect_qos_metrics(interface_name)?;
+        
+        // Add network quality metrics to QoS analysis
+        let quality_metrics = self.collect_network_quality_metrics(target)?;
+        
+        // Update QoS metrics with quality information
+        // Note: We can't directly add these to NetworkQoSMetrics as it doesn't have these fields,
+        // but we can use them to determine QoS policy and class
+        
+        // Determine QoS class based on network quality
+        if quality_metrics.latency_ms < 30.0 && quality_metrics.packet_loss < 1.0 {
+            qos_metrics.qos_class = Some("high-priority".to_string());
+        } else if quality_metrics.latency_ms < 100.0 && quality_metrics.packet_loss < 5.0 {
+            qos_metrics.qos_class = Some("medium-priority".to_string());
+        } else {
+            qos_metrics.qos_class = Some("low-priority".to_string());
+        }
+
+        // Update QoS policy based on network conditions
+        if quality_metrics.stability_score > 0.8 {
+            qos_metrics.qos_policy = Some("optimal-performance".to_string());
+        } else if quality_metrics.stability_score > 0.6 {
+            qos_metrics.qos_policy = Some("balanced-performance".to_string());
+        } else {
+            qos_metrics.qos_policy = Some("conservative-performance".to_string());
+        }
+
+        Ok(qos_metrics)
+    }
 }
 
 /// Network route analysis structure
@@ -4207,29 +4690,32 @@ pub enum RouteOptimizationPriority {
 mod route_optimization_tests {
     use super::*;
     use std::net::Ipv4Addr;
-    
+
     #[test]
     fn test_route_quality_calculation() {
         let monitor = NetworkMonitor::new();
-        
+
         // Test with good metric and low load
         let quality1 = monitor.calculate_route_quality(100, 0.2);
         assert!(quality1 > 0.8, "Good route should have high quality score");
-        
+
         // Test with poor metric and high load
         let quality2 = monitor.calculate_route_quality(500, 0.9);
         assert!(quality2 < 0.4, "Poor route should have low quality score");
-        
+
         // Test with medium values
         let quality3 = monitor.calculate_route_quality(300, 0.5);
-        assert!(quality3 > 0.4 && quality3 < 0.7, "Medium route should have medium quality score");
+        assert!(
+            quality3 > 0.4 && quality3 < 0.7,
+            "Medium route should have medium quality score"
+        );
     }
-    
+
     #[test]
     fn test_route_optimization_recommendations() {
         // Create a mock network monitor for testing
         let monitor = NetworkMonitor::new();
-        
+
         // Test route analysis creation
         let route = NetworkRouteAnalysis {
             destination: Ipv4Addr::new(192, 168, 1, 1),
@@ -4240,22 +4726,32 @@ mod route_optimization_tests {
             quality_score: 0.65,
             is_optimal: false,
         };
-        
+
         assert_eq!(route.destination, Ipv4Addr::new(192, 168, 1, 1));
-        assert!(!route.is_optimal, "Route with quality 0.65 should not be optimal");
+        assert!(
+            !route.is_optimal,
+            "Route with quality 0.65 should not be optimal"
+        );
     }
-    
+
     #[test]
     fn test_network_load_calculation() {
         let monitor = NetworkMonitor::new();
-        
+
         // Test with zero traffic
         let load1 = monitor.get_network_load_for_interface("lo");
         assert!(load1.is_ok(), "Should handle interface lookup gracefully");
-        
+
         // Test with non-existent interface
         let load2 = monitor.get_network_load_for_interface("nonexistent");
-        assert!(load2.is_ok(), "Should handle non-existent interface gracefully");
-        assert_eq!(load2.unwrap(), 0.0, "Non-existent interface should have zero load");
+        assert!(
+            load2.is_ok(),
+            "Should handle non-existent interface gracefully"
+        );
+        assert_eq!(
+            load2.unwrap(),
+            0.0,
+            "Non-existent interface should have zero load"
+        );
     }
 }

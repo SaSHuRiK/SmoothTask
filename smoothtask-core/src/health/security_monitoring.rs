@@ -10,9 +10,6 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(target_os = "linux")]
-use sysconf;
-
 /// Тип события безопасности.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SecurityEventType {
@@ -412,7 +409,7 @@ impl Default for SecurityStats {
 }
 
 /// Реализация SecurityMonitorTrait.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct SecurityMonitorImpl {
     security_state: Arc<tokio::sync::RwLock<SecurityMonitor>>,
     config: SecurityMonitorConfig,
@@ -543,7 +540,10 @@ impl SecurityMonitorImpl {
     }
 
     /// Создать новый SecurityMonitorImpl с уведомителем.
-    pub fn new_with_notifier(config: SecurityMonitorConfig, notifier: Arc<dyn crate::notifications::Notifier>) -> Self {
+    pub fn new_with_notifier(
+        config: SecurityMonitorConfig,
+        notifier: Arc<dyn crate::notifications::Notifier>,
+    ) -> Self {
         Self {
             security_state: Arc::new(tokio::sync::RwLock::new(SecurityMonitor::default())),
             config,
@@ -553,27 +553,38 @@ impl SecurityMonitorImpl {
     }
 
     /// Выполнить проверку безопасности.
-    async fn perform_security_checks(&self, mut security_monitor: SecurityMonitor) -> Result<SecurityMonitor> {
+    async fn perform_security_checks(
+        &self,
+        mut security_monitor: SecurityMonitor,
+    ) -> Result<SecurityMonitor> {
         // Проверяем подозрительные процессы
-        self.check_suspicious_processes(&mut security_monitor).await?;
+        self.check_suspicious_processes(&mut security_monitor)
+            .await?;
 
         // Проверяем подозрительные паттерны поведения процессов
-        self.check_suspicious_behavior(&mut security_monitor).await?;
+        self.check_suspicious_behavior(&mut security_monitor)
+            .await?;
 
         // Проверяем аномальное использование ресурсов
-        self.check_anomalous_resource_usage(&mut security_monitor).await?;
+        self.check_anomalous_resource_usage(&mut security_monitor)
+            .await?;
 
         // Проверяем подозрительные сетевые соединения
-        self.check_suspicious_network_connections(&mut security_monitor).await?;
+        self.check_suspicious_network_connections(&mut security_monitor)
+            .await?;
 
         // Проверяем подозрительную активность файловой системы
-        self.check_suspicious_filesystem_activity(&mut security_monitor).await?;
+        self.check_suspicious_filesystem_activity(&mut security_monitor)
+            .await?;
 
         Ok(security_monitor)
     }
 
     /// Проверка подозрительных процессов.
-    async fn check_suspicious_processes(&self, _security_monitor: &mut SecurityMonitor) -> Result<()> {
+    async fn check_suspicious_processes(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
         // Получаем список всех процессов
         let processes = self.get_all_processes().await?;
 
@@ -588,9 +599,18 @@ impl SecurityMonitorImpl {
                     status: SecurityEventStatus::New,
                     process_name: Some(process.name.clone()),
                     process_id: Some(process.pid),
-                    description: format!("Suspicious process detected: {} (PID: {})", process.name, process.pid),
-                    details: Some(format!("Process path: {}", process.exe_path.unwrap_or_default())),
-                    recommendations: Some("Investigate this process and consider terminating it if it's malicious".to_string()),
+                    description: format!(
+                        "Suspicious process detected: {} (PID: {})",
+                        process.name, process.pid
+                    ),
+                    details: Some(format!(
+                        "Process path: {}",
+                        process.exe_path.unwrap_or_default()
+                    )),
+                    recommendations: Some(
+                        "Investigate this process and consider terminating it if it's malicious"
+                            .to_string(),
+                    ),
                     resolved_time: None,
                 };
 
@@ -602,7 +622,10 @@ impl SecurityMonitorImpl {
     }
 
     /// Проверка аномального использования ресурсов.
-    async fn check_anomalous_resource_usage(&self, _security_monitor: &mut SecurityMonitor) -> Result<()> {
+    async fn check_anomalous_resource_usage(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
         // Получаем информацию о процессах с высоким использованием ресурсов
         let high_resource_processes = self.get_high_resource_processes().await?;
 
@@ -610,12 +633,12 @@ impl SecurityMonitorImpl {
         for process in high_resource_processes {
             // Проверяем, является ли процесс известным системным процессом
             let is_system_process = self.is_system_process(&process.name);
-            
+
             // Определяем уровень серьезности на основе типа процесса и использования ресурсов
             let (severity, description, recommendations) = if is_system_process {
                 // Системные процессы с высоким использованием ресурсов
                 if process.cpu_usage > 95.0 || process.memory_usage > 90.0 {
-                    (SecurityEventSeverity::High, 
+                    (SecurityEventSeverity::High,
                      format!("Critical resource usage by system process: {} (CPU: {:.1}%, Memory: {:.1}%)", 
                          process.name, process.cpu_usage, process.memory_usage),
                      "Investigate immediately - this may indicate a system issue or resource exhaustion attack".to_string())
@@ -660,8 +683,13 @@ impl SecurityMonitorImpl {
             if !anomaly_patterns.is_empty() {
                 details.push_str("\nAnomaly patterns detected:");
                 for pattern in &anomaly_patterns {
-                    details.push_str(&format!("\n- {}: {} (threshold: {}, current: {})", 
-                        pattern.pattern_type, pattern.description, pattern.threshold, pattern.current_value));
+                    details.push_str(&format!(
+                        "\n- {}: {} (threshold: {}, current: {})",
+                        pattern.pattern_type,
+                        pattern.description,
+                        pattern.threshold,
+                        pattern.current_value
+                    ));
                 }
             }
 
@@ -688,17 +716,36 @@ impl SecurityMonitorImpl {
     /// Проверка, является ли процесс системным.
     fn is_system_process(&self, process_name: &str) -> bool {
         let system_processes = [
-            "systemd", "init", "kthreadd", "ksoftirqd", "kworker", 
-            "rcu_sched", "rcu_bh", "migration", "watchdog", "idle",
-            "smoothtaskd", "dbus", "polkitd", "rsyslogd", "cron",
-            "sshd", "networkd", "udevd", "thermald", "bluetoothd",
+            "systemd",
+            "init",
+            "kthreadd",
+            "ksoftirqd",
+            "kworker",
+            "rcu_sched",
+            "rcu_bh",
+            "migration",
+            "watchdog",
+            "idle",
+            "smoothtaskd",
+            "dbus",
+            "polkitd",
+            "rsyslogd",
+            "cron",
+            "sshd",
+            "networkd",
+            "udevd",
+            "thermald",
+            "bluetoothd",
         ];
 
         system_processes.contains(&process_name)
     }
 
     /// Обнаружение паттернов аномалий в использовании ресурсов.
-    async fn detect_resource_anomaly_patterns(&self, behavior: &ProcessBehavior) -> Result<Vec<SuspiciousBehaviorPattern>> {
+    async fn detect_resource_anomaly_patterns(
+        &self,
+        behavior: &ProcessBehavior,
+    ) -> Result<Vec<SuspiciousBehaviorPattern>> {
         let mut patterns = Vec::new();
 
         // Паттерн 1: Аномально высокое количество дочерних процессов
@@ -735,8 +782,10 @@ impl SecurityMonitorImpl {
         }
 
         // Паттерн 4: Аномально высокое использование CPU для типа процесса
-        if behavior.cpu_usage > 95.0 && !behavior.device_name.to_lowercase().contains("render") && 
-           !behavior.device_name.to_lowercase().contains("gpu") {
+        if behavior.cpu_usage > 95.0
+            && !behavior.device_name.to_lowercase().contains("render")
+            && !behavior.device_name.to_lowercase().contains("gpu")
+        {
             patterns.push(SuspiciousBehaviorPattern {
                 pattern_type: "anomalous_cpu_usage".to_string(),
                 description: "Process has anomalously high CPU usage for its type".to_string(),
@@ -747,8 +796,10 @@ impl SecurityMonitorImpl {
         }
 
         // Паттерн 5: Аномально высокое использование памяти для типа процесса
-        if behavior.memory_usage > 85.0 && !behavior.device_name.to_lowercase().contains("database") && 
-           !behavior.device_name.to_lowercase().contains("java") {
+        if behavior.memory_usage > 85.0
+            && !behavior.device_name.to_lowercase().contains("database")
+            && !behavior.device_name.to_lowercase().contains("java")
+        {
             patterns.push(SuspiciousBehaviorPattern {
                 pattern_type: "anomalous_memory_usage".to_string(),
                 description: "Process has anomalously high memory usage for its type".to_string(),
@@ -759,7 +810,8 @@ impl SecurityMonitorImpl {
         }
 
         // Паттерн 6: Аномально высокая частота создания дочерних процессов
-        if behavior.child_creation_rate > 5.0 { // более 5 процессов в минуту
+        if behavior.child_creation_rate > 5.0 {
+            // более 5 процессов в минуту
             patterns.push(SuspiciousBehaviorPattern {
                 pattern_type: "anomalous_child_creation_rate".to_string(),
                 description: "Process has anomalously high child process creation rate".to_string(),
@@ -773,7 +825,10 @@ impl SecurityMonitorImpl {
     }
 
     /// Проверка подозрительных сетевых соединений.
-    async fn check_suspicious_network_connections(&self, _security_monitor: &mut SecurityMonitor) -> Result<()> {
+    async fn check_suspicious_network_connections(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
         // Получаем информацию о сетевых соединениях
         let network_connections = self.get_network_connections().await?;
 
@@ -807,9 +862,19 @@ impl SecurityMonitorImpl {
     fn should_send_notification_for_event(&self, event: &SecurityEvent) -> bool {
         // Проверяем, включены ли уведомления в конфигурации
         match event.severity {
-            SecurityEventSeverity::Critical => self.config.notification_settings.enable_critical_notifications,
-            SecurityEventSeverity::High => self.config.notification_settings.enable_high_notifications,
-            SecurityEventSeverity::Medium => self.config.notification_settings.enable_medium_notifications,
+            SecurityEventSeverity::Critical => {
+                self.config
+                    .notification_settings
+                    .enable_critical_notifications
+            }
+            SecurityEventSeverity::High => {
+                self.config.notification_settings.enable_high_notifications
+            }
+            SecurityEventSeverity::Medium => {
+                self.config
+                    .notification_settings
+                    .enable_medium_notifications
+            }
             SecurityEventSeverity::Low => false, // Не отправляем уведомления для низкого уровня
             SecurityEventSeverity::Info => false, // Не отправляем уведомления для информационного уровня
         }
@@ -832,19 +897,23 @@ impl SecurityMonitorImpl {
                 notification_type,
                 format!("Security Event: {}", event.event_type),
                 event.description.clone(),
-            ).with_details(event.details.clone().unwrap_or_default());
+            )
+            .with_details(event.details.clone().unwrap_or_default());
 
             // Отправляем уведомление
             notifier.send_notification(&notification).await?;
-            
+
             tracing::info!("Sent security notification for event: {}", event.event_id);
         }
-        
+
         Ok(())
     }
 
     /// Проверка подозрительной активности файловой системы.
-    async fn check_suspicious_filesystem_activity(&self, _security_monitor: &mut SecurityMonitor) -> Result<()> {
+    async fn check_suspicious_filesystem_activity(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
         // Получаем информацию о недавней активности файловой системы
         let filesystem_activity = self.get_filesystem_activity().await?;
 
@@ -859,10 +928,18 @@ impl SecurityMonitorImpl {
                     status: SecurityEventStatus::New,
                     process_name: activity.process_name.clone(),
                     process_id: activity.process_id,
-                    description: format!("Suspicious filesystem activity detected: {}", activity.path),
-                    details: Some(format!("Operation: {}, Process: {}", activity.operation, 
-                        activity.process_name.unwrap_or_default())),
-                    recommendations: Some("Investigate this filesystem activity and monitor the process".to_string()),
+                    description: format!(
+                        "Suspicious filesystem activity detected: {}",
+                        activity.path
+                    ),
+                    details: Some(format!(
+                        "Operation: {}, Process: {}",
+                        activity.operation,
+                        activity.process_name.unwrap_or_default()
+                    )),
+                    recommendations: Some(
+                        "Investigate this filesystem activity and monitor the process".to_string(),
+                    ),
                     resolved_time: None,
                 };
 
@@ -880,7 +957,9 @@ impl SecurityMonitorImpl {
         let mut has_medium = false;
 
         for event in &security_monitor.event_history {
-            if event.status == SecurityEventStatus::New || event.status == SecurityEventStatus::Analyzing {
+            if event.status == SecurityEventStatus::New
+                || event.status == SecurityEventStatus::Analyzing
+            {
                 match event.severity {
                     SecurityEventSeverity::Critical => has_critical = true,
                     SecurityEventSeverity::High => has_high = true,
@@ -910,12 +989,17 @@ impl SecurityMonitorImpl {
         let unresolved_events = security_monitor
             .event_history
             .iter()
-            .filter(|event| event.status == SecurityEventStatus::New || event.status == SecurityEventStatus::Analyzing)
+            .filter(|event| {
+                event.status == SecurityEventStatus::New
+                    || event.status == SecurityEventStatus::Analyzing
+            })
             .count();
 
         // Каждое неразрешенное событие снижает балл
         for event in &security_monitor.event_history {
-            if event.status == SecurityEventStatus::New || event.status == SecurityEventStatus::Analyzing {
+            if event.status == SecurityEventStatus::New
+                || event.status == SecurityEventStatus::Analyzing
+            {
                 match event.severity {
                     SecurityEventSeverity::Critical => score -= 20.0,
                     SecurityEventSeverity::High => score -= 10.0,
@@ -1077,6 +1161,7 @@ impl SecurityMonitorImpl {
             parent_name: None,
             cpu_usage: 0.0,
             memory_usage: 0.0,
+            device_name: String::new(),
             child_creation_rate: 0.0,
         };
 
@@ -1121,6 +1206,8 @@ impl SecurityMonitorImpl {
         if let Some(info) = process_info {
             behavior.cpu_usage = info.cpu_usage;
             behavior.memory_usage = info.memory_usage;
+            // Устанавливаем device_name на основе имени процесса
+            behavior.device_name = info.name.clone();
         }
 
         Ok(behavior)
@@ -1174,8 +1261,12 @@ impl SecurityMonitorImpl {
             if parts.len() >= 22 {
                 if let Ok(start_time_clock_ticks) = parts[21].parse::<i64>() {
                     // Конвертация clock ticks в DateTime
+                    // Используем стандартное значение 100 clock ticks per second для Linux
+                    let clock_ticks_per_second = 100;
                     let boot_time = self.get_system_boot_time().await?;
-                    let duration_since_boot = Duration::from_secs_f64(start_time_clock_ticks as f64 / sysconf::sysconf(sysconf::SysconfVariable::SC_CLK_TCK).unwrap_or(100) as f64);
+                    let duration_since_boot = Duration::from_secs_f64(
+                        start_time_clock_ticks as f64 / clock_ticks_per_second as f64,
+                    );
                     let start_time = boot_time + duration_since_boot;
                     return Ok(Some(start_time));
                 }
@@ -1193,7 +1284,8 @@ impl SecurityMonitorImpl {
                 if line.starts_with("btime") {
                     if let Some(btime) = line.split_whitespace().nth(1) {
                         if let Ok(btime_secs) = btime.parse::<i64>() {
-                            return Ok(DateTime::<Utc>::from_timestamp(btime_secs, 0).unwrap_or(Utc::now()));
+                            return Ok(DateTime::<Utc>::from_timestamp(btime_secs, 0)
+                                .unwrap_or(Utc::now()));
                         }
                     }
                 }
@@ -1252,7 +1344,10 @@ impl SecurityMonitorImpl {
     }
 
     /// Проверка подозрительных паттернов поведения.
-    async fn check_suspicious_behavior_patterns(&self, behavior: &ProcessBehavior) -> Result<Vec<SuspiciousBehaviorPattern>> {
+    async fn check_suspicious_behavior_patterns(
+        &self,
+        behavior: &ProcessBehavior,
+    ) -> Result<Vec<SuspiciousBehaviorPattern>> {
         let mut patterns = Vec::new();
 
         // Паттерн 1: Слишком много дочерних процессов
@@ -1327,7 +1422,10 @@ impl SecurityMonitorImpl {
     }
 
     /// Проверка подозрительных паттернов поведения процессов.
-    async fn check_suspicious_behavior(&self, _security_monitor: &mut SecurityMonitor) -> Result<()> {
+    async fn check_suspicious_behavior(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
         // Получаем список всех процессов
         let processes = self.get_all_processes().await?;
 
@@ -1347,12 +1445,21 @@ impl SecurityMonitorImpl {
                     status: SecurityEventStatus::New,
                     process_name: Some(process.name.clone()),
                     process_id: Some(process.pid),
-                    description: format!("Suspicious behavior pattern detected: {}", pattern.pattern_type),
+                    description: format!(
+                        "Suspicious behavior pattern detected: {}",
+                        pattern.pattern_type
+                    ),
                     details: Some(format!(
                         "Pattern: {}\nDescription: {}\nThreshold: {}\nCurrent: {}",
-                        pattern.pattern_type, pattern.description, pattern.threshold, pattern.current_value
+                        pattern.pattern_type,
+                        pattern.description,
+                        pattern.threshold,
+                        pattern.current_value
                     )),
-                    recommendations: Some("Investigate this process behavior and monitor for potential threats".to_string()),
+                    recommendations: Some(
+                        "Investigate this process behavior and monitor for potential threats"
+                            .to_string(),
+                    ),
                     resolved_time: None,
                 };
 
@@ -1438,6 +1545,8 @@ pub struct ProcessBehavior {
     pub cpu_usage: f32,
     /// Использование памяти
     pub memory_usage: f32,
+    /// Имя устройства (если применимо)
+    pub device_name: String,
     /// Частота создания дочерних процессов (в минуту)
     pub child_creation_rate: f32,
 }
@@ -1476,7 +1585,7 @@ mod tests {
     async fn test_security_monitor_creation() {
         let config = SecurityMonitorConfig::default();
         let monitor = SecurityMonitorImpl::new(config);
-        
+
         let status = monitor.get_security_status().await.unwrap();
         assert_eq!(status.overall_status, SecurityStatus::Unknown);
         assert_eq!(status.event_history.len(), 0);
@@ -1528,11 +1637,17 @@ mod tests {
         };
 
         monitor.add_security_event(event).await.unwrap();
-        monitor.resolve_security_event("test-event-2").await.unwrap();
+        monitor
+            .resolve_security_event("test-event-2")
+            .await
+            .unwrap();
 
         let status = monitor.get_security_status().await.unwrap();
         assert_eq!(status.event_history.len(), 1);
-        assert_eq!(status.event_history[0].status, SecurityEventStatus::Analyzed);
+        assert_eq!(
+            status.event_history[0].status,
+            SecurityEventStatus::Analyzed
+        );
     }
 
     #[tokio::test]
@@ -1555,11 +1670,17 @@ mod tests {
         };
 
         monitor.add_security_event(event).await.unwrap();
-        monitor.mark_event_as_false_positive("test-event-3").await.unwrap();
+        monitor
+            .mark_event_as_false_positive("test-event-3")
+            .await
+            .unwrap();
 
         let status = monitor.get_security_status().await.unwrap();
         assert_eq!(status.event_history.len(), 1);
-        assert_eq!(status.event_history[0].status, SecurityEventStatus::FalsePositive);
+        assert_eq!(
+            status.event_history[0].status,
+            SecurityEventStatus::FalsePositive
+        );
     }
 
     #[tokio::test]
@@ -1615,29 +1736,43 @@ mod tests {
         // Создаем тестовое поведение с высокими значениями
         let mut behavior = ProcessBehavior {
             pid: 1234,
-            child_count: 15, // Выше порога
-            thread_count: 150, // Выше порога
+            child_count: 15,       // Выше порога
+            thread_count: 150,     // Выше порога
             open_files_count: 150, // Выше порога
             network_connections_count: 0,
             start_time: None,
             parent_pid: None,
             parent_name: Some("xmrig".to_string()), // Подозрительный родитель
-            cpu_usage: 95.0, // Выше порога
-            memory_usage: 85.0, // Выше порога
+            cpu_usage: 95.0,                        // Выше порога
+            memory_usage: 85.0,                     // Выше порога
             child_creation_rate: 0.0,
+            device_name: String::new(),
         };
 
         // Проверяем обнаружение паттернов
-        let patterns = monitor.check_suspicious_behavior_patterns(&behavior).await.unwrap();
+        let patterns = monitor
+            .check_suspicious_behavior_patterns(&behavior)
+            .await
+            .unwrap();
 
         // Должны быть обнаружены несколько паттернов
         assert!(!patterns.is_empty());
-        assert!(patterns.iter().any(|p| p.pattern_type == "high_child_process_count"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "high_thread_count"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "high_open_files_count"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "suspicious_parent_process"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "high_child_process_count"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "high_thread_count"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "high_open_files_count"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "suspicious_parent_process"));
         assert!(patterns.iter().any(|p| p.pattern_type == "high_cpu_usage"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "high_memory_usage"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "high_memory_usage"));
     }
 
     #[tokio::test]
@@ -1649,7 +1784,9 @@ mod tests {
         let mut security_monitor = SecurityMonitor::default();
 
         // Выполняем проверку подозрительного поведения
-        let result = monitor.check_suspicious_behavior(&mut security_monitor).await;
+        let result = monitor
+            .check_suspicious_behavior(&mut security_monitor)
+            .await;
 
         // Проверяем, что проверка завершилась успешно
         assert!(result.is_ok());
@@ -1663,29 +1800,45 @@ mod tests {
         // Создаем тестовое поведение с аномальными значениями
         let mut behavior = ProcessBehavior {
             pid: 1234,
-            child_count: 25, // Выше порога
-            thread_count: 250, // Выше порога
+            child_count: 25,       // Выше порога
+            thread_count: 250,     // Выше порога
             open_files_count: 250, // Выше порога
             network_connections_count: 0,
             start_time: None,
             parent_pid: None,
             parent_name: None,
-            cpu_usage: 96.0, // Выше порога
-            memory_usage: 86.0, // Выше порога
+            cpu_usage: 96.0,          // Выше порога
+            memory_usage: 86.0,       // Выше порога
             child_creation_rate: 6.0, // Выше порога
+            device_name: String::new(),
         };
 
         // Проверяем обнаружение паттернов аномалий
-        let patterns = monitor.detect_resource_anomaly_patterns(&behavior).await.unwrap();
+        let patterns = monitor
+            .detect_resource_anomaly_patterns(&behavior)
+            .await
+            .unwrap();
 
         // Должны быть обнаружены несколько паттернов
         assert!(!patterns.is_empty());
-        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_child_process_count"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_thread_count"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_open_files_count"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_cpu_usage"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_memory_usage"));
-        assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_child_creation_rate"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "anomalous_child_process_count"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "anomalous_thread_count"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "anomalous_open_files_count"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "anomalous_cpu_usage"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "anomalous_memory_usage"));
+        assert!(patterns
+            .iter()
+            .any(|p| p.pattern_type == "anomalous_child_creation_rate"));
     }
 
     #[tokio::test]

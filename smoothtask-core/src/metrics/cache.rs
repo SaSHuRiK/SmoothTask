@@ -107,7 +107,7 @@ impl Default for MetricsCacheConfig {
             max_ttl_increase_factor: 1.5, // Можно увеличить TTL до 1.5x при низком давлении
             max_ttl_decrease_factor: 0.5, // Можно уменьшить TTL до 0.5x при высоком давлении
             intelligent_ttl_enabled: true, // Включаем интеллектуальное управление TTL
-            max_frequent_access_ttl: 15, // Максимальный TTL для часто используемых элементов
+            max_frequent_access_ttl: 15,  // Максимальный TTL для часто используемых элементов
             frequent_access_ttl_factor: 1.8, // Коэффициент увеличения TTL для часто используемых
             frequent_access_threshold: 1.0, // Порог частоты обращений (1 обращение в секунду)
         }
@@ -188,7 +188,11 @@ impl CachedMetrics {
     /// # Возвращает
     ///
     /// `true`, если кэш устарел, `false` в противном случае.
-    pub fn is_expired_with_type_ttl(&self, ttl_seconds: u64, metric_type_ttl: &HashMap<String, u64>) -> bool {
+    pub fn is_expired_with_type_ttl(
+        &self,
+        ttl_seconds: u64,
+        metric_type_ttl: &HashMap<String, u64>,
+    ) -> bool {
         // Используем индивидуальный TTL для типа метрик, если он задан
         let effective_ttl = metric_type_ttl
             .get(&self.metric_type)
@@ -264,7 +268,8 @@ impl CachedMetrics {
     /// Обновить статистику обращений к кэшу.
     pub fn update_access_stats(&self) {
         // Увеличиваем счётчик обращений
-        self.access_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.access_count
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
         // Обновляем временную метку последнего обращения
         let mut last_access = self.last_access_time.lock().unwrap();
@@ -344,7 +349,7 @@ impl CachedMetrics {
             approximate_size_bytes: self.approximate_size_bytes,
             priority: self.priority,
             access_count: std::sync::atomic::AtomicUsize::new(
-                self.access_count.load(std::sync::atomic::Ordering::Relaxed)
+                self.access_count.load(std::sync::atomic::Ordering::Relaxed),
             ),
             last_access_time: std::sync::Mutex::new(*self.last_access_time.lock().unwrap()),
             average_access_rate: std::sync::Mutex::new(*self.average_access_rate.lock().unwrap()),
@@ -403,7 +408,9 @@ impl CachePerformanceMetrics {
 
     /// Получить текущий hit rate.
     pub fn hit_rate(&self) -> f64 {
-        let total = self.total_requests.load(std::sync::atomic::Ordering::Relaxed);
+        let total = self
+            .total_requests
+            .load(std::sync::atomic::Ordering::Relaxed);
         if total == 0 {
             0.0
         } else {
@@ -414,7 +421,9 @@ impl CachePerformanceMetrics {
 
     /// Получить текущий miss rate.
     pub fn miss_rate(&self) -> f64 {
-        let total = self.total_requests.load(std::sync::atomic::Ordering::Relaxed);
+        let total = self
+            .total_requests
+            .load(std::sync::atomic::Ordering::Relaxed);
         if total == 0 {
             0.0
         } else {
@@ -561,7 +570,9 @@ impl MetricsCache {
         }
 
         // Определяем приоритет для типа метрик
-        let priority = self.config.metric_type_priority
+        let priority = self
+            .config
+            .metric_type_priority
             .get(&metric_type)
             .copied()
             .unwrap_or(1);
@@ -682,7 +693,10 @@ impl MetricsCache {
         let mut expired_keys = Vec::new();
 
         for (key, cached) in cache_guard.iter() {
-            if cached.is_expired_with_type_ttl(self.config.cache_ttl_seconds, &self.config.metric_type_ttl) {
+            if cached.is_expired_with_type_ttl(
+                self.config.cache_ttl_seconds,
+                &self.config.metric_type_ttl,
+            ) {
                 expired_keys.push(key.clone());
             }
         }
@@ -699,7 +713,13 @@ impl MetricsCache {
 
         // Если всё ещё превышен лимит, используем приоритетную инвалидацию
         if self.config.priority_based_invalidation_enabled && current_usage > target_usage {
-            self.priority_based_cleanup(cache_guard, &mut current_usage, &mut removed_count, &mut bytes_freed, target_usage);
+            self.priority_based_cleanup(
+                cache_guard,
+                &mut current_usage,
+                &mut removed_count,
+                &mut bytes_freed,
+                target_usage,
+            );
         } else if current_usage > target_usage && !cache_guard.is_empty() {
             // Используем стандартный LRU алгоритм, если приоритетная инвалидация отключена
             while current_usage > target_usage && !cache_guard.is_empty() {
@@ -751,7 +771,7 @@ impl MetricsCache {
     ) {
         // Собираем все элементы с их приоритетами
         let mut items_with_priority: Vec<(String, u32, usize)> = Vec::new();
-        
+
         for (key, cached) in cache_guard.iter() {
             items_with_priority.push((key.clone(), cached.priority, cached.approximate_size_bytes));
         }
@@ -764,7 +784,7 @@ impl MetricsCache {
             if *current_usage <= target_usage {
                 break;
             }
-            
+
             if let Some(_cached) = cache_guard.pop(&key) {
                 *current_usage = current_usage.saturating_sub(size);
                 *removed_count += 1;
@@ -960,6 +980,15 @@ impl MetricsCache {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Получить конфигурацию кэша.
+    ///
+    /// # Возвращает
+    ///
+    /// Ссылка на конфигурацию кэша.
+    pub fn get_config(&self) -> &MetricsCacheConfig {
+        &self.config
+    }
 }
 
 /// Оптимизированный сборщик системных метрик с кэшированием.
@@ -1024,8 +1053,12 @@ impl OptimizedMetricsCollector {
         source_paths.insert("loadavg".to_string(), paths.loadavg.clone());
 
         // Пробуем сохранить в кэше (с graceful degradation, если не получится)
-        self.cache
-            .insert(cache_key.to_string(), metrics.clone(), source_paths, "system_metrics".to_string());
+        self.cache.insert(
+            cache_key.to_string(),
+            metrics.clone(),
+            source_paths,
+            "system_metrics".to_string(),
+        );
 
         Ok(metrics)
     }
@@ -1073,7 +1106,10 @@ impl OptimizedMetricsCollector {
             Ok(cache_guard) => {
                 let mut stats = Vec::new();
                 for (key, cached) in cache_guard.iter() {
-                    let access_count = cached.access_count.load(std::sync::atomic::Ordering::Relaxed) as u64;
+                    let access_count = cached
+                        .access_count
+                        .load(std::sync::atomic::Ordering::Relaxed)
+                        as u64;
                     let avg_rate = cached.average_access_rate.lock().unwrap();
                     stats.push((key.clone(), access_count, *avg_rate));
                 }
@@ -1099,7 +1135,8 @@ impl OptimizedMetricsCollector {
     /// Вектор с часто используемыми элементами.
     pub fn get_frequently_accessed_items(&self, threshold: f64) -> Vec<String> {
         let stats = self.get_cache_access_statistics();
-        stats.into_iter()
+        stats
+            .into_iter()
             .filter(|(_, _, avg_rate)| *avg_rate >= threshold)
             .map(|(key, _, _)| key)
             .collect()
@@ -1116,7 +1153,8 @@ impl OptimizedMetricsCollector {
     /// Вектор с редко используемыми элементами.
     pub fn get_infrequently_accessed_items(&self, threshold: f64) -> Vec<String> {
         let stats = self.get_cache_access_statistics();
-        stats.into_iter()
+        stats
+            .into_iter()
             .filter(|(_, _, avg_rate)| *avg_rate < threshold)
             .map(|(key, _, _)| key)
             .collect()
@@ -1152,8 +1190,6 @@ impl OptimizedMetricsCollector {
             }
         }
     }
-
-
 
     /// Собрать CPU метрики с кэшированием.
     ///
@@ -1209,8 +1245,12 @@ impl OptimizedMetricsCollector {
         };
 
         // Пробуем сохранить в кэше (с graceful degradation, если не получится)
-        self.cache
-            .insert(cache_key.to_string(), metrics, source_paths, "cpu_metrics".to_string());
+        self.cache.insert(
+            cache_key.to_string(),
+            metrics,
+            source_paths,
+            "cpu_metrics".to_string(),
+        );
 
         Ok(cpu_times)
     }
@@ -1269,8 +1309,12 @@ impl OptimizedMetricsCollector {
         };
 
         // Пробуем сохранить в кэше (с graceful degradation, если не получится)
-        self.cache
-            .insert(cache_key.to_string(), metrics, source_paths, "memory_metrics".to_string());
+        self.cache.insert(
+            cache_key.to_string(),
+            metrics,
+            source_paths,
+            "memory_metrics".to_string(),
+        );
 
         Ok(memory_info)
     }
@@ -1314,8 +1358,12 @@ impl OptimizedMetricsCollector {
         source_paths.insert("loadavg".to_string(), paths.loadavg.clone());
 
         // Пробуем сохранить в кэше (с graceful degradation, если не получится)
-        self.cache
-            .insert(cache_key.to_string(), metrics.clone(), source_paths, "system_metrics".to_string());
+        self.cache.insert(
+            cache_key.to_string(),
+            metrics.clone(),
+            source_paths,
+            "system_metrics".to_string(),
+        );
 
         // Выполняем очистку кэша с учетом давления памяти
         let mut cache_guard = self.cache.cache.lock().unwrap();
@@ -1481,7 +1529,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         assert_eq!(cache.len(), 1);
         assert!(!cache.is_empty());
@@ -1595,7 +1648,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         // Кэш должен остаться пустым
         assert_eq!(cache.len(), 0);
@@ -1620,7 +1678,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         // Сразу после вставки кэш должен быть актуальным
         assert!(cache.get("test_key").is_some());
@@ -1715,7 +1778,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         assert!(cache.current_memory_usage() > 0);
         assert!(!cache.is_empty());
@@ -1749,7 +1817,12 @@ mod tests {
                 format!("key_{}", i),
                 PathBuf::from(format!("/proc/test_{}", i)),
             );
-            cache.insert(format!("test_key_{}", i), metrics.clone(), paths, "test_metrics".to_string());
+            cache.insert(
+                format!("test_key_{}", i),
+                metrics.clone(),
+                paths,
+                "test_metrics".to_string(),
+            );
         }
 
         // Проверяем, что очистка сработала (используем более реалистичный лимит)
@@ -1772,7 +1845,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         let info_after = cache.get_memory_info();
         assert!(info_after.contains("current:"));
@@ -1823,7 +1901,12 @@ mod tests {
                 format!("key_{}", i),
                 PathBuf::from(format!("/proc/test_{}", i)),
             );
-            cache.insert(format!("test_key_{}", i), metrics.clone(), paths, "test_metrics".to_string());
+            cache.insert(
+                format!("test_key_{}", i),
+                metrics.clone(),
+                paths,
+                "test_metrics".to_string(),
+            );
         }
 
         // Тестируем очистку с разным давлением
@@ -1932,38 +2015,108 @@ mod tests {
 
         // Проверяем начальные значения
         let metrics = cache.get_performance_metrics();
-        assert_eq!(metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.cache_hits.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.cache_misses.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.cache_insertions.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.cache_evictions.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.auto_cleanup_count.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.bytes_freed_by_cleanup.load(std::sync::atomic::Ordering::Relaxed), 0);
-        assert_eq!(metrics.cache_errors.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(
+            metrics
+                .total_requests
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .cache_hits
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .cache_misses
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .cache_insertions
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .cache_evictions
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .auto_cleanup_count
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .bytes_freed_by_cleanup
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
+        assert_eq!(
+            metrics
+                .cache_errors
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
 
         // Добавляем данные в кэш
         let metrics_data = SystemMetrics::default();
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics_data, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics_data,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         // Проверяем, что вставка была учтена
-        assert_eq!(metrics.cache_insertions.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics
+                .cache_insertions
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
 
         // Пробуем получить данные из кэша
         let _result = cache.get("test_key");
 
         // Проверяем, что запрос был учтен
-        assert_eq!(metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed), 1);
-        assert_eq!(metrics.cache_hits.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics
+                .total_requests
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
+        assert_eq!(
+            metrics
+                .cache_hits
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
 
         // Пробуем получить несуществующие данные
         let _result = cache.get("nonexistent_key");
 
         // Проверяем, что промах был учтен
-        assert_eq!(metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed), 2);
-        assert_eq!(metrics.cache_misses.load(std::sync::atomic::Ordering::Relaxed), 1);
+        assert_eq!(
+            metrics
+                .total_requests
+                .load(std::sync::atomic::Ordering::Relaxed),
+            2
+        );
+        assert_eq!(
+            metrics
+                .cache_misses
+                .load(std::sync::atomic::Ordering::Relaxed),
+            1
+        );
 
         // Проверяем hit rate и miss rate
         assert!(cache.get_hit_rate() > 0.0);
@@ -2037,7 +2190,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        collector.cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        collector.cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         // При низком давлении кэш не должен устареть быстро
         assert!(!collector.is_cache_expired_with_pressure("test_key", 0.2));
@@ -2055,7 +2213,12 @@ mod tests {
 
         // Проверяем, что метрики производительности доступны
         let metrics = collector.get_cache_performance_metrics();
-        assert!(metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed) >= 0);
+        assert!(
+            metrics
+                .total_requests
+                .load(std::sync::atomic::Ordering::Relaxed)
+                >= 0
+        );
 
         // Проверяем, что hit rate и miss rate доступны
         let hit_rate = collector.get_cache_hit_rate();
@@ -2066,7 +2229,12 @@ mod tests {
         // Проверяем, что можно сбросить метрики
         collector.reset_cache_performance_metrics();
         let metrics_after_reset = collector.get_cache_performance_metrics();
-        assert_eq!(metrics_after_reset.total_requests.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(
+            metrics_after_reset
+                .total_requests
+                .load(std::sync::atomic::Ordering::Relaxed),
+            0
+        );
     }
 
     #[test]
@@ -2122,14 +2290,34 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("test_key".to_string(), metrics_data, source_paths, "test_metrics".to_string());
+        cache.insert(
+            "test_key".to_string(),
+            metrics_data,
+            source_paths,
+            "test_metrics".to_string(),
+        );
         let _result = cache.get("test_key");
 
         // Проверяем, что метрики можно получить и они корректны
         let perf_metrics = cache.get_performance_metrics();
-        assert!(perf_metrics.total_requests.load(std::sync::atomic::Ordering::Relaxed) > 0);
-        assert!(perf_metrics.cache_hits.load(std::sync::atomic::Ordering::Relaxed) > 0);
-        assert!(perf_metrics.cache_insertions.load(std::sync::atomic::Ordering::Relaxed) > 0);
+        assert!(
+            perf_metrics
+                .total_requests
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0
+        );
+        assert!(
+            perf_metrics
+                .cache_hits
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0
+        );
+        assert!(
+            perf_metrics
+                .cache_insertions
+                .load(std::sync::atomic::Ordering::Relaxed)
+                > 0
+        );
 
         // Проверяем, что hit rate и miss rate корректны
         let hit_rate = cache.get_hit_rate();
@@ -2148,8 +2336,18 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        cache.insert("frequent_key".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        cache.insert("infrequent_key".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert(
+            "frequent_key".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        cache.insert(
+            "infrequent_key".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
 
         // Часто обращаемся к одному ключу
         for _ in 0..10 {
@@ -2187,8 +2385,18 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        collector.cache.insert("key1".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        collector.cache.insert("key2".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert(
+            "key1".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        collector.cache.insert(
+            "key2".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
 
         // Обращаемся к ключам с разной частотой
         for _ in 0..5 {
@@ -2218,9 +2426,24 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        collector.cache.insert("frequent1".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        collector.cache.insert("frequent2".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        collector.cache.insert("infrequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert(
+            "frequent1".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        collector.cache.insert(
+            "frequent2".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        collector.cache.insert(
+            "infrequent".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
 
         // Часто обращаемся к некоторым ключам
         for _ in 0..10 {
@@ -2246,9 +2469,24 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        collector.cache.insert("frequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        collector.cache.insert("infrequent1".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        collector.cache.insert("infrequent2".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert(
+            "frequent".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        collector.cache.insert(
+            "infrequent1".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        collector.cache.insert(
+            "infrequent2".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
 
         // Часто обращаемся к одному ключу
         for _ in 0..10 {
@@ -2272,7 +2510,12 @@ mod tests {
         let mut source_paths = HashMap::new();
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
-        collector.cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+        collector.cache.insert(
+            "test_key".to_string(),
+            metrics,
+            source_paths,
+            "test_metrics".to_string(),
+        );
 
         // Обращаемся к ключу несколько раз
         for _ in 0..5 {
@@ -2317,7 +2560,12 @@ mod tests {
         // Добавляем несколько элементов
         for i in 0..5 {
             let key = format!("key_{}", i);
-            collector.cache.insert(key.clone(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+            collector.cache.insert(
+                key.clone(),
+                metrics.clone(),
+                source_paths.clone(),
+                "test_metrics".to_string(),
+            );
         }
 
         // Часто обращаемся к некоторым ключам
@@ -2346,11 +2594,36 @@ mod tests {
         source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
 
         // Добавляем элементы с разными паттернами обращений
-        cache.insert("very_frequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        cache.insert("frequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        cache.insert("normal".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        cache.insert("rare".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
-        cache.insert("very_rare".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert(
+            "very_frequent".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        cache.insert(
+            "frequent".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        cache.insert(
+            "normal".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        cache.insert(
+            "rare".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
+        cache.insert(
+            "very_rare".to_string(),
+            metrics.clone(),
+            source_paths.clone(),
+            "test_metrics".to_string(),
+        );
 
         // Симулируем разные паттерны обращений
         for _ in 0..20 {
@@ -2370,7 +2643,10 @@ mod tests {
         assert_eq!(stats.len(), 5);
 
         // Находим статистику для каждого ключа
-        let very_frequent = stats.iter().find(|(key, _, _)| key == "very_frequent").unwrap();
+        let very_frequent = stats
+            .iter()
+            .find(|(key, _, _)| key == "very_frequent")
+            .unwrap();
         let frequent = stats.iter().find(|(key, _, _)| key == "frequent").unwrap();
         let normal = stats.iter().find(|(key, _, _)| key == "normal").unwrap();
         let rare = stats.iter().find(|(key, _, _)| key == "rare").unwrap();

@@ -2852,8 +2852,10 @@ impl EbpfMetricsCollector {
         self.application_performance_program = Some(program);
 
         // Загрузка карт из программы
-        self.application_performance_maps =
-            self.load_maps_from_program(program_path.to_str().unwrap(), "application_performance_map")?;
+        self.application_performance_maps = self.load_maps_from_program(
+            program_path.to_str().unwrap(),
+            "application_performance_map",
+        )?;
 
         tracing::info!(
             "eBPF программа для мониторинга производительности приложений успешно загружена с {} картами",
@@ -3363,11 +3365,12 @@ impl EbpfMetricsCollector {
             None
         };
 
-        let application_performance_details = if self.config.enable_application_performance_monitoring {
-            self.collect_application_performance_stats()?
-        } else {
-            None
-        };
+        let application_performance_details =
+            if self.config.enable_application_performance_monitoring {
+                self.collect_application_performance_stats()?
+            } else {
+                None
+            };
 
         // Оптимизация: собираем детализированную статистику параллельно
         let (
@@ -4649,7 +4652,9 @@ impl EbpfMetricsCollector {
 
     /// Собрать статистику производительности приложений из eBPF карт
     #[cfg(feature = "ebpf")]
-    fn collect_application_performance_stats(&self) -> Result<Option<Vec<ApplicationPerformanceStat>>> {
+    fn collect_application_performance_stats(
+        &self,
+    ) -> Result<Option<Vec<ApplicationPerformanceStat>>> {
         use libbpf_rs::Map;
 
         if !self.config.enable_application_performance_monitoring {
@@ -4670,66 +4675,72 @@ impl EbpfMetricsCollector {
                 Ok(stats) => {
                     for stat in stats {
                         // Вычисляем проценты
-                        let total_time = stat.execution_time_ns + stat.io_wait_time_ns + stat.cpu_wait_time_ns +
-                            stat.lock_wait_time_ns + stat.network_wait_time_ns + stat.disk_wait_time_ns +
-                            stat.memory_wait_time_ns + stat.gpu_wait_time_ns + stat.other_wait_time_ns;
-                        
+                        let total_time = stat.execution_time_ns
+                            + stat.io_wait_time_ns
+                            + stat.cpu_wait_time_ns
+                            + stat.lock_wait_time_ns
+                            + stat.network_wait_time_ns
+                            + stat.disk_wait_time_ns
+                            + stat.memory_wait_time_ns
+                            + stat.gpu_wait_time_ns
+                            + stat.other_wait_time_ns;
+
                         let execution_percent = if total_time > 0 {
                             (stat.execution_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let wait_percent = 100.0 - execution_percent;
-                        
+
                         let io_wait_percent = if total_time > 0 {
                             (stat.io_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let cpu_wait_percent = if total_time > 0 {
                             (stat.cpu_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let lock_wait_percent = if total_time > 0 {
                             (stat.lock_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let network_wait_percent = if total_time > 0 {
                             (stat.network_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let disk_wait_percent = if total_time > 0 {
                             (stat.disk_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let memory_wait_percent = if total_time > 0 {
                             (stat.memory_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let gpu_wait_percent = if total_time > 0 {
                             (stat.gpu_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         let other_wait_percent = if total_time > 0 {
                             (stat.other_wait_time_ns as f32 / total_time as f32) * 100.0
                         } else {
                             0.0
                         };
-                        
+
                         performance_stats.push(ApplicationPerformanceStat {
                             pid: stat.pid,
                             tgid: stat.tgid,
@@ -9839,7 +9850,10 @@ mod test_application_performance {
         );
 
         config.enable_application_performance_monitoring = true;
-        assert!(config.enable_application_performance_monitoring, "Должно включаться");
+        assert!(
+            config.enable_application_performance_monitoring,
+            "Должно включаться"
+        );
     }
 
     #[test]
@@ -9907,7 +9921,10 @@ mod test_application_performance {
         ];
 
         metrics.application_performance_details = Some(performance_stats.clone());
-        assert!(metrics.application_performance_details.is_some(), "Должно быть Some");
+        assert!(
+            metrics.application_performance_details.is_some(),
+            "Должно быть Some"
+        );
 
         if let Some(details) = &metrics.application_performance_details {
             assert_eq!(details.len(), 2, "Должно быть 2 записи");
@@ -9996,8 +10013,15 @@ mod test_application_performance {
         );
 
         if let Some((_, _, _, _, _, _, _, _, _, _, _, performance_details)) = optimized {
-            assert_eq!(performance_details.len(), 1, "Должно быть ограничено до 1 записи");
-            assert_eq!(performance_details[0].pid, 123, "Должна остаться первая запись");
+            assert_eq!(
+                performance_details.len(),
+                1,
+                "Должно быть ограничено до 1 записи"
+            );
+            assert_eq!(
+                performance_details[0].pid, 123,
+                "Должна остаться первая запись"
+            );
         }
     }
 
@@ -10013,10 +10037,17 @@ mod test_application_performance {
         let memory_wait = 150000u64;
         let gpu_wait = 100000u64;
         let other_wait = 50000u64;
-        
-        let total_time = execution_time + io_wait + cpu_wait + lock_wait + network_wait + 
-                       disk_wait + memory_wait + gpu_wait + other_wait;
-        
+
+        let total_time = execution_time
+            + io_wait
+            + cpu_wait
+            + lock_wait
+            + network_wait
+            + disk_wait
+            + memory_wait
+            + gpu_wait
+            + other_wait;
+
         let execution_percent = (execution_time as f32 / total_time as f32) * 100.0;
         let wait_percent = 100.0 - execution_percent;
         let io_wait_percent = (io_wait as f32 / total_time as f32) * 100.0;

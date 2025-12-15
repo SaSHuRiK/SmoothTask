@@ -5,7 +5,7 @@
 //! Добавляет поддержку дополнительных типов сенсоров, не покрытых базовым мониторингом
 
 use anyhow::Result;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
 use tracing::{debug, info, warn};
@@ -24,28 +24,28 @@ pub struct ExtendedHardwareSensors {
     pub illumination_lux: Vec<(String, f32)>, // Освещенность в люксах
     pub custom_sensors: Vec<(String, f32, String)>, // Пользовательские сенсоры (имя, значение, единица)
     pub thunderbolt_devices: Vec<(String, f32)>, // Thunderbolt устройства (имя, скорость в Гбит/с)
-    pub pcie_devices: Vec<(String, f32)>, // PCIe устройства (имя, скорость в Гбит/с)
-    pub usb4_devices: Vec<(String, f32)>, // USB4 устройства (имя, скорость в Гбит/с)
-    pub nvme_devices: Vec<(String, f32)>, // NVMe устройства (имя, скорость в Гбит/с)
+    pub pcie_devices: Vec<(String, f32)>,        // PCIe устройства (имя, скорость в Гбит/с)
+    pub usb4_devices: Vec<(String, f32)>,        // USB4 устройства (имя, скорость в Гбит/с)
+    pub nvme_devices: Vec<(String, f32)>,        // NVMe устройства (имя, скорость в Гбит/с)
     pub thunderbolt5_devices: Vec<(String, f32)>, // Thunderbolt 5 устройства (имя, скорость в Гбит/с)
-    pub pcie6_devices: Vec<(String, f32)>, // PCIe 6.0 устройства (имя, скорость в Гбит/с)
-    pub usb4_v2_devices: Vec<(String, f32)>, // USB4 v2 устройства (имя, скорость в Гбит/с)
-    pub nvme_2_0_devices: Vec<(String, f32)>, // NVMe 2.0 устройства (имя, скорость в Гбит/с)
+    pub pcie6_devices: Vec<(String, f32)>,        // PCIe 6.0 устройства (имя, скорость в Гбит/с)
+    pub usb4_v2_devices: Vec<(String, f32)>,      // USB4 v2 устройства (имя, скорость в Гбит/с)
+    pub nvme_2_0_devices: Vec<(String, f32)>,     // NVMe 2.0 устройства (имя, скорость в Гбит/с)
     pub thunderbolt6_devices: Vec<(String, f32)>, // Thunderbolt 6 устройства (имя, скорость в Гбит/с)
-    pub pcie7_devices: Vec<(String, f32)>, // PCIe 7.0 устройства (имя, скорость в Гбит/с)
-    pub usb4_v3_devices: Vec<(String, f32)>, // USB4 v3 устройства (имя, скорость в Гбит/с)
-    pub nvme_3_0_devices: Vec<(String, f32)>, // NVMe 3.0 устройства (имя, скорость в Гбит/с)
+    pub pcie7_devices: Vec<(String, f32)>,        // PCIe 7.0 устройства (имя, скорость в Гбит/с)
+    pub usb4_v3_devices: Vec<(String, f32)>,      // USB4 v3 устройства (имя, скорость в Гбит/с)
+    pub nvme_3_0_devices: Vec<(String, f32)>,     // NVMe 3.0 устройства (имя, скорость в Гбит/с)
     // Дополнительные типы сенсоров
     pub additional_temperatures_c: Vec<(String, f32)>, // Дополнительные температуры
     pub additional_frequencies_hz: Vec<(String, f32)>, // Дополнительные частоты
     pub additional_utilizations_percent: Vec<(String, f32)>, // Дополнительные утилизации
-    pub additional_loads_percent: Vec<(String, f32)>, // Дополнительные нагрузки
+    pub additional_loads_percent: Vec<(String, f32)>,  // Дополнительные нагрузки
     pub additional_efficiencies_percent: Vec<(String, f32)>, // Дополнительные эффективности
     pub additional_health_percent: Vec<(String, f32)>, // Дополнительные состояния здоровья
     pub additional_capacities_percent: Vec<(String, f32)>, // Дополнительные емкости
     pub additional_throughputs_mbps: Vec<(String, f32)>, // Дополнительные пропускные способности
-    pub additional_latencies_ns: Vec<(String, f32)>, // Дополнительные задержки
-    pub additional_errors_count: Vec<(String, f32)>, // Дополнительные ошибки
+    pub additional_latencies_ns: Vec<(String, f32)>,   // Дополнительные задержки
+    pub additional_errors_count: Vec<(String, f32)>,   // Дополнительные ошибки
     // Новые типы сенсоров
     pub vibration_mps2: Vec<(String, f32)>, // Вибрация в м/с²
     pub acceleration_mps2: Vec<(String, f32)>, // Ускорение в м/с²
@@ -398,70 +398,90 @@ impl ExtendedHardwareSensorsMonitor {
                                 && file_name.starts_with("temp")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_temperature_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_temperature_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные частоты
                             else if self.config.enable_additional_frequency_sensors
                                 && file_name.starts_with("freq")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_frequency_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_frequency_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные утилизации
                             else if self.config.enable_additional_utilization_sensors
                                 && file_name.starts_with("util")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_utilization_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_utilization_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные нагрузки
                             else if self.config.enable_additional_load_sensors
                                 && file_name.starts_with("load")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_load_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_load_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные эффективности
                             else if self.config.enable_additional_efficiency_sensors
                                 && file_name.starts_with("eff")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_efficiency_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_efficiency_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные состояния здоровья
                             else if self.config.enable_additional_health_sensors
                                 && file_name.starts_with("health")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_health_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_health_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные емкости
                             else if self.config.enable_additional_capacity_sensors
                                 && file_name.starts_with("cap")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_capacity_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_capacity_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные пропускные способности
                             else if self.config.enable_additional_throughput_sensors
                                 && file_name.starts_with("throughput")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_throughput_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_throughput_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные задержки
                             else if self.config.enable_additional_latency_sensors
                                 && file_name.starts_with("latency")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_latency_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_latency_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем дополнительные ошибки
                             else if self.config.enable_additional_error_sensors
                                 && file_name.starts_with("error")
                                 && file_name.ends_with("_input")
                             {
-                                self.process_additional_error_sensor(&file_path, file_name, sensors)?;
+                                self.process_additional_error_sensor(
+                                    &file_path, file_name, sensors,
+                                )?;
                             }
                             // Обрабатываем вибрацию
                             else if self.config.enable_vibration_sensors
@@ -1095,7 +1115,10 @@ impl ExtendedHardwareSensorsMonitor {
         );
 
         if !thunderbolt_dir.exists() {
-            debug!("Thunderbolt directory not found at: {}", thunderbolt_dir.display());
+            debug!(
+                "Thunderbolt directory not found at: {}",
+                thunderbolt_dir.display()
+            );
             return Ok(());
         }
 
@@ -1127,7 +1150,8 @@ impl ExtendedHardwareSensorsMonitor {
                                             Err(e) => {
                                                 warn!(
                                                     "Failed to parse Thunderbolt speed from {}: {}",
-                                                    speed_file.display(), e
+                                                    speed_file.display(),
+                                                    e
                                                 );
                                             }
                                         }
@@ -1135,7 +1159,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read Thunderbolt speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1194,19 +1219,15 @@ impl ExtendedHardwareSensorsMonitor {
                                             "16.0 GT/s" => 16.0,
                                             "32.0 GT/s" => 32.0,
                                             _ => {
-                                                warn!(
-                                                    "Unknown PCIe speed code: {}",
-                                                    speed_code
-                                                );
+                                                warn!("Unknown PCIe speed code: {}", speed_code);
                                                 0.0
                                             }
                                         };
 
                                         if speed_gbps > 0.0 {
-                                            sensors.pcie_devices.push((
-                                                device_name_str.to_string(),
-                                                speed_gbps,
-                                            ));
+                                            sensors
+                                                .pcie_devices
+                                                .push((device_name_str.to_string(), speed_gbps));
                                             debug!(
                                                 "Successfully read PCIe device: {} at {} Gbps",
                                                 device_name_str, speed_gbps
@@ -1216,7 +1237,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read PCIe speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1283,7 +1305,8 @@ impl ExtendedHardwareSensorsMonitor {
                                             Err(e) => {
                                                 warn!(
                                                     "Failed to parse USB4 speed from {}: {}",
-                                                    speed_file.display(), e
+                                                    speed_file.display(),
+                                                    e
                                                 );
                                             }
                                         }
@@ -1291,7 +1314,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read USB4 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1377,7 +1401,10 @@ impl ExtendedHardwareSensorsMonitor {
         );
 
         if !thunderbolt_dir.exists() {
-            debug!("Thunderbolt directory not found at: {}", thunderbolt_dir.display());
+            debug!(
+                "Thunderbolt directory not found at: {}",
+                thunderbolt_dir.display()
+            );
             return Ok(());
         }
 
@@ -1420,7 +1447,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read Thunderbolt 5 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1455,7 +1483,10 @@ impl ExtendedHardwareSensorsMonitor {
         );
 
         if !thunderbolt_dir.exists() {
-            debug!("Thunderbolt directory not found at: {}", thunderbolt_dir.display());
+            debug!(
+                "Thunderbolt directory not found at: {}",
+                thunderbolt_dir.display()
+            );
             return Ok(());
         }
 
@@ -1498,7 +1529,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read Thunderbolt 6 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1562,10 +1594,9 @@ impl ExtendedHardwareSensorsMonitor {
                                         };
 
                                         if speed_gbps > 0.0 {
-                                            sensors.pcie6_devices.push((
-                                                device_name_str.to_string(),
-                                                speed_gbps,
-                                            ));
+                                            sensors
+                                                .pcie6_devices
+                                                .push((device_name_str.to_string(), speed_gbps));
                                             debug!(
                                                 "Successfully read PCIe 6.0 device: {} at {} Gbps",
                                                 device_name_str, speed_gbps
@@ -1575,7 +1606,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read PCIe 6.0 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1639,10 +1671,9 @@ impl ExtendedHardwareSensorsMonitor {
                                         };
 
                                         if speed_gbps > 0.0 {
-                                            sensors.pcie7_devices.push((
-                                                device_name_str.to_string(),
-                                                speed_gbps,
-                                            ));
+                                            sensors
+                                                .pcie7_devices
+                                                .push((device_name_str.to_string(), speed_gbps));
                                             debug!(
                                                 "Successfully read PCIe 7.0 device: {} at {} Gbps",
                                                 device_name_str, speed_gbps
@@ -1652,7 +1683,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read PCIe 7.0 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1719,7 +1751,8 @@ impl ExtendedHardwareSensorsMonitor {
                                             Err(e) => {
                                                 warn!(
                                                     "Failed to parse USB4 v2 speed from {}: {}",
-                                                    speed_file.display(), e
+                                                    speed_file.display(),
+                                                    e
                                                 );
                                             }
                                         }
@@ -1727,7 +1760,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read USB4 v2 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1845,7 +1879,8 @@ impl ExtendedHardwareSensorsMonitor {
                                             Err(e) => {
                                                 warn!(
                                                     "Failed to parse USB4 v3 speed from {}: {}",
-                                                    speed_file.display(), e
+                                                    speed_file.display(),
+                                                    e
                                                 );
                                             }
                                         }
@@ -1853,7 +1888,8 @@ impl ExtendedHardwareSensorsMonitor {
                                     Err(e) => {
                                         warn!(
                                             "Failed to read USB4 v3 speed from {}: {}",
-                                            speed_file.display(), e
+                                            speed_file.display(),
+                                            e
                                         );
                                     }
                                 }
@@ -1935,31 +1971,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional temperature sensor file: {}", file_path.display());
+        debug!(
+            "Found additional temperature sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "temp")?;
-                        sensors.additional_temperatures_c.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional temperature sensor: {}°C from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional temperature sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "temp")?;
+                    sensors
+                        .additional_temperatures_c
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional temperature sensor: {}°C from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional temperature sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional temperature sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -1978,31 +2020,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional frequency sensor file: {}", file_path.display());
+        debug!(
+            "Found additional frequency sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "freq")?;
-                        sensors.additional_frequencies_hz.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional frequency sensor: {}Hz from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional frequency sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "freq")?;
+                    sensors
+                        .additional_frequencies_hz
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional frequency sensor: {}Hz from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional frequency sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional frequency sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2021,31 +2069,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional utilization sensor file: {}", file_path.display());
+        debug!(
+            "Found additional utilization sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "util")?;
-                        sensors.additional_utilizations_percent.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional utilization sensor: {}% from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional utilization sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "util")?;
+                    sensors
+                        .additional_utilizations_percent
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional utilization sensor: {}% from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional utilization sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional utilization sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2067,28 +2121,31 @@ impl ExtendedHardwareSensorsMonitor {
         debug!("Found additional load sensor file: {}", file_path.display());
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "load")?;
-                        sensors.additional_loads_percent.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional load sensor: {}% from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional load sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "load")?;
+                    sensors
+                        .additional_loads_percent
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional load sensor: {}% from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional load sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional load sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2107,31 +2164,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional efficiency sensor file: {}", file_path.display());
+        debug!(
+            "Found additional efficiency sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "eff")?;
-                        sensors.additional_efficiencies_percent.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional efficiency sensor: {}% from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional efficiency sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "eff")?;
+                    sensors
+                        .additional_efficiencies_percent
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional efficiency sensor: {}% from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional efficiency sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional efficiency sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2150,31 +2213,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional health sensor file: {}", file_path.display());
+        debug!(
+            "Found additional health sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "health")?;
-                        sensors.additional_health_percent.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional health sensor: {}% from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional health sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "health")?;
+                    sensors
+                        .additional_health_percent
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional health sensor: {}% from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional health sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional health sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2193,31 +2262,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional capacity sensor file: {}", file_path.display());
+        debug!(
+            "Found additional capacity sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "cap")?;
-                        sensors.additional_capacities_percent.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional capacity sensor: {}% from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional capacity sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "cap")?;
+                    sensors
+                        .additional_capacities_percent
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional capacity sensor: {}% from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional capacity sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional capacity sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2236,31 +2311,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional throughput sensor file: {}", file_path.display());
+        debug!(
+            "Found additional throughput sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "throughput")?;
-                        sensors.additional_throughputs_mbps.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional throughput sensor: {}MB/s from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional throughput sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "throughput")?;
+                    sensors
+                        .additional_throughputs_mbps
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional throughput sensor: {}MB/s from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional throughput sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional throughput sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2279,31 +2360,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional latency sensor file: {}", file_path.display());
+        debug!(
+            "Found additional latency sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "latency")?;
-                        sensors.additional_latencies_ns.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional latency sensor: {}ns from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional latency sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "latency")?;
+                    sensors
+                        .additional_latencies_ns
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional latency sensor: {}ns from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional latency sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional latency sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2322,31 +2409,37 @@ impl ExtendedHardwareSensorsMonitor {
             return Ok(());
         }
 
-        debug!("Found additional error sensor file: {}", file_path.display());
+        debug!(
+            "Found additional error sensor file: {}",
+            file_path.display()
+        );
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "error")?;
-                        sensors.additional_errors_count.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read additional error sensor: {} errors from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse additional error sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "error")?;
+                    sensors
+                        .additional_errors_count
+                        .push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read additional error sensor: {} errors from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse additional error sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read additional error sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2368,28 +2461,29 @@ impl ExtendedHardwareSensorsMonitor {
         debug!("Found vibration sensor file: {}", file_path.display());
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "vibration")?;
-                        sensors.vibration_mps2.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read vibration sensor: {} m/s² from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse vibration sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "vibration")?;
+                    sensors.vibration_mps2.push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read vibration sensor: {} m/s² from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse vibration sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read vibration sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2411,28 +2505,29 @@ impl ExtendedHardwareSensorsMonitor {
         debug!("Found acceleration sensor file: {}", file_path.display());
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "acceleration")?;
-                        sensors.acceleration_mps2.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read acceleration sensor: {} m/s² from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse acceleration sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "acceleration")?;
+                    sensors.acceleration_mps2.push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read acceleration sensor: {} m/s² from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse acceleration sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read acceleration sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2454,28 +2549,30 @@ impl ExtendedHardwareSensorsMonitor {
         debug!("Found magnetic field sensor file: {}", file_path.display());
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "magnetic_field")?;
-                        sensors.magnetic_field_ut.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read magnetic field sensor: {} µT from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse magnetic field sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name =
+                        self.get_sensor_name(file_path, file_name, "magnetic_field")?;
+                    sensors.magnetic_field_ut.push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read magnetic field sensor: {} µT from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse magnetic field sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read magnetic field sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2497,28 +2594,29 @@ impl ExtendedHardwareSensorsMonitor {
         debug!("Found sound level sensor file: {}", file_path.display());
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "sound_level")?;
-                        sensors.sound_level_db.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read sound level sensor: {} dB from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse sound level sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "sound_level")?;
+                    sensors.sound_level_db.push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read sound level sensor: {} dB from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse sound level sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read sound level sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2540,28 +2638,29 @@ impl ExtendedHardwareSensorsMonitor {
         debug!("Found light level sensor file: {}", file_path.display());
 
         match fs::read_to_string(file_path) {
-            Ok(sensor_content) => {
-                match sensor_content.trim().parse::<f32>() {
-                    Ok(sensor_value) => {
-                        let sensor_name = self.get_sensor_name(file_path, file_name, "light_level")?;
-                        sensors.light_level_lux.push((sensor_name, sensor_value));
-                        debug!(
-                            "Successfully read light level sensor: {} lux from {}",
-                            sensor_value, file_path.display()
-                        );
-                    }
-                    Err(e) => {
-                        warn!(
-                            "Failed to parse light level sensor value from {}: {}",
-                            file_path.display(), e
-                        );
-                    }
+            Ok(sensor_content) => match sensor_content.trim().parse::<f32>() {
+                Ok(sensor_value) => {
+                    let sensor_name = self.get_sensor_name(file_path, file_name, "light_level")?;
+                    sensors.light_level_lux.push((sensor_name, sensor_value));
+                    debug!(
+                        "Successfully read light level sensor: {} lux from {}",
+                        sensor_value,
+                        file_path.display()
+                    );
                 }
-            }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse light level sensor value from {}: {}",
+                        file_path.display(),
+                        e
+                    );
+                }
+            },
             Err(e) => {
                 warn!(
                     "Failed to read light level sensor from {}: {}",
-                    file_path.display(), e
+                    file_path.display(),
+                    e
                 );
             }
         }
@@ -2928,7 +3027,11 @@ mod tests {
         // Тестируем обработку дополнительных температур
         let temp_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(temp_file.path(), "45000").expect("write temp");
-        let result = monitor.process_additional_temperature_sensor(temp_file.path(), "temp1_input", &mut sensors);
+        let result = monitor.process_additional_temperature_sensor(
+            temp_file.path(),
+            "temp1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_temperatures_c.len(), 1);
         assert_eq!(sensors.additional_temperatures_c[0].1, 45.0);
@@ -2936,7 +3039,11 @@ mod tests {
         // Тестируем обработку дополнительных частот
         let freq_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(freq_file.path(), "3500000000").expect("write freq");
-        let result = monitor.process_additional_frequency_sensor(freq_file.path(), "freq1_input", &mut sensors);
+        let result = monitor.process_additional_frequency_sensor(
+            freq_file.path(),
+            "freq1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_frequencies_hz.len(), 1);
         assert_eq!(sensors.additional_frequencies_hz[0].1, 3500000000.0);
@@ -2944,7 +3051,11 @@ mod tests {
         // Тестируем обработку дополнительных утилизаций
         let util_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(util_file.path(), "75.5").expect("write util");
-        let result = monitor.process_additional_utilization_sensor(util_file.path(), "util1_input", &mut sensors);
+        let result = monitor.process_additional_utilization_sensor(
+            util_file.path(),
+            "util1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_utilizations_percent.len(), 1);
         assert_eq!(sensors.additional_utilizations_percent[0].1, 75.5);
@@ -2952,7 +3063,8 @@ mod tests {
         // Тестируем обработку дополнительных нагрузок
         let load_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(load_file.path(), "60.0").expect("write load");
-        let result = monitor.process_additional_load_sensor(load_file.path(), "load1_input", &mut sensors);
+        let result =
+            monitor.process_additional_load_sensor(load_file.path(), "load1_input", &mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.additional_loads_percent.len(), 1);
         assert_eq!(sensors.additional_loads_percent[0].1, 60.0);
@@ -2960,7 +3072,11 @@ mod tests {
         // Тестируем обработку дополнительных эффективностей
         let eff_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(eff_file.path(), "85.2").expect("write eff");
-        let result = monitor.process_additional_efficiency_sensor(eff_file.path(), "eff1_input", &mut sensors);
+        let result = monitor.process_additional_efficiency_sensor(
+            eff_file.path(),
+            "eff1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_efficiencies_percent.len(), 1);
         assert_eq!(sensors.additional_efficiencies_percent[0].1, 85.2);
@@ -2968,7 +3084,11 @@ mod tests {
         // Тестируем обработку дополнительных состояний здоровья
         let health_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(health_file.path(), "95.0").expect("write health");
-        let result = monitor.process_additional_health_sensor(health_file.path(), "health1_input", &mut sensors);
+        let result = monitor.process_additional_health_sensor(
+            health_file.path(),
+            "health1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_health_percent.len(), 1);
         assert_eq!(sensors.additional_health_percent[0].1, 95.0);
@@ -2976,7 +3096,8 @@ mod tests {
         // Тестируем обработку дополнительных емкостей
         let cap_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(cap_file.path(), "80.0").expect("write cap");
-        let result = monitor.process_additional_capacity_sensor(cap_file.path(), "cap1_input", &mut sensors);
+        let result =
+            monitor.process_additional_capacity_sensor(cap_file.path(), "cap1_input", &mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.additional_capacities_percent.len(), 1);
         assert_eq!(sensors.additional_capacities_percent[0].1, 80.0);
@@ -2984,7 +3105,11 @@ mod tests {
         // Тестируем обработку дополнительных пропускных способностей
         let throughput_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(throughput_file.path(), "1500.0").expect("write throughput");
-        let result = monitor.process_additional_throughput_sensor(throughput_file.path(), "throughput1_input", &mut sensors);
+        let result = monitor.process_additional_throughput_sensor(
+            throughput_file.path(),
+            "throughput1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_throughputs_mbps.len(), 1);
         assert_eq!(sensors.additional_throughputs_mbps[0].1, 1500.0);
@@ -2992,7 +3117,11 @@ mod tests {
         // Тестируем обработку дополнительных задержек
         let latency_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(latency_file.path(), "5000.0").expect("write latency");
-        let result = monitor.process_additional_latency_sensor(latency_file.path(), "latency1_input", &mut sensors);
+        let result = monitor.process_additional_latency_sensor(
+            latency_file.path(),
+            "latency1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_latencies_ns.len(), 1);
         assert_eq!(sensors.additional_latencies_ns[0].1, 5000.0);
@@ -3000,7 +3129,11 @@ mod tests {
         // Тестируем обработку дополнительных ошибок
         let error_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(error_file.path(), "10.0").expect("write error");
-        let result = monitor.process_additional_error_sensor(error_file.path(), "error1_input", &mut sensors);
+        let result = monitor.process_additional_error_sensor(
+            error_file.path(),
+            "error1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_errors_count.len(), 1);
         assert_eq!(sensors.additional_errors_count[0].1, 10.0);
@@ -3026,13 +3159,21 @@ mod tests {
         // Пробуем обработать сенсоры с отключенными опциями
         let temp_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(temp_file.path(), "45000").expect("write temp");
-        let result = monitor.process_additional_temperature_sensor(temp_file.path(), "temp1_input", &mut sensors);
+        let result = monitor.process_additional_temperature_sensor(
+            temp_file.path(),
+            "temp1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_temperatures_c.len(), 0);
 
         let freq_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(freq_file.path(), "3500000000").expect("write freq");
-        let result = monitor.process_additional_frequency_sensor(freq_file.path(), "freq1_input", &mut sensors);
+        let result = monitor.process_additional_frequency_sensor(
+            freq_file.path(),
+            "freq1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.additional_frequencies_hz.len(), 0);
     }
@@ -3045,7 +3186,7 @@ mod tests {
         let result = monitor.collect_extended_sensors();
         assert!(result.is_ok());
         let sensors = result.unwrap();
-        
+
         // Проверяем, что все новые типы сенсоров инициализированы
         assert!(sensors.additional_temperatures_c.len() >= 0);
         assert!(sensors.additional_frequencies_hz.len() >= 0);
@@ -3057,7 +3198,7 @@ mod tests {
         assert!(sensors.additional_throughputs_mbps.len() >= 0);
         assert!(sensors.additional_latencies_ns.len() >= 0);
         assert!(sensors.additional_errors_count.len() >= 0);
-        
+
         // Проверяем новые типы сенсоров
         assert!(sensors.vibration_mps2.len() >= 0);
         assert!(sensors.acceleration_mps2.len() >= 0);
@@ -3075,7 +3216,11 @@ mod tests {
         // Тестируем обработку вибрации
         let vibration_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(vibration_file.path(), "2.5").expect("write vibration");
-        let result = monitor.process_vibration_sensor(vibration_file.path(), "vibration1_input", &mut sensors);
+        let result = monitor.process_vibration_sensor(
+            vibration_file.path(),
+            "vibration1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.vibration_mps2.len(), 1);
         assert_eq!(sensors.vibration_mps2[0].1, 2.5);
@@ -3083,7 +3228,8 @@ mod tests {
         // Тестируем обработку ускорения
         let accel_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(accel_file.path(), "9.81").expect("write accel");
-        let result = monitor.process_acceleration_sensor(accel_file.path(), "accel1_input", &mut sensors);
+        let result =
+            monitor.process_acceleration_sensor(accel_file.path(), "accel1_input", &mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.acceleration_mps2.len(), 1);
         assert_eq!(sensors.acceleration_mps2[0].1, 9.81);
@@ -3091,7 +3237,11 @@ mod tests {
         // Тестируем обработку магнитного поля
         let magnet_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(magnet_file.path(), "50.0").expect("write magnet");
-        let result = monitor.process_magnetic_field_sensor(magnet_file.path(), "magnet1_input", &mut sensors);
+        let result = monitor.process_magnetic_field_sensor(
+            magnet_file.path(),
+            "magnet1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.magnetic_field_ut.len(), 1);
         assert_eq!(sensors.magnetic_field_ut[0].1, 50.0);
@@ -3099,7 +3249,8 @@ mod tests {
         // Тестируем обработку уровня звука
         let sound_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(sound_file.path(), "65.0").expect("write sound");
-        let result = monitor.process_sound_level_sensor(sound_file.path(), "sound1_input", &mut sensors);
+        let result =
+            monitor.process_sound_level_sensor(sound_file.path(), "sound1_input", &mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.sound_level_db.len(), 1);
         assert_eq!(sensors.sound_level_db[0].1, 65.0);
@@ -3107,7 +3258,8 @@ mod tests {
         // Тестируем обработку уровня света
         let light_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(light_file.path(), "1000.0").expect("write light");
-        let result = monitor.process_light_level_sensor(light_file.path(), "light1_input", &mut sensors);
+        let result =
+            monitor.process_light_level_sensor(light_file.path(), "light1_input", &mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.light_level_lux.len(), 1);
         assert_eq!(sensors.light_level_lux[0].1, 1000.0);
@@ -3128,13 +3280,18 @@ mod tests {
         // Пробуем обработать сенсоры с отключенными опциями
         let vibration_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(vibration_file.path(), "2.5").expect("write vibration");
-        let result = monitor.process_vibration_sensor(vibration_file.path(), "vibration1_input", &mut sensors);
+        let result = monitor.process_vibration_sensor(
+            vibration_file.path(),
+            "vibration1_input",
+            &mut sensors,
+        );
         assert!(result.is_ok());
         assert_eq!(sensors.vibration_mps2.len(), 0);
 
         let accel_file = tempfile::NamedTempFile::new().expect("temp file");
         std::fs::write(accel_file.path(), "9.81").expect("write accel");
-        let result = monitor.process_acceleration_sensor(accel_file.path(), "accel1_input", &mut sensors);
+        let result =
+            monitor.process_acceleration_sensor(accel_file.path(), "accel1_input", &mut sensors);
         assert!(result.is_ok());
         assert_eq!(sensors.acceleration_mps2.len(), 0);
     }

@@ -871,7 +871,6 @@ SUMMARY:
 
         Ok(results)
     }
-}
 
     /// Выполняет ML-анализ логов для обнаружения аномалий.
     ///
@@ -936,10 +935,11 @@ SUMMARY:
             // Проверяем временное окно, если указано
             if let Some(window) = time_window {
                 if let Some(caps) = timestamp_regex.captures(&line) {
-                    if let Ok(timestamp_str) = caps.get(0).map(|m| m.as_str()) {
+                    if let Some(timestamp_str) = caps.get(0).map(|m| m.as_str()) {
                         if let Ok(log_time) = DateTime::parse_from_rfc3339(&format!("{}", timestamp_str)) {
                             let current_time = Utc::now();
-                            if (current_time - log_time).num_seconds() as u64 > window {
+                            let duration = current_time.signed_duration_since(log_time);
+                            if duration.num_seconds() > window as i64 {
                                 continue; // Пропускаем старые записи
                             }
                         }
@@ -1072,6 +1072,7 @@ SUMMARY:
             recommendations,
         })
     }
+}
 
 /// Структура для интеграции асинхронного логирования в модуль метрик.
 #[derive(Debug, Clone)]

@@ -170,10 +170,22 @@ impl LogEntry {
     /// HashMap с парами ключ-значение
     pub fn to_key_value(&self) -> HashMap<String, serde_json::Value> {
         let mut map = HashMap::new();
-        map.insert("timestamp".to_string(), serde_json::Value::String(self.timestamp.to_rfc3339()));
-        map.insert("level".to_string(), serde_json::Value::String(format!("{}", self.level)));
-        map.insert("target".to_string(), serde_json::Value::String(self.target.clone()));
-        map.insert("message".to_string(), serde_json::Value::String(self.message.clone()));
+        map.insert(
+            "timestamp".to_string(),
+            serde_json::Value::String(self.timestamp.to_rfc3339()),
+        );
+        map.insert(
+            "level".to_string(),
+            serde_json::Value::String(format!("{}", self.level)),
+        );
+        map.insert(
+            "target".to_string(),
+            serde_json::Value::String(self.target.clone()),
+        );
+        map.insert(
+            "message".to_string(),
+            serde_json::Value::String(self.message.clone()),
+        );
 
         if let Some(fields) = &self.fields {
             if let serde_json::Value::Object(fields_map) = fields {
@@ -218,7 +230,9 @@ impl LogEntry {
     ///
     /// `true`, если поле существует, `false` в противном случае
     pub fn has_field(&self, key: &str) -> bool {
-        self.fields.as_ref().map_or(false, |fields| fields.get(key).is_some())
+        self.fields
+            .as_ref()
+            .map_or(false, |fields| fields.get(key).is_some())
     }
 }
 
@@ -758,20 +772,15 @@ impl LogStorage {
                 let message_match = entry.message.to_lowercase().contains(&keyword_lower);
 
                 // Поиск в структурированных данных
-                let fields_match = entry
-                    .fields
-                    .as_ref()
-                    .map_or(false, |fields| {
-                        fields
-                            .as_object()
-                            .map_or(false, |obj| {
-                                obj.values().any(|value| {
-                                    value
-                                        .as_str()
-                                        .map_or(false, |s| s.to_lowercase().contains(&keyword_lower))
-                                })
-                            })
-                    });
+                let fields_match = entry.fields.as_ref().map_or(false, |fields| {
+                    fields.as_object().map_or(false, |obj| {
+                        obj.values().any(|value| {
+                            value
+                                .as_str()
+                                .map_or(false, |s| s.to_lowercase().contains(&keyword_lower))
+                        })
+                    })
+                });
 
                 message_match || fields_match
             })
@@ -1821,18 +1830,33 @@ mod tests {
         assert_eq!(entry.target, "api.request");
         assert_eq!(entry.message, "Request processed successfully");
         assert!(entry.has_structured_data());
-        assert_eq!(entry.get_field("request_id").unwrap(), &json_data["request_id"]);
+        assert_eq!(
+            entry.get_field("request_id").unwrap(),
+            &json_data["request_id"]
+        );
         assert_eq!(entry.get_field("user_id").unwrap(), &json_data["user_id"]);
-        assert_eq!(entry.get_field("duration_ms").unwrap(), &json_data["duration_ms"]);
+        assert_eq!(
+            entry.get_field("duration_ms").unwrap(),
+            &json_data["duration_ms"]
+        );
     }
 
     #[test]
     fn test_log_entry_structured_key_value() {
         // Тестируем создание записи лога с парами ключ-значение
         let mut key_value_pairs = HashMap::new();
-        key_value_pairs.insert("request_id".to_string(), serde_json::Value::String("12345".to_string()));
-        key_value_pairs.insert("user_id".to_string(), serde_json::Value::String("user123".to_string()));
-        key_value_pairs.insert("duration_ms".to_string(), serde_json::Value::Number(serde_json::Number::from(150)));
+        key_value_pairs.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("12345".to_string()),
+        );
+        key_value_pairs.insert(
+            "user_id".to_string(),
+            serde_json::Value::String("user123".to_string()),
+        );
+        key_value_pairs.insert(
+            "duration_ms".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(150)),
+        );
 
         let entry = LogEntry::new_key_value(
             LogLevel::Info,
@@ -1854,8 +1878,14 @@ mod tests {
     fn test_log_entry_to_json() {
         // Тестируем преобразование записи лога в JSON
         let mut key_value_pairs = HashMap::new();
-        key_value_pairs.insert("request_id".to_string(), serde_json::Value::String("12345".to_string()));
-        key_value_pairs.insert("user_id".to_string(), serde_json::Value::String("user123".to_string()));
+        key_value_pairs.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("12345".to_string()),
+        );
+        key_value_pairs.insert(
+            "user_id".to_string(),
+            serde_json::Value::String("user123".to_string()),
+        );
 
         let entry = LogEntry::new_key_value(
             LogLevel::Info,
@@ -1865,7 +1895,7 @@ mod tests {
         );
 
         let json_output = entry.to_json();
-        
+
         assert!(json_output["timestamp"].is_string());
         assert_eq!(json_output["level"], "INFO");
         assert_eq!(json_output["target"], "api.request");
@@ -1879,8 +1909,14 @@ mod tests {
     fn test_log_entry_to_key_value() {
         // Тестируем преобразование записи лога в формат Key-Value
         let mut key_value_pairs = HashMap::new();
-        key_value_pairs.insert("request_id".to_string(), serde_json::Value::String("12345".to_string()));
-        key_value_pairs.insert("user_id".to_string(), serde_json::Value::String("user123".to_string()));
+        key_value_pairs.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("12345".to_string()),
+        );
+        key_value_pairs.insert(
+            "user_id".to_string(),
+            serde_json::Value::String("user123".to_string()),
+        );
 
         let entry = LogEntry::new_key_value(
             LogLevel::Info,
@@ -1890,11 +1926,14 @@ mod tests {
         );
 
         let key_value_output = entry.to_key_value();
-        
+
         assert!(key_value_output.contains_key("timestamp"));
         assert_eq!(key_value_output["level"], "INFO");
         assert_eq!(key_value_output["target"], "api.request");
-        assert_eq!(key_value_output["message"], "Request processed successfully");
+        assert_eq!(
+            key_value_output["message"],
+            "Request processed successfully"
+        );
         assert_eq!(key_value_output["request_id"], "12345");
         assert_eq!(key_value_output["user_id"], "user123");
     }
@@ -1910,18 +1949,39 @@ mod tests {
 
         // Добавляем структурированные записи
         let mut fields1 = HashMap::new();
-        fields1.insert("request_id".to_string(), serde_json::Value::String("req123".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Structured log 1", fields1));
+        fields1.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("req123".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Info,
+            "api",
+            "Structured log 1",
+            fields1,
+        ));
 
         let mut fields2 = HashMap::new();
-        fields2.insert("request_id".to_string(), serde_json::Value::String("req456".to_string()));
-        fields2.insert("user_id".to_string(), serde_json::Value::String("user789".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Structured log 2", fields2));
+        fields2.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("req456".to_string()),
+        );
+        fields2.insert(
+            "user_id".to_string(),
+            serde_json::Value::String("user789".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Info,
+            "api",
+            "Structured log 2",
+            fields2,
+        ));
 
         // Проверяем фильтрацию по структурированным данным
         let structured_entries = storage.get_entries_with_structured_data();
         assert_eq!(structured_entries.len(), 2);
-        assert!(structured_entries.iter().all(|entry| entry.has_structured_data()));
+        assert!(structured_entries
+            .iter()
+            .all(|entry| entry.has_structured_data()));
 
         // Проверяем фильтрацию по полю
         let entries_with_request_id = storage.get_entries_with_field("request_id");
@@ -1937,26 +1997,51 @@ mod tests {
         let mut storage = LogStorage::new(100);
 
         let mut fields1 = HashMap::new();
-        fields1.insert("request_id".to_string(), serde_json::Value::String("req123".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Request 1", fields1));
+        fields1.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("req123".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Info,
+            "api",
+            "Request 1",
+            fields1,
+        ));
 
         let mut fields2 = HashMap::new();
-        fields2.insert("request_id".to_string(), serde_json::Value::String("req456".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Request 2", fields2));
+        fields2.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("req456".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Info,
+            "api",
+            "Request 2",
+            fields2,
+        ));
 
         let mut fields3 = HashMap::new();
-        fields3.insert("request_id".to_string(), serde_json::Value::String("req123".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Info, "api", "Request 3", fields3));
+        fields3.insert(
+            "request_id".to_string(),
+            serde_json::Value::String("req123".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Info,
+            "api",
+            "Request 3",
+            fields3,
+        ));
 
         // Фильтруем по значению "req123"
         let filtered_entries = storage.filter_entries_by_field_value(
             "request_id",
             &serde_json::Value::String("req123".to_string()),
         );
-        
+
         assert_eq!(filtered_entries.len(), 2);
-        assert!(filtered_entries.iter().all(|entry| 
-            entry.get_field("request_id").unwrap() == "req123"));
+        assert!(filtered_entries
+            .iter()
+            .all(|entry| entry.get_field("request_id").unwrap() == "req123"));
     }
 
     #[test]
@@ -1965,18 +2050,48 @@ mod tests {
         let mut storage = LogStorage::new(100);
 
         // Добавляем записи с разными сообщениями и структурированными данными
-        storage.add_entry(LogEntry::new(LogLevel::Info, "test", "Error occurred during processing"));
-        storage.add_entry(LogEntry::new(LogLevel::Warn, "test", "Warning: high memory usage"));
+        storage.add_entry(LogEntry::new(
+            LogLevel::Info,
+            "test",
+            "Error occurred during processing",
+        ));
+        storage.add_entry(LogEntry::new(
+            LogLevel::Warn,
+            "test",
+            "Warning: high memory usage",
+        ));
 
         let mut fields1 = HashMap::new();
-        fields1.insert("error_code".to_string(), serde_json::Value::String("E001".to_string()));
-        fields1.insert("details".to_string(), serde_json::Value::String("Database connection failed".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Error, "db", "Database error", fields1));
+        fields1.insert(
+            "error_code".to_string(),
+            serde_json::Value::String("E001".to_string()),
+        );
+        fields1.insert(
+            "details".to_string(),
+            serde_json::Value::String("Database connection failed".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Error,
+            "db",
+            "Database error",
+            fields1,
+        ));
 
         let mut fields2 = HashMap::new();
-        fields2.insert("error_code".to_string(), serde_json::Value::String("E002".to_string()));
-        fields2.insert("details".to_string(), serde_json::Value::String("Network timeout".to_string()));
-        storage.add_entry(LogEntry::new_key_value(LogLevel::Error, "network", "Network error", fields2));
+        fields2.insert(
+            "error_code".to_string(),
+            serde_json::Value::String("E002".to_string()),
+        );
+        fields2.insert(
+            "details".to_string(),
+            serde_json::Value::String("Network timeout".to_string()),
+        );
+        storage.add_entry(LogEntry::new_key_value(
+            LogLevel::Error,
+            "network",
+            "Network error",
+            fields2,
+        ));
 
         // Поиск по ключевому слову "error"
         let error_results = storage.search_entries("error");
@@ -2009,14 +2124,16 @@ mod tests {
         );
 
         let mut kv_pairs = HashMap::new();
-        kv_pairs.insert("operation".to_string(), serde_json::Value::String("database_query".to_string()));
-        kv_pairs.insert("rows_affected".to_string(), serde_json::Value::Number(serde_json::Number::from(42)));
-        let kv_log = LogEntry::new_key_value(
-            LogLevel::Debug,
-            "db.operation",
-            "Query executed",
-            kv_pairs,
+        kv_pairs.insert(
+            "operation".to_string(),
+            serde_json::Value::String("database_query".to_string()),
         );
+        kv_pairs.insert(
+            "rows_affected".to_string(),
+            serde_json::Value::Number(serde_json::Number::from(42)),
+        );
+        let kv_log =
+            LogEntry::new_key_value(LogLevel::Debug, "db.operation", "Query executed", kv_pairs);
 
         // Добавляем логи в хранилище
         storage.add_entry(json_log);
@@ -2044,7 +2161,7 @@ mod tests {
             assert!(json_output["level"].is_string());
             assert!(json_output["target"].is_string());
             assert!(json_output["message"].is_string());
-            
+
             if entry.has_structured_data() {
                 assert!(json_output["fields"].is_object());
             }

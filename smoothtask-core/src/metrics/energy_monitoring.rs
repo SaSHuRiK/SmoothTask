@@ -772,7 +772,6 @@ impl EnergyMonitor {
             utilization_percent: None,
             temperature_c: None,
             component_type: None,
-            sensor_path: "aggregated".to_string(),
         }))
     }
 

@@ -335,16 +335,32 @@ mod tests {
         // Проверяем, что статус безопасности установлен корректно
         match security_status.status {
             ComponentHealthStatus::Healthy => {
-                assert!(security_status.message.as_ref().unwrap().contains("healthy"));
+                assert!(security_status
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .contains("healthy"));
             }
             ComponentHealthStatus::Warning => {
-                assert!(security_status.message.as_ref().unwrap().contains("warnings"));
+                assert!(security_status
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .contains("warnings"));
             }
             ComponentHealthStatus::Unhealthy => {
-                assert!(security_status.message.as_ref().unwrap().contains("threats"));
+                assert!(security_status
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .contains("threats"));
             }
             ComponentHealthStatus::Unknown => {
-                assert!(security_status.message.as_ref().unwrap().contains("unknown"));
+                assert!(security_status
+                    .message
+                    .as_ref()
+                    .unwrap()
+                    .contains("unknown"));
             }
             ComponentHealthStatus::Disabled => {
                 panic!("Security component should not be disabled");
@@ -396,11 +412,26 @@ mod tests {
         // Проверяем, что контекст создан корректно
         assert_eq!(error_context.component_name, "test_component");
         assert_eq!(error_context.error_type, "resource_exhaustion");
-        assert_eq!(error_context.error_message, "Test resource exhaustion error");
-        assert_eq!(error_context.error_details, Some("Detailed error information".to_string()));
-        assert_eq!(error_context.stack_trace, Some("Stack trace information".to_string()));
-        assert_eq!(error_context.execution_context, Some("Execution context details".to_string()));
-        assert_eq!(error_context.system_context, Some("System context information".to_string()));
+        assert_eq!(
+            error_context.error_message,
+            "Test resource exhaustion error"
+        );
+        assert_eq!(
+            error_context.error_details,
+            Some("Detailed error information".to_string())
+        );
+        assert_eq!(
+            error_context.stack_trace,
+            Some("Stack trace information".to_string())
+        );
+        assert_eq!(
+            error_context.execution_context,
+            Some("Execution context details".to_string())
+        );
+        assert_eq!(
+            error_context.system_context,
+            Some("System context information".to_string())
+        );
         assert_eq!(error_context.occurrence_count, 1);
     }
 
@@ -410,23 +441,28 @@ mod tests {
         let health_monitor = create_health_monitor(config);
 
         // Тестируем различные типы ошибок
-        let resource_suggestions = health_monitor.get_recovery_suggestions("resource_exhaustion", "test_component");
+        let resource_suggestions =
+            health_monitor.get_recovery_suggestions("resource_exhaustion", "test_component");
         assert!(resource_suggestions.contains("Resource exhaustion detected"));
         assert!(resource_suggestions.contains("Check system resource usage"));
 
-        let connection_suggestions = health_monitor.get_recovery_suggestions("connection_failed", "test_component");
+        let connection_suggestions =
+            health_monitor.get_recovery_suggestions("connection_failed", "test_component");
         assert!(connection_suggestions.contains("Connection failure"));
         assert!(connection_suggestions.contains("Check network connectivity"));
 
-        let database_suggestions = health_monitor.get_recovery_suggestions("database_error", "test_component");
+        let database_suggestions =
+            health_monitor.get_recovery_suggestions("database_error", "test_component");
         assert!(database_suggestions.contains("Database error"));
         assert!(database_suggestions.contains("Check database connectivity"));
 
-        let security_suggestions = health_monitor.get_recovery_suggestions("security_error", "test_component");
+        let security_suggestions =
+            health_monitor.get_recovery_suggestions("security_error", "test_component");
         assert!(security_suggestions.contains("Security error"));
         assert!(security_suggestions.contains("Review security policies"));
 
-        let general_suggestions = health_monitor.get_recovery_suggestions("unknown_error", "test_component");
+        let general_suggestions =
+            health_monitor.get_recovery_suggestions("unknown_error", "test_component");
         assert!(general_suggestions.contains("Error detected"));
         assert!(general_suggestions.contains("Check system logs"));
     }
@@ -456,8 +492,14 @@ mod tests {
         // Проверяем результат восстановления
         assert_eq!(recovery_attempt.component, "system_metrics");
         assert_eq!(recovery_attempt.status, RecoveryStatus::Success);
-        assert!(recovery_attempt.recovery_details.unwrap().contains("Enhanced recovery"));
-        assert!(recovery_attempt.recovery_details.unwrap().contains("success"));
+        assert!(recovery_attempt
+            .recovery_details
+            .unwrap()
+            .contains("Enhanced recovery"));
+        assert!(recovery_attempt
+            .recovery_details
+            .unwrap()
+            .contains("success"));
 
         // Проверяем, что статистика восстановления обновлена
         let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
@@ -591,7 +633,10 @@ mod tests {
         assert!(patterns[0].is_recurring);
 
         // Выполняем улучшенный анализ паттернов ошибок
-        let enhanced_patterns = health_monitor.enhanced_error_pattern_analysis().await.unwrap();
+        let enhanced_patterns = health_monitor
+            .enhanced_error_pattern_analysis()
+            .await
+            .unwrap();
         assert_eq!(enhanced_patterns.len(), 1);
         assert_eq!(enhanced_patterns[0].error_type, "resource_exhaustion");
         assert_eq!(enhanced_patterns[0].occurrence_count, 2);

@@ -8,10 +8,10 @@
 //! - Memory optimization techniques
 //! - Performance profiling and monitoring
 
+use anyhow::Result;
+use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
-use anyhow::Result;
 
 /// Performance metrics for a specific operation or component
 #[derive(Debug, Clone, Default)]
@@ -36,7 +36,7 @@ pub struct PerformanceMetrics {
 #[derive(Debug)]
 pub struct PerformanceProfiler {
     /// Map of component names to their performance metrics
-    component_metrics: Arc<Mutex<HashMap<String, PerformanceMetrics>>>, 
+    component_metrics: Arc<Mutex<HashMap<String, PerformanceMetrics>>>,
     /// Global start time for profiling
     global_start: Instant,
 }
@@ -90,12 +90,15 @@ impl PerformanceProfiler {
 pub struct PerformanceTimer {
     component_name: String,
     start_time: Instant,
-    metrics: Arc<Mutex<HashMap<String, PerformanceMetrics>>>, 
+    metrics: Arc<Mutex<HashMap<String, PerformanceMetrics>>>,
 }
 
 impl PerformanceTimer {
     /// Create a new performance timer
-    fn new(component_name: String, metrics: Arc<Mutex<HashMap<String, PerformanceMetrics>>>) -> Self {
+    fn new(
+        component_name: String,
+        metrics: Arc<Mutex<HashMap<String, PerformanceMetrics>>>,
+    ) -> Self {
         Self {
             component_name,
             start_time: Instant::now(),
@@ -209,13 +212,17 @@ impl CriticalPathOptimizer {
     }
 
     /// Analyze performance metrics and identify critical paths
-    pub fn analyze_critical_paths(&self, metrics: &HashMap<String, PerformanceMetrics>) -> Vec<CriticalPathAnalysis> {
+    pub fn analyze_critical_paths(
+        &self,
+        metrics: &HashMap<String, PerformanceMetrics>,
+    ) -> Vec<CriticalPathAnalysis> {
         let mut critical_paths = Vec::new();
 
         for (component_name, component_metrics) in metrics {
             // Calculate average execution time per invocation
             let avg_execution_time = if component_metrics.invocations > 0 {
-                component_metrics.execution_time.as_secs_f64() / component_metrics.invocations as f64
+                component_metrics.execution_time.as_secs_f64()
+                    / component_metrics.invocations as f64
             } else {
                 0.0
             };
@@ -223,7 +230,7 @@ impl CriticalPathOptimizer {
             // Check if this component is a critical path based on thresholds
             if avg_execution_time > self.thresholds.slow_execution_threshold {
                 let criticality_score = self.calculate_criticality_score(component_metrics);
-                
+
                 critical_paths.push(CriticalPathAnalysis {
                     component_name: component_name.clone(),
                     avg_execution_time,
@@ -235,14 +242,19 @@ impl CriticalPathOptimizer {
         }
 
         // Sort by criticality score (descending)
-        critical_paths.sort_by(|a, b| b.criticality_score.partial_cmp(&a.criticality_score).unwrap());
-        
+        critical_paths.sort_by(|a, b| {
+            b.criticality_score
+                .partial_cmp(&a.criticality_score)
+                .unwrap()
+        });
+
         critical_paths
     }
 
     /// Calculate criticality score for a component
     fn calculate_criticality_score(&self, metrics: &PerformanceMetrics) -> f64 {
-        let execution_time_score = metrics.execution_time.as_secs_f64() / self.thresholds.slow_execution_threshold;
+        let execution_time_score =
+            metrics.execution_time.as_secs_f64() / self.thresholds.slow_execution_threshold;
         let invocation_score = (metrics.invocations as f64).ln_1p(); // Logarithmic scaling for invocations
         let cache_miss_score = if metrics.cache_misses > 0 {
             (metrics.cache_misses as f64 / (metrics.cache_hits + metrics.cache_misses) as f64) * 2.0
@@ -285,10 +297,10 @@ pub struct CriticalPathThresholds {
 impl Default for CriticalPathThresholds {
     fn default() -> Self {
         Self {
-            slow_execution_threshold: 0.05, // 50ms
+            slow_execution_threshold: 0.05,     // 50ms
             high_memory_threshold: 1024 * 1024, // 1MB
-            high_io_threshold: 100, // 100 I/O operations
-            high_cache_miss_threshold: 0.3, // 30% cache miss ratio
+            high_io_threshold: 100,             // 100 I/O operations
+            high_cache_miss_threshold: 0.3,     // 30% cache miss ratio
         }
     }
 }
@@ -320,8 +332,11 @@ impl OptimizationStrategy for CriticalPathOptimizer {
 
         Ok(OptimizationResult {
             name: "Critical Path Optimization".to_string(),
-            description: format!("Identified {} critical paths with total improvement potential of {:.1}%", 
-                critical_paths.len(), total_improvement),
+            description: format!(
+                "Identified {} critical paths with total improvement potential of {:.1}%",
+                critical_paths.len(),
+                total_improvement
+            ),
             affected_components,
             expected_improvement: total_improvement,
             applied: true,
@@ -338,12 +353,12 @@ mod tests {
     #[test]
     fn test_performance_profiler() {
         let profiler = PerformanceProfiler::new();
-        
+
         // Test basic profiling
         let timer = profiler.start_profiling("test_component");
         thread::sleep(Duration::from_millis(10));
         timer.stop();
-        
+
         let metrics = profiler.get_metrics("test_component");
         assert!(metrics.is_some());
         let metrics = metrics.unwrap();
@@ -354,20 +369,26 @@ mod tests {
     #[test]
     fn test_critical_path_optimizer() {
         let optimizer = CriticalPathOptimizer::new();
-        
+
         // Create test metrics
         let mut metrics = HashMap::new();
-        metrics.insert("fast_component".to_string(), PerformanceMetrics {
-            execution_time: Duration::from_millis(1),
-            invocations: 100,
-            ..Default::default()
-        });
-        
-        metrics.insert("slow_component".to_string(), PerformanceMetrics {
-            execution_time: Duration::from_millis(100),
-            invocations: 10,
-            ..Default::default()
-        });
+        metrics.insert(
+            "fast_component".to_string(),
+            PerformanceMetrics {
+                execution_time: Duration::from_millis(1),
+                invocations: 100,
+                ..Default::default()
+            },
+        );
+
+        metrics.insert(
+            "slow_component".to_string(),
+            PerformanceMetrics {
+                execution_time: Duration::from_millis(100),
+                invocations: 10,
+                ..Default::default()
+            },
+        );
 
         let critical_paths = optimizer.analyze_critical_paths(&metrics);
         assert_eq!(critical_paths.len(), 1);
@@ -379,7 +400,7 @@ mod tests {
         let mut optimizer = PerformanceOptimizer::new();
         let critical_path_optimizer = CriticalPathOptimizer::new();
         optimizer.add_strategy(critical_path_optimizer);
-        
+
         // Test with empty metrics
         let results = optimizer.apply_optimizations().unwrap();
         assert_eq!(results.len(), 1);

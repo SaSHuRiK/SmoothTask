@@ -3054,9 +3054,7 @@ async fn logs_handler(
 /// # Получение всех логов с структурированными данными
 /// curl "http://127.0.0.1:8080/api/logs/structured"
 /// ```
-async fn logs_structured_handler(
-    State(state): State<ApiState>,
-) -> Result<Json<Value>, StatusCode> {
+async fn logs_structured_handler(State(state): State<ApiState>) -> Result<Json<Value>, StatusCode> {
     match &state.log_storage {
         Some(log_storage) => {
             // Получаем записи логов с структурированными данными
@@ -3125,7 +3123,7 @@ async fn logs_search_handler(
 ) -> Result<Json<Value>, StatusCode> {
     // Проверяем наличие параметра keyword
     let keyword = params.get("keyword").map(|s| s.as_str());
-    
+
     if keyword.is_none() {
         warn!("Missing required parameter: keyword");
         let error_response = crate::api::validation::create_validation_error_response(
@@ -3211,7 +3209,7 @@ async fn logs_field_handler(
 ) -> Result<Json<Value>, StatusCode> {
     // Проверяем наличие параметра field
     let field_name = params.get("field").map(|s| s.as_str());
-    
+
     if field_name.is_none() {
         warn!("Missing required parameter: field");
         let error_response = crate::api::validation::create_validation_error_response(
@@ -3235,8 +3233,10 @@ async fn logs_field_handler(
                     Ok(val) => val,
                     Err(_) => serde_json::Value::String(value_str.to_string()),
                 };
-                
-                log_storage.filter_entries_by_field_value(field_name, parsed_value).await
+
+                log_storage
+                    .filter_entries_by_field_value(field_name, parsed_value)
+                    .await
             } else {
                 // Возвращаем все записи с указанным полем
                 log_storage.get_entries_with_field(field_name).await
@@ -5317,6 +5317,9 @@ mod tests {
     // Import notification types for test configurations
     use crate::config::config_struct::{MLClassifierConfig, ModelType, PatternAutoUpdateConfig};
     use crate::metrics::ebpf::{EbpfConfig, EbpfNotificationThresholds};
+    
+    // Performance metrics imports for tests
+    use crate::metrics::system::{CpuPerformanceMetrics, MemoryPerformanceMetrics, IoPerformanceMetrics, SystemPerformanceMetrics, NetworkPerformanceMetrics};
 
     #[tokio::test]
     async fn test_api_server_start_and_shutdown() {
@@ -5411,6 +5414,11 @@ mod tests {
             system_calls: SystemCallMetrics::default(),
             inode: InodeMetrics::default(),
             swap: SwapMetrics::default(),
+            cpu_performance: CpuPerformanceMetrics::default(),
+            memory_performance: MemoryPerformanceMetrics::default(),
+            io_performance: IoPerformanceMetrics::default(),
+            system_performance: SystemPerformanceMetrics::default(),
+            network_performance: NetworkPerformanceMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc.clone());
@@ -5466,6 +5474,11 @@ mod tests {
             system_calls: SystemCallMetrics::default(),
             inode: InodeMetrics::default(),
             swap: SwapMetrics::default(),
+            cpu_performance: CpuPerformanceMetrics::default(),
+            memory_performance: MemoryPerformanceMetrics::default(),
+            io_performance: IoPerformanceMetrics::default(),
+            system_performance: SystemPerformanceMetrics::default(),
+            network_performance: NetworkPerformanceMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));
@@ -5593,6 +5606,11 @@ mod tests {
             system_calls: SystemCallMetrics::default(),
             inode: InodeMetrics::default(),
             swap: SwapMetrics::default(),
+            cpu_performance: CpuPerformanceMetrics::default(),
+            memory_performance: MemoryPerformanceMetrics::default(),
+            io_performance: IoPerformanceMetrics::default(),
+            system_performance: SystemPerformanceMetrics::default(),
+            network_performance: NetworkPerformanceMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let state = ApiState::with_system_metrics(metrics_arc);
@@ -5655,6 +5673,11 @@ mod tests {
             system_calls: SystemCallMetrics::default(),
             inode: InodeMetrics::default(),
             swap: SwapMetrics::default(),
+            cpu_performance: CpuPerformanceMetrics::default(),
+            memory_performance: MemoryPerformanceMetrics::default(),
+            io_performance: IoPerformanceMetrics::default(),
+            system_performance: SystemPerformanceMetrics::default(),
+            network_performance: NetworkPerformanceMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let server = ApiServer::with_system_metrics(addr, metrics_arc);
@@ -7059,6 +7082,11 @@ apps:
             system_calls: SystemCallMetrics::default(),
             inode: InodeMetrics::default(),
             swap: SwapMetrics::default(),
+            cpu_performance: CpuPerformanceMetrics::default(),
+            memory_performance: MemoryPerformanceMetrics::default(),
+            io_performance: IoPerformanceMetrics::default(),
+            system_performance: SystemPerformanceMetrics::default(),
+            network_performance: NetworkPerformanceMetrics::default(),
         };
         let metrics_arc = Arc::new(RwLock::new(metrics));
         let processes = Arc::new(RwLock::new(vec![]));
@@ -10566,275 +10594,275 @@ async fn test_prometheus_process_metrics() {
     );
 }
 
-    #[tokio::test]
-    async fn test_logs_structured_handler() {
-        // Тест для обработчика structured логов
-        let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
-        
-        // Добавляем обычные и структурированные логи
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new(
-                crate::logging::log_storage::LogLevel::Info,
-                "test",
-                "Normal log entry",
-            ))
-            .await;
-        
-        let mut fields = std::collections::HashMap::new();
-        fields.insert(
-            "request_id".to_string(),
-            serde_json::Value::String("12345".to_string()),
-        );
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
-                crate::logging::log_storage::LogLevel::Info,
-                "api",
-                "Structured log entry",
-                fields,
-            ))
-            .await;
-        
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: None,
-            health_monitor: None,
-            cache: None,
-            log_storage: Some(log_storage.into()),
-            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
-            custom_metrics_manager: None,
-            metrics_collector: None,
-            metrics: None,
-        };
-        
-        let result = logs_structured_handler(State(state)).await;
-        
-        assert!(result.is_ok());
-        let json_result = result.unwrap();
-        let value = json_result.0;
-        
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["count"], 1); // Только один структурированный лог
-        assert!(value["logs"].is_array());
-        let logs = value["logs"].as_array().unwrap();
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0]["message"], "Structured log entry");
-        assert!(logs[0]["fields"].is_object());
-    }
+#[tokio::test]
+async fn test_logs_structured_handler() {
+    // Тест для обработчика structured логов
+    let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
 
-    #[tokio::test]
-    async fn test_logs_search_handler() {
-        // Тест для обработчика поиска логов
-        let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
-        
-        // Добавляем логи с разными сообщениями
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new(
-                crate::logging::log_storage::LogLevel::Info,
-                "test",
-                "Error occurred during processing",
-            ))
-            .await;
-        
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new(
-                crate::logging::log_storage::LogLevel::Warn,
-                "test",
-                "Warning: high memory usage",
-            ))
-            .await;
-        
-        let mut fields = std::collections::HashMap::new();
-        fields.insert(
-            "error_code".to_string(),
-            serde_json::Value::String("E001".to_string()),
-        );
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
-                crate::logging::log_storage::LogLevel::Error,
-                "db",
-                "Database error",
-                fields,
-            ))
-            .await;
-        
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: None,
-            health_monitor: None,
-            cache: None,
-            log_storage: Some(log_storage.into()),
-            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
-            custom_metrics_manager: None,
-            metrics_collector: None,
-            metrics: None,
-        };
-        
-        // Тестируем поиск по ключевому слову "error"
-        let mut params = std::collections::HashMap::new();
-        params.insert("keyword".to_string(), "error".to_string());
-        let result = logs_search_handler(State(state), Query(params)).await;
-        
-        assert!(result.is_ok());
-        let json_result = result.unwrap();
-        let value = json_result.0;
-        
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["count"], 2); // "Error occurred" и "Database error"
-        assert!(value["logs"].is_array());
-        let logs = value["logs"].as_array().unwrap();
-        assert_eq!(logs.len(), 2);
-    }
+    // Добавляем обычные и структурированные логи
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new(
+            crate::logging::log_storage::LogLevel::Info,
+            "test",
+            "Normal log entry",
+        ))
+        .await;
 
-    #[tokio::test]
-    async fn test_logs_field_handler() {
-        // Тест для обработчика фильтрации по полю
-        let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
-        
-        // Добавляем структурированные логи
-        let mut fields1 = std::collections::HashMap::new();
-        fields1.insert(
-            "request_id".to_string(),
-            serde_json::Value::String("req123".to_string()),
-        );
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
-                crate::logging::log_storage::LogLevel::Info,
-                "api",
-                "Request 1",
-                fields1,
-            ))
-            .await;
-        
-        let mut fields2 = std::collections::HashMap::new();
-        fields2.insert(
-            "request_id".to_string(),
-            serde_json::Value::String("req456".to_string()),
-        );
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
-                crate::logging::log_storage::LogLevel::Info,
-                "api",
-                "Request 2",
-                fields2,
-            ))
-            .await;
-        
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: None,
-            health_monitor: None,
-            cache: None,
-            log_storage: Some(log_storage.into()),
-            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
-            custom_metrics_manager: None,
-            metrics_collector: None,
-            metrics: None,
-        };
-        
-        // Тестируем фильтрацию по полю "request_id"
-        let mut params = std::collections::HashMap::new();
-        params.insert("field".to_string(), "request_id".to_string());
-        let result = logs_field_handler(State(state), Query(params)).await;
-        
-        assert!(result.is_ok());
-        let json_result = result.unwrap();
-        let value = json_result.0;
-        
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["count"], 2); // Оба лога имеют поле request_id
-        assert!(value["logs"].is_array());
-        let logs = value["logs"].as_array().unwrap();
-        assert_eq!(logs.len(), 2);
-    }
+    let mut fields = std::collections::HashMap::new();
+    fields.insert(
+        "request_id".to_string(),
+        serde_json::Value::String("12345".to_string()),
+    );
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
+            crate::logging::log_storage::LogLevel::Info,
+            "api",
+            "Structured log entry",
+            fields,
+        ))
+        .await;
 
-    #[tokio::test]
-    async fn test_logs_field_handler_with_value() {
-        // Тест для обработчика фильтрации по полю со значением
-        let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
-        
-        // Добавляем структурированные логи
-        let mut fields1 = std::collections::HashMap::new();
-        fields1.insert(
-            "request_id".to_string(),
-            serde_json::Value::String("req123".to_string()),
-        );
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
-                crate::logging::log_storage::LogLevel::Info,
-                "api",
-                "Request 1",
-                fields1,
-            ))
-            .await;
-        
-        let mut fields2 = std::collections::HashMap::new();
-        fields2.insert(
-            "request_id".to_string(),
-            serde_json::Value::String("req456".to_string()),
-        );
-        log_storage
-            .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
-                crate::logging::log_storage::LogLevel::Info,
-                "api",
-                "Request 2",
-                fields2,
-            ))
-            .await;
-        
-        let state = ApiState {
-            daemon_stats: None,
-            system_metrics: None,
-            processes: None,
-            app_groups: None,
-            responsiveness_metrics: None,
-            config: None,
-            config_path: None,
-            pattern_database: None,
-            notification_manager: None,
-            health_monitor: None,
-            cache: None,
-            log_storage: Some(log_storage.into()),
-            performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
-            custom_metrics_manager: None,
-            metrics_collector: None,
-            metrics: None,
-        };
-        
-        // Тестируем фильтрацию по полю "request_id" со значением "req123"
-        let mut params = std::collections::HashMap::new();
-        params.insert("field".to_string(), "request_id".to_string());
-        params.insert("value".to_string(), "req123".to_string());
-        let result = logs_field_handler(State(state), Query(params)).await;
-        
-        assert!(result.is_ok());
-        let json_result = result.unwrap();
-        let value = json_result.0;
-        
-        assert_eq!(value["status"], "ok");
-        assert_eq!(value["count"], 1); // Только один лог с request_id = "req123"
-        assert!(value["logs"].is_array());
-        let logs = value["logs"].as_array().unwrap();
-        assert_eq!(logs.len(), 1);
-        assert_eq!(logs[0]["message"], "Request 1");
-    }
+    let state = ApiState {
+        daemon_stats: None,
+        system_metrics: None,
+        processes: None,
+        app_groups: None,
+        responsiveness_metrics: None,
+        config: None,
+        config_path: None,
+        pattern_database: None,
+        notification_manager: None,
+        health_monitor: None,
+        cache: None,
+        log_storage: Some(log_storage.into()),
+        performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        custom_metrics_manager: None,
+        metrics_collector: None,
+        metrics: None,
+    };
+
+    let result = logs_structured_handler(State(state)).await;
+
+    assert!(result.is_ok());
+    let json_result = result.unwrap();
+    let value = json_result.0;
+
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["count"], 1); // Только один структурированный лог
+    assert!(value["logs"].is_array());
+    let logs = value["logs"].as_array().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0]["message"], "Structured log entry");
+    assert!(logs[0]["fields"].is_object());
+}
+
+#[tokio::test]
+async fn test_logs_search_handler() {
+    // Тест для обработчика поиска логов
+    let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
+
+    // Добавляем логи с разными сообщениями
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new(
+            crate::logging::log_storage::LogLevel::Info,
+            "test",
+            "Error occurred during processing",
+        ))
+        .await;
+
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new(
+            crate::logging::log_storage::LogLevel::Warn,
+            "test",
+            "Warning: high memory usage",
+        ))
+        .await;
+
+    let mut fields = std::collections::HashMap::new();
+    fields.insert(
+        "error_code".to_string(),
+        serde_json::Value::String("E001".to_string()),
+    );
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
+            crate::logging::log_storage::LogLevel::Error,
+            "db",
+            "Database error",
+            fields,
+        ))
+        .await;
+
+    let state = ApiState {
+        daemon_stats: None,
+        system_metrics: None,
+        processes: None,
+        app_groups: None,
+        responsiveness_metrics: None,
+        config: None,
+        config_path: None,
+        pattern_database: None,
+        notification_manager: None,
+        health_monitor: None,
+        cache: None,
+        log_storage: Some(log_storage.into()),
+        performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        custom_metrics_manager: None,
+        metrics_collector: None,
+        metrics: None,
+    };
+
+    // Тестируем поиск по ключевому слову "error"
+    let mut params = std::collections::HashMap::new();
+    params.insert("keyword".to_string(), "error".to_string());
+    let result = logs_search_handler(State(state), Query(params)).await;
+
+    assert!(result.is_ok());
+    let json_result = result.unwrap();
+    let value = json_result.0;
+
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["count"], 2); // "Error occurred" и "Database error"
+    assert!(value["logs"].is_array());
+    let logs = value["logs"].as_array().unwrap();
+    assert_eq!(logs.len(), 2);
+}
+
+#[tokio::test]
+async fn test_logs_field_handler() {
+    // Тест для обработчика фильтрации по полю
+    let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
+
+    // Добавляем структурированные логи
+    let mut fields1 = std::collections::HashMap::new();
+    fields1.insert(
+        "request_id".to_string(),
+        serde_json::Value::String("req123".to_string()),
+    );
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
+            crate::logging::log_storage::LogLevel::Info,
+            "api",
+            "Request 1",
+            fields1,
+        ))
+        .await;
+
+    let mut fields2 = std::collections::HashMap::new();
+    fields2.insert(
+        "request_id".to_string(),
+        serde_json::Value::String("req456".to_string()),
+    );
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
+            crate::logging::log_storage::LogLevel::Info,
+            "api",
+            "Request 2",
+            fields2,
+        ))
+        .await;
+
+    let state = ApiState {
+        daemon_stats: None,
+        system_metrics: None,
+        processes: None,
+        app_groups: None,
+        responsiveness_metrics: None,
+        config: None,
+        config_path: None,
+        pattern_database: None,
+        notification_manager: None,
+        health_monitor: None,
+        cache: None,
+        log_storage: Some(log_storage.into()),
+        performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        custom_metrics_manager: None,
+        metrics_collector: None,
+        metrics: None,
+    };
+
+    // Тестируем фильтрацию по полю "request_id"
+    let mut params = std::collections::HashMap::new();
+    params.insert("field".to_string(), "request_id".to_string());
+    let result = logs_field_handler(State(state), Query(params)).await;
+
+    assert!(result.is_ok());
+    let json_result = result.unwrap();
+    let value = json_result.0;
+
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["count"], 2); // Оба лога имеют поле request_id
+    assert!(value["logs"].is_array());
+    let logs = value["logs"].as_array().unwrap();
+    assert_eq!(logs.len(), 2);
+}
+
+#[tokio::test]
+async fn test_logs_field_handler_with_value() {
+    // Тест для обработчика фильтрации по полю со значением
+    let log_storage = crate::logging::log_storage::SharedLogStorage::new(100);
+
+    // Добавляем структурированные логи
+    let mut fields1 = std::collections::HashMap::new();
+    fields1.insert(
+        "request_id".to_string(),
+        serde_json::Value::String("req123".to_string()),
+    );
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
+            crate::logging::log_storage::LogLevel::Info,
+            "api",
+            "Request 1",
+            fields1,
+        ))
+        .await;
+
+    let mut fields2 = std::collections::HashMap::new();
+    fields2.insert(
+        "request_id".to_string(),
+        serde_json::Value::String("req456".to_string()),
+    );
+    log_storage
+        .add_entry(crate::logging::log_storage::LogEntry::new_key_value(
+            crate::logging::log_storage::LogLevel::Info,
+            "api",
+            "Request 2",
+            fields2,
+        ))
+        .await;
+
+    let state = ApiState {
+        daemon_stats: None,
+        system_metrics: None,
+        processes: None,
+        app_groups: None,
+        responsiveness_metrics: None,
+        config: None,
+        config_path: None,
+        pattern_database: None,
+        notification_manager: None,
+        health_monitor: None,
+        cache: None,
+        log_storage: Some(log_storage.into()),
+        performance_metrics: Arc::new(RwLock::new(ApiPerformanceMetrics::default())),
+        custom_metrics_manager: None,
+        metrics_collector: None,
+        metrics: None,
+    };
+
+    // Тестируем фильтрацию по полю "request_id" со значением "req123"
+    let mut params = std::collections::HashMap::new();
+    params.insert("field".to_string(), "request_id".to_string());
+    params.insert("value".to_string(), "req123".to_string());
+    let result = logs_field_handler(State(state), Query(params)).await;
+
+    assert!(result.is_ok());
+    let json_result = result.unwrap();
+    let value = json_result.0;
+
+    assert_eq!(value["status"], "ok");
+    assert_eq!(value["count"], 1); // Только один лог с request_id = "req123"
+    assert!(value["logs"].is_array());
+    let logs = value["logs"].as_array().unwrap();
+    assert_eq!(logs.len(), 1);
+    assert_eq!(logs[0]["message"], "Request 1");
+}

@@ -352,7 +352,7 @@ fn get_simulated_vm_data(vm_id: &str) -> SimulatedVmData {
 /// Try to read VM metrics from QEMU/KVM monitor
 fn try_read_vm_metrics_from_qemu(vm_id: &str) -> Option<SimulatedVmData> {
     debug!("Attempting to read VM metrics from QEMU/KVM for: {}", vm_id);
-    
+
     // Simulate QEMU monitor connection
     let socket_path = format!("/var/run/libvirt/qemu/{}.monitor", vm_id);
     if Path::new(&socket_path).exists() {
@@ -365,8 +365,11 @@ fn try_read_vm_metrics_from_qemu(vm_id: &str) -> Option<SimulatedVmData> {
 
 /// Try to read VM metrics from VirtualBox
 fn try_read_vm_metrics_from_virtualbox(vm_id: &str) -> Option<SimulatedVmData> {
-    debug!("Attempting to read VM metrics from VirtualBox for: {}", vm_id);
-    
+    debug!(
+        "Attempting to read VM metrics from VirtualBox for: {}",
+        vm_id
+    );
+
     // Simulate VirtualBox metrics
     let vbox_path = format!("/VirtualBox VMs/{}/config.vbox", vm_id);
     if Path::new(&vbox_path).exists() {
@@ -380,7 +383,7 @@ fn try_read_vm_metrics_from_virtualbox(vm_id: &str) -> Option<SimulatedVmData> {
 /// Try to read VM metrics from libvirt
 fn try_read_vm_metrics_from_libvirt(vm_id: &str) -> Option<SimulatedVmData> {
     debug!("Attempting to read VM metrics from libvirt for: {}", vm_id);
-    
+
     // Simulate libvirt XML file
     let xml_path = format!("/var/lib/libvirt/qemu/{}.xml", vm_id);
     if Path::new(&xml_path).exists() {
@@ -394,27 +397,39 @@ fn try_read_vm_metrics_from_libvirt(vm_id: &str) -> Option<SimulatedVmData> {
 /// Collect CPU metrics for a virtual machine
 pub fn collect_vm_cpu_metrics(vm_id: &str) -> Result<f64> {
     debug!("Collecting CPU metrics for VM: {}", vm_id);
-    
+
     // Try QEMU/KVM first
     if let Some(data) = try_read_vm_metrics_from_qemu(vm_id) {
-        debug!("Successfully read CPU metrics from QEMU/KVM for VM: {}", vm_id);
+        debug!(
+            "Successfully read CPU metrics from QEMU/KVM for VM: {}",
+            vm_id
+        );
         return Ok(data.cpu_usage);
     }
-    
+
     // Fallback to VirtualBox
     if let Some(data) = try_read_vm_metrics_from_virtualbox(vm_id) {
-        debug!("Successfully read CPU metrics from VirtualBox for VM: {}", vm_id);
+        debug!(
+            "Successfully read CPU metrics from VirtualBox for VM: {}",
+            vm_id
+        );
         return Ok(data.cpu_usage);
     }
-    
+
     // Fallback to libvirt
     if let Some(data) = try_read_vm_metrics_from_libvirt(vm_id) {
-        debug!("Successfully read CPU metrics from libvirt for VM: {}", vm_id);
+        debug!(
+            "Successfully read CPU metrics from libvirt for VM: {}",
+            vm_id
+        );
         return Ok(data.cpu_usage);
     }
-    
+
     // Final fallback: use simulated data
-    warn!("No direct VM metrics source available for {}, using simulated data", vm_id);
+    warn!(
+        "No direct VM metrics source available for {}, using simulated data",
+        vm_id
+    );
     let simulated_data = get_simulated_vm_data(vm_id);
     Ok(simulated_data.cpu_usage)
 }
@@ -422,27 +437,39 @@ pub fn collect_vm_cpu_metrics(vm_id: &str) -> Result<f64> {
 /// Collect memory metrics for a virtual machine
 pub fn collect_vm_memory_metrics(vm_id: &str) -> Result<u64> {
     debug!("Collecting memory metrics for VM: {}", vm_id);
-    
+
     // Try QEMU/KVM first
     if let Some(data) = try_read_vm_metrics_from_qemu(vm_id) {
-        debug!("Successfully read memory metrics from QEMU/KVM for VM: {}", vm_id);
+        debug!(
+            "Successfully read memory metrics from QEMU/KVM for VM: {}",
+            vm_id
+        );
         return Ok(data.memory_usage);
     }
-    
+
     // Fallback to VirtualBox
     if let Some(data) = try_read_vm_metrics_from_virtualbox(vm_id) {
-        debug!("Successfully read memory metrics from VirtualBox for VM: {}", vm_id);
+        debug!(
+            "Successfully read memory metrics from VirtualBox for VM: {}",
+            vm_id
+        );
         return Ok(data.memory_usage);
     }
-    
+
     // Fallback to libvirt
     if let Some(data) = try_read_vm_metrics_from_libvirt(vm_id) {
-        debug!("Successfully read memory metrics from libvirt for VM: {}", vm_id);
+        debug!(
+            "Successfully read memory metrics from libvirt for VM: {}",
+            vm_id
+        );
         return Ok(data.memory_usage);
     }
-    
+
     // Final fallback: use simulated data
-    warn!("No direct VM metrics source available for {}, using simulated data", vm_id);
+    warn!(
+        "No direct VM metrics source available for {}, using simulated data",
+        vm_id
+    );
     let simulated_data = get_simulated_vm_data(vm_id);
     Ok(simulated_data.memory_usage)
 }
@@ -450,10 +477,10 @@ pub fn collect_vm_memory_metrics(vm_id: &str) -> Result<u64> {
 /// Collect comprehensive VM metrics
 pub fn collect_vm_metrics(vm_id: &str) -> Result<VmMetrics> {
     debug!("Collecting comprehensive metrics for VM: {}", vm_id);
-    
+
     // Get simulated data as base
     let simulated_data = get_simulated_vm_data(vm_id);
-    
+
     let metrics = VmMetrics {
         id: vm_id.to_string(),
         name: format!("VM {}", vm_id),
@@ -464,7 +491,10 @@ pub fn collect_vm_metrics(vm_id: &str) -> Result<VmMetrics> {
         stopped_at: None,
         cpu_usage: VmCpuUsage {
             total_usage: simulated_data.cpu_usage,
-            per_cpu_usage: vec![simulated_data.cpu_usage / 2.0, simulated_data.cpu_usage / 2.0],
+            per_cpu_usage: vec![
+                simulated_data.cpu_usage / 2.0,
+                simulated_data.cpu_usage / 2.0,
+            ],
             system_cpu_usage: simulated_data.cpu_usage * 0.8,
             online_cpus: 2,
             usage_percent: simulated_data.cpu_usage,
@@ -506,8 +536,8 @@ pub fn collect_vm_metrics(vm_id: &str) -> Result<VmMetrics> {
         uptime_seconds: Some(simulated_data.uptime_seconds),
         resource_limits: VmResourceLimits {
             cpu_limit: Some(4.0),
-            memory_limit: Some(4_294_967_296), // 4 GB
-            disk_io_limit: Some(100_000_000), // 100 MB/s
+            memory_limit: Some(4_294_967_296),         // 4 GB
+            disk_io_limit: Some(100_000_000),          // 100 MB/s
             network_bandwidth_limit: Some(10_000_000), // 10 MB/s
             cpu_shares: Some(1024),
             cpu_quota: Some(100_000),
@@ -519,24 +549,26 @@ pub fn collect_vm_metrics(vm_id: &str) -> Result<VmMetrics> {
         network_interfaces: vec!["eth0".to_string(), "eth1".to_string()],
         disk_devices: vec!["/dev/vda".to_string(), "/dev/vdb".to_string()],
     };
-    
-    info!("Successfully collected metrics for VM {}: CPU={}%, Memory={} bytes", 
-          vm_id, metrics.cpu_usage.total_usage, metrics.memory_usage.usage);
-    
+
+    info!(
+        "Successfully collected metrics for VM {}: CPU={}%, Memory={} bytes",
+        vm_id, metrics.cpu_usage.total_usage, metrics.memory_usage.usage
+    );
+
     Ok(metrics)
 }
 
 /// Start a virtual machine
 pub fn start_vm(vm_id: &str) -> Result<VmManagementResult> {
     debug!("Starting VM: {}", vm_id);
-    
+
     // Simulate VM start command
     let output = if vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3" {
         "VM started successfully".to_string()
     } else {
         "VM not found".to_string()
     };
-    
+
     let result = VmManagementResult {
         success: vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3",
         output,
@@ -551,27 +583,27 @@ pub fn start_vm(vm_id: &str) -> Result<VmManagementResult> {
             1
         },
     };
-    
+
     if result.success {
         info!("Successfully started VM: {}", vm_id);
     } else {
         error!("Failed to start VM {}: {}", vm_id, result.output);
     }
-    
+
     Ok(result)
 }
 
 /// Stop a virtual machine
 pub fn stop_vm(vm_id: &str) -> Result<VmManagementResult> {
     debug!("Stopping VM: {}", vm_id);
-    
+
     // Simulate VM stop command
     let output = if vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3" {
         "VM stopped successfully".to_string()
     } else {
         "VM not found".to_string()
     };
-    
+
     let result = VmManagementResult {
         success: vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3",
         output,
@@ -586,13 +618,13 @@ pub fn stop_vm(vm_id: &str) -> Result<VmManagementResult> {
             1
         },
     };
-    
+
     if result.success {
         info!("Successfully stopped VM: {}", vm_id);
     } else {
         error!("Failed to stop VM {}: {}", vm_id, result.output);
     }
-    
+
     Ok(result)
 }
 
@@ -605,7 +637,7 @@ pub fn update_vm_resource_limits(
     network_bandwidth_limit: Option<u64>,
 ) -> Result<VmManagementResult> {
     debug!("Updating resource limits for VM: {}", vm_id);
-    
+
     // Simulate resource update command
     let output = if vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3" {
         format!(
@@ -615,7 +647,7 @@ pub fn update_vm_resource_limits(
     } else {
         "VM not found".to_string()
     };
-    
+
     let result = VmManagementResult {
         success: vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3",
         output,
@@ -630,38 +662,42 @@ pub fn update_vm_resource_limits(
             1
         },
     };
-    
+
     if result.success {
         info!("Successfully updated resource limits for VM: {}", vm_id);
     } else {
-        error!("Failed to update resource limits for VM {}: {}", vm_id, result.output);
+        error!(
+            "Failed to update resource limits for VM {}: {}",
+            vm_id, result.output
+        );
     }
-    
+
     Ok(result)
 }
 
 /// Check VM health status
 pub fn check_vm_health(vm_id: &str) -> Result<String> {
     debug!("Checking health status for VM: {}", vm_id);
-    
+
     // Simulate health check
-    let health_status = if vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3" {
+    let health_status = if vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3"
+    {
         "Healthy".to_string()
     } else if vm_id == "crashed_vm" {
         "Crashed".to_string()
     } else {
         "Unknown".to_string()
     };
-    
+
     info!("Health status for VM {}: {}", vm_id, health_status);
-    
+
     Ok(health_status)
 }
 
 /// Perform automatic recovery for unhealthy VM
 pub fn perform_vm_recovery(vm_id: &str) -> Result<VmManagementResult> {
     debug!("Performing automatic recovery for VM: {}", vm_id);
-    
+
     // Simulate recovery process
     let output = if vm_id == "crashed_vm" {
         "VM recovered successfully".to_string()
@@ -670,37 +706,54 @@ pub fn perform_vm_recovery(vm_id: &str) -> Result<VmManagementResult> {
     } else {
         "VM not found".to_string()
     };
-    
+
     let result = VmManagementResult {
-        success: vm_id == "crashed_vm" || vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3",
+        success: vm_id == "crashed_vm"
+            || vm_id == "test_vm"
+            || vm_id == "vm1"
+            || vm_id == "vm2"
+            || vm_id == "vm3",
         output,
-        error: if vm_id != "crashed_vm" && vm_id != "test_vm" && vm_id != "vm1" && vm_id != "vm2" && vm_id != "vm3" {
+        error: if vm_id != "crashed_vm"
+            && vm_id != "test_vm"
+            && vm_id != "vm1"
+            && vm_id != "vm2"
+            && vm_id != "vm3"
+        {
             Some("VM not found".to_string())
         } else {
             None
         },
-        exit_code: if vm_id == "crashed_vm" || vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3" {
+        exit_code: if vm_id == "crashed_vm"
+            || vm_id == "test_vm"
+            || vm_id == "vm1"
+            || vm_id == "vm2"
+            || vm_id == "vm3"
+        {
             0
         } else {
             1
         },
     };
-    
+
     if result.success {
         info!("Successfully performed recovery for VM: {}", vm_id);
     } else {
-        error!("Failed to perform recovery for VM {}: {}", vm_id, result.output);
+        error!(
+            "Failed to perform recovery for VM {}: {}",
+            vm_id, result.output
+        );
     }
-    
+
     Ok(result)
 }
 
 /// Monitor VM load and resource usage patterns
 pub fn monitor_vm_load(vm_id: &str) -> Result<VmMetrics> {
     debug!("Monitoring load for VM: {}", vm_id);
-    
+
     let metrics = collect_vm_metrics(vm_id)?;
-    
+
     info!("VM {} load monitoring: CPU={}%, Memory={}% ({} bytes), Disk IOPS={}, Network BW={} bytes/s",
           vm_id,
           metrics.cpu_usage.total_usage,
@@ -708,27 +761,27 @@ pub fn monitor_vm_load(vm_id: &str) -> Result<VmMetrics> {
           metrics.memory_usage.usage,
           metrics.disk_usage.iops,
           metrics.network_stats.bandwidth);
-    
+
     Ok(metrics)
 }
 
 /// Analyze VM resource usage patterns
 pub fn analyze_vm_resource_usage(metrics: &VmMetrics) -> Result<VmResourceAnalysis> {
     debug!("Analyzing resource usage for VM: {}", metrics.id);
-    
+
     let cpu_usage = metrics.cpu_usage.total_usage;
     let memory_usage_percent = metrics.memory_usage.usage_percent;
     let disk_iops = metrics.disk_usage.iops as f64;
     let network_bandwidth = metrics.network_stats.bandwidth as f64;
-    
+
     // Calculate resource utilization scores (0-100)
     let cpu_score = cpu_usage;
     let memory_score = memory_usage_percent;
     let disk_score = (disk_iops / 1000.0).min(100.0); // Normalize to 0-100
     let network_score = (network_bandwidth / 10_000_000.0).min(100.0); // Normalize to 0-100
-    
+
     let overall_score = (cpu_score + memory_score + disk_score + network_score) / 4.0;
-    
+
     let analysis = VmResourceAnalysis {
         vm_id: metrics.id.clone(),
         cpu_utilization: cpu_score,
@@ -739,23 +792,23 @@ pub fn analyze_vm_resource_usage(metrics: &VmMetrics) -> Result<VmResourceAnalys
         is_overloaded: overall_score > 80.0,
         is_underutilized: overall_score < 30.0,
     };
-    
+
     info!("VM {} resource analysis: Overall={:.1}%, CPU={:.1}%, Memory={:.1}%, Disk={:.1}%, Network={:.1}%",
           metrics.id, analysis.overall_utilization, analysis.cpu_utilization,
           analysis.memory_utilization, analysis.disk_utilization, analysis.network_utilization);
-    
+
     Ok(analysis)
 }
 
 /// Calculate VM scaling needs based on resource analysis
 pub fn calculate_vm_scaling_needs(analysis: &VmResourceAnalysis) -> Result<VmScalingPlan> {
     debug!("Calculating scaling needs for VM: {}", analysis.vm_id);
-    
+
     let mut cpu_scaling = 1.0;
     let mut memory_scaling = 1.0;
     let mut disk_scaling = 1.0;
     let mut network_scaling = 1.0;
-    
+
     // Determine scaling factors based on utilization
     if analysis.is_overloaded {
         // Scale up if overloaded
@@ -770,7 +823,7 @@ pub fn calculate_vm_scaling_needs(analysis: &VmResourceAnalysis) -> Result<VmSca
         disk_scaling = 0.8;
         network_scaling = 0.8;
     }
-    
+
     let scaling_plan = VmScalingPlan {
         vm_id: analysis.vm_id.clone(),
         cpu_scaling_factor: cpu_scaling,
@@ -786,19 +839,28 @@ pub fn calculate_vm_scaling_needs(analysis: &VmResourceAnalysis) -> Result<VmSca
             "No scaling needed - VM is optimally loaded".to_string()
         },
     };
-    
-    info!("VM {} scaling plan: CPU={:.1}x, Memory={:.1}x, Disk={:.1}x, Network={:.1}x - {}",
-          analysis.vm_id, scaling_plan.cpu_scaling_factor, scaling_plan.memory_scaling_factor,
-          scaling_plan.disk_scaling_factor, scaling_plan.network_scaling_factor,
-          scaling_plan.recommendation);
-    
+
+    info!(
+        "VM {} scaling plan: CPU={:.1}x, Memory={:.1}x, Disk={:.1}x, Network={:.1}x - {}",
+        analysis.vm_id,
+        scaling_plan.cpu_scaling_factor,
+        scaling_plan.memory_scaling_factor,
+        scaling_plan.disk_scaling_factor,
+        scaling_plan.network_scaling_factor,
+        scaling_plan.recommendation
+    );
+
     Ok(scaling_plan)
 }
 
 /// Apply automatic scaling based on scaling plan
-pub fn apply_vm_auto_scaling(vm_id: &str, scaling_plan: &VmScalingPlan, current_metrics: &VmMetrics) -> Result<VmManagementResult> {
+pub fn apply_vm_auto_scaling(
+    vm_id: &str,
+    scaling_plan: &VmScalingPlan,
+    current_metrics: &VmMetrics,
+) -> Result<VmManagementResult> {
     debug!("Applying auto-scaling for VM: {}", vm_id);
-    
+
     if !scaling_plan.should_scale {
         let result = VmManagementResult {
             success: true,
@@ -806,21 +868,36 @@ pub fn apply_vm_auto_scaling(vm_id: &str, scaling_plan: &VmScalingPlan, current_
             error: None,
             exit_code: 0,
         };
-        info!("No scaling needed for VM {}: {}", vm_id, scaling_plan.recommendation);
+        info!(
+            "No scaling needed for VM {}: {}",
+            vm_id, scaling_plan.recommendation
+        );
         return Ok(result);
     }
-    
+
     // Calculate new resource limits based on scaling factors
     let current_cpu_limit = current_metrics.resource_limits.cpu_limit.unwrap_or(2.0);
-    let current_memory_limit = current_metrics.resource_limits.memory_limit.unwrap_or(2_147_483_648); // 2 GB
-    let current_disk_io_limit = current_metrics.resource_limits.disk_io_limit.unwrap_or(50_000_000); // 50 MB/s
-    let current_network_bw_limit = current_metrics.resource_limits.network_bandwidth_limit.unwrap_or(5_000_000); // 5 MB/s
-    
+    let current_memory_limit = current_metrics
+        .resource_limits
+        .memory_limit
+        .unwrap_or(2_147_483_648); // 2 GB
+    let current_disk_io_limit = current_metrics
+        .resource_limits
+        .disk_io_limit
+        .unwrap_or(50_000_000); // 50 MB/s
+    let current_network_bw_limit = current_metrics
+        .resource_limits
+        .network_bandwidth_limit
+        .unwrap_or(5_000_000); // 5 MB/s
+
     let new_cpu_limit = (current_cpu_limit * scaling_plan.cpu_scaling_factor) as f64;
-    let new_memory_limit = (current_memory_limit as f64 * scaling_plan.memory_scaling_factor) as u64;
-    let new_disk_io_limit = (current_disk_io_limit as f64 * scaling_plan.disk_scaling_factor) as u64;
-    let new_network_bw_limit = (current_network_bw_limit as f64 * scaling_plan.network_scaling_factor) as u64;
-    
+    let new_memory_limit =
+        (current_memory_limit as f64 * scaling_plan.memory_scaling_factor) as u64;
+    let new_disk_io_limit =
+        (current_disk_io_limit as f64 * scaling_plan.disk_scaling_factor) as u64;
+    let new_network_bw_limit =
+        (current_network_bw_limit as f64 * scaling_plan.network_scaling_factor) as u64;
+
     // Apply the new resource limits
     let result = update_vm_resource_limits(
         vm_id,
@@ -829,29 +906,35 @@ pub fn apply_vm_auto_scaling(vm_id: &str, scaling_plan: &VmScalingPlan, current_
         Some(new_disk_io_limit),
         Some(new_network_bw_limit),
     )?;
-    
+
     if result.success {
         info!("Successfully applied auto-scaling for VM {}: CPU={:.1}, Memory={}, Disk IO={}, Network BW={}",
               vm_id, new_cpu_limit, new_memory_limit, new_disk_io_limit, new_network_bw_limit);
     } else {
-        error!("Failed to apply auto-scaling for VM {}: {}", vm_id, result.output);
+        error!(
+            "Failed to apply auto-scaling for VM {}: {}",
+            vm_id, result.output
+        );
     }
-    
+
     Ok(result)
 }
 
 /// Apply dynamic resource management based on usage patterns
-pub fn apply_dynamic_resource_management(vm_id: &str, metrics: &VmMetrics) -> Result<VmManagementResult> {
+pub fn apply_dynamic_resource_management(
+    vm_id: &str,
+    metrics: &VmMetrics,
+) -> Result<VmManagementResult> {
     debug!("Applying dynamic resource management for VM: {}", vm_id);
-    
+
     // Analyze current usage and adjust resources
     let cpu_usage = metrics.cpu_usage.total_usage;
     let memory_usage = metrics.memory_usage.usage as f64;
     let memory_limit = metrics.memory_usage.limit as f64;
-    
+
     let mut cpu_limit_adjustment = None;
     let mut memory_limit_adjustment = None;
-    
+
     // CPU scaling logic
     if cpu_usage > 80.0 {
         // Increase CPU limit if usage is high
@@ -860,7 +943,7 @@ pub fn apply_dynamic_resource_management(vm_id: &str, metrics: &VmMetrics) -> Re
         // Decrease CPU limit if usage is low
         cpu_limit_adjustment = Some(metrics.resource_limits.cpu_limit.unwrap_or(2.0) * 0.8);
     }
-    
+
     // Memory scaling logic
     let memory_usage_percent = (memory_usage / memory_limit) * 100.0;
     if memory_usage_percent > 85.0 {
@@ -870,7 +953,7 @@ pub fn apply_dynamic_resource_management(vm_id: &str, metrics: &VmMetrics) -> Re
         // Decrease memory limit if usage is low
         memory_limit_adjustment = Some((memory_limit * 0.8) as u64);
     }
-    
+
     // Simulate resource adjustment
     let output = if vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3" {
         format!(
@@ -880,7 +963,7 @@ pub fn apply_dynamic_resource_management(vm_id: &str, metrics: &VmMetrics) -> Re
     } else {
         "VM not found".to_string()
     };
-    
+
     let result = VmManagementResult {
         success: vm_id == "test_vm" || vm_id == "vm1" || vm_id == "vm2" || vm_id == "vm3",
         output,
@@ -895,13 +978,19 @@ pub fn apply_dynamic_resource_management(vm_id: &str, metrics: &VmMetrics) -> Re
             1
         },
     };
-    
+
     if result.success {
-        info!("Successfully applied dynamic resource management for VM: {}", vm_id);
+        info!(
+            "Successfully applied dynamic resource management for VM: {}",
+            vm_id
+        );
     } else {
-        error!("Failed to apply dynamic resource management for VM {}: {}", vm_id, result.output);
+        error!(
+            "Failed to apply dynamic resource management for VM {}: {}",
+            vm_id, result.output
+        );
     }
-    
+
     Ok(result)
 }
 
@@ -963,7 +1052,13 @@ mod tests {
 
     #[test]
     fn test_update_vm_resource_limits() {
-        let result = update_vm_resource_limits("test_vm", Some(4.0), Some(4_294_967_296), Some(100_000_000), Some(10_000_000));
+        let result = update_vm_resource_limits(
+            "test_vm",
+            Some(4.0),
+            Some(4_294_967_296),
+            Some(100_000_000),
+            Some(10_000_000),
+        );
         assert!(result.is_ok());
         let management_result = result.unwrap();
         assert!(management_result.success);
@@ -991,7 +1086,7 @@ mod tests {
         let metrics_result = collect_vm_metrics("test_vm");
         assert!(metrics_result.is_ok());
         let metrics = metrics_result.unwrap();
-        
+
         let result = apply_dynamic_resource_management("test_vm", &metrics);
         assert!(result.is_ok());
         let management_result = result.unwrap();
@@ -1013,7 +1108,7 @@ mod tests {
         let metrics_result = collect_vm_metrics("test_vm");
         assert!(metrics_result.is_ok());
         let metrics = metrics_result.unwrap();
-        
+
         let result = analyze_vm_resource_usage(&metrics);
         assert!(result.is_ok());
         let analysis = result.unwrap();
@@ -1030,7 +1125,7 @@ mod tests {
         let analysis_result = analyze_vm_resource_usage(&metrics);
         assert!(analysis_result.is_ok());
         let analysis = analysis_result.unwrap();
-        
+
         let result = calculate_vm_scaling_needs(&analysis);
         assert!(result.is_ok());
         let scaling_plan = result.unwrap();
@@ -1049,7 +1144,7 @@ mod tests {
         let scaling_plan_result = calculate_vm_scaling_needs(&analysis);
         assert!(scaling_plan_result.is_ok());
         let scaling_plan = scaling_plan_result.unwrap();
-        
+
         let result = apply_vm_auto_scaling("test_vm", &scaling_plan, &metrics);
         assert!(result.is_ok());
         let management_result = result.unwrap();
@@ -1061,7 +1156,7 @@ mod tests {
         let cpu_result = collect_vm_cpu_metrics("unknown_vm");
         assert!(cpu_result.is_ok());
         assert_eq!(cpu_result.unwrap(), 0.0);
-        
+
         let start_result = start_vm("unknown_vm");
         assert!(start_result.is_ok());
         let start_management = start_result.unwrap();
@@ -1075,15 +1170,15 @@ mod tests {
         let monitor_result = monitor_vm_load("test_vm");
         assert!(monitor_result.is_ok());
         let metrics = monitor_result.unwrap();
-        
+
         let analysis_result = analyze_vm_resource_usage(&metrics);
         assert!(analysis_result.is_ok());
         let analysis = analysis_result.unwrap();
-        
+
         let scaling_plan_result = calculate_vm_scaling_needs(&analysis);
         assert!(scaling_plan_result.is_ok());
         let scaling_plan = scaling_plan_result.unwrap();
-        
+
         let apply_result = apply_vm_auto_scaling("test_vm", &scaling_plan, &metrics);
         assert!(apply_result.is_ok());
         let management_result = apply_result.unwrap();

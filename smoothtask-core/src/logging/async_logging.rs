@@ -604,8 +604,7 @@ pub async fn write_log_entry_async(log_path: &Path, log_entry: &str) -> Result<(
         })?;
 
     // Записываем лог с новой строкой
-    file
-        .write_all(format!("{}\n", log_entry).as_bytes())
+    file.write_all(format!("{}\n", log_entry).as_bytes())
         .await
         .with_context(|| {
             format!(
@@ -615,15 +614,12 @@ pub async fn write_log_entry_async(log_path: &Path, log_entry: &str) -> Result<(
         })?;
 
     // Сбрасываем изменения на диск
-    file
-        .flush()
-        .await
-        .with_context(|| {
-            format!(
-                "Не удалось сбросить изменения в файл лога {}: ошибка ввода-вывода",
-                log_path.display()
-            )
-        })?;
+    file.flush().await.with_context(|| {
+        format!(
+            "Не удалось сбросить изменения в файл лога {}: ошибка ввода-вывода",
+            log_path.display()
+        )
+    })?;
 
     Ok(())
 }
@@ -668,8 +664,7 @@ pub async fn write_log_batch_async(log_path: &Path, log_entries: &[String]) -> R
 
     // Объединяем все записи с разделителями и записываем за один раз
     let combined_content = log_entries.join("\n") + "\n";
-    file
-        .write_all(combined_content.as_bytes())
+    file.write_all(combined_content.as_bytes())
         .await
         .with_context(|| {
             format!(
@@ -679,15 +674,12 @@ pub async fn write_log_batch_async(log_path: &Path, log_entries: &[String]) -> R
         })?;
 
     // Сбрасываем изменения на диск
-    file
-        .flush()
-        .await
-        .with_context(|| {
-            format!(
-                "Не удалось сбросить изменения в файл лога {}: ошибка ввода-вывода",
-                log_path.display()
-            )
-        })?;
+    file.flush().await.with_context(|| {
+        format!(
+            "Не удалось сбросить изменения в файл лога {}: ошибка ввода-вывода",
+            log_path.display()
+        )
+    })?;
 
     Ok(())
 }
@@ -788,7 +780,7 @@ pub async fn write_log_with_compression_async(
             rotator.max_age_sec,
             rotator.max_total_size_bytes,
         );
-        
+
         // Выполняем ротацию
         rotator_with_compression.rotate_log(log_path).await?;
     }
@@ -838,7 +830,7 @@ pub async fn write_log_optimized_async(
                 rotator.max_age_sec,
                 rotator.max_total_size_bytes,
             );
-            
+
             // Выполняем ротацию
             rotator_with_compression.rotate_log(log_path).await?;
         }
@@ -1003,7 +995,8 @@ pub async fn monitor_and_optimize_log_performance_async(
         memory_pressure,
         high_volume,
         disk_space_low,
-    ).await?;
+    )
+    .await?;
 
     // Дополнительные оптимизации для логов с большим количеством ошибок
     if error_heavy {
@@ -1017,8 +1010,14 @@ pub async fn monitor_and_optimize_log_performance_async(
     }
 
     // Логируем результаты оптимизации
-    let (new_max_size, new_max_files, new_compression, new_interval, _new_max_age, _new_max_total_size) =
-        rotator.get_config();
+    let (
+        new_max_size,
+        new_max_files,
+        new_compression,
+        new_interval,
+        _new_max_age,
+        _new_max_total_size,
+    ) = rotator.get_config();
 
     tracing::info!(
         "Мониторинг и оптимизация производительности логирования завершены. Новая конфигурация: size={} байт, files={}, compression={}, interval={} сек",
@@ -1311,7 +1310,11 @@ mod tests {
                 .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
                 .collect();
 
-            assert_eq!(rotated_files.len(), 1, "Should have one compressed rotated log file");
+            assert_eq!(
+                rotated_files.len(),
+                1,
+                "Should have one compressed rotated log file"
+            );
         });
     }
 
@@ -1341,14 +1344,17 @@ mod tests {
             let remaining_files: Vec<_> = std::fs::read_dir(temp_dir.path())
                 .expect("read dir")
                 .filter_map(|entry| entry.ok())
-                .filter(|entry| 
-                    entry.path().file_name().map_or(false, |name| 
+                .filter(|entry| {
+                    entry.path().file_name().map_or(false, |name| {
                         name.to_string_lossy().starts_with("policy_test.")
-                    )
-                )
+                    })
+                })
                 .collect();
 
-            assert!(remaining_files.len() <= 2, "Should have at most 2 rotated files after cleanup");
+            assert!(
+                remaining_files.len() <= 2,
+                "Should have at most 2 rotated files after cleanup"
+            );
         });
     }
 
@@ -1364,9 +1370,14 @@ mod tests {
 
             // Записываем достаточно данных для ротации
             for i in 0..20 {
-                write_log_with_compression_async(&log_path, &format!("Test log entry {}", i), &rotator, true)
-                    .await
-                    .expect("write should succeed");
+                write_log_with_compression_async(
+                    &log_path,
+                    &format!("Test log entry {}", i),
+                    &rotator,
+                    true,
+                )
+                .await
+                .expect("write should succeed");
             }
 
             // Проверяем, что создан ротированный файл (сжатый)
@@ -1376,7 +1387,11 @@ mod tests {
                 .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "gz"))
                 .collect();
 
-            assert_eq!(rotated_files.len(), 1, "Should have one compressed rotated log file");
+            assert_eq!(
+                rotated_files.len(),
+                1,
+                "Should have one compressed rotated log file"
+            );
         });
     }
 
@@ -1391,7 +1406,9 @@ mod tests {
             let rotator = AsyncLogRotator::new(100, 3, false, 0, 0, 0);
 
             // Создаем большой набор логов
-            let log_entries: Vec<String> = (0..50).map(|i| format!("Optimized log entry {}", i)).collect();
+            let log_entries: Vec<String> = (0..50)
+                .map(|i| format!("Optimized log entry {}", i))
+                .collect();
 
             // Записываем с оптимизацией (пакеты по 10 записей)
             write_log_optimized_async(&log_path, &log_entries, &rotator, 10, true)
@@ -1421,7 +1438,9 @@ mod tests {
 
             // Создаем несколько ротированных файлов
             for i in 0..8 {
-                let rotated_path = temp_dir.path().join(format!("advanced_cleanup_test.{:06}.log", i));
+                let rotated_path = temp_dir
+                    .path()
+                    .join(format!("advanced_cleanup_test.{:06}.log", i));
                 let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
                 writeln!(file, "Advanced cleanup log entry {}", i).expect("write to rotated log");
                 drop(file);
@@ -1436,14 +1455,17 @@ mod tests {
             let remaining_files: Vec<_> = std::fs::read_dir(temp_dir.path())
                 .expect("read dir")
                 .filter_map(|entry| entry.ok())
-                .filter(|entry| 
-                    entry.path().file_name().map_or(false, |name| 
+                .filter(|entry| {
+                    entry.path().file_name().map_or(false, |name| {
                         name.to_string_lossy().starts_with("advanced_cleanup_test.")
-                    )
-                )
+                    })
+                })
                 .collect();
 
-            assert!(remaining_files.len() <= 2, "Aggressive cleanup should leave at most 2 files");
+            assert!(
+                remaining_files.len() <= 2,
+                "Aggressive cleanup should leave at most 2 files"
+            );
         });
     }
 
@@ -1459,7 +1481,9 @@ mod tests {
 
             // Создаем несколько ротированных файлов
             for i in 0..3 {
-                let rotated_path = temp_dir.path().join(format!("performance_test.{:06}.log", i));
+                let rotated_path = temp_dir
+                    .path()
+                    .join(format!("performance_test.{:06}.log", i));
                 let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
                 writeln!(file, "Performance test log entry {}", i).expect("write to rotated log");
                 drop(file);
@@ -1490,8 +1514,8 @@ mod tests {
             let stats = LogStats {
                 total_entries: 2000,
                 total_size: 2_000_000, // 2MB - высокий объем
-                error_count: 300, // 15% ошибок
-                warning_count: 800, // 40% предупреждений
+                error_count: 300,      // 15% ошибок
+                warning_count: 800,    // 40% предупреждений
                 info_count: 800,
                 debug_count: 100,
             };
@@ -1518,29 +1542,44 @@ mod tests {
 
             // Создаем несколько ротированных файлов
             for i in 0..5 {
-                let rotated_path = temp_dir.path().join(format!("cleanup_methods_test.{:06}.log", i));
+                let rotated_path = temp_dir
+                    .path()
+                    .join(format!("cleanup_methods_test.{:06}.log", i));
                 let mut file = std::fs::File::create(&rotated_path).expect("create rotated file");
-                writeln!(file, "Cleanup methods test log entry {}", i).expect("write to rotated log");
+                writeln!(file, "Cleanup methods test log entry {}", i)
+                    .expect("write to rotated log");
                 drop(file);
             }
 
             // Тестируем отдельные методы очистки
-            rotator.cleanup_by_age_async(&log_path).await.expect("age cleanup should succeed");
-            rotator.cleanup_by_total_size_async(&log_path).await.expect("size cleanup should succeed");
-            rotator.cleanup_old_logs_async(&log_path).await.expect("old logs cleanup should succeed");
+            rotator
+                .cleanup_by_age_async(&log_path)
+                .await
+                .expect("age cleanup should succeed");
+            rotator
+                .cleanup_by_total_size_async(&log_path)
+                .await
+                .expect("size cleanup should succeed");
+            rotator
+                .cleanup_old_logs_async(&log_path)
+                .await
+                .expect("old logs cleanup should succeed");
 
             // Проверяем, что очистка сработала
             let remaining_files: Vec<_> = std::fs::read_dir(temp_dir.path())
                 .expect("read dir")
                 .filter_map(|entry| entry.ok())
-                .filter(|entry| 
-                    entry.path().file_name().map_or(false, |name| 
+                .filter(|entry| {
+                    entry.path().file_name().map_or(false, |name| {
                         name.to_string_lossy().starts_with("cleanup_methods_test.")
-                    )
-                )
+                    })
+                })
                 .collect();
 
-            assert!(remaining_files.len() <= 3, "Cleanup methods should limit files to 3");
+            assert!(
+                remaining_files.len() <= 3,
+                "Cleanup methods should limit files to 3"
+            );
         });
     }
 
@@ -1555,7 +1594,9 @@ mod tests {
             let rotator = AsyncLogRotator::new(500, 3, true, 1800, 3600, 5000);
 
             // Создаем большой набор логов
-            let log_entries: Vec<String> = (0..100).map(|i| format!("Comprehensive perf test log entry {}", i)).collect();
+            let log_entries: Vec<String> = (0..100)
+                .map(|i| format!("Comprehensive perf test log entry {}", i))
+                .collect();
 
             // Записываем с полной оптимизацией
             write_log_optimized_async(&log_path, &log_entries, &rotator, 15, true)
@@ -1566,8 +1607,8 @@ mod tests {
             let stats = LogStats {
                 total_entries: 1000,
                 total_size: 5_000_000, // 5MB
-                error_count: 150, // 15% ошибок
-                warning_count: 300, // 30% предупреждений
+                error_count: 150,      // 15% ошибок
+                warning_count: 300,    // 30% предупреждений
                 info_count: 400,
                 debug_count: 150,
             };
@@ -1583,7 +1624,10 @@ mod tests {
                 .expect("comprehensive advanced cleanup should succeed");
 
             // Проверяем, что все операции завершились успешно
-            assert!(true, "Comprehensive performance optimization completed successfully");
+            assert!(
+                true,
+                "Comprehensive performance optimization completed successfully"
+            );
         });
     }
 }

@@ -263,9 +263,10 @@ impl EnhancedLogEntry {
         // Check include keywords
         if !filter.include_keywords.is_empty() {
             let message = self.entry.message.to_lowercase();
-            let has_match = filter.include_keywords.iter().any(|keyword| {
-                message.contains(&keyword.to_lowercase())
-            });
+            let has_match = filter
+                .include_keywords
+                .iter()
+                .any(|keyword| message.contains(&keyword.to_lowercase()));
             if !has_match {
                 return false;
             }
@@ -274,9 +275,10 @@ impl EnhancedLogEntry {
         // Check exclude keywords
         if !filter.exclude_keywords.is_empty() {
             let message = self.entry.message.to_lowercase();
-            let has_match = filter.exclude_keywords.iter().any(|keyword| {
-                message.contains(&keyword.to_lowercase())
-            });
+            let has_match = filter
+                .exclude_keywords
+                .iter()
+                .any(|keyword| message.contains(&keyword.to_lowercase()));
             if has_match {
                 return false;
             }
@@ -284,9 +286,10 @@ impl EnhancedLogEntry {
 
         // Check include modules
         if !filter.include_modules.is_empty() {
-            let has_match = filter.include_modules.iter().any(|module| {
-                self.module.contains(module)
-            });
+            let has_match = filter
+                .include_modules
+                .iter()
+                .any(|module| self.module.contains(module));
             if !has_match {
                 return false;
             }
@@ -294,9 +297,10 @@ impl EnhancedLogEntry {
 
         // Check exclude modules
         if !filter.exclude_modules.is_empty() {
-            let has_match = filter.exclude_modules.iter().any(|module| {
-                self.module.contains(module)
-            });
+            let has_match = filter
+                .exclude_modules
+                .iter()
+                .any(|module| self.module.contains(module));
             if has_match {
                 return false;
             }
@@ -375,15 +379,36 @@ impl LogAnalyzer {
         };
 
         result.entries = final_entries;
-        result.metadata.entries_filtered_out = result.metadata.entries_processed - result.entries.len() as u64;
+        result.metadata.entries_filtered_out =
+            result.metadata.entries_processed - result.entries.len() as u64;
 
         // Calculate statistics
         result.stats.total_entries = result.entries.len() as u64;
-        result.stats.total_size = result.entries.iter().map(|e| e.entry.message.len() as u64).sum();
-        result.stats.error_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Error).count() as u64;
-        result.stats.warning_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Warn).count() as u64;
-        result.stats.info_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Info).count() as u64;
-        result.stats.debug_count = result.entries.iter().filter(|e| e.entry.level == LogLevel::Debug).count() as u64;
+        result.stats.total_size = result
+            .entries
+            .iter()
+            .map(|e| e.entry.message.len() as u64)
+            .sum();
+        result.stats.error_count = result
+            .entries
+            .iter()
+            .filter(|e| e.entry.level == LogLevel::Error)
+            .count() as u64;
+        result.stats.warning_count = result
+            .entries
+            .iter()
+            .filter(|e| e.entry.level == LogLevel::Warn)
+            .count() as u64;
+        result.stats.info_count = result
+            .entries
+            .iter()
+            .filter(|e| e.entry.level == LogLevel::Info)
+            .count() as u64;
+        result.stats.debug_count = result
+            .entries
+            .iter()
+            .filter(|e| e.entry.level == LogLevel::Debug)
+            .count() as u64;
 
         // Calculate analysis duration
         let end_time = SystemTime::now();
@@ -406,7 +431,11 @@ impl LogAnalyzer {
     }
 
     /// Find logs by keyword with filtering
-    pub fn find_logs_by_keyword(&self, keyword: &str, filter: LogFilterConfig) -> Result<Vec<EnhancedLogEntry>> {
+    pub fn find_logs_by_keyword(
+        &self,
+        keyword: &str,
+        filter: LogFilterConfig,
+    ) -> Result<Vec<EnhancedLogEntry>> {
         let mut filter = filter;
         filter.include_keywords.push(keyword.to_string());
         let analysis = self.analyze_logs(filter)?;
@@ -414,7 +443,11 @@ impl LogAnalyzer {
     }
 
     /// Find logs by module with filtering
-    pub fn find_logs_by_module(&self, module: &str, filter: LogFilterConfig) -> Result<Vec<EnhancedLogEntry>> {
+    pub fn find_logs_by_module(
+        &self,
+        module: &str,
+        filter: LogFilterConfig,
+    ) -> Result<Vec<EnhancedLogEntry>> {
         let mut filter = filter;
         filter.include_modules.push(module.to_string());
         let analysis = self.analyze_logs(filter)?;
@@ -438,17 +471,25 @@ impl LogAnalyzer {
         }
 
         // Calculate total
-        pattern_analysis.total_entries = pattern_analysis.error_count +
-            pattern_analysis.warning_count +
-            pattern_analysis.info_count +
-            pattern_analysis.debug_count;
+        pattern_analysis.total_entries = pattern_analysis.error_count
+            + pattern_analysis.warning_count
+            + pattern_analysis.info_count
+            + pattern_analysis.debug_count;
 
         // Calculate percentages
         if pattern_analysis.total_entries > 0 {
-            pattern_analysis.error_percentage = (pattern_analysis.error_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
-            pattern_analysis.warning_percentage = (pattern_analysis.warning_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
-            pattern_analysis.info_percentage = (pattern_analysis.info_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
-            pattern_analysis.debug_percentage = (pattern_analysis.debug_count as f32 / pattern_analysis.total_entries as f32) * 100.0;
+            pattern_analysis.error_percentage = (pattern_analysis.error_count as f32
+                / pattern_analysis.total_entries as f32)
+                * 100.0;
+            pattern_analysis.warning_percentage = (pattern_analysis.warning_count as f32
+                / pattern_analysis.total_entries as f32)
+                * 100.0;
+            pattern_analysis.info_percentage = (pattern_analysis.info_count as f32
+                / pattern_analysis.total_entries as f32)
+                * 100.0;
+            pattern_analysis.debug_percentage = (pattern_analysis.debug_count as f32
+                / pattern_analysis.total_entries as f32)
+                * 100.0;
         }
 
         Ok(pattern_analysis)
@@ -616,10 +657,7 @@ pub fn optimize_log_performance(
 }
 
 /// Advanced log compression strategy
-pub fn optimize_log_compression(
-    rotator: &mut rotation::LogRotator,
-    compression_level: u32,
-) {
+pub fn optimize_log_compression(rotator: &mut rotation::LogRotator, compression_level: u32) {
     // Get current configuration
     let (max_size, max_files, compression, interval, max_age, max_total_size) =
         rotator.get_config();
@@ -639,10 +677,7 @@ pub fn optimize_log_compression(
 }
 
 /// Log performance monitoring and optimization
-pub fn monitor_and_optimize_log_performance(
-    rotator: &mut rotation::LogRotator,
-    stats: &LogStats,
-) {
+pub fn monitor_and_optimize_log_performance(rotator: &mut rotation::LogRotator, stats: &LogStats) {
     // Analyze log statistics to determine optimization strategy
     let high_volume = stats.total_entries > 1000 && stats.total_size > 1_000_000; // >1MB
     let error_heavy = stats.error_count > stats.total_entries / 10; // >10% errors
@@ -653,12 +688,7 @@ pub fn monitor_and_optimize_log_performance(
     let disk_space_low = false; // Would be determined from system metrics
 
     // Apply optimization based on analysis
-    optimize_log_performance(
-        rotator,
-        memory_pressure,
-        high_volume,
-        disk_space_low,
-    );
+    optimize_log_performance(rotator, memory_pressure, high_volume, disk_space_low);
 
     // Additional optimizations for error-heavy logs
     if error_heavy {
@@ -672,8 +702,14 @@ pub fn monitor_and_optimize_log_performance(
     }
 
     // Log optimization results
-    let (new_max_size, new_max_files, new_compression, new_interval, _new_max_age, _new_max_total_size) =
-        rotator.get_config();
+    let (
+        new_max_size,
+        new_max_files,
+        new_compression,
+        new_interval,
+        _new_max_age,
+        _new_max_total_size,
+    ) = rotator.get_config();
 
     tracing::info!(
         "Log performance optimization completed. New config: size={} bytes, files={}, compression={}, interval={} sec",
@@ -686,13 +722,13 @@ pub fn get_log_performance_metrics() -> LogPerformanceMetrics {
     // In a real implementation, this would collect actual performance metrics
     // For now, we'll return mock data
     LogPerformanceMetrics {
-        average_log_time_us: 150, // 150 microseconds per log entry
-        max_log_time_us: 500,     // 500 microseconds max
-        log_throughput: 1000,     // 1000 entries per second
-        compression_ratio: 2.5,   // 2.5:1 compression ratio
+        average_log_time_us: 150,      // 150 microseconds per log entry
+        max_log_time_us: 500,          // 500 microseconds max
+        log_throughput: 1000,          // 1000 entries per second
+        compression_ratio: 2.5,        // 2.5:1 compression ratio
         memory_usage_bytes: 5_000_000, // 5MB memory usage
-        disk_usage_bytes: 50_000_000,   // 50MB disk usage
-        cache_hit_rate: 0.85,     // 85% cache hit rate
+        disk_usage_bytes: 50_000_000,  // 50MB disk usage
+        cache_hit_rate: 0.85,          // 85% cache hit rate
     }
 }
 
@@ -730,7 +766,10 @@ pub fn log_performance_metrics(metrics: &LogPerformanceMetrics) {
 
     // Additional analysis
     if metrics.average_log_time_us > 1000 {
-        tracing::warn!("High average log time detected: {} us", metrics.average_log_time_us);
+        tracing::warn!(
+            "High average log time detected: {} us",
+            metrics.average_log_time_us
+        );
     }
 
     if metrics.cache_hit_rate < 0.7 {
@@ -739,10 +778,7 @@ pub fn log_performance_metrics(metrics: &LogPerformanceMetrics) {
 }
 
 /// Advanced log cleanup strategy
-pub fn advanced_log_cleanup(
-    rotator: &mut rotation::LogRotator,
-    aggressive: bool,
-) {
+pub fn advanced_log_cleanup(rotator: &mut rotation::LogRotator, aggressive: bool) {
     if aggressive {
         // Aggressive cleanup: remove all but the most recent log files
         let (max_size, max_files, compression, interval, max_age, max_total_size) =
@@ -761,8 +797,11 @@ pub fn advanced_log_cleanup(
             new_max_total_size,
         );
 
-        tracing::warn!("Aggressive log cleanup applied: max_files={}, max_total_size={} bytes",
-            new_max_files, new_max_total_size);
+        tracing::warn!(
+            "Aggressive log cleanup applied: max_files={}, max_total_size={} bytes",
+            new_max_files,
+            new_max_total_size
+        );
     } else {
         // Normal cleanup: apply standard rotation
         tracing::info!("Normal log cleanup applied");
@@ -770,10 +809,7 @@ pub fn advanced_log_cleanup(
 }
 
 /// Batch log processing for performance optimization
-pub fn process_logs_in_batch(
-    logs: Vec<LogEntry>,
-    batch_size: usize,
-) -> Vec<Vec<LogEntry>> {
+pub fn process_logs_in_batch(logs: Vec<LogEntry>, batch_size: usize) -> Vec<Vec<LogEntry>> {
     // Split logs into batches for more efficient processing
     logs.chunks(batch_size)
         .map(|chunk: &[LogEntry]| chunk.to_vec())
@@ -887,7 +923,8 @@ pub async fn write_log_with_compression_async(
     rotator: &async_logging::AsyncLogRotator,
     force_compression: bool,
 ) -> Result<(), anyhow::Error> {
-    async_logging::write_log_with_compression_async(log_path, log_entry, rotator, force_compression).await
+    async_logging::write_log_with_compression_async(log_path, log_entry, rotator, force_compression)
+        .await
 }
 
 /// Write log optimized asynchronously
@@ -898,7 +935,14 @@ pub async fn write_log_optimized_async(
     batch_size: usize,
     force_compression: bool,
 ) -> Result<(), anyhow::Error> {
-    async_logging::write_log_optimized_async(log_path, log_entries, rotator, batch_size, force_compression).await
+    async_logging::write_log_optimized_async(
+        log_path,
+        log_entries,
+        rotator,
+        batch_size,
+        force_compression,
+    )
+    .await
 }
 
 /// Cleanup logs advanced asynchronously
@@ -918,7 +962,14 @@ pub async fn optimize_log_performance_async(
     high_log_volume: bool,
     disk_space_low: bool,
 ) -> Result<(), anyhow::Error> {
-    async_logging::optimize_log_performance_async(log_path, rotator, memory_pressure, high_log_volume, disk_space_low).await
+    async_logging::optimize_log_performance_async(
+        log_path,
+        rotator,
+        memory_pressure,
+        high_log_volume,
+        disk_space_low,
+    )
+    .await
 }
 
 /// Monitor and optimize log performance asynchronously
@@ -1054,9 +1105,10 @@ mod tests {
 
         // Test memory pressure optimization
         optimize_log_performance(&mut rotator, true, false, false);
-        
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Should be reduced due to memory pressure
         assert!(max_size < 10_000);
         assert!(interval < 3600);
@@ -1071,9 +1123,10 @@ mod tests {
 
         // Test high volume optimization
         optimize_log_performance(&mut rotator, false, true, false);
-        
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Should have compression enabled and reduced interval
         assert!(compression); // Compression should be enabled
         assert!(interval < 3600);
@@ -1088,9 +1141,10 @@ mod tests {
 
         // Test low disk space optimization
         optimize_log_performance(&mut rotator, false, false, true);
-        
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Should be aggressive cleanup
         assert!(max_size < 10_000);
         assert_eq!(max_files, 2); // Only 2 files
@@ -1103,23 +1157,24 @@ mod tests {
         use rotation::LogRotator;
 
         let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
-        
+
         // Create stats that would trigger optimization
         let stats = LogStats {
             total_entries: 2000,
             total_size: 2_000_000, // 2MB - high volume
-            error_count: 300, // 15% errors - high error rate
-            warning_count: 800, // 40% warnings - high warning rate
+            error_count: 300,      // 15% errors - high error rate
+            warning_count: 800,    // 40% warnings - high warning rate
             info_count: 800,
             debug_count: 100,
         };
 
         // This should trigger optimizations
         monitor_and_optimize_log_performance(&mut rotator, &stats);
-        
+
         // Verify that optimization was applied
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Should see some optimization applied
         assert!(max_size <= 10_000);
         assert!(interval <= 3600);
@@ -1128,7 +1183,7 @@ mod tests {
     #[test]
     fn test_get_log_performance_metrics() {
         let metrics = get_log_performance_metrics();
-        
+
         // Verify we get reasonable metrics
         assert!(metrics.average_log_time_us > 0);
         assert!(metrics.max_log_time_us >= metrics.average_log_time_us);
@@ -1150,7 +1205,7 @@ mod tests {
             disk_usage_bytes: 100_000_000,
             cache_hit_rate: 0.9,
         };
-        
+
         // This should not panic and should log the metrics
         log_performance_metrics(&metrics);
     }
@@ -1163,9 +1218,10 @@ mod tests {
 
         // Test aggressive cleanup
         advanced_log_cleanup(&mut rotator, true);
-        
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Should be very aggressive
         assert_eq!(max_files, 1); // Only current log
         assert!(max_total_size < 1_000_000); // Reduced total size
@@ -1174,7 +1230,7 @@ mod tests {
     #[test]
     fn test_process_logs_in_batch() {
         use log_storage::LogEntry;
-        
+
         // Create some test log entries
         let logs = vec![
             LogEntry::new(log_storage::LogLevel::Info, "test", "message1"),
@@ -1186,7 +1242,7 @@ mod tests {
 
         // Process in batches of 2
         let batches = process_logs_in_batch(logs, 2);
-        
+
         // Should have 3 batches (2, 2, 1)
         assert_eq!(batches.len(), 3);
         assert_eq!(batches[0].len(), 2);
@@ -1197,7 +1253,7 @@ mod tests {
     #[test]
     fn test_filter_logs_optimized() {
         use log_storage::LogEntry;
-        
+
         // Create test log entries with different levels and targets
         let logs = vec![
             LogEntry::new(log_storage::LogLevel::Info, "module1", "info message"),
@@ -1216,7 +1272,12 @@ mod tests {
         assert_eq!(filtered.len(), 3); // Should get all module1 entries
 
         // Test combined filtering
-        let filtered = filter_logs_optimized(&logs, Some(log_storage::LogLevel::Info), Some("module1"), None);
+        let filtered = filter_logs_optimized(
+            &logs,
+            Some(log_storage::LogLevel::Info),
+            Some("module1"),
+            None,
+        );
         assert_eq!(filtered.len(), 1); // Should get only Info from module1
     }
 
@@ -1232,7 +1293,7 @@ mod tests {
             disk_usage_bytes: 50_000_000,
             cache_hit_rate: 0.65, // Low
         };
-        
+
         // This should log warnings about high log time and low cache hit rate
         log_performance_metrics(&metrics);
     }
@@ -1245,7 +1306,7 @@ mod tests {
 
         // Test compression optimization
         optimize_log_compression(&mut rotator, 9);
-        
+
         // Should log the compression level
         // Note: Actual compression implementation would be in the rotator
     }
@@ -1255,7 +1316,7 @@ mod tests {
         use rotation::LogRotator;
 
         let mut rotator = LogRotator::new(10_000, 5, true, 3600, 86400, 1_000_000);
-        
+
         // Test multiple optimization scenarios
         let high_volume_stats = LogStats {
             total_entries: 5000,
@@ -1268,9 +1329,10 @@ mod tests {
 
         // Apply optimization for high volume
         monitor_and_optimize_log_performance(&mut rotator, &high_volume_stats);
-        
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         // Should see optimization applied
         assert!(interval < 3600); // Reduced interval
         assert!(compression); // Compression enabled
@@ -1282,11 +1344,12 @@ mod tests {
         let stats = LogStats::default();
         assert_eq!(stats.total_entries, 0);
         assert_eq!(stats.total_size, 0);
-        
+
         // Test that we can create an async rotator
         let rotator = create_async_log_rotator(1000, 3, true, 3600, 86400, 10000);
-        let (max_size, max_files, compression, interval, max_age, max_total_size) = rotator.get_config();
-        
+        let (max_size, max_files, compression, interval, max_age, max_total_size) =
+            rotator.get_config();
+
         assert_eq!(max_size, 1000);
         assert_eq!(max_files, 3);
         assert!(compression);
@@ -1306,11 +1369,11 @@ mod tests {
             info_count: 500,
             debug_count: 440,
         };
-        
+
         // Verify the stats are reasonable
         assert!(stats.total_size > 0);
         assert!(stats.total_entries > 0);
-        
+
         // Calculate average size
         let avg_size = stats.total_size as f64 / stats.total_entries as f64;
         assert!(avg_size > 0.0);
@@ -1329,7 +1392,7 @@ mod tests {
             disk_usage_bytes: 100_000_000,
             cache_hit_rate: 0.9,
         };
-        
+
         // Verify the metrics are reasonable
         assert!(metrics.average_log_time_us > 0);
         assert!(metrics.max_log_time_us >= metrics.average_log_time_us);
@@ -1425,30 +1488,24 @@ mod tests {
         assert!(!enhanced.matches_filter(&filter_level));
 
         // Test keyword filtering
-        let filter_keyword = LogFilterConfig::new()
-            .with_include_keyword("error".to_string());
+        let filter_keyword = LogFilterConfig::new().with_include_keyword("error".to_string());
         assert!(enhanced.matches_filter(&filter_keyword));
 
-        let filter_exclude = LogFilterConfig::new()
-            .with_exclude_keyword("test".to_string());
+        let filter_exclude = LogFilterConfig::new().with_exclude_keyword("test".to_string());
         assert!(!enhanced.matches_filter(&filter_exclude));
 
         // Test time range filtering
-        let filter_time = LogFilterConfig::new()
-            .with_time_range(1000, 2000);
+        let filter_time = LogFilterConfig::new().with_time_range(1000, 2000);
         assert!(enhanced.matches_filter(&filter_time));
 
-        let filter_time_outside = LogFilterConfig::new()
-            .with_time_range(2000, 3000);
+        let filter_time_outside = LogFilterConfig::new().with_time_range(2000, 3000);
         assert!(!enhanced.matches_filter(&filter_time_outside));
 
         // Test module filtering
-        let filter_module = LogFilterConfig::new()
-            .with_include_module("test".to_string());
+        let filter_module = LogFilterConfig::new().with_include_module("test".to_string());
         assert!(enhanced.matches_filter(&filter_module));
 
-        let filter_exclude_module = LogFilterConfig::new()
-            .with_exclude_module("test".to_string());
+        let filter_exclude_module = LogFilterConfig::new().with_exclude_module("test".to_string());
         assert!(!enhanced.matches_filter(&filter_exclude_module));
     }
 
@@ -1520,14 +1577,12 @@ mod tests {
         assert_eq!(result.stats.error_count, 1);
 
         // Test keyword filtering
-        let filter_keyword = LogFilterConfig::new()
-            .with_include_keyword("error".to_string());
+        let filter_keyword = LogFilterConfig::new().with_include_keyword("error".to_string());
         let result = analyzer.analyze_logs(filter_keyword).unwrap();
         assert_eq!(result.entries.len(), 1);
 
         // Test time range filtering
-        let filter_time = LogFilterConfig::new()
-            .with_time_range(1200, 1800);
+        let filter_time = LogFilterConfig::new().with_time_range(1200, 1800);
         let result = analyzer.analyze_logs(filter_time).unwrap();
         assert_eq!(result.entries.len(), 1);
     }
@@ -1607,9 +1662,9 @@ mod tests {
 
 /// Реэкспорт интеграционных структур для удобного использования
 pub use integration::{
-    AsyncLoggingIntegration, ClassifyAsyncLogger, MetricsAsyncLogger, PolicyAsyncLogger,
     create_default_async_logging_integration, create_default_classify_logger,
-    create_default_metrics_logger, create_default_policy_logger,
+    create_default_metrics_logger, create_default_policy_logger, AsyncLoggingIntegration,
+    ClassifyAsyncLogger, MetricsAsyncLogger, PolicyAsyncLogger,
 };
 
 /// Структурированный логгер с поддержкой JSON и других форматов
@@ -1694,8 +1749,12 @@ impl StructuredLogger {
 
         // Форматировать в соответствии с выбранным форматом
         match self.output_format {
-            StructuredLogFormat::Json => serde_json::to_string_pretty(&log_data).unwrap_or_default(),
-            StructuredLogFormat::JsonCompact => serde_json::to_string(&log_data).unwrap_or_default(),
+            StructuredLogFormat::Json => {
+                serde_json::to_string_pretty(&log_data).unwrap_or_default()
+            }
+            StructuredLogFormat::JsonCompact => {
+                serde_json::to_string(&log_data).unwrap_or_default()
+            }
             StructuredLogFormat::Text => self.format_as_text(&log_data),
         }
     }
@@ -1705,14 +1764,25 @@ impl StructuredLogger {
         let timestamp = log_data["timestamp"].as_u64().unwrap_or(0);
         let level = log_data["level"].as_str().unwrap_or("INFO");
         let message = log_data["message"].as_str().unwrap_or("");
-        
+
         let datetime = DateTime::<Utc>::from_timestamp(timestamp as i64, 0).unwrap();
-        
-        format!("[{}] {} - {}", datetime.format("%Y-%m-%d %H:%M:%S"), level, message)
+
+        format!(
+            "[{}] {} - {}",
+            datetime.format("%Y-%m-%d %H:%M:%S"),
+            level,
+            message
+        )
     }
 
     /// Записать лог в файл
-    pub fn log_to_file(&self, level: LogLevel, message: &str, fields: serde_json::Value, file_path: &Path) -> Result<()> {
+    pub fn log_to_file(
+        &self,
+        level: LogLevel,
+        message: &str,
+        fields: serde_json::Value,
+        file_path: &Path,
+    ) -> Result<()> {
         let log_output = self.log(level, message, fields);
         if log_output.is_empty() {
             return Ok(());
@@ -1725,7 +1795,7 @@ impl StructuredLogger {
             .context("Failed to open log file")?;
 
         writeln!(file, "{}", log_output).context("Failed to write to log file")?;
-        
+
         Ok(())
     }
 
@@ -1785,10 +1855,9 @@ impl EnhancedLogFilter {
     /// Применить фильтр к структурированному логу
     pub fn apply_filter(&self, log_data: &serde_json::Value) -> bool {
         // Применить базовый фильтр (если возможно)
-        if let (Some(timestamp), Some(level)) = (
-            log_data["timestamp"].as_u64(),
-            log_data["level"].as_str()
-        ) {
+        if let (Some(timestamp), Some(level)) =
+            (log_data["timestamp"].as_u64(), log_data["level"].as_str())
+        {
             let log_level = match level {
                 "TRACE" => LogLevel::Trace,
                 "DEBUG" => LogLevel::Debug,
@@ -1799,8 +1868,9 @@ impl EnhancedLogFilter {
             };
 
             // Проверка уровня лога
-            if log_level.as_numeric() < self.base_filter.min_level.as_numeric() ||
-               log_level.as_numeric() > self.base_filter.max_level.as_numeric() {
+            if log_level.as_numeric() < self.base_filter.min_level.as_numeric()
+                || log_level.as_numeric() > self.base_filter.max_level.as_numeric()
+            {
                 return false;
             }
 
@@ -1854,18 +1924,24 @@ impl JsonFieldFilter {
     /// Применить фильтр к JSON данным
     pub fn apply(&self, log_data: &serde_json::Value) -> bool {
         let field_value = log_data.get(&self.field_name);
-        
+
         match (&self.operator, field_value) {
             (JsonFieldOperator::Equals, Some(val)) => val == &self.value,
             (JsonFieldOperator::NotEquals, Some(val)) => val != &self.value,
-            (JsonFieldOperator::Contains, Some(val)) if val.is_string() => {
-                val.as_str().map_or(false, |s| s.contains(self.value.as_str().unwrap_or("")))
+            (JsonFieldOperator::Contains, Some(val)) if val.is_string() => val
+                .as_str()
+                .map_or(false, |s| s.contains(self.value.as_str().unwrap_or(""))),
+            (JsonFieldOperator::GreaterThan, Some(val))
+                if val.is_number() && self.value.is_number() =>
+            {
+                val.as_f64()
+                    .map_or(false, |v| v > self.value.as_f64().unwrap_or(0.0))
             }
-            (JsonFieldOperator::GreaterThan, Some(val)) if val.is_number() && self.value.is_number() => {
-                val.as_f64().map_or(false, |v| v > self.value.as_f64().unwrap_or(0.0))
-            }
-            (JsonFieldOperator::LessThan, Some(val)) if val.is_number() && self.value.is_number() => {
-                val.as_f64().map_or(false, |v| v < self.value.as_f64().unwrap_or(0.0))
+            (JsonFieldOperator::LessThan, Some(val))
+                if val.is_number() && self.value.is_number() =>
+            {
+                val.as_f64()
+                    .map_or(false, |v| v < self.value.as_f64().unwrap_or(0.0))
             }
             (JsonFieldOperator::Exists, _) => field_value.is_some(),
             (JsonFieldOperator::NotExists, _) => field_value.is_none(),
@@ -1917,7 +1993,7 @@ impl MetadataFilter {
     /// Применить фильтр к JSON данным
     pub fn apply(&self, log_data: &serde_json::Value) -> bool {
         let metadata_value = log_data.get(&self.metadata_name);
-        
+
         match (&self.operator, metadata_value) {
             (MetadataOperator::Equals, Some(val)) if val.is_string() => {
                 val.as_str().map_or(false, |s| s == &self.value)
@@ -1959,27 +2035,41 @@ pub struct AsyncStructuredLogger {
 
 impl AsyncStructuredLogger {
     /// Создать новый асинхронный структурированный логгер
-    pub fn new(output_format: StructuredLogFormat, log_level: LogLevel, buffer_size: usize) -> Self {
+    pub fn new(
+        output_format: StructuredLogFormat,
+        log_level: LogLevel,
+        buffer_size: usize,
+    ) -> Self {
         let (sender, mut receiver) = tokio::sync::mpsc::channel(buffer_size);
-        
+
         let inner_logger = StructuredLogger::new(output_format, log_level);
         let async_inner = inner_logger.clone();
-        
+
         // Запустить фоновую задачу для обработки логов
         tokio::spawn(async move {
             while let Some(message) = receiver.recv().await {
                 match message {
-                    StructuredLogMessage::LogToFile { level, message, fields, file_path, responder } => {
+                    StructuredLogMessage::LogToFile {
+                        level,
+                        message,
+                        fields,
+                        file_path,
+                        responder,
+                    } => {
                         let result = async_inner.log_to_file(level, &message, fields, &file_path);
                         let _ = responder.send(result);
                     }
-                    StructuredLogMessage::LogToStdout { level, message, fields } => {
+                    StructuredLogMessage::LogToStdout {
+                        level,
+                        message,
+                        fields,
+                    } => {
                         async_inner.log_to_stdout(level, &message, fields);
                     }
                 }
             }
         });
-        
+
         Self { sender }
     }
 
@@ -1992,15 +2082,18 @@ impl AsyncStructuredLogger {
         file_path: PathBuf,
     ) -> Result<()> {
         let (sender, receiver) = tokio::sync::oneshot::channel();
-        
-        self.sender.send(StructuredLogMessage::LogToFile {
-            level,
-            message: message.to_string(),
-            fields,
-            file_path,
-            responder: sender,
-        }).await.context("Failed to send log message")?;
-        
+
+        self.sender
+            .send(StructuredLogMessage::LogToFile {
+                level,
+                message: message.to_string(),
+                fields,
+                file_path,
+                responder: sender,
+            })
+            .await
+            .context("Failed to send log message")?;
+
         receiver.await.context("Failed to receive log result")?
     }
 
@@ -2011,11 +2104,14 @@ impl AsyncStructuredLogger {
         message: &str,
         fields: serde_json::Value,
     ) {
-        let _ = self.sender.send(StructuredLogMessage::LogToStdout {
-            level,
-            message: message.to_string(),
-            fields,
-        }).await;
+        let _ = self
+            .sender
+            .send(StructuredLogMessage::LogToStdout {
+                level,
+                message: message.to_string(),
+                fields,
+            })
+            .await;
     }
 }
 
@@ -2046,15 +2142,15 @@ mod structured_logging_tests {
     #[test]
     fn test_structured_logger_json_output() {
         let logger = StructuredLogger::new(StructuredLogFormat::Json, LogLevel::Info);
-        
+
         let fields = json!({
             "user_id": "12345",
             "action": "login",
             "status": "success"
         });
-        
+
         let output = logger.log(LogLevel::Info, "User logged in", fields);
-        
+
         assert!(output.contains("User logged in"));
         assert!(output.contains("user_id"));
         assert!(output.contains("12345"));
@@ -2063,14 +2159,14 @@ mod structured_logging_tests {
     #[test]
     fn test_structured_logger_text_output() {
         let logger = StructuredLogger::new(StructuredLogFormat::Text, LogLevel::Info);
-        
+
         let fields = json!({
             "user_id": "12345",
             "action": "login"
         });
-        
+
         let output = logger.log(LogLevel::Info, "User logged in", fields);
-        
+
         assert!(output.contains("User logged in"));
         assert!(output.contains("INFO"));
     }
@@ -2083,21 +2179,21 @@ mod structured_logging_tests {
             "user_id": "12345",
             "status": "success"
         });
-        
+
         let filter = JsonFieldFilter::new(
             "status".to_string(),
             JsonFieldOperator::Equals,
-            json!("success")
+            json!("success"),
         );
-        
+
         assert!(filter.apply(&log_data));
-        
+
         let filter2 = JsonFieldFilter::new(
             "status".to_string(),
             JsonFieldOperator::NotEquals,
-            json!("failed")
+            json!("failed"),
         );
-        
+
         assert!(filter2.apply(&log_data));
     }
 
@@ -2110,18 +2206,18 @@ mod structured_logging_tests {
             "user_id": "12345",
             "status": "success"
         });
-        
+
         let mut filter = EnhancedLogFilter::new();
         filter.base_filter = LogFilterConfig::default().with_min_level(LogLevel::Info);
-        
+
         let json_filter = JsonFieldFilter::new(
             "status".to_string(),
             JsonFieldOperator::Equals,
-            json!("success")
+            json!("success"),
         );
-        
+
         filter = filter.with_json_field_filter(json_filter);
-        
+
         assert!(filter.apply_filter(&log_data));
     }
 }

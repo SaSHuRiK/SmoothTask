@@ -739,8 +739,12 @@ pub fn apply_advanced_auto_scaling(
         predict_resource_usage_with_ml(historical_data, &current_metric);
 
     // Calculate enhanced scaling confidence
+    // Extract CPU usage values from historical data
+    let cpu_usage_history: Vec<f64> = historical_data.iter()
+        .map(|m| m.cpu_usage.usage_percent)
+        .collect();
     let scaling_confidence = calculate_enhanced_scaling_confidence(
-        historical_data,
+        &cpu_usage_history,
         &current_metric,
         predicted_cpu_usage,
         predicted_memory_usage,
@@ -2974,13 +2978,7 @@ mod tests {
     fn test_enhanced_confidence_calculation() {
         // Test the enhanced confidence calculation
 
-        let historical_data = vec![
-            create_test_container_metric("test123", 10.0, 20.0, 1000, 2048),
-            create_test_container_metric("test123", 15.0, 25.0, 1000, 2048),
-            create_test_container_metric("test123", 20.0, 30.0, 1000, 2048),
-            create_test_container_metric("test123", 25.0, 35.0, 1000, 2048),
-            create_test_container_metric("test123", 30.0, 40.0, 1000, 2048),
-        ];
+        let historical_data = vec![10.0, 15.0, 20.0, 25.0, 30.0];
 
         let current_metric = create_test_container_metric("test123", 35.0, 45.0, 1000, 2048);
         let predicted_cpu = 40.0;

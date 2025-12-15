@@ -681,8 +681,8 @@ impl FeatureCache {
             stats.update_memory_usage(0);
 
             warn!("Критическое давление памяти ({:.1}%) - очищен кэш фич ({} элементов, {} KB освобождено)", 
-                memory_usage_ratio * 100.0, 
-                cache_size_before, 
+                memory_usage_ratio * 100.0,
+                cache_size_before,
                 memory_freed / 1024);
         }
         // Высокое давление памяти - уменьшаем емкость кэша
@@ -700,8 +700,8 @@ impl FeatureCache {
                 stats.update_memory_usage(0);
 
                 warn!("Высокое давление памяти ({:.1}%) - уменьшена емкость кэша до {} ({} KB освобождено)", 
-                    memory_usage_ratio * 100.0, 
-                    new_capacity, 
+                    memory_usage_ratio * 100.0,
+                    new_capacity,
                     memory_freed / 1024);
             }
         }
@@ -1169,10 +1169,7 @@ impl CatBoostMLClassifier {
     ///
     /// Этот метод предоставляет оптимизированную версию извлечения фич с возможностью
     /// отключения кэширования для тестирования производительности.
-    pub fn process_to_features_optimized(
-        process: &ProcessRecord,
-        use_cache: bool,
-    ) -> Vec<f32> {
+    pub fn process_to_features_optimized(process: &ProcessRecord, use_cache: bool) -> Vec<f32> {
         if use_cache {
             // Используем кэширование для оптимизации производительности
             GLOBAL_FEATURE_CACHE.get_or_compute(process.pid as u32, || {
@@ -1199,7 +1196,8 @@ impl CatBoostMLClassifier {
                 features.push(process.rss_mb.unwrap_or(0) as f32);
                 features.push(process.swap_mb.unwrap_or(0) as f32);
                 features.push(
-                    (process.rss_mb.unwrap_or(0) as f32 + process.swap_mb.unwrap_or(0) as f32) * 1024.0,
+                    (process.rss_mb.unwrap_or(0) as f32 + process.swap_mb.unwrap_or(0) as f32)
+                        * 1024.0,
                 ); // Total memory KB
 
                 // Контекстные переключения
@@ -1256,12 +1254,22 @@ impl CatBoostMLClassifier {
                 // Новые расширенные фичи для улучшенной ML классификации
                 // CPU/IO соотношение - помогает отличать CPU-интенсивные от IO-интенсивных процессов
                 let cpu_1s = process.cpu_share_1s.unwrap_or(0.0) as f32;
-                let io_total = (process.io_read_bytes.unwrap_or(0) + process.io_write_bytes.unwrap_or(0)) as f32 / (1024.0 * 1024.0);
-                features.push(if io_total > 0.0 { cpu_1s / io_total } else { 0.0 }); // CPU/IO ratio
+                let io_total = (process.io_read_bytes.unwrap_or(0)
+                    + process.io_write_bytes.unwrap_or(0)) as f32
+                    / (1024.0 * 1024.0);
+                features.push(if io_total > 0.0 {
+                    cpu_1s / io_total
+                } else {
+                    0.0
+                }); // CPU/IO ratio
 
                 // Память/CPU соотношение - помогает идентифицировать память-интенсивные процессы
                 let memory_mb = process.rss_mb.unwrap_or(0) as f32;
-                features.push(if cpu_1s > 0.0 { memory_mb / cpu_1s } else { 0.0 }); // Memory/CPU ratio
+                features.push(if cpu_1s > 0.0 {
+                    memory_mb / cpu_1s
+                } else {
+                    0.0
+                }); // Memory/CPU ratio
 
                 // Нормализованное время работы (0-1) - помогает в классификации по времени жизни
                 let normalized_uptime = (process.uptime_sec as f32 / 86400.0).min(1.0); // 0-1 day scale
@@ -1269,18 +1277,29 @@ impl CatBoostMLClassifier {
 
                 // Интерактивный скор на основе нескольких факторов (0-1)
                 let mut interactivity_score = 0.0;
-                if process.has_gui_window { interactivity_score += 0.4; }
-                if process.is_focused_window { interactivity_score += 0.3; }
-                if process.has_tty && !process.env_ssh { interactivity_score += 0.2; }
-                if process.is_audio_client { interactivity_score += 0.1; }
+                if process.has_gui_window {
+                    interactivity_score += 0.4;
+                }
+                if process.is_focused_window {
+                    interactivity_score += 0.3;
+                }
+                if process.has_tty && !process.env_ssh {
+                    interactivity_score += 0.2;
+                }
+                if process.is_audio_client {
+                    interactivity_score += 0.1;
+                }
                 features.push(interactivity_score);
 
                 // Ресурсоемкость на основе CPU, памяти и IO (нормализованный скор)
-                let resource_intensity = cpu_1s * 0.5 + (memory_mb / 1000.0) * 0.3 + (io_total / 100.0) * 0.2;
+                let resource_intensity =
+                    cpu_1s * 0.5 + (memory_mb / 1000.0) * 0.3 + (io_total / 100.0) * 0.2;
                 features.push(resource_intensity);
 
                 // Стабильность процесса (меньше контекстных переключений = более стабильный)
-                let ctx_switches = (process.voluntary_ctx.unwrap_or(0) + process.involuntary_ctx.unwrap_or(0)) as f32;
+                let ctx_switches = (process.voluntary_ctx.unwrap_or(0)
+                    + process.involuntary_ctx.unwrap_or(0))
+                    as f32;
                 let stability_score = 1.0 / (1.0 + ctx_switches / 1000.0); // 0-1 scale
                 features.push(stability_score);
 
@@ -1368,12 +1387,22 @@ impl CatBoostMLClassifier {
             // Новые расширенные фичи для улучшенной ML классификации
             // CPU/IO соотношение - помогает отличать CPU-интенсивные от IO-интенсивных процессов
             let cpu_1s = process.cpu_share_1s.unwrap_or(0.0) as f32;
-            let io_total = (process.io_read_bytes.unwrap_or(0) + process.io_write_bytes.unwrap_or(0)) as f32 / (1024.0 * 1024.0);
-            features.push(if io_total > 0.0 { cpu_1s / io_total } else { 0.0 }); // CPU/IO ratio
+            let io_total = (process.io_read_bytes.unwrap_or(0)
+                + process.io_write_bytes.unwrap_or(0)) as f32
+                / (1024.0 * 1024.0);
+            features.push(if io_total > 0.0 {
+                cpu_1s / io_total
+            } else {
+                0.0
+            }); // CPU/IO ratio
 
             // Память/CPU соотношение - помогает идентифицировать память-интенсивные процессы
             let memory_mb = process.rss_mb.unwrap_or(0) as f32;
-            features.push(if cpu_1s > 0.0 { memory_mb / cpu_1s } else { 0.0 }); // Memory/CPU ratio
+            features.push(if cpu_1s > 0.0 {
+                memory_mb / cpu_1s
+            } else {
+                0.0
+            }); // Memory/CPU ratio
 
             // Нормализованное время работы (0-1) - помогает в классификации по времени жизни
             let normalized_uptime = (process.uptime_sec as f32 / 86400.0).min(1.0); // 0-1 day scale
@@ -1381,18 +1410,28 @@ impl CatBoostMLClassifier {
 
             // Интерактивный скор на основе нескольких факторов (0-1)
             let mut interactivity_score = 0.0;
-            if process.has_gui_window { interactivity_score += 0.4; }
-            if process.is_focused_window { interactivity_score += 0.3; }
-            if process.has_tty && !process.env_ssh { interactivity_score += 0.2; }
-            if process.is_audio_client { interactivity_score += 0.1; }
+            if process.has_gui_window {
+                interactivity_score += 0.4;
+            }
+            if process.is_focused_window {
+                interactivity_score += 0.3;
+            }
+            if process.has_tty && !process.env_ssh {
+                interactivity_score += 0.2;
+            }
+            if process.is_audio_client {
+                interactivity_score += 0.1;
+            }
             features.push(interactivity_score);
 
             // Ресурсоемкость на основе CPU, памяти и IO (нормализованный скор)
-            let resource_intensity = cpu_1s * 0.5 + (memory_mb / 1000.0) * 0.3 + (io_total / 100.0) * 0.2;
+            let resource_intensity =
+                cpu_1s * 0.5 + (memory_mb / 1000.0) * 0.3 + (io_total / 100.0) * 0.2;
             features.push(resource_intensity);
 
             // Стабильность процесса (меньше контекстных переключений = более стабильный)
-            let ctx_switches = (process.voluntary_ctx.unwrap_or(0) + process.involuntary_ctx.unwrap_or(0)) as f32;
+            let ctx_switches =
+                (process.voluntary_ctx.unwrap_or(0) + process.involuntary_ctx.unwrap_or(0)) as f32;
             let stability_score = 1.0 / (1.0 + ctx_switches / 1000.0); // 0-1 scale
             features.push(stability_score);
 
@@ -1532,31 +1571,49 @@ impl CatBoostMLClassifier {
 
             // Расширенные производные фичи
             let cpu_1s = process.cpu_share_1s.unwrap_or(0.0) as f32;
-            let io_total = (process.io_read_bytes.unwrap_or(0) as f32 + process.io_write_bytes.unwrap_or(0) as f32) / (1024.0 * 1024.0);
+            let io_total = (process.io_read_bytes.unwrap_or(0) as f32
+                + process.io_write_bytes.unwrap_or(0) as f32)
+                / (1024.0 * 1024.0);
             let memory_mb = process.rss_mb.unwrap_or(0) as f32;
 
             // Соотношения
-            features.push(if io_total > 0.0 { cpu_1s / io_total } else { 0.0 }); // CPU/IO ratio
-            features.push(if cpu_1s > 0.0 { memory_mb / cpu_1s } else { 0.0 }); // Memory/CPU ratio
+            features.push(if io_total > 0.0 {
+                cpu_1s / io_total
+            } else {
+                0.0
+            }); // CPU/IO ratio
+            features.push(if cpu_1s > 0.0 {
+                memory_mb / cpu_1s
+            } else {
+                0.0
+            }); // Memory/CPU ratio
 
             // Нормализованное время работы
             let normalized_uptime = (process.uptime_sec as f32 / 86400.0).min(1.0); // 0-1 scale (days)
             features.push(normalized_uptime);
 
             // Интерактивный скор (0-1)
-            let interactivity_score = if process.has_gui_window || process.has_tty || process.is_audio_client {
-                1.0
-            } else {
-                0.0
-            };
+            let interactivity_score =
+                if process.has_gui_window || process.has_tty || process.is_audio_client {
+                    1.0
+                } else {
+                    0.0
+                };
             features.push(interactivity_score);
 
             // Ресурсоемкость (0-1)
-            let resource_intensity = ((cpu_1s * 100.0).min(100.0) + (memory_mb / 1024.0).min(100.0) + io_total.min(100.0)) / 300.0;
+            let resource_intensity = ((cpu_1s * 100.0).min(100.0)
+                + (memory_mb / 1024.0).min(100.0)
+                + io_total.min(100.0))
+                / 300.0;
             features.push(resource_intensity);
 
             // Стабильность процесса (0-1)
-            let stability_score = (1.0 - (process.involuntary_ctx.unwrap_or(0) as f32 / process.voluntary_ctx.unwrap_or(1) as f32).min(1.0)).max(0.0);
+            let stability_score = (1.0
+                - (process.involuntary_ctx.unwrap_or(0) as f32
+                    / process.voluntary_ctx.unwrap_or(1) as f32)
+                    .min(1.0))
+            .max(0.0);
             features.push(stability_score);
 
             features
@@ -1606,7 +1663,6 @@ impl MLClassifier for CatBoostMLClassifier {
     fn reset_performance_metrics(&mut self) {
         self.performance_metrics.reset();
     }
-
 }
 
 #[cfg(feature = "catboost")]
@@ -2303,7 +2359,8 @@ mod tests {
         process.uptime_sec = 3600; // 1 час
 
         // Тестируем оптимизированное извлечение фич без кэширования
-        let features_uncached = CatBoostMLClassifier::process_to_features_optimized(&process, false);
+        let features_uncached =
+            CatBoostMLClassifier::process_to_features_optimized(&process, false);
 
         // Тестируем оптимизированное извлечение фич с кэшированием
         let features_cached = CatBoostMLClassifier::process_to_features_optimized(&process, true);
@@ -2970,30 +3027,30 @@ mod tests {
         };
 
         let features = CatBoostMLClassifier::process_to_features_optimized(&process, false);
-        
+
         // Should have 35 features now (enhanced from 29)
         assert_eq!(features.len(), 35);
-        
+
         // Test some of the new enhanced features
         // CPU/IO ratio: 0.5 / (1.5) = 0.333...
         let expected_cpu_io_ratio = 0.5 / 1.5;
         assert!(features[29] > 0.0); // CPU/IO ratio should be positive
-        
+
         // Memory/CPU ratio: 256 / 0.5 = 512
         let expected_memory_cpu_ratio = 256.0 / 0.5;
         assert!(features[30] > 0.0); // Memory/CPU ratio should be positive
-        
+
         // Normalized uptime: 3600/86400 = 0.0417
         let expected_normalized_uptime = 3600.0 / 86400.0;
         assert!(features[31] > 0.0 && features[31] <= 1.0); // Should be in 0-1 range
-        
+
         // Interactivity score: 0.4 (GUI) + 0.3 (focused) + 0.2 (local TTY) = 0.9
         let expected_interactivity = 0.4 + 0.3 + 0.2;
         assert!(features[32] > 0.0 && features[32] <= 1.0); // Should be in 0-1 range
-        
+
         // Resource intensity: 0.5*0.5 + 256/1000*0.3 + 1.5/100*0.2
         assert!(features[33] > 0.0); // Should be positive
-        
+
         // Stability score: 1/(1 + 1500/1000) = 1/2.5 = 0.4
         let expected_stability = 1.0 / (1.0 + 1500.0 / 1000.0);
         assert!(features[34] > 0.0 && features[34] <= 1.0); // Should be in 0-1 range
@@ -3027,26 +3084,26 @@ mod tests {
         };
 
         let features = CatBoostMLClassifier::process_to_features_optimized(&process, false);
-        
+
         // Should still have 35 features
         assert_eq!(features.len(), 35);
-        
+
         // Test edge case handling
         // CPU/IO ratio with zero IO should be 0.0
         assert_eq!(features[29], 0.0);
-        
+
         // Memory/CPU ratio with zero CPU should be 0.0
         assert_eq!(features[30], 0.0);
-        
+
         // Normalized uptime with zero uptime should be 0.0
         assert_eq!(features[31], 0.0);
-        
+
         // Interactivity score should be 0.0 (no interactive features)
         assert_eq!(features[32], 0.0);
-        
+
         // Resource intensity should be 0.0 (no resources)
         assert_eq!(features[33], 0.0);
-        
+
         // Stability score with zero context switches should be 1.0
         assert_eq!(features[34], 1.0);
     }
@@ -3060,11 +3117,11 @@ mod tests {
             cmdline: Some("high_load_process --stress".to_string()),
             cpu_share_1s: Some(1.0), // 100% CPU
             cpu_share_10s: Some(0.9),
-            io_read_bytes: Some(100 * 1024 * 1024), // 100 MB
+            io_read_bytes: Some(100 * 1024 * 1024),  // 100 MB
             io_write_bytes: Some(200 * 1024 * 1024), // 200 MB
-            rss_mb: Some(8192), // 8 GB memory
-            swap_mb: Some(4096), // 4 GB swap
-            voluntary_ctx: Some(100000), // High context switches
+            rss_mb: Some(8192),                      // 8 GB memory
+            swap_mb: Some(4096),                     // 4 GB swap
+            voluntary_ctx: Some(100000),             // High context switches
             involuntary_ctx: Some(50000),
             uptime_sec: 86400, // 1 day (max for normalization)
             has_tty: true,
@@ -3079,25 +3136,25 @@ mod tests {
         };
 
         let features = CatBoostMLClassifier::process_to_features_optimized(&process, false);
-        
+
         assert_eq!(features.len(), 35);
-        
+
         // Test high value handling
         // CPU/IO ratio: 1.0 / 300 = 0.0033
         assert!(features[29] > 0.0 && features[29] < 0.1);
-        
+
         // Memory/CPU ratio: 8192 / 1.0 = 8192
         assert!(features[30] > 8000.0 && features[30] < 8200.0);
-        
+
         // Normalized uptime should be 1.0 (capped at 1 day)
         assert_eq!(features[31], 1.0);
-        
+
         // Interactivity score should be 1.0 (all interactive features)
         assert_eq!(features[32], 1.0);
-        
+
         // Resource intensity should be high
         assert!(features[33] > 10.0);
-        
+
         // Stability score should be low due to high context switches
         assert!(features[34] > 0.0 && features[34] < 0.1);
     }
@@ -3127,7 +3184,7 @@ mod tests {
 
         let features = classifier.process_to_features(&process);
         assert_eq!(features.len(), 50); // Enhanced to 50 features
-        
+
         // Проверяем некоторые ключевые фичи
         assert_eq!(features[0], 0.5); // cpu_share_1s
         assert_eq!(features[1], 0.3); // cpu_share_10s
@@ -3160,7 +3217,7 @@ mod tests {
         process.env_ssh = true;
         process.is_audio_client = false;
         process.has_active_stream = false;
-        
+
         // Новые метрики
         process.energy_uj = Some(5000000); // 5000 mJ
         process.power_w = Some(2.5);
@@ -3177,7 +3234,7 @@ mod tests {
 
         let features = classifier.process_to_features(&process);
         assert_eq!(features.len(), 50); // Enhanced to 50 features
-        
+
         // Проверяем новые фичи
         assert_eq!(features[32], 5.0); // energy in mJ (5000000 / 1000000)
         assert_eq!(features[33], 2.5); // power in W
@@ -3198,7 +3255,7 @@ mod tests {
         let classifier = CatBoostMLClassifier::new_test();
         let mut process = create_test_process();
         process.pid = 789;
-        
+
         // Тестируем с нулевыми значениями
         process.cpu_share_1s = Some(0.0);
         process.cpu_share_10s = Some(0.0);
@@ -3212,7 +3269,7 @@ mod tests {
 
         let features = classifier.process_to_features(&process);
         assert_eq!(features.len(), 50);
-        
+
         // Проверяем, что нет паники с нулевыми значениями
         assert_eq!(features[0], 0.0); // cpu_share_1s
         assert_eq!(features[1], 0.0); // cpu_share_10s
@@ -3225,7 +3282,7 @@ mod tests {
         let classifier = CatBoostMLClassifier::new_test();
         let mut process = create_test_process();
         process.pid = 999;
-        
+
         // Тестируем с максимальными значениями
         process.cpu_share_1s = Some(1.0);
         process.cpu_share_10s = Some(1.0);
@@ -3239,7 +3296,7 @@ mod tests {
 
         let features = classifier.process_to_features(&process);
         assert_eq!(features.len(), 50);
-        
+
         // Проверяем, что нет паники с максимальными значениями
         assert_eq!(features[0], 1.0); // cpu_share_1s
         assert_eq!(features[1], 1.0); // cpu_share_10s
@@ -3271,10 +3328,10 @@ mod tests {
         // Вызываем дважды для проверки кэширования
         let features1 = classifier.process_to_features(&process);
         let features2 = classifier.process_to_features(&process);
-        
+
         assert_eq!(features1.len(), 50);
         assert_eq!(features2.len(), 50);
-        
+
         // Проверяем, что результаты идентичны
         for i in 0..features1.len() {
             assert_eq!(features1[i], features2[i], "Features differ at index {}", i);
@@ -3286,7 +3343,7 @@ mod tests {
         // Тестируем интеграцию расширенных фич с ML классификацией
         let classifier = CatBoostMLClassifier::new_test();
         let mut process = create_test_process();
-        
+
         // Устанавливаем различные типы процессов
         process.has_gui_window = true;
         process.is_focused_window = true;
@@ -3297,10 +3354,10 @@ mod tests {
         process.gpu_utilization = Some(0.9);
 
         let features = classifier.process_to_features(&process);
-        
+
         // Проверяем, что все фичи присутствуют
         assert_eq!(features.len(), 50);
-        
+
         // Проверяем ключевые фичи
         assert!(features[0] > 0.0); // CPU usage
         assert!(features[8] > 0.0); // Memory
@@ -3314,19 +3371,19 @@ mod tests {
         // Тестируем масштабирование фич
         let classifier = CatBoostMLClassifier::new_test();
         let mut process = create_test_process();
-        
+
         // Устанавливаем экстремальные значения
         process.cpu_share_1s = Some(1.0);
         process.rss_mb = Some(10000); // 10 GB
         process.uptime_sec = 86400 * 30; // 30 days
-        
+
         let features = classifier.process_to_features(&process);
-        
+
         // Проверяем, что фичи не вызывают переполнения
         assert!(features[0].is_finite()); // CPU
         assert!(features[8].is_finite()); // Memory
         assert!(features[16].is_finite()); // Uptime
-        
+
         // Проверяем нормализованные фичи
         assert!(features[31] >= 0.0 && features[31] <= 1.0); // Normalized uptime
     }

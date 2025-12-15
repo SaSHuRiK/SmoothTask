@@ -43,10 +43,10 @@ use crate::logging::snapshots::{
 };
 use crate::metrics::audio::{AudioIntrospector, AudioMetrics, StaticAudioIntrospector};
 use crate::metrics::audio_pipewire::PipeWireIntrospector;
+use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
 use crate::metrics::input::{EvdevInputTracker, InputMetrics, InputTracker};
 use crate::metrics::process::collect_process_metrics;
 use crate::metrics::scheduling_latency::{LatencyCollector, LatencyProbe};
-use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
 use crate::metrics::system::{
     collect_system_metrics, CpuTimes, DiskMetrics, HardwareMetrics, LoadAvg, MemoryInfo,
     NetworkMetrics, PowerMetrics, PressureMetrics, ProcPaths, SystemMetrics, TemperatureMetrics,
@@ -817,7 +817,7 @@ pub async fn run_daemon(
         // В текущей реализации конфигурация не хранит свой путь, поэтому это резервный вариант
         "smoothtask.yml".to_string()
     };
-    
+
     let config_watcher = ConfigWatcher::new(&config_path).with_context(|| {
         format!(
             "Failed to initialize config watcher for file: {}",
@@ -1643,9 +1643,10 @@ pub async fn collect_snapshot(
 
     // Сбор расширенных метрик аппаратных сенсоров
     let extended_sensors = tokio::task::spawn_blocking(|| {
-        let monitor = crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsMonitor::new(
-            crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default()
-        );
+        let monitor =
+            crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsMonitor::new(
+                crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default(),
+            );
         monitor.collect_extended_sensors()
     })
     .await

@@ -48,7 +48,7 @@ impl ConfigAutoReload {
     pub fn new(config_path: impl Into<String>, initial_config: Config) -> Result<Self> {
         let config_watcher = ConfigWatcher::new(config_path.into())?;
         let (reload_sender, reload_receiver) = watch::channel(false);
-        
+
         Ok(Self {
             current_config: Arc::new(RwLock::new(initial_config)),
             config_watcher,
@@ -86,14 +86,15 @@ impl ConfigAutoReload {
         let current_config = self.current_config.clone();
         let is_reloading = self.is_reloading.clone();
 
-        tokio::spawn(async move { 
+        tokio::spawn(async move {
             Self::auto_reload_task(
-                config_path, 
-                change_receiver, 
-                reload_sender, 
-                current_config, 
-                is_reloading
-            ).await 
+                config_path,
+                change_receiver,
+                reload_sender,
+                current_config,
+                is_reloading,
+            )
+            .await
         })
     }
 
@@ -121,7 +122,7 @@ impl ConfigAutoReload {
             // Проверяем, есть ли изменения в конфигурационном файле
             if *change_receiver.borrow() {
                 tracing::info!("Config file change detected, initiating reload...");
-                
+
                 // Проверяем, что перезагрузка не выполняется в данный момент
                 {
                     let reloading = *is_reloading.read().await;
@@ -140,13 +141,15 @@ impl ConfigAutoReload {
                 match Self::reload_config(&config_path).await {
                     Ok(new_config) => {
                         tracing::info!("Config reloaded successfully");
-                        
+
                         // Обновляем текущую конфигурацию
                         *current_config.write().await = new_config;
-                        
+
                         // Отправляем уведомление о перезагрузке
                         if reload_sender.send(true).is_err() {
-                            tracing::warn!("Failed to send reload notification - no active receivers");
+                            tracing::warn!(
+                                "Failed to send reload notification - no active receivers"
+                            );
                         }
                     }
                     Err(e) => {
@@ -157,7 +160,7 @@ impl ConfigAutoReload {
 
                 // Сбрасываем флаг перезагрузки
                 *is_reloading.write().await = false;
-                
+
                 // Сбрасываем флаг изменения
                 change_receiver.borrow_and_update();
             }
@@ -176,7 +179,7 @@ impl ConfigAutoReload {
     /// `Result<Config>` - Загруженная конфигурация или ошибка.
     async fn reload_config(config_path: &str) -> Result<Config> {
         let path = Path::new(config_path);
-        
+
         // Проверяем, что файл существует
         if !path.exists() {
             anyhow::bail!("Config file does not exist during reload: {}", config_path);
@@ -191,11 +194,15 @@ impl ConfigAutoReload {
             .context("Failed to parse config file during reload")?;
 
         // Валидация конфигурации
-        config.validate()
+        config
+            .validate()
             .context("Config validation failed during reload")?;
 
-        tracing::info!("Successfully loaded and validated new config from {}", config_path);
-        
+        tracing::info!(
+            "Successfully loaded and validated new config from {}",
+            config_path
+        );
+
         Ok(config)
     }
 
@@ -226,8 +233,8 @@ impl ConfigAutoReload {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     #[test]
     fn test_config_auto_reload_creation() {
@@ -251,8 +258,9 @@ mod tests {
         std::fs::write(&file_path, config_content).expect("write config");
 
         let initial_config: Config = serde_yaml::from_str(config_content).expect("parse config");
-        
-        let auto_reload = ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
+
+        let auto_reload =
+            ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
         assert_eq!(auto_reload.config_watcher.config_path(), file_path);
     }
 
@@ -278,9 +286,10 @@ mod tests {
         std::fs::write(&file_path, config_content).expect("write config");
 
         let initial_config: Config = serde_yaml::from_str(config_content).expect("parse config");
-        
-        let auto_reload = ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
-        
+
+        let auto_reload =
+            ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
+
         let current_config = auto_reload.get_current_config().await;
         assert_eq!(current_config.polling_interval_ms, 1000);
         assert_eq!(current_config.max_candidates, 10);
@@ -308,8 +317,9 @@ mod tests {
         std::fs::write(&file_path, config_content).expect("write config");
 
         let initial_config: Config = serde_yaml::from_str(config_content).expect("parse config");
-        
-        let auto_reload = ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
+
+        let auto_reload =
+            ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
         let receiver = auto_reload.reload_receiver();
 
         // Проверяем, что изначально нет уведомлений о перезагрузке
@@ -338,8 +348,9 @@ mod tests {
         std::fs::write(&file_path, config_content).expect("write config");
 
         let initial_config: Config = serde_yaml::from_str(config_content).expect("parse config");
-        
-        let auto_reload = ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
+
+        let auto_reload =
+            ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
         let handle = auto_reload.start_watching();
 
         // Даём задаче немного времени для запуска
@@ -377,9 +388,10 @@ mod tests {
         std::fs::write(&file_path, config_content).expect("write config");
 
         let initial_config: Config = serde_yaml::from_str(config_content).expect("parse config");
-        
-        let auto_reload = ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
-        
+
+        let auto_reload =
+            ConfigAutoReload::new(&file_path, initial_config).expect("auto reload creation");
+
         // Проверяем, что изначально перезагрузка не выполняется
         assert!(!auto_reload.is_reloading().await);
     }
@@ -408,7 +420,7 @@ mod tests {
         // Пытаемся перезагрузить конфигурацию
         let result = ConfigAutoReload::reload_config(&file_path).await;
         assert!(result.is_ok());
-        
+
         let loaded_config = result.unwrap();
         assert_eq!(loaded_config.polling_interval_ms, 1000);
         assert_eq!(loaded_config.max_candidates, 10);

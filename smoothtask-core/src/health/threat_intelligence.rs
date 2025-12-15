@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 /// Тип угрозы.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ThreatType {
     /// Вредоносное ПО
     #[serde(rename = "malware")]
@@ -68,7 +68,7 @@ impl std::fmt::Display for ThreatType {
 }
 
 /// Уровень опасности угрозы.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ThreatSeverity {
     /// Низкий уровень опасности
     #[serde(rename = "low")]
@@ -142,7 +142,7 @@ impl Default for ThreatIntel {
 }
 
 /// Тип индикатора угрозы.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ThreatIndicatorType {
     /// IP адрес
     #[serde(rename = "ip")]
@@ -384,6 +384,9 @@ pub enum ThreatIntelligenceStatus {
     /// Система не инициализирована
     #[serde(rename = "not_initialized")]
     NotInitialized,
+    /// Система инициализируется
+    #[serde(rename = "initializing")]
+    Initializing,
     /// Система инициализирована
     #[serde(rename = "initialized")]
     Initialized,
@@ -1270,7 +1273,7 @@ impl ThreatIntelligenceImpl {
             if !new_keys.contains(threat_id) {
                 // Проверяем, не устарела ли угроза
                 let age = current_time.signed_duration_since(threat.last_updated);
-                if age > self.config.cache_ttl {
+                if age.num_seconds() > self.config.cache_ttl.as_secs() as i64 {
                     to_remove.push(threat_id.clone());
                 }
             }
@@ -1288,11 +1291,14 @@ impl ThreatIntelligenceImpl {
             threats.sort_by_key(|(_, threat)| threat.last_updated);
 
             let to_remove_count = database.len() - self.config.max_threats;
-            for i in 0..to_remove_count {
-                if let Some((threat_id, _)) = threats.get(i) {
-                    database.remove(threat_id);
-                    threats_removed += 1;
-                }
+            let keys_to_remove: Vec<String> = threats.iter()
+                .take(to_remove_count)
+                .map(|(threat_id, _)| (*threat_id).clone())
+                .collect();
+            
+            for threat_id in keys_to_remove {
+                database.remove(&threat_id);
+                threats_removed += 1;
             }
         }
 

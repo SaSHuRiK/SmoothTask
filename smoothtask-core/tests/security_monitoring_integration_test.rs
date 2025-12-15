@@ -62,20 +62,32 @@ async fn test_security_event_management() {
     assert_eq!(status.event_history[0].event_id, "test-event-1");
 
     // Resolve the event
-    security_monitor.resolve_security_event("test-event-1").await.unwrap();
+    security_monitor
+        .resolve_security_event("test-event-1")
+        .await
+        .unwrap();
 
     // Verify event was resolved
     let status = security_monitor.get_security_status().await.unwrap();
     assert_eq!(status.event_history.len(), 1);
-    assert_eq!(status.event_history[0].status, SecurityEventStatus::Analyzed);
+    assert_eq!(
+        status.event_history[0].status,
+        SecurityEventStatus::Analyzed
+    );
 
     // Mark as false positive
-    security_monitor.mark_event_as_false_positive("test-event-1").await.unwrap();
+    security_monitor
+        .mark_event_as_false_positive("test-event-1")
+        .await
+        .unwrap();
 
     // Verify event was marked as false positive
     let status = security_monitor.get_security_status().await.unwrap();
     assert_eq!(status.event_history.len(), 1);
-    assert_eq!(status.event_history[0].status, SecurityEventStatus::FalsePositive);
+    assert_eq!(
+        status.event_history[0].status,
+        SecurityEventStatus::FalsePositive
+    );
 
     // Clear event history
     security_monitor.clear_event_history().await.unwrap();
@@ -133,29 +145,42 @@ async fn test_suspicious_behavior_patterns() {
     // Create test behavior with high values
     let mut behavior = ProcessBehavior {
         pid: 1234,
-        child_count: 15, // Above threshold
-        thread_count: 150, // Above threshold
+        child_count: 15,       // Above threshold
+        thread_count: 150,     // Above threshold
         open_files_count: 150, // Above threshold
         network_connections_count: 0,
         start_time: None,
         parent_pid: None,
         parent_name: Some("xmrig".to_string()), // Suspicious parent
-        cpu_usage: 95.0, // Above threshold
-        memory_usage: 85.0, // Above threshold
+        cpu_usage: 95.0,                        // Above threshold
+        memory_usage: 85.0,                     // Above threshold
         child_creation_rate: 0.0,
     };
 
     // Test pattern detection
-    let patterns = security_monitor.check_suspicious_behavior_patterns(&behavior).await.unwrap();
+    let patterns = security_monitor
+        .check_suspicious_behavior_patterns(&behavior)
+        .await
+        .unwrap();
 
     // Should detect multiple patterns
     assert!(!patterns.is_empty());
-    assert!(patterns.iter().any(|p| p.pattern_type == "high_child_process_count"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "high_thread_count"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "high_open_files_count"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "suspicious_parent_process"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "high_child_process_count"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "high_thread_count"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "high_open_files_count"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "suspicious_parent_process"));
     assert!(patterns.iter().any(|p| p.pattern_type == "high_cpu_usage"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "high_memory_usage"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "high_memory_usage"));
 
     println!("✅ Suspicious behavior patterns test passed");
 }
@@ -168,29 +193,44 @@ async fn test_resource_anomaly_detection() {
     // Create test behavior with anomalous values
     let mut behavior = ProcessBehavior {
         pid: 1234,
-        child_count: 25, // Above threshold
-        thread_count: 250, // Above threshold
+        child_count: 25,       // Above threshold
+        thread_count: 250,     // Above threshold
         open_files_count: 250, // Above threshold
         network_connections_count: 0,
         start_time: None,
         parent_pid: None,
         parent_name: None,
-        cpu_usage: 96.0, // Above threshold
-        memory_usage: 86.0, // Above threshold
+        cpu_usage: 96.0,          // Above threshold
+        memory_usage: 86.0,       // Above threshold
         child_creation_rate: 6.0, // Above threshold
     };
 
     // Test anomaly detection
-    let patterns = security_monitor.detect_resource_anomaly_patterns(&behavior).await.unwrap();
+    let patterns = security_monitor
+        .detect_resource_anomaly_patterns(&behavior)
+        .await
+        .unwrap();
 
     // Should detect multiple anomaly patterns
     assert!(!patterns.is_empty());
-    assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_child_process_count"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_thread_count"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_open_files_count"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_cpu_usage"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_memory_usage"));
-    assert!(patterns.iter().any(|p| p.pattern_type == "anomalous_child_creation_rate"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "anomalous_child_process_count"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "anomalous_thread_count"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "anomalous_open_files_count"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "anomalous_cpu_usage"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "anomalous_memory_usage"));
+    assert!(patterns
+        .iter()
+        .any(|p| p.pattern_type == "anomalous_child_creation_rate"));
 
     println!("✅ Resource anomaly detection test passed");
 }
@@ -202,7 +242,7 @@ async fn test_security_score_calculation() {
 
     // Create security monitor with some events
     let mut security_monitor_state = SecurityMonitor::default();
-    
+
     // Add some unresolved events
     let event1 = SecurityEvent {
         event_id: "test-event-1".to_string(),
@@ -217,7 +257,7 @@ async fn test_security_score_calculation() {
         recommendations: None,
         resolved_time: None,
     };
-    
+
     let event2 = SecurityEvent {
         event_id: "test-event-2".to_string(),
         timestamp: Utc::now(),
@@ -231,17 +271,17 @@ async fn test_security_score_calculation() {
         recommendations: None,
         resolved_time: None,
     };
-    
+
     security_monitor_state.event_history.push(event1);
     security_monitor_state.event_history.push(event2);
 
     // Calculate security score
     let score = security_monitor.calculate_security_score(&security_monitor_state);
-    
+
     // Score should be reduced due to unresolved events
     assert!(score < 100.0);
     assert!(score >= 0.0);
-    
+
     // With 1 critical and 1 high event, score should be around 70 (100 - 20 - 10)
     assert!(score >= 60.0);
     assert!(score <= 80.0);
@@ -273,7 +313,7 @@ async fn test_security_status_determination() {
         recommendations: None,
         resolved_time: None,
     };
-    
+
     security_monitor_state.event_history.push(event);
     let status = security_monitor.determine_overall_status(&security_monitor_state);
     assert_eq!(status, SecurityStatus::Warning);
@@ -292,7 +332,7 @@ async fn test_security_status_determination() {
         recommendations: None,
         resolved_time: None,
     };
-    
+
     security_monitor_state.event_history.push(event);
     let status = security_monitor.determine_overall_status(&security_monitor_state);
     assert_eq!(status, SecurityStatus::PotentialThreat);
@@ -311,7 +351,7 @@ async fn test_security_status_determination() {
         recommendations: None,
         resolved_time: None,
     };
-    
+
     security_monitor_state.event_history.push(event);
     let status = security_monitor.determine_overall_status(&security_monitor_state);
     assert_eq!(status, SecurityStatus::CriticalThreat);

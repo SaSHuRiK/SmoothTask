@@ -19,7 +19,7 @@ fn benchmark_performance_profiler_overhead(c: &mut Criterion) {
     c.bench_function("performance_profiler_overhead", |b| {
         b.iter(|| {
             let profiler = PerformanceProfiler::new();
-            
+
             // Simulate profiling multiple components
             for i in 0..10 {
                 let timer = profiler.start_profiling(&format!("component_{}", i));
@@ -27,7 +27,7 @@ fn benchmark_performance_profiler_overhead(c: &mut Criterion) {
                 std::thread::sleep(Duration::from_micros(1));
                 timer.stop();
             }
-            
+
             // Get metrics
             let metrics = profiler.get_all_metrics();
             black_box(metrics);
@@ -38,7 +38,7 @@ fn benchmark_performance_profiler_overhead(c: &mut Criterion) {
 /// Benchmark for critical path analysis
 fn benchmark_critical_path_analysis(c: &mut Criterion) {
     let optimizer = CriticalPathOptimizer::new();
-    
+
     // Create test metrics with varying performance characteristics
     let mut metrics = HashMap::new();
     for i in 0..100 {
@@ -47,14 +47,17 @@ fn benchmark_critical_path_analysis(c: &mut Criterion) {
         } else {
             Duration::from_micros(100) // Fast components
         };
-        
-        metrics.insert(format!("component_{}", i), PerformanceMetrics {
-            execution_time,
-            invocations: if i % 5 == 0 { 100 } else { 10 }, // Varying invocation counts
-            cache_hits: if i % 3 == 0 { 1000 } else { 100 },
-            cache_misses: if i % 3 == 0 { 100 } else { 10 },
-            ..Default::default()
-        });
+
+        metrics.insert(
+            format!("component_{}", i),
+            PerformanceMetrics {
+                execution_time,
+                invocations: if i % 5 == 0 { 100 } else { 10 }, // Varying invocation counts
+                cache_hits: if i % 3 == 0 { 1000 } else { 100 },
+                cache_misses: if i % 3 == 0 { 100 } else { 10 },
+                ..Default::default()
+            },
+        );
     }
 
     c.bench_function("critical_path_analysis", |b| {
@@ -70,19 +73,22 @@ fn benchmark_optimization_strategy_application(c: &mut Criterion) {
     let mut optimizer = PerformanceOptimizer::new();
     let critical_path_optimizer = CriticalPathOptimizer::new();
     optimizer.add_strategy(critical_path_optimizer);
-    
+
     // Create test metrics
     let mut metrics = HashMap::new();
     for i in 0..50 {
-        metrics.insert(format!("component_{}", i), PerformanceMetrics {
-            execution_time: if i % 5 == 0 {
-                Duration::from_millis(50) // Some slow components
-            } else {
-                Duration::from_micros(50) // Mostly fast components
+        metrics.insert(
+            format!("component_{}", i),
+            PerformanceMetrics {
+                execution_time: if i % 5 == 0 {
+                    Duration::from_millis(50) // Some slow components
+                } else {
+                    Duration::from_micros(50) // Mostly fast components
+                },
+                invocations: 10,
+                ..Default::default()
             },
-            invocations: 10,
-            ..Default::default()
-        });
+        );
     }
 
     c.bench_function("optimization_strategy_application", |b| {
@@ -98,37 +104,49 @@ fn benchmark_performance_optimizer_realistic(c: &mut Criterion) {
     let mut optimizer = PerformanceOptimizer::new();
     let critical_path_optimizer = CriticalPathOptimizer::new();
     optimizer.add_strategy(critical_path_optimizer);
-    
+
     // Create realistic test metrics
     let mut metrics = HashMap::new();
-    
+
     // System metrics components
-    metrics.insert("system_cpu_metrics".to_string(), PerformanceMetrics {
-        execution_time: Duration::from_micros(500),
-        invocations: 100,
-        ..Default::default()
-    });
-    
-    metrics.insert("system_memory_metrics".to_string(), PerformanceMetrics {
-        execution_time: Duration::from_micros(300),
-        invocations: 100,
-        ..Default::default()
-    });
-    
+    metrics.insert(
+        "system_cpu_metrics".to_string(),
+        PerformanceMetrics {
+            execution_time: Duration::from_micros(500),
+            invocations: 100,
+            ..Default::default()
+        },
+    );
+
+    metrics.insert(
+        "system_memory_metrics".to_string(),
+        PerformanceMetrics {
+            execution_time: Duration::from_micros(300),
+            invocations: 100,
+            ..Default::default()
+        },
+    );
+
     // Process metrics components
-    metrics.insert("process_collection".to_string(), PerformanceMetrics {
-        execution_time: Duration::from_millis(5),
-        invocations: 50,
-        ..Default::default()
-    });
-    
+    metrics.insert(
+        "process_collection".to_string(),
+        PerformanceMetrics {
+            execution_time: Duration::from_millis(5),
+            invocations: 50,
+            ..Default::default()
+        },
+    );
+
     // Network metrics components
-    metrics.insert("network_interface_metrics".to_string(), PerformanceMetrics {
-        execution_time: Duration::from_micros(800),
-        invocations: 100,
-        ..Default::default()
-    });
-    
+    metrics.insert(
+        "network_interface_metrics".to_string(),
+        PerformanceMetrics {
+            execution_time: Duration::from_micros(800),
+            invocations: 100,
+            ..Default::default()
+        },
+    );
+
     // Add profiler to optimizer
     let profiler = optimizer.profiler();
     for (component_name, _) in &metrics {
@@ -151,13 +169,16 @@ fn benchmark_critical_path_optimizer_thresholds(c: &mut Criterion) {
     // Create test metrics
     let mut metrics = HashMap::new();
     for i in 0..100 {
-        metrics.insert(format!("component_{}", i), PerformanceMetrics {
-            execution_time: Duration::from_micros(100 + i * 10),
-            invocations: 10,
-            cache_hits: 100,
-            cache_misses: 10,
-            ..Default::default()
-        });
+        metrics.insert(
+            format!("component_{}", i),
+            PerformanceMetrics {
+                execution_time: Duration::from_micros(100 + i * 10),
+                invocations: 10,
+                cache_hits: 100,
+                cache_misses: 10,
+                ..Default::default()
+            },
+        );
     }
 
     c.bench_function("critical_path_optimizer_default_thresholds", |b| {
@@ -184,7 +205,7 @@ fn benchmark_critical_path_optimizer_thresholds(c: &mut Criterion) {
 criterion_group! {
     name = performance_optimizer_benches;
     config = Criterion::default().sample_size(10);
-    targets = 
+    targets =
         benchmark_performance_profiler_overhead,
         benchmark_critical_path_analysis,
         benchmark_optimization_strategy_application,

@@ -2,7 +2,7 @@
 /* Copyright (c) 2024 SmoothTask Project */
 
 //! Модуль для пакетной обработки метрик
-//! 
+//!
 //! Этот модуль предоставляет функциональность для оптимизации производительности
 //! системы мониторинга через пакетную обработку метрик. Основные возможности:
 //! - Пакетный сбор метрик с нескольких источников
@@ -137,7 +137,7 @@ impl BatchProcessor {
             "Creating batch processor with config: max_batch_size={}, parallel_processing={}",
             config.max_batch_size, config.enable_parallel_processing
         );
-        
+
         Self {
             config,
             cache: HashMap::new(),
@@ -154,10 +154,10 @@ impl BatchProcessor {
             priority,
             flags: BatchFlags::default(),
         };
-        
+
         debug!("Created new metrics batch: {}", batch_id);
         self.statistics.batches_created += 1;
-        
+
         batch
     }
 
@@ -166,7 +166,7 @@ impl BatchProcessor {
         let metric_type = metric.metric_type.clone();
         batch.metrics.push(metric);
         debug!("Added metric to batch {}: {}", batch.batch_id, metric_type);
-        
+
         self.statistics.metrics_added += 1;
     }
 
@@ -174,43 +174,49 @@ impl BatchProcessor {
     pub fn process_batch(&mut self, batch: MetricsBatch) -> Result<BatchProcessingResult> {
         info!(
             "Processing batch {} with {} metrics, priority: {:?}",
-            batch.batch_id, batch.metrics.len(), batch.priority
+            batch.batch_id,
+            batch.metrics.len(),
+            batch.priority
         );
-        
+
         let start_time = Instant::now();
-        
+
         // Проверяем размер пакета
         if batch.metrics.len() > self.config.max_batch_size {
             warn!(
                 "Batch {} exceeds maximum size: {} > {}",
-                batch.batch_id, batch.metrics.len(), self.config.max_batch_size
+                batch.batch_id,
+                batch.metrics.len(),
+                self.config.max_batch_size
             );
         }
-        
+
         // Обрабатываем метрики в пакете
         let mut results = Vec::new();
         for metric in &batch.metrics {
             let result = self.process_metric(metric);
             results.push(result);
         }
-        
+
         let processing_time = start_time.elapsed();
-        
+
         // Обновляем статистику
         self.statistics.batches_processed += 1;
         self.statistics.metrics_processed += batch.metrics.len() as u64;
         self.statistics.total_processing_time += processing_time;
-        
+
         // Кэшируем результат если нужно
         if self.config.enable_caching {
             self.cache_result(&batch.batch_id, &results);
         }
-        
+
         info!(
             "Batch {} processed in {:?}, {} metrics processed",
-            batch.batch_id, processing_time, batch.metrics.len()
+            batch.batch_id,
+            processing_time,
+            batch.metrics.len()
         );
-        
+
         Ok(BatchProcessingResult {
             batch_id: batch.batch_id,
             metrics_processed: batch.metrics.len(),
@@ -225,10 +231,10 @@ impl BatchProcessor {
             "Processing metric: {} from source {}",
             metric.metric_type, metric.source_id
         );
-        
+
         // Здесь может быть логика обработки метрики
         // Например, десериализация, валидация, преобразование и т.д.
-        
+
         MetricProcessingResult {
             metric_type: metric.metric_type.clone(),
             source_id: metric.source_id.clone(),
@@ -243,16 +249,20 @@ impl BatchProcessor {
         if self.cache.len() >= self.config.max_cache_size {
             // Очищаем кэш если он переполнен
             self.cache.clear();
-            warn!("Cache cleared due to size limit: {}", self.config.max_cache_size);
+            warn!(
+                "Cache cleared due to size limit: {}",
+                self.config.max_cache_size
+            );
         }
-        
+
         let _cached_batch = CachedBatch {
             _batch_id: batch_id.to_string(),
             _timestamp: Instant::now(),
             _results: results.to_vec(),
         };
-        
-        self.cache.insert(batch_id.to_string(), MetricsBatch::default()); // Упрощенно
+
+        self.cache
+            .insert(batch_id.to_string(), MetricsBatch::default()); // Упрощенно
         debug!("Cached batch results: {}", batch_id);
     }
 
@@ -359,10 +369,11 @@ impl BatchProcessorStatistics {
     /// Рассчитать среднее время обработки
     pub fn calculate_averages(&mut self) {
         if self.batches_processed > 0 {
-            self.average_batch_processing_time = 
-                Duration::from_micros(self.total_processing_time.as_micros() as u64 / self.batches_processed);
+            self.average_batch_processing_time = Duration::from_micros(
+                self.total_processing_time.as_micros() as u64 / self.batches_processed,
+            );
         }
-        
+
         if self.metrics_processed > 0 {
             let total_metric_time = self.total_processing_time.as_micros() as u64;
             let avg_metric_micros = total_metric_time / self.metrics_processed;
@@ -389,7 +400,7 @@ mod tests {
     fn test_batch_creation() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         let batch = processor.create_batch("test_batch_1", BatchPriority::Normal);
         assert_eq!(batch.batch_id, "test_batch_1");
         assert_eq!(batch.metrics.len(), 0);
@@ -400,9 +411,9 @@ mod tests {
     fn test_add_metric_to_batch() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         let mut batch = processor.create_batch("test_batch_2", BatchPriority::High);
-        
+
         let metric = MetricItem {
             metric_type: "cpu_usage".to_string(),
             source_id: "cpu0".to_string(),
@@ -410,7 +421,7 @@ mod tests {
             timestamp: Instant::now(),
             priority: MetricPriority::Normal,
         };
-        
+
         processor.add_metric_to_batch(&mut batch, metric);
         assert_eq!(batch.metrics.len(), 1);
         assert_eq!(batch.metrics[0].metric_type, "cpu_usage");
@@ -420,9 +431,9 @@ mod tests {
     fn test_batch_processing() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         let mut batch = processor.create_batch("test_batch_3", BatchPriority::Normal);
-        
+
         // Добавляем несколько метрик
         for i in 0..5 {
             let metric = MetricItem {
@@ -434,7 +445,7 @@ mod tests {
             };
             processor.add_metric_to_batch(&mut batch, metric);
         }
-        
+
         // Обрабатываем пакет
         let result = processor.process_batch(batch);
         assert!(result.is_ok());
@@ -447,14 +458,14 @@ mod tests {
     fn test_batch_processor_statistics() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         let stats = processor.get_statistics();
         assert_eq!(stats.batches_created, 0);
         assert_eq!(stats.metrics_added, 0);
-        
+
         // Создаем пакет и добавляем метрики
         let mut batch = processor.create_batch("test_batch_4", BatchPriority::Low);
-        
+
         let metric = MetricItem {
             metric_type: "test_metric".to_string(),
             source_id: "test_source".to_string(),
@@ -462,9 +473,9 @@ mod tests {
             timestamp: Instant::now(),
             priority: MetricPriority::Low,
         };
-        
+
         processor.add_metric_to_batch(&mut batch, metric);
-        
+
         let stats = processor.get_statistics();
         assert_eq!(stats.batches_created, 1);
         assert_eq!(stats.metrics_added, 1);
@@ -474,13 +485,13 @@ mod tests {
     fn test_performance_optimization() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         let original_batch_size = processor.config.max_batch_size;
-        
+
         // Тестируем оптимизацию при высокой нагрузке
         processor.optimize_performance(0.9);
         assert!(processor.config.max_batch_size < original_batch_size);
-        
+
         // Тестируем оптимизацию при низкой нагрузке
         processor.optimize_performance(0.3);
         assert!(processor.config.max_batch_size > original_batch_size);
@@ -490,7 +501,7 @@ mod tests {
     fn test_cache_management() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         // Добавляем данные в кэш
         let mut batch = processor.create_batch("test_batch_5", BatchPriority::Normal);
         let metric = MetricItem {
@@ -502,10 +513,10 @@ mod tests {
         };
         processor.add_metric_to_batch(&mut batch, metric);
         processor.process_batch(batch).unwrap();
-        
+
         // Проверяем что кэш не пустой
         assert!(!processor.cache.is_empty());
-        
+
         // Очищаем кэш
         processor.clear_cache();
         assert!(processor.cache.is_empty());
@@ -515,12 +526,12 @@ mod tests {
     fn test_batch_priority_handling() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         // Создаем пакеты с разными приоритетами
         let high_priority_batch = processor.create_batch("high_priority", BatchPriority::High);
         let normal_batch = processor.create_batch("normal_priority", BatchPriority::Normal);
         let low_priority_batch = processor.create_batch("low_priority", BatchPriority::Low);
-        
+
         assert_eq!(high_priority_batch.priority, BatchPriority::High);
         assert_eq!(normal_batch.priority, BatchPriority::Normal);
         assert_eq!(low_priority_batch.priority, BatchPriority::Low);
@@ -530,11 +541,16 @@ mod tests {
     fn test_metric_priority_handling() {
         let config = BatchProcessorConfig::default();
         let mut processor = BatchProcessor::new(config);
-        
+
         let mut batch = processor.create_batch("priority_test", BatchPriority::Normal);
-        
+
         // Добавляем метрики с разными приоритетами
-        for priority in &[MetricPriority::Low, MetricPriority::Normal, MetricPriority::High, MetricPriority::Critical] {
+        for priority in &[
+            MetricPriority::Low,
+            MetricPriority::Normal,
+            MetricPriority::High,
+            MetricPriority::Critical,
+        ] {
             let metric = MetricItem {
                 metric_type: format!("metric_{:?}", priority),
                 source_id: "priority_source".to_string(),
@@ -544,7 +560,7 @@ mod tests {
             };
             processor.add_metric_to_batch(&mut batch, metric);
         }
-        
+
         assert_eq!(batch.metrics.len(), 4);
         assert_eq!(batch.metrics[0].priority, MetricPriority::Low);
         assert_eq!(batch.metrics[3].priority, MetricPriority::Critical);

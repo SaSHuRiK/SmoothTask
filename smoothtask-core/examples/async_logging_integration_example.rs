@@ -38,9 +38,18 @@ fn main() -> Result<()> {
     });
 
     println!("Created async logging integration:");
-    println!("  Metrics log path: {}", integration.metrics_log_path().display());
-    println!("  Classify log path: {}", integration.classify_log_path().display());
-    println!("  Policy log path: {}", integration.policy_log_path().display());
+    println!(
+        "  Metrics log path: {}",
+        integration.metrics_log_path().display()
+    );
+    println!(
+        "  Classify log path: {}",
+        integration.classify_log_path().display()
+    );
+    println!(
+        "  Policy log path: {}",
+        integration.policy_log_path().display()
+    );
     println!();
 
     // Пример 2: Использование логгера метрик
@@ -154,19 +163,19 @@ fn main() -> Result<()> {
     println!("=== Example 7: Using Utility Functions ===");
     runtime.block_on(async {
         // Создание логгера метрик с помощью утилиты
-        let metrics_logger = create_default_metrics_logger(log_dir)
-            .expect("Failed to create metrics logger");
+        let metrics_logger =
+            create_default_metrics_logger(log_dir).expect("Failed to create metrics logger");
 
         // Создание логгера классификации с помощью утилиты
-        let classify_logger = create_default_classify_logger(log_dir)
-            .expect("Failed to create classify logger");
+        let classify_logger =
+            create_default_classify_logger(log_dir).expect("Failed to create classify logger");
 
         // Создание логгера политик с помощью утилиты
-        let policy_logger = create_default_policy_logger(log_dir)
-            .expect("Failed to create policy logger");
+        let policy_logger =
+            create_default_policy_logger(log_dir).expect("Failed to create policy logger");
 
         println!("Successfully created loggers using utility functions");
-        
+
         // Использование созданных логгеров
         metrics_logger
             .log_metrics("Utility function test: metrics logger")

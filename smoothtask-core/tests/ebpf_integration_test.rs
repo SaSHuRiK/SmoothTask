@@ -117,12 +117,15 @@ fn test_application_performance_monitoring_limit() {
     assert!(performance_stats.is_ok());
 
     let stats = performance_stats.unwrap();
-    
+
     // Проверяем, что статистика может быть собрана (даже если пустая)
     if let Some(performance_details) = stats {
         // В реальной системе с eBPF поддержкой это будет содержать данные
         // В тестовой среде это может быть пустым вектором
-        assert!(performance_details.len() <= 20480, "Process limit should be 20480");
+        assert!(
+            performance_details.len() <= 20480,
+            "Process limit should be 20480"
+        );
     }
 }
 
@@ -130,7 +133,7 @@ fn test_application_performance_monitoring_limit() {
 fn test_ebpf_config_validation() {
     // Тестируем валидацию конфигурации eBPF
     let config = EbpfConfig::default();
-    
+
     // Проверяем, что конфигурация имеет разумные значения по умолчанию
     assert!(config.enable_cpu_metrics);
     assert!(config.enable_memory_metrics);

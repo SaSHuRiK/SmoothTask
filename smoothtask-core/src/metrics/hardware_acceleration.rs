@@ -269,12 +269,12 @@ impl HardwareAccelerationMonitor {
                 metrics.profiles = self.detect_vaapi_profiles()?;
                 metrics.entrypoints = self.detect_vaapi_entrypoints()?;
                 metrics.active_contexts = self.count_active_vaapi_contexts()?;
-                
+
                 // Set some basic usage metrics (would be enhanced with actual monitoring)
                 metrics.usage.active_sessions = metrics.active_contexts;
                 metrics.usage.gpu_utilization = 0.0; // Placeholder
                 metrics.usage.last_activity_timestamp = Some(timestamp);
-                
+
                 break;
             }
         }
@@ -289,10 +289,7 @@ impl HardwareAccelerationMonitor {
     /// Collect VDPAU metrics
     fn collect_vdpau_metrics(&self) -> Result<VdpauMetrics> {
         // Check if VDPAU is available
-        let vdpau_devices = vec![
-            "/dev/dri/card0",
-            "/dev/dri/card1",
-        ];
+        let vdpau_devices = vec!["/dev/dri/card0", "/dev/dri/card1"];
 
         let timestamp = chrono::Utc::now().timestamp() as u64;
         let mut metrics = VdpauMetrics::default();
@@ -304,12 +301,12 @@ impl HardwareAccelerationMonitor {
                 metrics.driver_version = Some(self.read_driver_version(device_path)?);
                 metrics.features = self.detect_vdpau_features()?;
                 metrics.active_sessions = self.count_active_vdpau_sessions()?;
-                
+
                 // Set some basic usage metrics
                 metrics.usage.active_sessions = metrics.active_sessions;
                 metrics.usage.gpu_utilization = 0.0; // Placeholder
                 metrics.usage.last_activity_timestamp = Some(timestamp);
-                
+
                 break;
             }
         }
@@ -325,12 +322,9 @@ impl HardwareAccelerationMonitor {
     fn collect_cuda_metrics(&self) -> Result<CudaMetrics> {
         let timestamp = chrono::Utc::now().timestamp() as u64;
         let mut metrics = CudaMetrics::default();
-        
+
         // Check for CUDA installation
-        let cuda_paths = vec![
-            "/usr/local/cuda",
-            "/usr/lib/cuda",
-        ];
+        let cuda_paths = vec!["/usr/local/cuda", "/usr/lib/cuda"];
 
         let mut found_cuda = false;
         for cuda_path in cuda_paths {
@@ -339,19 +333,19 @@ impl HardwareAccelerationMonitor {
                 metrics.cuda_version = Some(self.read_cuda_version(cuda_path)?);
                 metrics.driver_version = Some(self.read_nvidia_driver_version()?);
                 metrics.device_count = self.count_cuda_devices()?;
-                
+
                 // Try to get memory info if nvidia-smi is available
                 if let Ok(memory_info) = self.get_cuda_memory_info() {
                     metrics.memory_total = Some(memory_info.0);
                     metrics.memory_used = Some(memory_info.1);
                     metrics.memory_free = Some(memory_info.2);
                 }
-                
+
                 // Set some basic usage metrics
                 metrics.usage.active_sessions = 0; // Would need actual monitoring
                 metrics.usage.gpu_utilization = 0.0; // Placeholder
                 metrics.usage.last_activity_timestamp = Some(timestamp);
-                
+
                 break;
             }
         }
@@ -373,7 +367,10 @@ impl HardwareAccelerationMonitor {
 
     fn detect_vaapi_profiles(&self) -> Result<Vec<String>> {
         // Detect available VA-API profiles
-        Ok(vec!["VAProfileMPEG2Simple".to_string(), "VAProfileH264High".to_string()])
+        Ok(vec![
+            "VAProfileMPEG2Simple".to_string(),
+            "VAProfileH264High".to_string(),
+        ])
     }
 
     fn detect_vaapi_entrypoints(&self) -> Result<Vec<String>> {
@@ -482,7 +479,7 @@ mod tests {
         metrics.driver_version = Some("1.0.0".to_string());
         metrics.profiles = vec!["H264".to_string(), "HEVC".to_string()];
         metrics.active_contexts = 2;
-        
+
         assert_eq!(metrics.driver_version.unwrap(), "1.0.0");
         assert_eq!(metrics.profiles.len(), 2);
         assert_eq!(metrics.active_contexts, 2);
@@ -495,7 +492,7 @@ mod tests {
         metrics.driver_version = Some("460.32.03".to_string());
         metrics.device_count = 2;
         metrics.memory_total = Some(16_000_000_000);
-        
+
         assert_eq!(metrics.cuda_version.unwrap(), "11.2");
         assert_eq!(metrics.driver_version.unwrap(), "460.32.03");
         assert_eq!(metrics.device_count, 2);
@@ -508,15 +505,15 @@ mod tests {
         config.enable_vaapi = false;
         config.enable_vdpau = false;
         config.enable_cuda = false;
-        
+
         let monitor = HardwareAccelerationMonitor::new(config);
         let result = monitor.collect_metrics();
-        
+
         // Should return Unavailable status when all APIs are disabled
         assert!(result.is_ok());
         let metrics = result.unwrap();
         match metrics.status {
-            HardwareAccelerationStatus::Unavailable => {},
+            HardwareAccelerationStatus::Unavailable => {}
             _ => panic!("Expected Unavailable status"),
         }
     }
@@ -526,7 +523,7 @@ mod tests {
         let config = HardwareAccelerationMonitorConfig::default();
         let monitor = HardwareAccelerationMonitor::new(config);
         let result = monitor.collect_metrics();
-        
+
         if let Ok(metrics) = result {
             // Timestamp should be set and reasonable (within last minute)
             let current_time = SystemTime::now()

@@ -8,11 +8,11 @@ use anyhow::Result;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::{SystemTime, UNIX_EPOCH, Duration};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{info, warn};
 
 // Import notify crate for real filesystem monitoring
-use notify::{RecommendedWatcher, RecursiveMode, Watcher, Event as NotifyEvent, EventKind};
+use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc::{channel, Receiver};
 
 /// Структура для хранения информации об изменении файла
@@ -73,7 +73,7 @@ impl FilesystemMonitor {
 
         // Create channel for receiving notify events
         let (_sender, receiver) = channel();
-        
+
         let monitor = Self {
             config,
             watchers: HashMap::new(),
@@ -111,25 +111,22 @@ impl FilesystemMonitor {
     fn add_watch_internal(&mut self, path: &Path) -> Result<i32> {
         // Create a new watcher for this path
         let (_sender, _receiver) = channel();
-        let mut watcher = RecommendedWatcher::new(
-            _sender, 
-            notify::Config::default()
-        )?;
-        
+        let mut watcher = RecommendedWatcher::new(_sender, notify::Config::default())?;
+
         // Watch the path
         if self.config.recursive {
             watcher.watch(path, RecursiveMode::Recursive)?;
         } else {
             watcher.watch(path, RecursiveMode::NonRecursive)?;
         }
-        
+
         // Store the watcher
         let wd = self.watch_descriptors.len() as i32 + 1;
         self.watchers.insert(path.to_path_buf(), watcher);
         self.watch_descriptors.insert(path.to_path_buf(), wd);
-        
+
         info!("Added real inotify watch for path: {}", path.display());
-        
+
         Ok(wd)
     }
 
@@ -139,7 +136,7 @@ impl FilesystemMonitor {
 
         // Try to get real inotify events first
         let receiver = self.event_receiver.lock().unwrap();
-        
+
         // Process any pending events from the notify receiver
         while let Ok(notify_event) = receiver.try_recv() {
             if let Some(converted_event) = self.convert_notify_event(&notify_event) {
@@ -189,7 +186,7 @@ impl FilesystemMonitor {
                 } else {
                     FileChangeType::Modified
                 }
-            },
+            }
             EventKind::Remove(_) => FileChangeType::Deleted,
             EventKind::Access(_) => FileChangeType::Accessed,
             EventKind::Any => FileChangeType::Modified,
@@ -437,15 +434,15 @@ mod tests {
         };
 
         let mut monitor = FilesystemMonitor::new(config).unwrap();
-        
+
         // Before initialization, should not be using real inotify
         assert!(!monitor.is_using_real_inotify());
         assert_eq!(monitor.get_watcher_count(), 0);
-        
+
         // Initialize the monitor
         let result = monitor.initialize();
         assert!(result.is_ok());
-        
+
         // After initialization, should be using real inotify
         assert!(monitor.is_using_real_inotify());
         assert_eq!(monitor.get_watcher_count(), 1);
@@ -456,14 +453,14 @@ mod tests {
         // Test event conversion from notify to our format
         let config = FilesystemMonitorConfig::default();
         let monitor = FilesystemMonitor::new(config).unwrap();
-        
+
         // Create a test notify event (we can't easily create real ones in tests)
         // So we'll test the conversion logic indirectly through the public API
-        
+
         // The monitor should be able to handle events
         let events = monitor.collect_events();
         assert!(events.is_ok());
-        
+
         // Should get at least test events if no real ones
         let events = events.unwrap();
         assert!(!events.is_empty() || monitor.is_using_real_inotify());
@@ -473,10 +470,7 @@ mod tests {
     fn test_filesystem_monitor_multiple_watchers() {
         // Test creating multiple watchers
         let config = FilesystemMonitorConfig {
-            watch_paths: vec![
-                PathBuf::from("/tmp"),
-                PathBuf::from("/var"),
-            ],
+            watch_paths: vec![PathBuf::from("/tmp"), PathBuf::from("/var")],
             recursive: true,
             max_events: 100,
             event_timeout_secs: 30,
@@ -485,7 +479,7 @@ mod tests {
         let mut monitor = FilesystemMonitor::new(config).unwrap();
         let result = monitor.initialize();
         assert!(result.is_ok());
-        
+
         // Should have 2 watchers
         assert_eq!(monitor.get_watcher_count(), 2);
         assert!(monitor.is_using_real_inotify());
@@ -510,11 +504,11 @@ mod tests {
 
         let mut recursive_monitor = FilesystemMonitor::new(recursive_config).unwrap();
         let mut non_recursive_monitor = FilesystemMonitor::new(non_recursive_config).unwrap();
-        
+
         // Both should initialize successfully
         assert!(recursive_monitor.initialize().is_ok());
         assert!(non_recursive_monitor.initialize().is_ok());
-        
+
         // Both should have watchers
         assert!(recursive_monitor.is_using_real_inotify());
         assert!(non_recursive_monitor.is_using_real_inotify());

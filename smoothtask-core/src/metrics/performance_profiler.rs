@@ -3,10 +3,10 @@
 //! Этот модуль предоставляет расширенные функции для профилирования
 //! производительности системы и анализа узких мест.
 
+use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::time::{Instant, Duration};
+use std::time::{Duration, Instant};
 use tracing::info;
-use anyhow::{Result, Context};
 
 /// Структура для хранения метрик производительности.
 #[derive(Debug, Clone, Default)]
@@ -111,7 +111,9 @@ impl PerformanceProfiler {
 
     /// Зарегистрировать выполнение для компонента.
     pub fn record_execution(&mut self, component_name: &str, duration: Duration) {
-        let metrics = self.metrics.entry(component_name.to_string())
+        let metrics = self
+            .metrics
+            .entry(component_name.to_string())
             .or_insert_with(PerformanceMetrics::new);
         metrics.record_execution(duration);
         self.global_metrics.record_execution(duration);
@@ -145,15 +147,15 @@ impl PerformanceProfiler {
     /// Логировать сводку метрик для всех компонентов.
     pub fn log_summary(&self) {
         info!("=== Performance Profiler Summary ===");
-        
+
         // Логируем глобальные метрики
         self.global_metrics.log_summary("Global");
-        
+
         // Логируем метрики для каждого компонента
         for (component_name, metrics) in &self.metrics {
             metrics.log_summary(component_name);
         }
-        
+
         info!("=== End Performance Profiler Summary ===");
     }
 
@@ -167,7 +169,9 @@ impl PerformanceProfiler {
         report.push_str("=== Bottleneck Analysis ===\n");
 
         // Находим компоненты с самым высоким средним временем
-        let mut components_by_avg_time: Vec<_> = self.metrics.iter()
+        let mut components_by_avg_time: Vec<_> = self
+            .metrics
+            .iter()
             .map(|(name, metrics)| (name, metrics.average_time_us))
             .collect();
 
@@ -179,7 +183,9 @@ impl PerformanceProfiler {
         }
 
         // Находим компоненты с самым высоким общим временем
-        let mut components_by_total_time: Vec<_> = self.metrics.iter()
+        let mut components_by_total_time: Vec<_> = self
+            .metrics
+            .iter()
             .map(|(name, metrics)| (name, metrics.total_time_us))
             .collect();
 
@@ -191,7 +197,9 @@ impl PerformanceProfiler {
         }
 
         // Находим компоненты с самым высоким количеством вызовов
-        let mut components_by_call_count: Vec<_> = self.metrics.iter()
+        let mut components_by_call_count: Vec<_> = self
+            .metrics
+            .iter()
             .map(|(name, metrics)| (name, metrics.call_count))
             .collect();
 
@@ -214,7 +222,9 @@ impl PerformanceProfiler {
     pub fn export_to_json(&self) -> Result<String> {
         use serde_json::{json, to_string};
 
-        let metrics_data: Vec<_> = self.metrics.iter()
+        let metrics_data: Vec<_> = self
+            .metrics
+            .iter()
             .map(|(name, metrics)| {
                 json!({
                     "component": name,
@@ -263,14 +273,16 @@ impl<'a> PerformanceTimer<'a> {
     /// Завершить таймер и зарегистрировать выполнение.
     pub fn finish(self) {
         let duration = self.start_time.elapsed();
-        self.profiler.record_execution(&self.component_name, duration);
+        self.profiler
+            .record_execution(&self.component_name, duration);
     }
 }
 
 impl<'a> Drop for PerformanceTimer<'a> {
     fn drop(&mut self) {
         let duration = self.start_time.elapsed();
-        self.profiler.record_execution(&self.component_name, duration);
+        self.profiler
+            .record_execution(&self.component_name, duration);
     }
 }
 
@@ -295,9 +307,7 @@ impl GlobalPerformanceProfiler {
     /// Начать профилирование компонента.
     pub fn start_profiling(&mut self, component_name: &str) -> GlobalPerformanceTimer<'_> {
         let timer = self.inner.start_profiling(component_name);
-        GlobalPerformanceTimer {
-            timer,
-        }
+        GlobalPerformanceTimer { timer }
     }
 
     /// Получить глобальный экземпляр.
@@ -310,9 +320,8 @@ impl GlobalPerformanceProfiler {
         use std::sync::Mutex;
 
         lazy_static! {
-            static ref GLOBAL_PROFILER: Mutex<GlobalPerformanceProfiler> = {
-                Mutex::new(GlobalPerformanceProfiler::new())
-            };
+            static ref GLOBAL_PROFILER: Mutex<GlobalPerformanceProfiler> =
+                Mutex::new(GlobalPerformanceProfiler::new());
         }
 
         GLOBAL_PROFILER.lock().unwrap()
@@ -511,10 +520,10 @@ mod tests {
         // Добавляем метрики для разных компонентов
         profiler.record_execution("fast_component", Duration::from_micros(10));
         profiler.record_execution("fast_component", Duration::from_micros(20));
-        
+
         profiler.record_execution("slow_component", Duration::from_micros(1000));
         profiler.record_execution("slow_component", Duration::from_micros(2000));
-        
+
         profiler.record_execution("medium_component", Duration::from_micros(100));
 
         // Анализируем узкие места
@@ -524,10 +533,12 @@ mod tests {
         assert!(report.contains("slow_component"));
         assert!(report.contains("medium_component"));
         assert!(report.contains("fast_component"));
-        
+
         // Проверяем, что slow_component упоминается первым в разделе по среднему времени
         let lines: Vec<&str> = report.lines().collect();
-        let avg_time_section = lines.iter().position(|line| line.contains("average execution time"));
+        let avg_time_section = lines
+            .iter()
+            .position(|line| line.contains("average execution time"));
         if let Some(section_idx) = avg_time_section {
             // Следующая строка должна содержать slow_component
             if section_idx + 1 < lines.len() {

@@ -8,8 +8,8 @@ use std::path::Path;
 
 use crate::config::config_struct::Thresholds;
 use crate::logging::rotation::{get_log_file_size, LogRotator};
-use crate::metrics::system::SystemMetrics;
 use crate::metrics::extended_hardware_sensors::ExtendedHardwareSensors;
+use crate::metrics::system::SystemMetrics;
 
 /// Идентификатор снапшота (timestamp в миллисекундах).
 pub type SnapshotId = u64;

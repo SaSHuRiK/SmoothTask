@@ -4,9 +4,9 @@
 //! в работе демона. Поддерживает различные бэкенды (заглушки, desktop уведомления и т.д.).
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fmt;
-use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use tokio::time::{sleep, Duration};
 
@@ -609,7 +609,11 @@ impl SmsNotifier {
     ///
     /// # Возвращает
     /// Мутированный экземпляр SmsNotifier.
-    pub fn with_credentials(mut self, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn with_credentials(
+        mut self,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         self.username = Some(username.into());
         self.password = Some(password.into());
         self
@@ -650,8 +654,6 @@ impl SmsNotifier {
         self.timeout_seconds = timeout_seconds;
         self
     }
-
-
 
     /// Возвращает URL SMS шлюза.
     ///
@@ -734,7 +736,11 @@ impl EmailNotifier {
     ///
     /// # Возвращает
     /// Мутированный экземпляр EmailNotifier.
-    pub fn with_credentials(mut self, username: impl Into<String>, password: impl Into<String>) -> Self {
+    pub fn with_credentials(
+        mut self,
+        username: impl Into<String>,
+        password: impl Into<String>,
+    ) -> Self {
         self.smtp_username = Some(username.into());
         self.smtp_password = Some(password.into());
         self
@@ -756,14 +762,14 @@ impl EmailNotifier {
     ///
     /// # Возвращает
     /// Результат с SMTP транспортом или ошибкой.
-    async fn create_smtp_transport(&self) -> Result<lettre::AsyncSmtpTransport<lettre::Tokio1Executor>> {
+    async fn create_smtp_transport(
+        &self,
+    ) -> Result<lettre::AsyncSmtpTransport<lettre::Tokio1Executor>> {
         let mut builder = if self.use_tls {
             lettre::AsyncSmtpTransport::<lettre::Tokio1Executor>::relay(&self.smtp_server)?
                 .port(self.smtp_port)
                 .tls(lettre::transport::smtp::client::Tls::Required(
-                    lettre::transport::smtp::client::TlsParameters::new(
-                        self.smtp_server.clone(),
-                    )?,
+                    lettre::transport::smtp::client::TlsParameters::new(self.smtp_server.clone())?,
                 ))
         } else {
             lettre::AsyncSmtpTransport::<lettre::Tokio1Executor>::relay(&self.smtp_server)?
@@ -775,10 +781,11 @@ impl EmailNotifier {
 
         // Устанавливаем учётные данные, если они указаны
         if let (Some(username), Some(password)) = (&self.smtp_username, &self.smtp_password) {
-            builder = builder.credentials(lettre::transport::smtp::authentication::Credentials::new(
-                username.clone(),
-                password.clone(),
-            ));
+            builder =
+                builder.credentials(lettre::transport::smtp::authentication::Credentials::new(
+                    username.clone(),
+                    password.clone(),
+                ));
         }
 
         Ok(builder.build())
@@ -932,10 +939,7 @@ impl Notifier for WebhookNotifier {
         request_builder = request_builder.header("Content-Type", "application/json");
 
         // Отправляем запрос
-        let response = request_builder
-            .json(&notification_json)
-            .send()
-            .await;
+        let response = request_builder.json(&notification_json).send().await;
 
         match response {
             Ok(resp) => {
@@ -950,7 +954,10 @@ impl Notifier for WebhookNotifier {
                     Ok(())
                 } else {
                     let status = resp.status();
-                    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     tracing::error!(
                         "Failed to send webhook notification to {}: HTTP {} - {}",
                         self.webhook_url,
@@ -1003,8 +1010,7 @@ impl Notifier for EmailNotifier {
         // Формируем тело письма
         let mut body = format!(
             "SmoothTask Notification\n\nType: {}\n\nMessage:\n{}",
-            notification.notification_type,
-            notification.message
+            notification.notification_type, notification.message
         );
 
         // Добавляем дополнительные детали, если они есть
@@ -1015,7 +1021,10 @@ impl Notifier for EmailNotifier {
 
         // Добавляем временную метку
         body.push_str("\n\n---\n");
-        body.push_str(&format!("Timestamp: {}", notification.timestamp.to_rfc3339()));
+        body.push_str(&format!(
+            "Timestamp: {}",
+            notification.timestamp.to_rfc3339()
+        ));
 
         // Создаём email сообщение
         let email = lettre::Message::builder()
@@ -1128,7 +1137,10 @@ impl Notifier for SmsNotifier {
                     Ok(())
                 } else {
                     let status = resp.status();
-                    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     tracing::error!(
                         "Failed to send SMS notification to {}: HTTP {} - {}",
                         self.phone_number,
@@ -1251,10 +1263,7 @@ impl Notifier for TelegramNotifier {
         ));
 
         // Формируем URL для Telegram Bot API
-        let api_url = format!(
-            "https://api.telegram.org/bot{}/sendMessage",
-            self.bot_token
-        );
+        let api_url = format!("https://api.telegram.org/bot{}/sendMessage", self.bot_token);
 
         // Подготавливаем параметры для Telegram API
         let params = [
@@ -1279,7 +1288,10 @@ impl Notifier for TelegramNotifier {
                     Ok(())
                 } else {
                     let status = resp.status();
-                    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     tracing::error!(
                         "Failed to send Telegram notification to chat {}: HTTP {} - {}",
                         self.chat_id,
@@ -1377,9 +1389,7 @@ impl Notifier for DiscordNotifier {
         // Формируем сообщение Discord
         let discord_message = format!(
             "🔔 **SmoothTask Notification**\n\n**Type**: {}\n**Title**: {}\n**Message**: {}",
-            notification.notification_type,
-            notification.title,
-            notification.message
+            notification.notification_type, notification.title, notification.message
         );
 
         // Добавляем дополнительные детали, если они есть
@@ -1438,7 +1448,10 @@ impl Notifier for DiscordNotifier {
                     Ok(())
                 } else {
                     let status = resp.status();
-                    let body = resp.text().await.unwrap_or_else(|_| "Unknown error".to_string());
+                    let body = resp
+                        .text()
+                        .await
+                        .unwrap_or_else(|_| "Unknown error".to_string());
                     tracing::error!(
                         "Failed to send Discord notification to webhook {}: HTTP {} - {}",
                         self.webhook_url,
@@ -1710,7 +1723,7 @@ pub struct EnhancedNotificationConfig {
 impl Default for EnhancedNotificationConfig {
     fn default() -> Self {
         let mut strategies = std::collections::HashMap::new();
-        
+
         // Стратегия по умолчанию для критических уведомлений
         strategies.insert(
             NotificationType::Critical,
@@ -1720,10 +1733,14 @@ impl Default for EnhancedNotificationConfig {
                 max_retries: 5,
                 retry_delay_ms: 500,
                 enable_escalation: true,
-                escalation_channels: vec!["webhook".to_string(), "email".to_string(), "sms".to_string()],
+                escalation_channels: vec![
+                    "webhook".to_string(),
+                    "email".to_string(),
+                    "sms".to_string(),
+                ],
             },
         );
-        
+
         // Стратегия по умолчанию для предупреждений
         strategies.insert(
             NotificationType::Warning,
@@ -1736,7 +1753,7 @@ impl Default for EnhancedNotificationConfig {
                 escalation_channels: vec!["webhook".to_string()],
             },
         );
-        
+
         // Стратегия по умолчанию для информационных уведомлений
         strategies.insert(
             NotificationType::Info,
@@ -1749,7 +1766,7 @@ impl Default for EnhancedNotificationConfig {
                 escalation_channels: vec!["webhook".to_string()],
             },
         );
-        
+
         Self {
             strategies,
             global_rate_limit_seconds: 60,
@@ -1779,10 +1796,12 @@ pub struct NotificationManager {
     last_global_notification: Arc<tokio::sync::RwLock<Option<DateTime<Utc>>>>,
 
     /// Время последнего уведомления для каждого типа.
-    last_notification_by_type: Arc<tokio::sync::RwLock<std::collections::HashMap<NotificationType, DateTime<Utc>>>>,
+    last_notification_by_type:
+        Arc<tokio::sync::RwLock<std::collections::HashMap<NotificationType, DateTime<Utc>>>>,
 
     /// Дополнительные бэкенды для эскалации.
-    escalation_notifiers: Arc<tokio::sync::RwLock<std::collections::HashMap<String, Box<dyn Notifier>>>>,
+    escalation_notifiers:
+        Arc<tokio::sync::RwLock<std::collections::HashMap<String, Box<dyn Notifier>>>>,
 }
 
 /// Расширенный менеджер уведомлений с поддержкой стратегий и интеграции с мониторингом.
@@ -1802,10 +1821,16 @@ impl NotificationManager {
             primary_notifier: Box::new(notifier),
             enabled: true,
             log_storage: None,
-            config: Arc::new(tokio::sync::RwLock::new(EnhancedNotificationConfig::default())),
+            config: Arc::new(tokio::sync::RwLock::new(
+                EnhancedNotificationConfig::default(),
+            )),
             last_global_notification: Arc::new(tokio::sync::RwLock::new(None)),
-            last_notification_by_type: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
-            escalation_notifiers: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            last_notification_by_type: Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
+            escalation_notifiers: Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
         }
     }
 
@@ -2197,7 +2222,11 @@ impl NotificationManager {
     }
 
     /// Добавляет бэкенд для эскалации.
-    pub async fn add_escalation_notifier(&self, name: String, notifier: Box<dyn Notifier>) -> Result<()> {
+    pub async fn add_escalation_notifier(
+        &self,
+        name: String,
+        notifier: Box<dyn Notifier>,
+    ) -> Result<()> {
         let mut escalation_lock = self.escalation_notifiers.write().await;
         escalation_lock.insert(name, notifier);
         Ok(())
@@ -2211,9 +2240,12 @@ impl NotificationManager {
     }
 
     /// Проверяет, разрешено ли отправлять уведомление на основе стратегии.
-    async fn check_notification_allowed(&self, notification_type: &NotificationType) -> Result<bool> {
+    async fn check_notification_allowed(
+        &self,
+        notification_type: &NotificationType,
+    ) -> Result<bool> {
         let config = self.config.read().await;
-        
+
         // Проверяем глобальное ограничение частоты
         if config.global_rate_limit_seconds > 0 {
             let last_global = self.last_global_notification.read().await;
@@ -2275,7 +2307,10 @@ impl NotificationManager {
         }
 
         // Проверяем, разрешено ли отправлять уведомление
-        if !self.check_notification_allowed(&notification.notification_type).await? {
+        if !self
+            .check_notification_allowed(&notification.notification_type)
+            .await?
+        {
             tracing::warn!(
                 "Notification rate limit exceeded for type: {:?}",
                 notification.notification_type
@@ -2314,7 +2349,9 @@ impl NotificationManager {
 
         // Получаем стратегию для этого типа уведомления
         let config = self.config.read().await;
-        let strategy = config.strategies.get(&notification.notification_type)
+        let strategy = config
+            .strategies
+            .get(&notification.notification_type)
             .cloned()
             .unwrap_or_default();
 
@@ -2322,10 +2359,10 @@ impl NotificationManager {
         let mut attempt = 0;
         let mut primary_success = false;
         let mut last_error: Option<anyhow::Error> = None;
-        
+
         while attempt < strategy.max_retries {
             attempt += 1;
-            
+
             match self.primary_notifier.send_notification(notification).await {
                 Ok(_) => {
                     tracing::info!(
@@ -2343,7 +2380,7 @@ impl NotificationManager {
                         e,
                         strategy.retry_delay_ms
                     );
-                    
+
                     // Логируем ошибку в хранилище логов, если оно доступно
                     if let Some(ref log_storage_arc) = self.log_storage {
                         let log_level = if attempt == strategy.max_retries {
@@ -2351,12 +2388,13 @@ impl NotificationManager {
                         } else {
                             crate::logging::log_storage::LogLevel::Warn
                         };
-                        
+
                         let log_entry = crate::logging::log_storage::LogEntry::new(
                             log_level,
                             "notifications",
                             format!("Notification send attempt {} failed", attempt),
-                        ).with_fields(serde_json::json!({
+                        )
+                        .with_fields(serde_json::json!({
                             "notification_title": notification.title,
                             "notification_type": format!("{}", notification.notification_type),
                             "error": format!("{}", e),
@@ -2366,7 +2404,7 @@ impl NotificationManager {
                         }));
                         log_storage_arc.add_entry(log_entry).await;
                     }
-                    
+
                     if attempt < strategy.max_retries {
                         sleep(Duration::from_millis(strategy.retry_delay_ms)).await;
                     }
@@ -2376,7 +2414,8 @@ impl NotificationManager {
 
         // Обновляем время последнего уведомления только если отправка была успешной
         if primary_success {
-            self.update_last_notification_time(&notification.notification_type).await;
+            self.update_last_notification_time(&notification.notification_type)
+                .await;
         }
 
         // Если включена эскалация и основная отправка не удалась, пробуем эскалацию
@@ -2387,19 +2426,25 @@ impl NotificationManager {
             );
             self.handle_escalation(notification, &strategy).await?;
         } else if !primary_success {
-            let error_message = last_error.map(|e| e.to_string()).unwrap_or_else(|| "Unknown error".to_string());
+            let error_message = last_error
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "Unknown error".to_string());
             tracing::error!(
                 "Notification failed and escalation is disabled: {}",
                 error_message
             );
-            
+
             // Логируем критическую ошибку, если все попытки не удались
             if let Some(ref log_storage_arc) = self.log_storage {
                 let log_entry = crate::logging::log_storage::LogEntry::new(
                     crate::logging::log_storage::LogLevel::Error,
                     "notifications",
-                    format!("Notification failed after {} attempts", strategy.max_retries),
-                ).with_fields(serde_json::json!({
+                    format!(
+                        "Notification failed after {} attempts",
+                        strategy.max_retries
+                    ),
+                )
+                .with_fields(serde_json::json!({
                     "notification_title": notification.title,
                     "notification_type": format!("{}", notification.notification_type),
                     "error": error_message,
@@ -2413,16 +2458,20 @@ impl NotificationManager {
     }
 
     /// Обрабатывает эскалацию уведомления через дополнительные каналы.
-    async fn handle_escalation(&self, notification: &Notification, strategy: &NotificationStrategy) -> Result<()> {
+    async fn handle_escalation(
+        &self,
+        notification: &Notification,
+        strategy: &NotificationStrategy,
+    ) -> Result<()> {
         let escalation_notifiers = self.escalation_notifiers.read().await;
         let mut escalation_success = false;
-        
+
         tracing::info!(
             "Starting escalation process for notification: {} (channels: {:?})",
             notification.title,
             strategy.escalation_channels
         );
-        
+
         for channel in &strategy.escalation_channels {
             if let Some(notifier) = escalation_notifiers.get(channel) {
                 tracing::info!(
@@ -2430,7 +2479,7 @@ impl NotificationManager {
                     channel,
                     notification.title
                 );
-                
+
                 // Пробуем отправить через канал эскалации
                 match notifier.send_notification(notification).await {
                     Ok(_) => {
@@ -2446,14 +2495,15 @@ impl NotificationManager {
                             channel,
                             e
                         );
-                        
+
                         // Логируем ошибку в хранилище логов, если оно доступно
                         if let Some(ref log_storage_arc) = self.log_storage {
                             let log_entry = crate::logging::log_storage::LogEntry::new(
                                 crate::logging::log_storage::LogLevel::Error,
                                 "notifications",
                                 format!("Escalation failed for {} channel", channel),
-                            ).with_fields(serde_json::json!({
+                            )
+                            .with_fields(serde_json::json!({
                                 "notification_title": notification.title,
                                 "notification_type": format!("{}", notification.notification_type),
                                 "error": format!("{}", e),
@@ -2470,20 +2520,21 @@ impl NotificationManager {
                 );
             }
         }
-        
+
         if !escalation_success && !strategy.escalation_channels.is_empty() {
             tracing::error!(
                 "All escalation attempts failed for notification: {}",
                 notification.title
             );
-            
+
             // Если все попытки эскалации не удались, логируем критическую ошибку
             if let Some(ref log_storage_arc) = self.log_storage {
                 let log_entry = crate::logging::log_storage::LogEntry::new(
                     crate::logging::log_storage::LogLevel::Error,
                     "notifications",
                     format!("All escalation attempts failed: {}", notification.title),
-                ).with_fields(serde_json::json!({
+                )
+                .with_fields(serde_json::json!({
                     "notification_type": format!("{}", notification.notification_type),
                     "timestamp": notification.timestamp.to_rfc3339(),
                 }));
@@ -2500,7 +2551,7 @@ impl NotificationManager {
         let last_global = self.last_global_notification.read().await;
         let last_by_type = self.last_notification_by_type.read().await;
         let escalation_notifiers = self.escalation_notifiers.read().await;
-        
+
         Ok(EnhancedNotificationStatus {
             enabled: self.enabled,
             backend: self.backend_name().to_string(),
@@ -2566,7 +2617,11 @@ impl EnhancedNotificationManager {
     }
 
     /// Добавляет бэкенд для эскалации.
-    pub async fn add_escalation_notifier(&self, name: String, notifier: Box<dyn Notifier>) -> Result<()> {
+    pub async fn add_escalation_notifier(
+        &self,
+        name: String,
+        notifier: Box<dyn Notifier>,
+    ) -> Result<()> {
         self.inner.add_escalation_notifier(name, notifier).await
     }
 
@@ -2586,32 +2641,45 @@ impl EnhancedNotificationManager {
     }
 
     /// Интегрирует уведомления с системой мониторинга здоровья.
-    pub async fn integrate_with_monitoring(&mut self, monitoring_service: Arc<dyn HealthMonitoringService + Send + Sync>) -> Result<()> {
+    pub async fn integrate_with_monitoring(
+        &mut self,
+        monitoring_service: Arc<dyn HealthMonitoringService + Send + Sync>,
+    ) -> Result<()> {
         self.health_monitoring_integration = Some(monitoring_service);
-        
+
         // Настраиваем конфигурацию для включения интеграции с мониторингом
         let mut config = self.inner.get_config().await;
         config.enable_monitoring_integration = true;
         self.inner.set_config(config).await?;
-        
+
         Ok(())
     }
 
     /// Отправляет уведомление о событии здоровья.
     pub async fn send_health_event_notification(&self, event: &HealthEvent) -> Result<()> {
         if !self.inner.config.read().await.enable_monitoring_integration {
-            tracing::debug!("Monitoring integration is disabled, skipping health event notification");
+            tracing::debug!(
+                "Monitoring integration is disabled, skipping health event notification"
+            );
             return Ok(());
         }
 
         let notification = match event {
-            HealthEvent::HealthStatusChanged { old_status, new_status, timestamp } => {
-                Notification::new(
-                    NotificationType::SystemEvent,
-                    format!("Health Status Changed: {:?} -> {:?}", old_status, new_status),
-                    format!("Health status changed from {:?} to {:?} at {}", old_status, new_status, timestamp),
-                )
-            }
+            HealthEvent::HealthStatusChanged {
+                old_status,
+                new_status,
+                timestamp,
+            } => Notification::new(
+                NotificationType::SystemEvent,
+                format!(
+                    "Health Status Changed: {:?} -> {:?}",
+                    old_status, new_status
+                ),
+                format!(
+                    "Health status changed from {:?} to {:?} at {}",
+                    old_status, new_status, timestamp
+                ),
+            ),
             HealthEvent::NewHealthIssue { issue, timestamp } => {
                 let notification_type = match issue.severity {
                     HealthIssueSeverity::Critical => NotificationType::Critical,
@@ -2622,23 +2690,39 @@ impl EnhancedNotificationManager {
                 Notification::new(
                     notification_type,
                     format!("New Health Issue: {}", issue.issue_type),
-                    format!("{} - {}", issue.description, issue.error_details.as_deref().unwrap_or("")),
-                ).with_details(format!("Issue ID: {}, Timestamp: {}", issue.issue_id, timestamp))
+                    format!(
+                        "{} - {}",
+                        issue.description,
+                        issue.error_details.as_deref().unwrap_or("")
+                    ),
+                )
+                .with_details(format!(
+                    "Issue ID: {}, Timestamp: {}",
+                    issue.issue_id, timestamp
+                ))
             }
-            HealthEvent::HealthIssueResolved { issue_id, timestamp } => {
-                Notification::new(
-                    NotificationType::Info,
-                    "Health Issue Resolved",
-                    format!("Health issue {} has been resolved", issue_id),
-                ).with_details(format!("Resolved at: {}", timestamp))
-            }
-            HealthEvent::CriticalHealthDetected { issue, timestamp } => {
-                Notification::new(
-                    NotificationType::Critical,
-                    format!("CRITICAL HEALTH ISSUE: {}", issue.issue_type),
-                    format!("CRITICAL: {} - {}", issue.description, issue.error_details.as_deref().unwrap_or("")),
-                ).with_details(format!("Issue ID: {}, Timestamp: {}", issue.issue_id, timestamp))
-            }
+            HealthEvent::HealthIssueResolved {
+                issue_id,
+                timestamp,
+            } => Notification::new(
+                NotificationType::Info,
+                "Health Issue Resolved",
+                format!("Health issue {} has been resolved", issue_id),
+            )
+            .with_details(format!("Resolved at: {}", timestamp)),
+            HealthEvent::CriticalHealthDetected { issue, timestamp } => Notification::new(
+                NotificationType::Critical,
+                format!("CRITICAL HEALTH ISSUE: {}", issue.issue_type),
+                format!(
+                    "CRITICAL: {} - {}",
+                    issue.description,
+                    issue.error_details.as_deref().unwrap_or("")
+                ),
+            )
+            .with_details(format!(
+                "Issue ID: {}, Timestamp: {}",
+                issue.issue_id, timestamp
+            )),
         };
 
         self.send(&notification).await
@@ -2667,8 +2751,8 @@ impl EnhancedNotificationManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Utc;
     use crate::health::{HealthIssue, HealthStatus};
+    use chrono::Utc;
 
     #[tokio::test]
     async fn test_notification_creation() {
@@ -2711,7 +2795,10 @@ mod tests {
         {
             use super::DiscordNotifier;
             let notifier = DiscordNotifier::new("https://discord.com/api/webhooks/test");
-            assert_eq!(notifier.webhook_url(), "https://discord.com/api/webhooks/test");
+            assert_eq!(
+                notifier.webhook_url(),
+                "https://discord.com/api/webhooks/test"
+            );
             assert_eq!(notifier.timeout_seconds(), 30);
         }
     }
@@ -2731,7 +2818,8 @@ mod tests {
         #[cfg(feature = "discord")]
         {
             use super::DiscordNotifier;
-            let notifier = DiscordNotifier::new("https://discord.com/api/webhooks/test").with_timeout(60);
+            let notifier =
+                DiscordNotifier::new("https://discord.com/api/webhooks/test").with_timeout(60);
             assert_eq!(notifier.timeout_seconds(), 60);
         }
     }
@@ -3029,8 +3117,8 @@ mod tests {
         headers.insert("Authorization".to_string(), "Bearer token123".to_string());
         headers.insert("X-Custom-Header".to_string(), "CustomValue".to_string());
 
-        let notifier = WebhookNotifier::new("https://example.com/webhook")
-            .with_headers(headers.clone());
+        let notifier =
+            WebhookNotifier::new("https://example.com/webhook").with_headers(headers.clone());
 
         assert_eq!(notifier.headers().len(), 2);
         assert_eq!(
@@ -3045,16 +3133,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_webhook_notifier_with_timeout() {
-        let notifier = WebhookNotifier::new("https://example.com/webhook")
-            .with_timeout(30);
+        let notifier = WebhookNotifier::new("https://example.com/webhook").with_timeout(30);
 
         assert_eq!(notifier.timeout_seconds(), 30);
     }
 
     #[tokio::test]
     async fn test_webhook_notifier_allow_insecure_https() {
-        let notifier = WebhookNotifier::new("https://example.com/webhook")
-            .allow_insecure_https();
+        let notifier = WebhookNotifier::new("https://example.com/webhook").allow_insecure_https();
 
         assert!(notifier.is_insecure_https_allowed());
     }
@@ -3095,12 +3181,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_webhook_notifier_serialization() {
-        let notification = Notification::new(
-            NotificationType::Critical,
-            "Test Title",
-            "Test Message",
-        )
-        .with_details("Test details");
+        let notification =
+            Notification::new(NotificationType::Critical, "Test Title", "Test Message")
+                .with_details("Test details");
 
         let notifier = WebhookNotifier::new("https://example.com/webhook");
 
@@ -3453,19 +3536,19 @@ mod tests {
         // Этот тест не будет отправлять реальное email, так как мы используем mock SMTP сервер
         // В реальном использовании нужно настроить тестовый SMTP сервер
         let result = notifier.send_notification(&notification).await;
-        
+
         // Ожидаем ошибку, так как нет реального SMTP сервера
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn test_sms_notifier_creation() {
-        let notifier = SmsNotifier::new(
-            "https://sms-gateway.example.com/api/send",
-            "+1234567890",
-        );
+        let notifier = SmsNotifier::new("https://sms-gateway.example.com/api/send", "+1234567890");
 
-        assert_eq!(notifier.gateway_url(), "https://sms-gateway.example.com/api/send");
+        assert_eq!(
+            notifier.gateway_url(),
+            "https://sms-gateway.example.com/api/send"
+        );
         assert_eq!(notifier.phone_number(), "+1234567890");
         assert_eq!(notifier.timeout_seconds(), 30);
         assert_eq!(notifier.backend_name(), "sms");
@@ -3476,14 +3559,11 @@ mod tests {
         let mut headers = std::collections::HashMap::new();
         headers.insert("Authorization".to_string(), "Bearer token123".to_string());
 
-        let notifier = SmsNotifier::new(
-            "https://sms-gateway.example.com/api/send",
-            "+1234567890",
-        )
-        .with_credentials("username", "password")
-        .with_api_key("api_key_123")
-        .with_headers(headers)
-        .with_timeout(60);
+        let notifier = SmsNotifier::new("https://sms-gateway.example.com/api/send", "+1234567890")
+            .with_credentials("username", "password")
+            .with_api_key("api_key_123")
+            .with_headers(headers)
+            .with_timeout(60);
 
         assert_eq!(notifier.timeout_seconds(), 60);
         assert_eq!(notifier.headers().len(), 1);
@@ -3495,10 +3575,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sms_notifier_send() {
-        let notifier = SmsNotifier::new(
-            "https://sms-gateway.example.com/api/send",
-            "+1234567890",
-        );
+        let notifier = SmsNotifier::new("https://sms-gateway.example.com/api/send", "+1234567890");
 
         let notification = Notification::new(
             NotificationType::Critical,
@@ -3510,7 +3587,7 @@ mod tests {
         // Этот тест не будет отправлять реальное SMS, так как мы используем mock SMS шлюз
         // В реальном использовании нужно настроить тестовый SMS шлюз
         let result = notifier.send_notification(&notification).await;
-        
+
         // Ожидаем ошибку, так как нет реального SMS шлюза
         assert!(result.is_err());
     }
@@ -3536,10 +3613,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_notification_manager_sms() {
-        let manager = NotificationManager::new_sms(
-            "https://sms-gateway.example.com/api/send",
-            "+1234567890",
-        );
+        let manager =
+            NotificationManager::new_sms("https://sms-gateway.example.com/api/send", "+1234567890");
 
         assert_eq!(manager.backend_name(), "sms");
         assert!(manager.is_enabled());
@@ -3589,10 +3664,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_sms_message_length_limiting() {
-        let notifier = SmsNotifier::new(
-            "https://sms-gateway.example.com/api/send",
-            "+1234567890",
-        );
+        let notifier = SmsNotifier::new("https://sms-gateway.example.com/api/send", "+1234567890");
 
         // Создаём уведомление с очень длинным сообщением
         let long_details = "a".repeat(200); // Очень длинные детали
@@ -3659,16 +3731,13 @@ mod tests {
     #[tokio::test]
     async fn test_sms_notifier_uses_stored_client() {
         // Тестируем, что SmsNotifier использует хранимый клиент вместо создания нового
-        let notifier = SmsNotifier::new(
-            "https://example.com/sms-gateway",
-            "+1234567890",
-        )
-        .with_timeout(30);
+        let notifier =
+            SmsNotifier::new("https://example.com/sms-gateway", "+1234567890").with_timeout(30);
 
         // Проверяем, что клиент создан и хранится
         let client = notifier.client();
         assert!(client.timeout().is_some());
-        
+
         // Проверяем, что таймаут клиента соответствует конфигурации
         if let Some(timeout) = client.timeout() {
             assert_eq!(timeout.as_secs(), 30);
@@ -3677,7 +3746,7 @@ mod tests {
         // Основная проверка: send_notification должен использовать хранимый клиент
         // Это проверяется косвенно - если бы он создавал новый клиент, то хранимый клиент
         // не использовался бы и компилятор бы выдавал warning о неиспользуемом поле
-        
+
         // Проверяем, что клиент доступен через метод client()
         let client = notifier.client();
         assert!(client.timeout().is_some());
@@ -3700,18 +3769,21 @@ mod tests {
         let client2 = notifier.client();
 
         // Должны быть одинаковые указатели (один и тот же объект)
-        assert!(std::ptr::eq(client1, client2), "SmsNotifier should reuse the same client instance");
+        assert!(
+            std::ptr::eq(client1, client2),
+            "SmsNotifier should reuse the same client instance"
+        );
     }
 
     #[tokio::test]
     async fn test_enhanced_notification_config_default() {
         let config = EnhancedNotificationConfig::default();
-        
+
         // Проверяем стратегии по умолчанию
         assert!(config.strategies.contains_key(&NotificationType::Critical));
         assert!(config.strategies.contains_key(&NotificationType::Warning));
         assert!(config.strategies.contains_key(&NotificationType::Info));
-        
+
         // Проверяем стратегию для критических уведомлений
         let critical_strategy = config.strategies.get(&NotificationType::Critical).unwrap();
         assert_eq!(critical_strategy.max_frequency_seconds, 30);
@@ -3720,7 +3792,7 @@ mod tests {
         assert_eq!(critical_strategy.retry_delay_ms, 500);
         assert!(critical_strategy.enable_escalation);
         assert_eq!(critical_strategy.escalation_channels.len(), 3);
-        
+
         // Проверяем глобальные настройки
         assert_eq!(config.global_rate_limit_seconds, 60);
         assert!(config.enable_monitoring_integration);
@@ -3730,7 +3802,7 @@ mod tests {
     #[tokio::test]
     async fn test_notification_strategy_default() {
         let strategy = NotificationStrategy::default();
-        
+
         assert_eq!(strategy.max_frequency_seconds, 60);
         assert_eq!(strategy.priority, 50);
         assert_eq!(strategy.max_retries, 3);
@@ -3742,18 +3814,18 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_config_management() {
         let manager = NotificationManager::new_stub();
-        
+
         // Проверяем конфигурацию по умолчанию
         let default_config = manager.get_config().await;
         assert_eq!(default_config.global_rate_limit_seconds, 60);
-        
+
         // Создаём новую конфигурацию
         let mut new_config = EnhancedNotificationConfig::default();
         new_config.global_rate_limit_seconds = 120;
-        
+
         // Устанавливаем новую конфигурацию
         manager.set_config(new_config.clone()).await.unwrap();
-        
+
         // Проверяем, что конфигурация обновлена
         let updated_config = manager.get_config().await;
         assert_eq!(updated_config.global_rate_limit_seconds, 120);
@@ -3762,23 +3834,26 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_escalation_notifiers() {
         let manager = NotificationManager::new_stub();
-        
+
         // Проверяем, что изначально нет эскалационных нотифаеров
         let escalation_notifiers = manager.escalation_notifiers.read().await;
         assert!(escalation_notifiers.is_empty());
-        
+
         // Добавляем эскалационный нотифаер
         let email_notifier = Box::new(StubNotifier);
-        manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        
+        manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+
         // Проверяем, что нотифаер добавлен
         let escalation_notifiers = manager.escalation_notifiers.read().await;
         assert_eq!(escalation_notifiers.len(), 1);
         assert!(escalation_notifiers.contains_key("email"));
-        
+
         // Удаляем эскалационный нотифаер
         manager.remove_escalation_notifier("email").await.unwrap();
-        
+
         // Проверяем, что нотифаер удалён
         let escalation_notifiers = manager.escalation_notifiers.read().await;
         assert!(escalation_notifiers.is_empty());
@@ -3787,18 +3862,18 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_rate_limiting() {
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
-        
+
         // Первая отправка должна пройти успешно
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
-        
+
         // Вторая отправка должна быть ограничена глобальным лимитом
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok()); // Должно возвращать Ok, но не отправлять
-        
+
         // Проверяем состояние
         let status = manager.get_enhanced_status().await.unwrap();
         assert!(status.last_notification_time.is_some());
@@ -3807,14 +3882,14 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_send_with_strategy_success() {
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
-        
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
-        
+
         // Проверяем расширенное состояние
         let status = manager.get_enhanced_status().await.unwrap();
         assert!(status.enabled);
@@ -3827,11 +3902,11 @@ mod tests {
     async fn test_enhanced_notification_manager_creation() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Проверяем базовые свойства
         assert_eq!(enhanced_manager.backend_name(), "stub");
         assert!(enhanced_manager.is_enabled());
-        
+
         // Проверяем конфигурацию
         let config = enhanced_manager.get_config().await;
         assert_eq!(config.global_rate_limit_seconds, 60);
@@ -3841,10 +3916,10 @@ mod tests {
     async fn test_enhanced_notification_manager_send() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
-        
+
         // Отправляем уведомление
         let result = enhanced_manager.send(&notification).await;
         assert!(result.is_ok());
@@ -3854,10 +3929,10 @@ mod tests {
     async fn test_enhanced_notification_manager_status() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Получаем состояние
         let status = enhanced_manager.get_status().await.unwrap();
-        
+
         // Проверяем состояние
         assert!(status.enabled);
         assert_eq!(status.backend, "stub");
@@ -3872,11 +3947,14 @@ mod tests {
     async fn test_enhanced_notification_manager_escalation() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Добавляем эскалационный нотифаер
         let email_notifier = Box::new(StubNotifier);
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+
         // Проверяем, что нотифаер добавлен
         let status = enhanced_manager.get_status().await.unwrap();
         assert_eq!(status.escalation_channels_count, 1);
@@ -3892,11 +3970,11 @@ mod tests {
             enable_escalation: true,
             escalation_channels: vec!["email".to_string(), "sms".to_string()],
         };
-        
+
         // Тестируем сериализацию
         let serialized = serde_json::to_string(&strategy).unwrap();
         let deserialized: NotificationStrategy = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(deserialized.max_frequency_seconds, 120);
         assert_eq!(deserialized.priority, 75);
         assert_eq!(deserialized.max_retries, 5);
@@ -3909,11 +3987,11 @@ mod tests {
     async fn test_enhanced_notification_config_serialization() {
         let mut config = EnhancedNotificationConfig::default();
         config.global_rate_limit_seconds = 120;
-        
+
         // Тестируем сериализацию
         let serialized = serde_json::to_string(&config).unwrap();
         let deserialized: EnhancedNotificationConfig = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(deserialized.global_rate_limit_seconds, 120);
         assert_eq!(deserialized.strategies.len(), 3); // Critical, Warning, Info
     }
@@ -3921,14 +3999,21 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_with_webhook_escalation() {
         let manager = NotificationManager::new_webhook("https://example.com/webhook");
-        
+
         // Добавляем эскалационный нотифаер
         let email_notifier = Box::new(StubNotifier);
-        manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        
+        manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+
         // Создаём критическое уведомление (должно использовать эскалацию)
-        let notification = Notification::new(NotificationType::Critical, "Critical Test", "Critical message");
-        
+        let notification = Notification::new(
+            NotificationType::Critical,
+            "Critical Test",
+            "Critical message",
+        );
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
@@ -3937,14 +4022,15 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_rate_limiting_by_type() {
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём уведомление информационного типа
-        let info_notification = Notification::new(NotificationType::Info, "Info Test", "Info message");
-        
+        let info_notification =
+            Notification::new(NotificationType::Info, "Info Test", "Info message");
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&info_notification).await;
         assert!(result.is_ok());
-        
+
         // Проверяем, что время последнего уведомления обновлено
         let last_by_type = manager.last_notification_by_type.read().await;
         assert!(last_by_type.contains_key(&NotificationType::Info));
@@ -3954,17 +4040,20 @@ mod tests {
     async fn test_enhanced_notification_manager_config_update() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Получаем текущую конфигурацию
         let current_config = enhanced_manager.get_config().await;
-        
+
         // Создаём новую конфигурацию с изменёнными настройками
         let mut new_config = current_config;
         new_config.global_rate_limit_seconds = 300;
-        
+
         // Обновляем конфигурацию
-        enhanced_manager.set_config(new_config.clone()).await.unwrap();
-        
+        enhanced_manager
+            .set_config(new_config.clone())
+            .await
+            .unwrap();
+
         // Проверяем, что конфигурация обновлена
         let updated_config = enhanced_manager.get_config().await;
         assert_eq!(updated_config.global_rate_limit_seconds, 300);
@@ -3974,10 +4063,10 @@ mod tests {
     async fn test_notification_manager_disabled_with_strategy() {
         let mut manager = NotificationManager::new_stub();
         manager.set_enabled(false);
-        
+
         // Создаём уведомление
         let notification = Notification::new(NotificationType::Critical, "Test", "Test message");
-        
+
         // Отправляем уведомление (должно быть проигнорировано)
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok()); // Должно возвращать Ok, даже если отключено
@@ -3987,14 +4076,17 @@ mod tests {
     async fn test_enhanced_notification_status_serialization() {
         let manager = NotificationManager::new_stub();
         let status = manager.get_enhanced_status().await.unwrap();
-        
+
         // Тестируем сериализацию
         let serialized = serde_json::to_string(&status).unwrap();
         let deserialized: EnhancedNotificationStatus = serde_json::from_str(&serialized).unwrap();
-        
+
         assert_eq!(deserialized.enabled, status.enabled);
         assert_eq!(deserialized.backend, status.backend);
-        assert_eq!(deserialized.global_rate_limit_seconds, status.global_rate_limit_seconds);
+        assert_eq!(
+            deserialized.global_rate_limit_seconds,
+            status.global_rate_limit_seconds
+        );
     }
 
     #[tokio::test]
@@ -4004,17 +4096,17 @@ mod tests {
             priority: 100,
             ..Default::default()
         };
-        
+
         let medium_priority = NotificationStrategy {
             priority: 50,
             ..Default::default()
         };
-        
+
         let low_priority = NotificationStrategy {
             priority: 10,
             ..Default::default()
         };
-        
+
         assert_eq!(high_priority.priority, 100);
         assert_eq!(medium_priority.priority, 50);
         assert_eq!(low_priority.priority, 10);
@@ -4023,20 +4115,20 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_multiple_notification_types() {
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём уведомления разных типов
         let notifications = vec![
             Notification::new(NotificationType::Critical, "Critical", "Critical message"),
             Notification::new(NotificationType::Warning, "Warning", "Warning message"),
             Notification::new(NotificationType::Info, "Info", "Info message"),
         ];
-        
+
         // Отправляем все уведомления
         for notification in &notifications {
             let result = manager.send_with_strategy(notification).await;
             assert!(result.is_ok());
         }
-        
+
         // Проверяем, что все типы были обработаны
         let last_by_type = manager.last_notification_by_type.read().await;
         assert_eq!(last_by_type.len(), 3);
@@ -4046,21 +4138,30 @@ mod tests {
     async fn test_enhanced_notification_manager_escalation_channels() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Добавляем несколько эскалационных нотифаеров
         let email_notifier = Box::new(StubNotifier);
         let sms_notifier = Box::new(StubNotifier);
-        
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        enhanced_manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        
+
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+        enhanced_manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+
         // Проверяем состояние
         let status = enhanced_manager.get_status().await.unwrap();
         assert_eq!(status.escalation_channels_count, 2);
-        
+
         // Удаляем один нотифаер
-        enhanced_manager.remove_escalation_notifier("email").await.unwrap();
-        
+        enhanced_manager
+            .remove_escalation_notifier("email")
+            .await
+            .unwrap();
+
         // Проверяем, что остался только один
         let status = enhanced_manager.get_status().await.unwrap();
         assert_eq!(status.escalation_channels_count, 1);
@@ -4071,21 +4172,24 @@ mod tests {
         // Тестируем механизм повторных попыток
         // Для этого теста нам нужен нотифаер, который сначала терпит неудачу, а затем успешен
         // Используем заглушку, которая всегда успешна, но проверяем логику
-        
+
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём конфигурацию с несколькими попытками
         let mut config = EnhancedNotificationConfig::default();
         let mut critical_strategy = NotificationStrategy::default();
         critical_strategy.max_retries = 3;
         critical_strategy.retry_delay_ms = 100;
-        config.strategies.insert(NotificationType::Critical, critical_strategy);
-        
+        config
+            .strategies
+            .insert(NotificationType::Critical, critical_strategy);
+
         manager.set_config(config).await.unwrap();
-        
+
         // Создаём критическое уведомление
-        let notification = Notification::new(NotificationType::Critical, "Critical", "Critical message");
-        
+        let notification =
+            Notification::new(NotificationType::Critical, "Critical", "Critical message");
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
@@ -4095,7 +4199,7 @@ mod tests {
     async fn test_enhanced_notification_config_custom_strategies() {
         // Тестируем кастомные стратегии для разных типов уведомлений
         let mut config = EnhancedNotificationConfig::default();
-        
+
         // Добавляем кастомную стратегию для PriorityChange
         let priority_strategy = NotificationStrategy {
             max_frequency_seconds: 60,
@@ -4105,13 +4209,20 @@ mod tests {
             enable_escalation: false,
             escalation_channels: vec!["webhook".to_string()],
         };
-        
-        config.strategies.insert(NotificationType::PriorityChange, priority_strategy);
-        
+
+        config
+            .strategies
+            .insert(NotificationType::PriorityChange, priority_strategy);
+
         // Проверяем, что стратегия добавлена
-        assert!(config.strategies.contains_key(&NotificationType::PriorityChange));
-        
-        let strategy = config.strategies.get(&NotificationType::PriorityChange).unwrap();
+        assert!(config
+            .strategies
+            .contains_key(&NotificationType::PriorityChange));
+
+        let strategy = config
+            .strategies
+            .get(&NotificationType::PriorityChange)
+            .unwrap();
         assert_eq!(strategy.priority, 80);
         assert_eq!(strategy.max_retries, 2);
     }
@@ -4119,20 +4230,20 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_global_rate_limit() {
         let manager = NotificationManager::new_stub();
-        
+
         // Устанавливаем глобальный лимит частоты
         let mut config = EnhancedNotificationConfig::default();
         config.global_rate_limit_seconds = 300; // 5 минут
-        
+
         manager.set_config(config).await.unwrap();
-        
+
         // Создаём уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
-        
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
-        
+
         // Проверяем, что глобальное время обновлено
         let status = manager.get_enhanced_status().await.unwrap();
         assert!(status.last_notification_time.is_some());
@@ -4142,11 +4253,11 @@ mod tests {
     async fn test_enhanced_notification_manager_monitoring_integration() {
         let manager = NotificationManager::new_stub();
         let mut enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Проверяем, что интеграция с мониторингом включена по умолчанию
         let config = enhanced_manager.get_config().await;
         assert!(config.enable_monitoring_integration);
-        
+
         // Проверяем, что health_monitoring_integration изначально None
         assert!(enhanced_manager.health_monitoring_integration.is_none());
     }
@@ -4159,19 +4270,19 @@ mod tests {
             escalation_channels: vec!["email".to_string(), "sms".to_string()],
             ..Default::default()
         };
-        
+
         let webhook_only_strategy = NotificationStrategy {
             enable_escalation: true,
             escalation_channels: vec!["webhook".to_string()],
             ..Default::default()
         };
-        
+
         let no_escalation_strategy = NotificationStrategy {
             enable_escalation: false,
             escalation_channels: vec![],
             ..Default::default()
         };
-        
+
         assert_eq!(email_sms_strategy.escalation_channels.len(), 2);
         assert_eq!(webhook_only_strategy.escalation_channels.len(), 1);
         assert!(no_escalation_strategy.escalation_channels.is_empty());
@@ -4182,37 +4293,43 @@ mod tests {
         // Комплексный тест всех функций EnhancedNotificationManager
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // 1. Проверяем начальное состояние
         let initial_status = enhanced_manager.get_status().await.unwrap();
         assert!(initial_status.enabled);
         assert_eq!(initial_status.escalation_channels_count, 0);
-        
+
         // 2. Добавляем эскалационные нотифаеры
         let email_notifier = Box::new(StubNotifier);
         let sms_notifier = Box::new(StubNotifier);
-        
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        enhanced_manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        
+
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+        enhanced_manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+
         // 3. Проверяем обновлённое состояние
         let updated_status = enhanced_manager.get_status().await.unwrap();
         assert_eq!(updated_status.escalation_channels_count, 2);
-        
+
         // 4. Обновляем конфигурацию
         let mut config = enhanced_manager.get_config().await;
         config.global_rate_limit_seconds = 600;
         enhanced_manager.set_config(config).await.unwrap();
-        
+
         // 5. Проверяем обновлённую конфигурацию
         let new_config = enhanced_manager.get_config().await;
         assert_eq!(new_config.global_rate_limit_seconds, 600);
-        
+
         // 6. Отправляем уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
         let result = enhanced_manager.send(&notification).await;
         assert!(result.is_ok());
-        
+
         // 7. Проверяем финальное состояние
         let final_status = enhanced_manager.get_status().await.unwrap();
         assert!(final_status.last_notification_time.is_some());
@@ -4223,23 +4340,28 @@ mod tests {
     async fn test_notification_manager_escalation_with_failure() {
         // Тестируем эскалацию при неудачной основной отправке
         let manager = NotificationManager::new_stub();
-        
+
         // Добавляем эскалационный нотифаер
         let email_notifier = Box::new(StubNotifier);
-        manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        
+        manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+
         // Создаём конфигурацию с эскалацией для информационных уведомлений
         let mut config = EnhancedNotificationConfig::default();
         let mut info_strategy = NotificationStrategy::default();
         info_strategy.enable_escalation = true;
         info_strategy.escalation_channels = vec!["email".to_string()];
-        config.strategies.insert(NotificationType::Info, info_strategy);
-        
+        config
+            .strategies
+            .insert(NotificationType::Info, info_strategy);
+
         manager.set_config(config).await.unwrap();
-        
+
         // Создаём уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
-        
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
@@ -4248,26 +4370,37 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_different_priority_levels() {
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём уведомления с разными уровнями приоритета
-        let critical_notification = Notification::new(NotificationType::Critical, "Critical", "Critical message");
-        let warning_notification = Notification::new(NotificationType::Warning, "Warning", "Warning message");
+        let critical_notification =
+            Notification::new(NotificationType::Critical, "Critical", "Critical message");
+        let warning_notification =
+            Notification::new(NotificationType::Warning, "Warning", "Warning message");
         let info_notification = Notification::new(NotificationType::Info, "Info", "Info message");
-        
+
         // Отправляем все уведомления
-        manager.send_with_strategy(&critical_notification).await.unwrap();
-        manager.send_with_strategy(&warning_notification).await.unwrap();
-        manager.send_with_strategy(&info_notification).await.unwrap();
-        
+        manager
+            .send_with_strategy(&critical_notification)
+            .await
+            .unwrap();
+        manager
+            .send_with_strategy(&warning_notification)
+            .await
+            .unwrap();
+        manager
+            .send_with_strategy(&info_notification)
+            .await
+            .unwrap();
+
         // Проверяем, что все типы были обработаны
         let last_by_type = manager.last_notification_by_type.read().await;
         assert_eq!(last_by_type.len(), 3);
-        
+
         // Проверяем, что критические уведомления имеют наивысший приоритет
         let config = manager.get_config().await;
         let critical_strategy = config.strategies.get(&NotificationType::Critical).unwrap();
         let info_strategy = config.strategies.get(&NotificationType::Info).unwrap();
-        
+
         assert!(critical_strategy.priority > info_strategy.priority);
     }
 
@@ -4275,14 +4408,26 @@ mod tests {
     async fn test_enhanced_notification_config_validation() {
         // Тестируем валидацию конфигурации
         let config = EnhancedNotificationConfig::default();
-        
+
         // Проверяем, что все стратегии имеют разумные значения
         for (notification_type, strategy) in &config.strategies {
-            assert!(strategy.max_retries > 0, "Max retries should be > 0 for {:?}", notification_type);
-            assert!(strategy.retry_delay_ms > 0, "Retry delay should be > 0 for {:?}", notification_type);
-            assert!(strategy.priority <= 100, "Priority should be <= 100 for {:?}", notification_type);
+            assert!(
+                strategy.max_retries > 0,
+                "Max retries should be > 0 for {:?}",
+                notification_type
+            );
+            assert!(
+                strategy.retry_delay_ms > 0,
+                "Retry delay should be > 0 for {:?}",
+                notification_type
+            );
+            assert!(
+                strategy.priority <= 100,
+                "Priority should be <= 100 for {:?}",
+                notification_type
+            );
         }
-        
+
         // Проверяем, что глобальный лимит частоты разумный
         assert!(config.global_rate_limit_seconds > 0);
     }
@@ -4290,24 +4435,26 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_rate_limiting_respects_type_strategy() {
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём конфигурацию с разными лимитами для разных типов
         let mut config = EnhancedNotificationConfig::default();
-        
+
         // Устанавливаем очень низкий лимит для информационных уведомлений
         let mut info_strategy = NotificationStrategy::default();
         info_strategy.max_frequency_seconds = 1; // 1 секунда
-        config.strategies.insert(NotificationType::Info, info_strategy);
-        
+        config
+            .strategies
+            .insert(NotificationType::Info, info_strategy);
+
         manager.set_config(config).await.unwrap();
-        
+
         // Создаём информационное уведомление
         let info_notification = Notification::new(NotificationType::Info, "Info", "Info message");
-        
+
         // Первая отправка должна пройти успешно
         let result = manager.send_with_strategy(&info_notification).await;
         assert!(result.is_ok());
-        
+
         // Вторая отправка должна быть ограничена
         let result = manager.send_with_strategy(&info_notification).await;
         assert!(result.is_ok()); // Должно возвращать Ok, но не отправлять
@@ -4317,16 +4464,20 @@ mod tests {
     async fn test_enhanced_notification_manager_error_handling() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Тестируем обработку ошибок при добавлении эскалационного нотифаера
         let email_notifier = Box::new(StubNotifier);
-        let result = enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await;
+        let result = enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await;
         assert!(result.is_ok());
-        
+
         // Тестируем обработку ошибок при удалении несуществующего нотифаера
-        let result = enhanced_manager.remove_escalation_notifier("nonexistent").await;
+        let result = enhanced_manager
+            .remove_escalation_notifier("nonexistent")
+            .await;
         assert!(result.is_ok()); // Должно возвращать Ok, даже если нотифаер не существует
-        
+
         // Тестируем обработку ошибок при обновлении конфигурации
         let config = EnhancedNotificationConfig::default();
         let result = enhanced_manager.set_config(config).await;
@@ -4336,28 +4487,44 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_escalation_with_multiple_channels() {
         let manager = NotificationManager::new_stub();
-        
+
         // Добавляем несколько эскалационных нотифаеров
         let email_notifier = Box::new(StubNotifier);
         let sms_notifier = Box::new(StubNotifier);
         let webhook_notifier = Box::new(StubNotifier);
-        
-        manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        manager.add_escalation_notifier("webhook".to_string(), webhook_notifier).await.unwrap();
-        
+
+        manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+        manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+        manager
+            .add_escalation_notifier("webhook".to_string(), webhook_notifier)
+            .await
+            .unwrap();
+
         // Создаём конфигурацию с эскалацией по нескольким каналам
         let mut config = EnhancedNotificationConfig::default();
         let mut critical_strategy = NotificationStrategy::default();
         critical_strategy.enable_escalation = true;
-        critical_strategy.escalation_channels = vec!["email".to_string(), "sms".to_string(), "webhook".to_string()];
-        config.strategies.insert(NotificationType::Critical, critical_strategy);
-        
+        critical_strategy.escalation_channels = vec![
+            "email".to_string(),
+            "sms".to_string(),
+            "webhook".to_string(),
+        ];
+        config
+            .strategies
+            .insert(NotificationType::Critical, critical_strategy);
+
         manager.set_config(config).await.unwrap();
-        
+
         // Создаём критическое уведомление
-        let notification = Notification::new(NotificationType::Critical, "Critical", "Critical message");
-        
+        let notification =
+            Notification::new(NotificationType::Critical, "Critical", "Critical message");
+
         // Отправляем уведомление
         let result = manager.send_with_strategy(&notification).await;
         assert!(result.is_ok());
@@ -4368,36 +4535,42 @@ mod tests {
         // Тестируем согласованность конфигурации
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Получаем конфигурацию
         let config1 = enhanced_manager.get_config().await;
         let config2 = enhanced_manager.get_config().await;
-        
+
         // Проверяем, что конфигурации идентичны
-        assert_eq!(config1.global_rate_limit_seconds, config2.global_rate_limit_seconds);
+        assert_eq!(
+            config1.global_rate_limit_seconds,
+            config2.global_rate_limit_seconds
+        );
         assert_eq!(config1.strategies.len(), config2.strategies.len());
-        assert_eq!(config1.enable_monitoring_integration, config2.enable_monitoring_integration);
+        assert_eq!(
+            config1.enable_monitoring_integration,
+            config2.enable_monitoring_integration
+        );
     }
 
     #[tokio::test]
     async fn test_notification_manager_time_tracking() {
         let manager = NotificationManager::new_stub();
-        
+
         // Проверяем, что изначально время не установлено
         let last_global = manager.last_global_notification.read().await;
         assert!(last_global.is_none());
-        
+
         let last_by_type = manager.last_notification_by_type.read().await;
         assert!(last_by_type.is_empty());
-        
+
         // Отправляем уведомление
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
         manager.send_with_strategy(&notification).await.unwrap();
-        
+
         // Проверяем, что время обновлено
         let last_global = manager.last_global_notification.read().await;
         assert!(last_global.is_some());
-        
+
         let last_by_type = manager.last_notification_by_type.read().await;
         assert!(!last_by_type.is_empty());
     }
@@ -4406,41 +4579,44 @@ mod tests {
     async fn test_enhanced_notification_manager_cloning() {
         let manager = NotificationManager::new_stub();
         let enhanced_manager1 = EnhancedNotificationManager::new(manager);
-        
+
         // Клонируем менеджер
         let enhanced_manager2 = enhanced_manager1.clone();
-        
+
         // Проверяем, что оба менеджера имеют одинаковое состояние
         let status1 = enhanced_manager1.get_status().await.unwrap();
         let status2 = enhanced_manager2.get_status().await.unwrap();
-        
+
         assert_eq!(status1.enabled, status2.enabled);
         assert_eq!(status1.backend, status2.backend);
-        assert_eq!(status1.global_rate_limit_seconds, status2.global_rate_limit_seconds);
+        assert_eq!(
+            status1.global_rate_limit_seconds,
+            status2.global_rate_limit_seconds
+        );
     }
 
     #[tokio::test]
     async fn test_notification_strategy_edge_cases() {
         // Тестируем крайние случаи для стратегий
-        
+
         // Стратегия с нулевым лимитом частоты (отключено)
         let no_rate_limit_strategy = NotificationStrategy {
             max_frequency_seconds: 0,
             ..Default::default()
         };
-        
+
         // Стратегия с нулевыми попытками (не рекомендуется, но допустимо)
         let no_retries_strategy = NotificationStrategy {
             max_retries: 0,
             ..Default::default()
         };
-        
+
         // Стратегия с нулевой задержкой
         let no_delay_strategy = NotificationStrategy {
             retry_delay_ms: 0,
             ..Default::default()
         };
-        
+
         assert_eq!(no_rate_limit_strategy.max_frequency_seconds, 0);
         assert_eq!(no_retries_strategy.max_retries, 0);
         assert_eq!(no_delay_strategy.retry_delay_ms, 0);
@@ -4449,19 +4625,19 @@ mod tests {
     #[tokio::test]
     async fn test_enhanced_notification_config_edge_cases() {
         // Тестируем крайние случаи для конфигурации
-        
+
         // Конфигурация с нулевым глобальным лимитом
         let mut config = EnhancedNotificationConfig::default();
         config.global_rate_limit_seconds = 0;
-        
+
         // Конфигурация с отключённой интеграцией мониторинга
         let mut no_monitoring_config = EnhancedNotificationConfig::default();
         no_monitoring_config.enable_monitoring_integration = false;
-        
+
         // Конфигурация с отключённым детальным логированием
         let mut no_logging_config = EnhancedNotificationConfig::default();
         no_logging_config.enable_detailed_logging = false;
-        
+
         assert_eq!(config.global_rate_limit_seconds, 0);
         assert!(!no_monitoring_config.enable_monitoring_integration);
         assert!(!no_logging_config.enable_detailed_logging);
@@ -4470,17 +4646,18 @@ mod tests {
     #[tokio::test]
     async fn test_notification_manager_with_different_backends() {
         // Тестируем менеджер с разными бэкендами
-        
+
         // Тестируем с заглушкой
         let stub_manager = NotificationManager::new_stub();
         assert_eq!(stub_manager.backend_name(), "stub");
-        
+
         // Тестируем с вебхук
         let webhook_manager = NotificationManager::new_webhook("https://example.com/webhook");
         assert_eq!(webhook_manager.backend_name(), "webhook");
-        
+
         // Тестируем с SMS
-        let sms_manager = NotificationManager::new_sms("https://sms-gateway.example.com", "+1234567890");
+        let sms_manager =
+            NotificationManager::new_sms("https://sms-gateway.example.com", "+1234567890");
         assert_eq!(sms_manager.backend_name(), "sms");
     }
 
@@ -4489,10 +4666,10 @@ mod tests {
         // Тестируем согласованность бэкендов
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Проверяем, что бэкенды совпадают
         assert_eq!(enhanced_manager.backend_name(), "stub");
-        
+
         // Проверяем состояние
         let status = enhanced_manager.get_status().await.unwrap();
         assert_eq!(status.backend, "stub");
@@ -4502,20 +4679,32 @@ mod tests {
     async fn test_notification_manager_escalation_notifier_types() {
         // Тестируем разные типы эскалационных нотифаеров
         let manager = NotificationManager::new_stub();
-        
+
         // Добавляем разные типы нотифаеров
         let stub_notifier = Box::new(StubNotifier);
         let webhook_notifier = Box::new(WebhookNotifier::new("https://example.com/webhook"));
-        let sms_notifier = Box::new(SmsNotifier::new("https://sms-gateway.example.com", "+1234567890"));
-        
-        manager.add_escalation_notifier("stub".to_string(), stub_notifier).await.unwrap();
-        manager.add_escalation_notifier("webhook".to_string(), webhook_notifier).await.unwrap();
-        manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        
+        let sms_notifier = Box::new(SmsNotifier::new(
+            "https://sms-gateway.example.com",
+            "+1234567890",
+        ));
+
+        manager
+            .add_escalation_notifier("stub".to_string(), stub_notifier)
+            .await
+            .unwrap();
+        manager
+            .add_escalation_notifier("webhook".to_string(), webhook_notifier)
+            .await
+            .unwrap();
+        manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+
         // Проверяем, что все нотифаеры добавлены
         let escalation_notifiers = manager.escalation_notifiers.read().await;
         assert_eq!(escalation_notifiers.len(), 3);
-        
+
         // Проверяем типы нотифаеров
         assert!(escalation_notifiers.contains_key("stub"));
         assert!(escalation_notifiers.contains_key("webhook"));
@@ -4527,37 +4716,43 @@ mod tests {
         // Комплексный тест интеграции всех функций
         let manager = NotificationManager::new_stub();
         let mut enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // 1. Настраиваем конфигурацию
         let mut config = EnhancedNotificationConfig::default();
         config.global_rate_limit_seconds = 120;
         enhanced_manager.set_config(config).await.unwrap();
-        
+
         // 2. Добавляем эскалационные нотифаеры
         let email_notifier = Box::new(StubNotifier);
         let sms_notifier = Box::new(StubNotifier);
-        
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        enhanced_manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        
+
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+        enhanced_manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+
         // 3. Отправляем уведомления разных типов
         let notifications = vec![
             Notification::new(NotificationType::Critical, "Critical", "Critical message"),
             Notification::new(NotificationType::Warning, "Warning", "Warning message"),
             Notification::new(NotificationType::Info, "Info", "Info message"),
         ];
-        
+
         for notification in &notifications {
             enhanced_manager.send(notification).await.unwrap();
         }
-        
+
         // 4. Проверяем финальное состояние
         let final_status = enhanced_manager.get_status().await.unwrap();
         assert!(final_status.last_notification_time.is_some());
         assert_eq!(final_status.notification_count_by_type, 3);
         assert_eq!(final_status.escalation_channels_count, 2);
         assert_eq!(final_status.global_rate_limit_seconds, 120);
-        
+
         // 5. Проверяем конфигурацию
         let final_config = enhanced_manager.get_config().await;
         assert_eq!(final_config.global_rate_limit_seconds, 120);
@@ -4569,7 +4764,7 @@ mod tests {
         // Тестируем интеграцию с событиями здоровья
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём mock событие здоровья
         let health_event = HealthEvent::NewHealthIssue {
             issue: HealthIssue {
@@ -4582,9 +4777,11 @@ mod tests {
             },
             timestamp: Utc::now(),
         };
-        
+
         // Отправляем уведомление о событии здоровья
-        let result = enhanced_manager.send_health_event_notification(&health_event).await;
+        let result = enhanced_manager
+            .send_health_event_notification(&health_event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -4593,7 +4790,7 @@ mod tests {
         // Тестируем разные типы событий здоровья
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём разные типы событий
         let critical_issue = HealthIssue {
             issue_id: "critical_issue".to_string(),
@@ -4603,7 +4800,7 @@ mod tests {
             severity: HealthIssueSeverity::Critical,
             timestamp: Utc::now(),
         };
-        
+
         let warning_issue = HealthIssue {
             issue_id: "warning_issue".to_string(),
             issue_type: "warning_type".to_string(),
@@ -4612,7 +4809,7 @@ mod tests {
             severity: HealthIssueSeverity::Warning,
             timestamp: Utc::now(),
         };
-        
+
         let events = vec![
             HealthEvent::NewHealthIssue {
                 issue: critical_issue,
@@ -4632,7 +4829,7 @@ mod tests {
                 timestamp: Utc::now(),
             },
         ];
-        
+
         // Отправляем все события
         for event in &events {
             let result = enhanced_manager.send_health_event_notification(event).await;
@@ -4645,12 +4842,12 @@ mod tests {
         // Тестируем отправку событий здоровья при отключённой интеграции
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Отключаем интеграцию с мониторингом
         let mut config = enhanced_manager.get_config().await;
         config.enable_monitoring_integration = false;
         enhanced_manager.set_config(config).await.unwrap();
-        
+
         // Создаём событие здоровья
         let health_event = HealthEvent::NewHealthIssue {
             issue: HealthIssue {
@@ -4663,9 +4860,11 @@ mod tests {
             },
             timestamp: Utc::now(),
         };
-        
+
         // Отправляем уведомление (должно быть проигнорировано)
-        let result = enhanced_manager.send_health_event_notification(&health_event).await;
+        let result = enhanced_manager
+            .send_health_event_notification(&health_event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -4674,7 +4873,7 @@ mod tests {
         // Тестируем маппинг приоритетов для событий здоровья
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём критические, предупреждающие и информационные события
         let critical_issue = HealthIssue {
             issue_id: "critical".to_string(),
@@ -4684,7 +4883,7 @@ mod tests {
             severity: HealthIssueSeverity::Critical,
             timestamp: Utc::now(),
         };
-        
+
         let warning_issue = HealthIssue {
             issue_id: "warning".to_string(),
             issue_type: "warning".to_string(),
@@ -4693,7 +4892,7 @@ mod tests {
             severity: HealthIssueSeverity::Warning,
             timestamp: Utc::now(),
         };
-        
+
         let info_issue = HealthIssue {
             issue_id: "info".to_string(),
             issue_type: "info".to_string(),
@@ -4702,7 +4901,7 @@ mod tests {
             severity: HealthIssueSeverity::Info,
             timestamp: Utc::now(),
         };
-        
+
         let events = vec![
             HealthEvent::NewHealthIssue {
                 issue: critical_issue,
@@ -4717,7 +4916,7 @@ mod tests {
                 timestamp: Utc::now(),
             },
         ];
-        
+
         // Отправляем все события
         for event in &events {
             let result = enhanced_manager.send_health_event_notification(event).await;
@@ -4730,7 +4929,7 @@ mod tests {
         // Тестируем события здоровья с деталями
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём событие с деталями
         let health_event = HealthEvent::NewHealthIssue {
             issue: HealthIssue {
@@ -4743,9 +4942,11 @@ mod tests {
             },
             timestamp: Utc::now(),
         };
-        
+
         // Отправляем уведомление
-        let result = enhanced_manager.send_health_event_notification(&health_event).await;
+        let result = enhanced_manager
+            .send_health_event_notification(&health_event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -4754,16 +4955,18 @@ mod tests {
         // Тестируем уведомления о изменении статуса здоровья
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём событие изменения статуса
         let health_event = HealthEvent::HealthStatusChanged {
             old_status: HealthStatus::Healthy,
             new_status: HealthStatus::Degraded,
             timestamp: Utc::now(),
         };
-        
+
         // Отправляем уведомление
-        let result = enhanced_manager.send_health_event_notification(&health_event).await;
+        let result = enhanced_manager
+            .send_health_event_notification(&health_event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -4772,14 +4975,20 @@ mod tests {
         // Тестируем эскалацию для критических событий здоровья
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Добавляем эскалационные нотифаеры
         let email_notifier = Box::new(StubNotifier);
         let sms_notifier = Box::new(StubNotifier);
-        
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        enhanced_manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        
+
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+        enhanced_manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+
         // Создаём критическое событие здоровья
         let critical_issue = HealthIssue {
             issue_id: "critical_escalation".to_string(),
@@ -4789,14 +4998,16 @@ mod tests {
             severity: HealthIssueSeverity::Critical,
             timestamp: Utc::now(),
         };
-        
+
         let health_event = HealthEvent::CriticalHealthDetected {
             issue: critical_issue,
             timestamp: Utc::now(),
         };
-        
+
         // Отправляем уведомление
-        let result = enhanced_manager.send_health_event_notification(&health_event).await;
+        let result = enhanced_manager
+            .send_health_event_notification(&health_event)
+            .await;
         assert!(result.is_ok());
     }
 
@@ -4805,10 +5016,10 @@ mod tests {
         // Тестируем производительность EnhancedNotificationManager
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Отправляем большое количество уведомлений
         let start_time = std::time::Instant::now();
-        
+
         for i in 0..100 {
             let notification = Notification::new(
                 NotificationType::Info,
@@ -4817,10 +5028,10 @@ mod tests {
             );
             enhanced_manager.send(&notification).await.unwrap();
         }
-        
+
         let duration = start_time.elapsed();
         tracing::info!("Sent 100 notifications in {:?}", duration);
-        
+
         // Проверяем, что все уведомления были обработаны
         let status = enhanced_manager.get_status().await.unwrap();
         assert!(status.last_notification_time.is_some());
@@ -4830,26 +5041,28 @@ mod tests {
     async fn test_notification_manager_concurrent_operations() {
         // Тестируем конкурентные операции
         let manager = NotificationManager::new_stub();
-        
+
         // Создаём несколько задач для конкурентной отправки
-        let tasks: Vec<_> = (0..10).map(|i| {
-            let manager = manager.clone();
-            tokio::spawn(async move {
-                let notification = Notification::new(
-                    NotificationType::Info,
-                    format!("Concurrent {}", i),
-                    format!("Concurrent message {}", i),
-                );
-                manager.send_with_strategy(&notification).await
+        let tasks: Vec<_> = (0..10)
+            .map(|i| {
+                let manager = manager.clone();
+                tokio::spawn(async move {
+                    let notification = Notification::new(
+                        NotificationType::Info,
+                        format!("Concurrent {}", i),
+                        format!("Concurrent message {}", i),
+                    );
+                    manager.send_with_strategy(&notification).await
+                })
             })
-        }).collect();
-        
+            .collect();
+
         // Ждём завершения всех задач
         for task in tasks {
             let result = task.await.unwrap();
             assert!(result.is_ok());
         }
-        
+
         // Проверяем, что все уведомления были обработаны
         let last_by_type = manager.last_notification_by_type.read().await;
         assert!(!last_by_type.is_empty());
@@ -4860,18 +5073,21 @@ mod tests {
         // Стресс-тест для EnhancedNotificationManager
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Добавляем эскалационные нотифаеры
         let email_notifier = Box::new(StubNotifier);
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+
         // Отправляем большое количество уведомлений разных типов
         let notification_types = vec![
             NotificationType::Critical,
             NotificationType::Warning,
             NotificationType::Info,
         ];
-        
+
         for i in 0..50 {
             let notification_type = &notification_types[i % notification_types.len()];
             let notification = Notification::new(
@@ -4881,7 +5097,7 @@ mod tests {
             );
             enhanced_manager.send(&notification).await.unwrap();
         }
-        
+
         // Проверяем финальное состояние
         let status = enhanced_manager.get_status().await.unwrap();
         assert!(status.last_notification_time.is_some());
@@ -4893,26 +5109,35 @@ mod tests {
     async fn test_notification_manager_configuration_persistence() {
         // Тестируем сохранение конфигурации
         let manager = NotificationManager::new_stub();
-        
+
         // Устанавливаем кастомную конфигурацию
         let mut config = EnhancedNotificationConfig::default();
         config.global_rate_limit_seconds = 600;
-        
+
         let mut custom_strategy = NotificationStrategy::default();
         custom_strategy.max_frequency_seconds = 300;
-        config.strategies.insert(NotificationType::Info, custom_strategy);
-        
+        config
+            .strategies
+            .insert(NotificationType::Info, custom_strategy);
+
         manager.set_config(config.clone()).await.unwrap();
-        
+
         // Проверяем, что конфигурация сохранена
         let saved_config = manager.get_config().await;
         assert_eq!(saved_config.global_rate_limit_seconds, 600);
-        assert_eq!(saved_config.strategies.get(&NotificationType::Info).unwrap().max_frequency_seconds, 300);
-        
+        assert_eq!(
+            saved_config
+                .strategies
+                .get(&NotificationType::Info)
+                .unwrap()
+                .max_frequency_seconds,
+            300
+        );
+
         // Отправляем уведомление и проверяем, что конфигурация не изменилась
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
         manager.send_with_strategy(&notification).await.unwrap();
-        
+
         let final_config = manager.get_config().await;
         assert_eq!(final_config.global_rate_limit_seconds, 600);
     }
@@ -4922,24 +5147,26 @@ mod tests {
         // Тестируем восстановление после ошибок
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Устанавливаем невалидную конфигурацию (с нулевыми попытками)
         let mut config = EnhancedNotificationConfig::default();
         let mut invalid_strategy = NotificationStrategy::default();
         invalid_strategy.max_retries = 0; // Нет попыток
-        config.strategies.insert(NotificationType::Info, invalid_strategy);
-        
+        config
+            .strategies
+            .insert(NotificationType::Info, invalid_strategy);
+
         enhanced_manager.set_config(config).await.unwrap();
-        
+
         // Отправляем уведомление (должно завершиться неудачей после 0 попыток)
         let notification = Notification::new(NotificationType::Info, "Test", "Test message");
         let result = enhanced_manager.send(&notification).await;
         assert!(result.is_ok()); // Должно возвращать Ok, даже если отправка не удалась
-        
+
         // Восстанавливаем валидную конфигурацию
         let valid_config = EnhancedNotificationConfig::default();
         enhanced_manager.set_config(valid_config).await.unwrap();
-        
+
         // Отправляем уведомление снова (должно пройти успешно)
         let result = enhanced_manager.send(&notification).await;
         assert!(result.is_ok());
@@ -4950,7 +5177,7 @@ mod tests {
         // Комплексный тест интеграции с системой здоровья
         let manager = NotificationManager::new_stub();
         let enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // Создаём различные события здоровья
         let critical_issue = HealthIssue {
             issue_id: "critical_integration".to_string(),
@@ -4960,7 +5187,7 @@ mod tests {
             severity: HealthIssueSeverity::Critical,
             timestamp: Utc::now(),
         };
-        
+
         let warning_issue = HealthIssue {
             issue_id: "warning_integration".to_string(),
             issue_type: "warning_type".to_string(),
@@ -4969,7 +5196,7 @@ mod tests {
             severity: HealthIssueSeverity::Warning,
             timestamp: Utc::now(),
         };
-        
+
         let events = vec![
             HealthEvent::CriticalHealthDetected {
                 issue: critical_issue,
@@ -4989,13 +5216,13 @@ mod tests {
                 timestamp: Utc::now(),
             },
         ];
-        
+
         // Отправляем все события
         for event in &events {
             let result = enhanced_manager.send_health_event_notification(event).await;
             assert!(result.is_ok());
         }
-        
+
         // Проверяем, что все события были обработаны
         let status = enhanced_manager.get_status().await.unwrap();
         assert!(status.last_notification_time.is_some());
@@ -5006,36 +5233,53 @@ mod tests {
         // Финальный комплексный тест всех функций
         let manager = NotificationManager::new_stub();
         let mut enhanced_manager = EnhancedNotificationManager::new(manager);
-        
+
         // 1. Настраиваем конфигурацию
         let mut config = EnhancedNotificationConfig::default();
         config.global_rate_limit_seconds = 300;
         config.enable_detailed_logging = true;
         enhanced_manager.set_config(config).await.unwrap();
-        
+
         // 2. Добавляем эскалационные нотифаеры
         let email_notifier = Box::new(StubNotifier);
         let sms_notifier = Box::new(StubNotifier);
         let webhook_notifier = Box::new(WebhookNotifier::new("https://example.com/webhook"));
-        
-        enhanced_manager.add_escalation_notifier("email".to_string(), email_notifier).await.unwrap();
-        enhanced_manager.add_escalation_notifier("sms".to_string(), sms_notifier).await.unwrap();
-        enhanced_manager.add_escalation_notifier("webhook".to_string(), webhook_notifier).await.unwrap();
-        
+
+        enhanced_manager
+            .add_escalation_notifier("email".to_string(), email_notifier)
+            .await
+            .unwrap();
+        enhanced_manager
+            .add_escalation_notifier("sms".to_string(), sms_notifier)
+            .await
+            .unwrap();
+        enhanced_manager
+            .add_escalation_notifier("webhook".to_string(), webhook_notifier)
+            .await
+            .unwrap();
+
         // 3. Отправляем уведомления разных типов
         let notifications = vec![
-            Notification::new(NotificationType::Critical, "Critical Final", "Critical final message"),
-            Notification::new(NotificationType::Warning, "Warning Final", "Warning final message"),
+            Notification::new(
+                NotificationType::Critical,
+                "Critical Final",
+                "Critical final message",
+            ),
+            Notification::new(
+                NotificationType::Warning,
+                "Warning Final",
+                "Warning final message",
+            ),
             Notification::new(NotificationType::Info, "Info Final", "Info final message"),
             Notification::priority_change("firefox", "normal", "high", "user request"),
             Notification::config_change("config.yml", "updated settings"),
             Notification::system_event("startup", "System started"),
         ];
-        
+
         for notification in &notifications {
             enhanced_manager.send(notification).await.unwrap();
         }
-        
+
         // 4. Отправляем события здоровья
         let critical_issue = HealthIssue {
             issue_id: "final_critical".to_string(),
@@ -5045,14 +5289,17 @@ mod tests {
             severity: HealthIssueSeverity::Critical,
             timestamp: Utc::now(),
         };
-        
+
         let health_event = HealthEvent::CriticalHealthDetected {
             issue: critical_issue,
             timestamp: Utc::now(),
         };
-        
-        enhanced_manager.send_health_event_notification(&health_event).await.unwrap();
-        
+
+        enhanced_manager
+            .send_health_event_notification(&health_event)
+            .await
+            .unwrap();
+
         // 5. Проверяем финальное состояние
         let final_status = enhanced_manager.get_status().await.unwrap();
         assert!(final_status.enabled);
@@ -5063,24 +5310,30 @@ mod tests {
         assert_eq!(final_status.escalation_channels_count, 3); // 3 эскалационных канала
         assert!(final_status.monitoring_integration_enabled);
         assert!(final_status.has_log_integration);
-        
+
         // 6. Проверяем финальную конфигурацию
         let final_config = enhanced_manager.get_config().await;
         assert_eq!(final_config.global_rate_limit_seconds, 300);
         assert!(final_config.enable_detailed_logging);
         assert!(final_config.enable_monitoring_integration);
         assert_eq!(final_config.strategies.len(), 3); // Critical, Warning, Info
-        
+
         // 7. Тестируем клонирование
         let cloned_manager = enhanced_manager.clone();
         let cloned_status = cloned_manager.get_status().await.unwrap();
-        assert_eq!(final_status.notification_count_by_type, cloned_status.notification_count_by_type);
-        
+        assert_eq!(
+            final_status.notification_count_by_type,
+            cloned_status.notification_count_by_type
+        );
+
         // 8. Тестируем удаление эскалационных нотифаеров
-        enhanced_manager.remove_escalation_notifier("email").await.unwrap();
+        enhanced_manager
+            .remove_escalation_notifier("email")
+            .await
+            .unwrap();
         let updated_status = enhanced_manager.get_status().await.unwrap();
         assert_eq!(updated_status.escalation_channels_count, 2);
-        
+
         tracing::info!("Final comprehensive test completed successfully!");
     }
 }
