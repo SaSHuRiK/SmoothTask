@@ -9,6 +9,114 @@
 polling_interval_ms: 1000
 enable_snapshot_logging: true
 
+# Настройки безопасности (новые возможности)
+security_monitoring:
+  enabled: true
+  check_interval: 60
+  max_event_history: 1000
+  anomaly_thresholds:
+    cpu_usage_threshold: 90.0
+    memory_usage_threshold: 85.0
+    io_usage_threshold: 5000.0
+    network_usage_threshold: 10000.0
+  trusted_processes:
+    - "smoothtaskd"
+    - "systemd"
+    - "init"
+  suspicious_processes:
+    - "malware"
+    - "virus"
+  notification_settings:
+    enable_notifications: true
+    notification_threshold: "medium"
+    notification_channels:
+      - "log"
+      - "email"
+
+# 🔒 Конфигурация безопасности
+
+SmoothTask теперь включает расширенную систему мониторинга безопасности для обнаружения подозрительных процессов и аномальной активности.
+
+### Основные параметры
+
+- `enabled`: Включить/отключить мониторинг безопасности
+- `check_interval`: Интервал проверки безопасности в секундах
+- `max_event_history`: Максимальное количество хранимых событий безопасности
+
+### Пороги аномалий
+
+Настройте пороги для обнаружения аномального использования ресурсов:
+
+```yaml
+anomaly_thresholds:
+  cpu_usage_threshold: 90.0      # Процент использования CPU
+  memory_usage_threshold: 85.0   # Процент использования памяти
+  io_usage_threshold: 5000.0     # Количество операций ввода-вывода в секунду
+  network_usage_threshold: 10000.0 # Количество байт в секунду
+```
+
+### Доверенные и подозрительные процессы
+
+```yaml
+trusted_processes:
+  - "smoothtaskd"
+  - "systemd"
+  - "init"
+  - "nginx"
+  - "apache2"
+
+suspicious_processes:
+  - "malware"
+  - "virus"
+  - "hacktool"
+  - "exploit"
+```
+
+### Настройки уведомлений
+
+```yaml
+notification_settings:
+  enable_notifications: true
+  notification_threshold: "medium"  # минимальный уровень серьезности для уведомлений
+  notification_channels:
+    - "log"     # запись в лог
+    - "email"   # отправка по email
+    - "webhook" # отправка через вебхук
+```
+
+### Пример полной конфигурации безопасности
+
+```yaml
+security_monitoring:
+  enabled: true
+  check_interval: 30
+  max_event_history: 5000
+  anomaly_thresholds:
+    cpu_usage_threshold: 85.0
+    memory_usage_threshold: 80.0
+    io_usage_threshold: 3000.0
+    network_usage_threshold: 5000.0
+  trusted_processes:
+    - "smoothtaskd"
+    - "systemd"
+    - "init"
+    - "docker"
+    - "kubelet"
+  suspicious_processes:
+    - "malware"
+    - "virus"
+    - "hacktool"
+    - "backdoor"
+    - "rootkit"
+  notification_settings:
+    enable_notifications: true
+    notification_threshold: "high"
+    notification_channels:
+      - "log"
+      - "email"
+      - "webhook"
+```
+
 # Пути к файлам
 paths:
   snapshot_db_path: "/var/lib/smoothtask/snapshots.db"
