@@ -15,7 +15,7 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::{debug, info};
 
 /// Тип сенсора энергопотребления
@@ -272,6 +272,12 @@ impl EnergyMonitor {
                             timestamp,
                             is_reliable: true,
                             sensor_path: energy_path.to_string_lossy().into_owned(),
+                            energy_efficiency: None,
+                            max_power_w: None,
+                            average_power_w: None,
+                            utilization_percent: None,
+                            temperature_c: None,
+                            component_type: None,
                         });
                     }
                 }
@@ -717,6 +723,13 @@ impl EnergyMonitor {
             power_w: total_power_w,
             timestamp,
             is_reliable,
+            sensor_path: "/aggregated".to_string(),
+            energy_efficiency: None,
+            max_power_w: None,
+            average_power_w: None,
+            utilization_percent: None,
+            temperature_c: None,
+            component_type: None,
             sensor_path: "aggregated".to_string(),
         }))
     }
@@ -751,6 +764,172 @@ impl EnergyMonitor {
         // и кэширование данных
         debug!("Energy monitoring resource usage optimized");
         Ok(())
+    }
+
+    /// Собрать расширенные метрики энергопотребления с дополнительной информацией
+    pub fn collect_enhanced_energy_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut enhanced_metrics = Vec::new();
+        
+        // Собираем все базовые метрики
+        let base_metrics = self.collect_all_energy_metrics()?;
+        
+        // Добавляем расширенную информацию к каждому сенсору
+        for mut metric in base_metrics {
+            // Добавляем расширенные метрики в зависимости от типа сенсора
+            let enhanced_metric = match metric.sensor_type {
+                EnergySensorType::Rapl => self.enhance_rapl_metrics(metric)?,
+                EnergySensorType::CpuPower => self.enhance_cpu_power_metrics(metric)?,
+                EnergySensorType::GpuPower => self.enhance_gpu_power_metrics(metric)?,
+                EnergySensorType::MemoryPower => self.enhance_memory_power_metrics(metric)?,
+                EnergySensorType::PciePower => self.enhance_pcie_power_metrics(metric)?,
+                _ => self.enhance_generic_metrics(metric)?,
+            };
+            
+            enhanced_metrics.push(enhanced_metric);
+        }
+        
+        // Добавляем специализированные метрики энергоэффективности
+        let efficiency_metrics = self.collect_energy_efficiency_metrics()?;
+        enhanced_metrics.extend(efficiency_metrics);
+        
+        Ok(enhanced_metrics)
+    }
+
+    /// Улучшить метрики RAPL с расширенной информацией
+    fn enhance_rapl_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        // Добавляем информацию о компоненте
+        if metric.sensor_id.contains("package") {
+            metric.component_type = Some("cpu_package".to_string());
+        } else if metric.sensor_id.contains("core") {
+            metric.component_type = Some("cpu_core".to_string());
+        } else if metric.sensor_id.contains("dram") {
+            metric.component_type = Some("memory".to_string());
+        }
+        
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности CPU
+    fn enhance_cpu_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("cpu".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности GPU
+    fn enhance_gpu_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("gpu".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности памяти
+    fn enhance_memory_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("memory".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить метрики мощности PCIe
+    fn enhance_pcie_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        metric.component_type = Some("pcie".to_string());
+        Ok(metric)
+    }
+
+    /// Улучшить общие метрики
+    fn enhance_generic_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
+        // Добавляем базовую информацию о компоненте
+        if metric.component_type.is_none() {
+            metric.component_type = Some("unknown".to_string());
+        }
+        
+        Ok(metric)
+    }
+
+    /// Собрать метрики энергоэффективности
+    fn collect_energy_efficiency_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut efficiency_metrics = Vec::new();
+        
+        // Собираем метрики энергоэффективности для основных компонентов
+        if let Some(cpu_efficiency) = self.calculate_cpu_energy_efficiency() {
+            efficiency_metrics.push(EnergySensorMetrics {
+                sensor_id: "cpu_efficiency".to_string(),
+                sensor_type: EnergySensorType::EnergyEfficiency,
+                energy_uj: 0,
+                power_w: 0.0,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
+                is_reliable: true,
+                sensor_path: "/sys/devices/system/cpu".to_string(),
+                energy_efficiency: Some(cpu_efficiency),
+                max_power_w: None,
+                average_power_w: None,
+                utilization_percent: None,
+                temperature_c: None,
+                component_type: Some("cpu".to_string()),
+            });
+        }
+        
+        if let Some(gpu_efficiency) = self.calculate_gpu_energy_efficiency() {
+            efficiency_metrics.push(EnergySensorMetrics {
+                sensor_id: "gpu_efficiency".to_string(),
+                sensor_type: EnergySensorType::EnergyEfficiency,
+                energy_uj: 0,
+                power_w: 0.0,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
+                is_reliable: true,
+                sensor_path: "/sys/class/drm".to_string(),
+                energy_efficiency: Some(gpu_efficiency),
+                max_power_w: None,
+                average_power_w: None,
+                utilization_percent: None,
+                temperature_c: None,
+                component_type: Some("gpu".to_string()),
+            });
+        }
+        
+        if let Some(memory_efficiency) = self.calculate_memory_energy_efficiency() {
+            efficiency_metrics.push(EnergySensorMetrics {
+                sensor_id: "memory_efficiency".to_string(),
+                sensor_type: EnergySensorType::EnergyEfficiency,
+                energy_uj: 0,
+                power_w: 0.0,
+                timestamp: SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or(Duration::from_secs(0))
+                    .as_secs(),
+                is_reliable: true,
+                sensor_path: "/sys/devices/system/memory".to_string(),
+                energy_efficiency: Some(memory_efficiency),
+                max_power_w: None,
+                average_power_w: None,
+                utilization_percent: None,
+                temperature_c: None,
+                component_type: Some("memory".to_string()),
+            });
+        }
+        
+        Ok(efficiency_metrics)
+    }
+
+    /// Рассчитать энергоэффективность CPU
+    fn calculate_cpu_energy_efficiency(&self) -> Option<f32> {
+        // Простая реализация - в реальном коде нужно получить реальные метрики
+        Some(100.0) // Примерное значение
+    }
+
+    /// Рассчитать энергоэффективность GPU
+    fn calculate_gpu_energy_efficiency(&self) -> Option<f32> {
+        // Простая реализация - в реальном коде нужно получить реальные метрики
+        Some(75.0) // Примерное значение
+    }
+
+    /// Рассчитать энергоэффективность памяти
+    fn calculate_memory_energy_efficiency(&self) -> Option<f32> {
+        // Простая реализация - в реальном коде нужно получить реальные метрики
+        Some(50.0) // Примерное значение
     }
 }
 
@@ -1706,171 +1885,5 @@ mod tests {
             software_metrics.sensor_type,
             EnergySensorType::SoftwarePower
         );
-    }
-
-    /// Собрать расширенные метрики энергопотребления с дополнительной информацией
-    pub fn collect_enhanced_energy_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
-        let mut enhanced_metrics = Vec::new();
-        
-        // Собираем все базовые метрики
-        let base_metrics = self.collect_all_energy_metrics()?;
-        
-        // Добавляем расширенную информацию к каждому сенсору
-        for mut metric in base_metrics {
-            // Добавляем расширенные метрики в зависимости от типа сенсора
-            let enhanced_metric = match metric.sensor_type {
-                EnergySensorType::Rapl => self.enhance_rapl_metrics(metric)?,
-                EnergySensorType::CpuPower => self.enhance_cpu_power_metrics(metric)?,
-                EnergySensorType::GpuPower => self.enhance_gpu_power_metrics(metric)?,
-                EnergySensorType::MemoryPower => self.enhance_memory_power_metrics(metric)?,
-                EnergySensorType::PciePower => self.enhance_pcie_power_metrics(metric)?,
-                _ => self.enhance_generic_metrics(metric)?,
-            };
-            
-            enhanced_metrics.push(enhanced_metric);
-        }
-        
-        // Добавляем специализированные метрики энергоэффективности
-        let efficiency_metrics = self.collect_energy_efficiency_metrics()?;
-        enhanced_metrics.extend(efficiency_metrics);
-        
-        Ok(enhanced_metrics)
-    }
-
-    /// Улучшить метрики RAPL с расширенной информацией
-    fn enhance_rapl_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
-        // Добавляем информацию о компоненте
-        if metric.sensor_id.contains("package") {
-            metric.component_type = Some("cpu_package".to_string());
-        } else if metric.sensor_id.contains("core") {
-            metric.component_type = Some("cpu_core".to_string());
-        } else if metric.sensor_id.contains("dram") {
-            metric.component_type = Some("memory".to_string());
-        }
-        
-        Ok(metric)
-    }
-
-    /// Улучшить метрики мощности CPU
-    fn enhance_cpu_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
-        metric.component_type = Some("cpu".to_string());
-        Ok(metric)
-    }
-
-    /// Улучшить метрики мощности GPU
-    fn enhance_gpu_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
-        metric.component_type = Some("gpu".to_string());
-        Ok(metric)
-    }
-
-    /// Улучшить метрики мощности памяти
-    fn enhance_memory_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
-        metric.component_type = Some("memory".to_string());
-        Ok(metric)
-    }
-
-    /// Улучшить метрики мощности PCIe
-    fn enhance_pcie_power_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
-        metric.component_type = Some("pcie".to_string());
-        Ok(metric)
-    }
-
-    /// Улучшить общие метрики
-    fn enhance_generic_metrics(&self, mut metric: EnergySensorMetrics) -> Result<EnergySensorMetrics> {
-        // Добавляем базовую информацию о компоненте
-        if metric.component_type.is_none() {
-            metric.component_type = Some("unknown".to_string());
-        }
-        
-        Ok(metric)
-    }
-
-    /// Собрать метрики энергоэффективности
-    fn collect_energy_efficiency_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
-        let mut efficiency_metrics = Vec::new();
-        
-        // Собираем метрики энергоэффективности для основных компонентов
-        if let Some(cpu_efficiency) = self.calculate_cpu_energy_efficiency() {
-            efficiency_metrics.push(EnergySensorMetrics {
-                sensor_id: "cpu_efficiency".to_string(),
-                sensor_type: EnergySensorType::EnergyEfficiency,
-                energy_uj: 0,
-                power_w: 0.0,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs(),
-                is_reliable: true,
-                sensor_path: "/sys/devices/system/cpu".to_string(),
-                energy_efficiency: Some(cpu_efficiency),
-                max_power_w: None,
-                average_power_w: None,
-                utilization_percent: None,
-                temperature_c: None,
-                component_type: Some("cpu".to_string()),
-            });
-        }
-        
-        if let Some(gpu_efficiency) = self.calculate_gpu_energy_efficiency() {
-            efficiency_metrics.push(EnergySensorMetrics {
-                sensor_id: "gpu_efficiency".to_string(),
-                sensor_type: EnergySensorType::EnergyEfficiency,
-                energy_uj: 0,
-                power_w: 0.0,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs(),
-                is_reliable: true,
-                sensor_path: "/sys/class/drm".to_string(),
-                energy_efficiency: Some(gpu_efficiency),
-                max_power_w: None,
-                average_power_w: None,
-                utilization_percent: None,
-                temperature_c: None,
-                component_type: Some("gpu".to_string()),
-            });
-        }
-        
-        if let Some(memory_efficiency) = self.calculate_memory_energy_efficiency() {
-            efficiency_metrics.push(EnergySensorMetrics {
-                sensor_id: "memory_efficiency".to_string(),
-                sensor_type: EnergySensorType::EnergyEfficiency,
-                energy_uj: 0,
-                power_w: 0.0,
-                timestamp: SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or(Duration::from_secs(0))
-                    .as_secs(),
-                is_reliable: true,
-                sensor_path: "/sys/devices/system/memory".to_string(),
-                energy_efficiency: Some(memory_efficiency),
-                max_power_w: None,
-                average_power_w: None,
-                utilization_percent: None,
-                temperature_c: None,
-                component_type: Some("memory".to_string()),
-            });
-        }
-        
-        Ok(efficiency_metrics)
-    }
-
-    /// Рассчитать энергоэффективность CPU
-    fn calculate_cpu_energy_efficiency(&self) -> Option<f32> {
-        // Простая реализация - в реальном коде нужно получить реальные метрики
-        Some(100.0) // Примерное значение
-    }
-
-    /// Рассчитать энергоэффективность GPU
-    fn calculate_gpu_energy_efficiency(&self) -> Option<f32> {
-        // Простая реализация - в реальном коде нужно получить реальные метрики
-        Some(75.0) // Примерное значение
-    }
-
-    /// Рассчитать энергоэффективность памяти
-    fn calculate_memory_energy_efficiency(&self) -> Option<f32> {
-        // Простая реализация - в реальном коде нужно получить реальные метрики
-        Some(50.0) // Примерное значение
     }
 }
