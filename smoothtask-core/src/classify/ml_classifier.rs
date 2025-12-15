@@ -1562,6 +1562,16 @@ impl CatBoostMLClassifier {
             features
         })
     }
+
+    /// Создать тестовый классификатор для тестов.
+    /// Использует заглушку вместо реальной модели.
+    pub fn new_test() -> Self {
+        Self {
+            model: CatBoostModel::Stub,
+            performance_metrics: MLPerformanceMetrics::new(),
+            model_version: None,
+        }
+    }
 }
 
 impl MLClassifier for CatBoostMLClassifier {
@@ -1596,6 +1606,7 @@ impl MLClassifier for CatBoostMLClassifier {
     fn reset_performance_metrics(&mut self) {
         self.performance_metrics.reset();
     }
+
 }
 
 #[cfg(feature = "catboost")]
@@ -2292,10 +2303,10 @@ mod tests {
         process.uptime_sec = 3600; // 1 час
 
         // Тестируем оптимизированное извлечение фич без кэширования
-        let features_uncached = classifier.process_to_features_optimized(&process, false);
+        let features_uncached = CatBoostMLClassifier::process_to_features_optimized(&process, false);
 
         // Тестируем оптимизированное извлечение фич с кэшированием
-        let features_cached = classifier.process_to_features_optimized(&process, true);
+        let features_cached = CatBoostMLClassifier::process_to_features_optimized(&process, true);
 
         // Проверяем, что оба метода возвращают одинаковые результаты
         assert_eq!(features_uncached.len(), 29);
@@ -2936,8 +2947,8 @@ mod tests {
         // Test the new enhanced features
         let process = ProcessRecord {
             pid: 1234,
-            name: "test_process".to_string(),
-            cmdline: "test_process --flag".to_string(),
+            exe: Some("test_process".to_string()),
+            cmdline: Some("test_process --flag".to_string()),
             cpu_share_1s: Some(0.5),
             cpu_share_10s: Some(0.3),
             io_read_bytes: Some(1024 * 1024), // 1 MB
@@ -2993,8 +3004,8 @@ mod tests {
         // Test edge cases for new enhanced features
         let process = ProcessRecord {
             pid: 5678,
-            name: "edge_case_process".to_string(),
-            cmdline: "edge_case_process".to_string(),
+            exe: Some("edge_case_process".to_string()),
+            cmdline: Some("edge_case_process".to_string()),
             cpu_share_1s: Some(0.0), // Zero CPU
             cpu_share_10s: Some(0.0),
             io_read_bytes: Some(0), // Zero IO
@@ -3045,8 +3056,8 @@ mod tests {
         // Test high value cases
         let process = ProcessRecord {
             pid: 9999,
-            name: "high_load_process".to_string(),
-            cmdline: "high_load_process --stress".to_string(),
+            exe: Some("high_load_process".to_string()),
+            cmdline: Some("high_load_process --stress".to_string()),
             cpu_share_1s: Some(1.0), // 100% CPU
             cpu_share_10s: Some(0.9),
             io_read_bytes: Some(100 * 1024 * 1024), // 100 MB
