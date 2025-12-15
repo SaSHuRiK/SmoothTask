@@ -3421,7 +3421,7 @@ impl NetworkMonitor {
 
         // Try to read IPv6 TCP connections
         if let Ok(tcp6_connections) = fs::read_to_string("/proc/net/tcp6") {
-            for (line_num, line) in tcp6_connections.lines().skip(1).enumerate() {
+            for (_line_num, line) in tcp6_connections.lines().skip(1).enumerate() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 10 {
                     // Parse IPv6 addresses and ports
@@ -3479,7 +3479,7 @@ impl NetworkMonitor {
 
         // Try to read IPv6 UDP connections
         if let Ok(udp6_connections) = fs::read_to_string("/proc/net/udp6") {
-            for (line_num, line) in udp6_connections.lines().skip(1).enumerate() {
+            for (_line_num, line) in udp6_connections.lines().skip(1).enumerate() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 10 {
                     // Parse IPv6 addresses and ports
@@ -3810,7 +3810,7 @@ impl NetworkMonitor {
     }
 
     /// Get process info from inode (similar to IPv4 implementation)
-    fn get_process_info_from_inode(&self, inode: &str) -> Result<(Option<u32>, Option<String>)> {
+    fn get_process_info_from_inode(&self, _inode: &str) -> Result<(Option<u32>, Option<String>)> {
         // This is a simplified version - in a real implementation, you'd need to
         // parse /proc/net/tcp6 and /proc/net/udp6 to find the process info
         

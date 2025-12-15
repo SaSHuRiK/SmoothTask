@@ -1313,6 +1313,7 @@ mod tests {
             processes,
             app_groups,
             responsiveness: ResponsivenessMetrics::default(),
+            extended_sensors: ExtendedHardwareSensors::default(),
         }
     }
 

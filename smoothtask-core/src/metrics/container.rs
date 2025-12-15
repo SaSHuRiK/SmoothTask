@@ -463,7 +463,7 @@ fn get_podman_processes() -> Result<Vec<ContainerProcess>> {
 }
 
 /// Parse container processes output
-fn parse_container_processes(ps_output: String, runtime: ContainerRuntime) -> Result<Vec<ContainerProcess>> {
+fn parse_container_processes(ps_output: String, _runtime: ContainerRuntime) -> Result<Vec<ContainerProcess>> {
     let mut processes = Vec::new();
     
     // Simplified parsing - extract basic info
@@ -490,40 +490,6 @@ fn parse_container_processes(ps_output: String, runtime: ContainerRuntime) -> Re
     }
     
     Ok(processes)
-}
-
-/// Collect detailed container information using inspect commands
-fn collect_detailed_container_info(container_id: &str, runtime: ContainerRuntime) -> Result<ContainerMetrics> {
-    match runtime {
-        ContainerRuntime::Docker => collect_docker_detailed_info(container_id),
-        ContainerRuntime::Podman => collect_podman_detailed_info(container_id),
-        _ => Ok(ContainerMetrics {
-            id: container_id.to_string(),
-            name: "unknown".to_string(),
-            runtime,
-            state: ContainerState::Unknown,
-            created_at: "unknown".to_string(),
-            started_at: None,
-            finished_at: None,
-            cpu_usage: ContainerCpuUsage::default(),
-            memory_usage: ContainerMemoryUsage::default(),
-            network_stats: ContainerNetworkStats::default(),
-            storage_stats: ContainerStorageStats::default(),
-            process_count: 0,
-            health_status: None,
-            image_name: None,
-            image_id: None,
-            labels: HashMap::new(),
-            env_vars_count: 0,
-            restart_count: 0,
-            uptime_seconds: None,
-            network_mode: None,
-            ip_addresses: vec![],
-            mounted_volumes: vec![],
-            resource_limits: ContainerResourceLimits::default(),
-            security_options: vec![],
-        }),
-    }
 }
 
 /// Collect detailed Docker container information
@@ -572,7 +538,7 @@ fn collect_podman_detailed_info(container_id: &str) -> Result<ContainerMetrics> 
 
 /// Parse detailed container information from inspect output
 fn parse_detailed_container_info(
-    inspect_output: String,
+    _inspect_output: String,
     runtime: ContainerRuntime,
     container_id: &str
 ) -> Result<ContainerMetrics> {

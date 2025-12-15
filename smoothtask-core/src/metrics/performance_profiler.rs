@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::time::{Instant, Duration};
-use tracing::{debug, info};
+use tracing::info;
 use anyhow::{Result, Context};
 
 /// Структура для хранения метрик производительности.
@@ -338,6 +338,7 @@ impl GlobalPerformanceProfiler {
 #[derive(Debug)]
 pub struct GlobalPerformanceTimer<'a> {
     /// Внутренний таймер.
+    #[allow(dead_code)]
     timer: PerformanceTimer<'a>,
 }
 

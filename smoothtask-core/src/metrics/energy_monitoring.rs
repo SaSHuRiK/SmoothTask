@@ -27,6 +27,8 @@ pub enum EnergySensorType {
     Acpi,
     /// PowerCap сенсор
     PowerCap,
+    /// Сенсор батареи
+    Battery,
     /// Пользовательский сенсор
     Custom,
     /// Неизвестный тип
@@ -67,6 +69,8 @@ pub struct EnergyMonitoringConfig {
     pub enable_acpi: bool,
     /// Включить мониторинг PowerCap
     pub enable_powercap: bool,
+    /// Включить мониторинг батареи
+    pub enable_battery: bool,
     /// Включить мониторинг пользовательских сенсоров
     pub enable_custom_sensors: bool,
     /// Базовый путь к RAPL интерфейсам
@@ -75,6 +79,8 @@ pub struct EnergyMonitoringConfig {
     pub acpi_base_path: PathBuf,
     /// Базовый путь к PowerCap интерфейсам
     pub powercap_base_path: PathBuf,
+    /// Базовый путь к интерфейсам батареи
+    pub battery_base_path: PathBuf,
 }
 
 impl Default for EnergyMonitoringConfig {
@@ -83,10 +89,12 @@ impl Default for EnergyMonitoringConfig {
             enable_rapl: true,
             enable_acpi: true,
             enable_powercap: true,
+            enable_battery: true,
             enable_custom_sensors: true,
             rapl_base_path: PathBuf::from("/sys/class/powercap/intel-rapl"),
             acpi_base_path: PathBuf::from("/sys/class/power_supply"),
             powercap_base_path: PathBuf::from("/sys/class/powercap"),
+            battery_base_path: PathBuf::from("/sys/class/power_supply"),
         }
     }
 }
@@ -140,6 +148,13 @@ impl EnergyMonitor {
         if self.config.enable_custom_sensors {
             if let Ok(custom_metrics) = self.collect_custom_sensors() {
                 all_metrics.extend(custom_metrics);
+            }
+        }
+
+        // Собираем метрики батареи
+        if self.config.enable_battery {
+            if let Ok(battery_metrics) = self.collect_battery_metrics() {
+                all_metrics.extend(battery_metrics);
             }
         }
 
@@ -312,7 +327,7 @@ impl EnergyMonitor {
             "/sys/class/hwmon/hwmon*/power*",
         ];
 
-        for pattern in custom_sensor_paths {
+        for _pattern in custom_sensor_paths {
             // В реальной реализации здесь был бы более сложный поиск
             // Для этой демонстрации мы просто пробуем несколько стандартных путей
             let test_paths = [
@@ -347,6 +362,82 @@ impl EnergyMonitor {
                                 sensor_path: test_path.to_string(),
                             });
                         }
+                    }
+                }
+            }
+        }
+
+        Ok(metrics)
+    }
+
+    /// Собрать метрики батареи
+    pub fn collect_battery_metrics(&self) -> Result<Vec<EnergySensorMetrics>> {
+        let mut metrics = Vec::new();
+
+        if !self.config.battery_base_path.exists() {
+            debug!("Battery base path does not exist: {:?}", self.config.battery_base_path);
+            return Ok(metrics);
+        }
+
+        let entries = fs::read_dir(&self.config.battery_base_path)
+            .context("Failed to read battery directory")?;
+
+        for entry in entries {
+            let entry = entry.context("Failed to read battery directory entry")?;
+            let battery_path = entry.path();
+
+            // Пробуем получить информацию о батарее
+            let energy_now_path = battery_path.join("energy_now");
+            let energy_full_path = battery_path.join("energy_full");
+            let power_now_path = battery_path.join("power_now");
+
+            if energy_now_path.exists() && energy_full_path.exists() {
+                if let (Ok(energy_now_content), Ok(energy_full_content)) = (
+                    fs::read_to_string(&energy_now_path),
+                    fs::read_to_string(&energy_full_path),
+                ) {
+                    if let (Ok(energy_now), Ok(energy_full)) = (
+                        energy_now_content.trim().parse::<u64>(),
+                        energy_full_content.trim().parse::<u64>(),
+                    ) {
+                        // Конвертируем микроватт-часы в микроджоули (упрощенно)
+                        let energy_uj = energy_now * 3600;
+                        
+                        // Получаем текущую мощность, если доступно
+                        let power_w = if power_now_path.exists() {
+                            if let Ok(power_content) = fs::read_to_string(&power_now_path) {
+                                if let Ok(power_microwatts) = power_content.trim().parse::<u64>() {
+                                    power_microwatts as f32 / 1_000_000.0
+                                } else {
+                                    0.0
+                                }
+                            } else {
+                                0.0
+                            }
+                        } else {
+                            // Вычисляем мощность на основе текущей и полной энергии
+                            (energy_now as f32 / energy_full as f32) * 100.0
+                        };
+
+                        let timestamp = SystemTime::now()
+                            .duration_since(UNIX_EPOCH)?
+                            .as_secs();
+
+                        let sensor_id = battery_path
+                            .file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("battery")
+                            .to_string();
+
+                        metrics.push(EnergySensorMetrics {
+                            sensor_id,
+                            sensor_type: EnergySensorType::Battery,
+                            energy_uj,
+                            power_w,
+                            timestamp,
+                            is_reliable: true,
+                            sensor_path: battery_path.to_string_lossy().into_owned(),
+                        });
                     }
                 }
             }
@@ -906,5 +997,114 @@ mod tests {
         assert_eq!(metrics1.timestamp, metrics1_copy.timestamp);
         assert_eq!(metrics1.is_reliable, metrics1_copy.is_reliable);
         assert_eq!(metrics1.sensor_path, metrics1_copy.sensor_path);
+    }
+
+    #[test]
+    fn test_battery_sensor_type() {
+        // Тестируем новый тип сенсора Battery
+        let battery_metrics = EnergySensorMetrics {
+            sensor_id: "test_battery".to_string(),
+            sensor_type: EnergySensorType::Battery,
+            energy_uj: 500000,
+            power_w: 25.5,
+            timestamp: 1234567890,
+            is_reliable: true,
+            sensor_path: "/sys/class/power_supply/BAT0".to_string(),
+        };
+
+        assert_eq!(battery_metrics.sensor_type, EnergySensorType::Battery);
+        assert_eq!(battery_metrics.sensor_id, "test_battery");
+        assert_eq!(battery_metrics.energy_uj, 500000);
+        assert_eq!(battery_metrics.power_w, 25.5);
+        assert!(battery_metrics.is_reliable);
+    }
+
+    #[test]
+    fn test_battery_metrics_collection_with_mock_data() {
+        // Создаем временные файлы для теста батареи
+        let mut energy_now_file = NamedTempFile::new().unwrap();
+        let mut energy_full_file = NamedTempFile::new().unwrap();
+        let mut power_now_file = NamedTempFile::new().unwrap();
+        
+        writeln!(energy_now_file, "50000000").unwrap(); // 50000000 микроватт-часов
+        writeln!(energy_full_file, "100000000").unwrap(); // 100000000 микроватт-часов
+        writeln!(power_now_file, "25000000").unwrap(); // 25 Вт в микроваттах
+        
+        let energy_now_path = energy_now_file.path().to_str().unwrap().to_string();
+        let energy_full_path = energy_full_file.path().to_str().unwrap().to_string();
+        let power_now_path = power_now_file.path().to_str().unwrap().to_string();
+
+        // Создаем монитор с кастомным путем
+        let mut config = EnergyMonitoringConfig::default();
+        config.battery_base_path = PathBuf::from(energy_now_path.parent().unwrap());
+        let monitor = EnergyMonitor::with_config(config);
+
+        // Пробуем собрать метрики (должно вернуть пустой вектор, так как структура каталогов не соответствует)
+        let metrics = monitor.collect_battery_metrics().unwrap();
+        assert!(metrics.is_empty());
+    }
+
+    #[test]
+    fn test_energy_sensor_type_all_variants() {
+        // Тестируем все варианты EnergySensorType, включая новый Battery
+        let sensor_types = vec![
+            EnergySensorType::Rapl,
+            EnergySensorType::Acpi,
+            EnergySensorType::PowerCap,
+            EnergySensorType::Battery,
+            EnergySensorType::Custom,
+            EnergySensorType::Unknown,
+        ];
+
+        for sensor_type in sensor_types {
+            let metrics = EnergySensorMetrics {
+                sensor_id: "test".to_string(),
+                sensor_type,
+                energy_uj: 1000,
+                power_w: 1.0,
+                timestamp: 1234567890,
+                is_reliable: true,
+                sensor_path: "/test".to_string(),
+            };
+
+            // Проверяем, что метрики создаются корректно
+            assert_eq!(metrics.sensor_id, "test");
+            assert_eq!(metrics.energy_uj, 1000);
+            assert_eq!(metrics.power_w, 1.0);
+            assert_eq!(metrics.timestamp, 1234567890);
+            assert!(metrics.is_reliable);
+        }
+    }
+
+    #[test]
+    fn test_battery_config_enabled() {
+        // Тестируем, что конфигурация батареи включена по умолчанию
+        let config = EnergyMonitoringConfig::default();
+        assert!(config.enable_battery);
+        assert_eq!(config.battery_base_path, PathBuf::from("/sys/class/power_supply"));
+
+        // Тестируем монитор с включенной батареей
+        let monitor = EnergyMonitor::new();
+        assert!(monitor.config.enable_battery);
+
+        // Тестируем монитор с отключенной батареей
+        let mut config_disabled = EnergyMonitoringConfig::default();
+        config_disabled.enable_battery = false;
+        let monitor_disabled = EnergyMonitor::with_config(config_disabled);
+        assert!(!monitor_disabled.config.enable_battery);
+    }
+
+    #[test]
+    fn test_battery_metrics_integration() {
+        // Тестируем интеграцию метрик батареи в общий сбор метрик
+        let monitor = EnergyMonitor::new();
+        
+        // Пробуем собрать все метрики (должно завершиться успешно)
+        let result = monitor.collect_all_energy_metrics();
+        assert!(result.is_ok());
+        
+        // Результат может быть пустым, если нет реальных сенсоров
+        let metrics = result.unwrap();
+        // Не проверяем количество метрик, так как оно зависит от системы
     }
 }

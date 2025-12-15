@@ -247,9 +247,9 @@ impl BatchProcessor {
         }
         
         let _cached_batch = CachedBatch {
-            batch_id: batch_id.to_string(),
-            timestamp: Instant::now(),
-            results: results.to_vec(),
+            _batch_id: batch_id.to_string(),
+            _timestamp: Instant::now(),
+            _results: results.to_vec(),
         };
         
         self.cache.insert(batch_id.to_string(), MetricsBatch::default()); // Упрощенно
@@ -323,11 +323,11 @@ pub struct MetricProcessingResult {
 #[derive(Debug, Clone)]
 struct CachedBatch {
     /// Идентификатор пакета
-    batch_id: String,
+    _batch_id: String,
     /// Временная метка кэширования
-    timestamp: Instant,
+    _timestamp: Instant,
     /// Результаты обработки
-    results: Vec<MetricProcessingResult>,
+    _results: Vec<MetricProcessingResult>,
 }
 
 /// Статистика пакетного процессора

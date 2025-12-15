@@ -4,7 +4,6 @@
 //! включая проверку статуса, мониторинг ресурсов и обнаружение проблем.
 
 use anyhow::{Context, Result};
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -294,7 +293,7 @@ impl ContainerHealthMonitorTrait for ContainerHealthMonitorImpl {
         Ok(self.config.clone())
     }
 
-    async fn add_monitored_container(&self, container_id: &str) -> Result<()> {
+    async fn add_monitored_container(&self, _container_id: &str) -> Result<()> {
         // В реальной реализации нужно добавить контейнер в список мониторинга
         Ok(())
     }
@@ -309,7 +308,7 @@ impl ContainerHealthMonitorTrait for ContainerHealthMonitorImpl {
         Ok(())
     }
 
-    async fn remove_ignored_container(&self, container_id: &str) -> Result<()> {
+    async fn remove_ignored_container(&self, _container_id: &str) -> Result<()> {
         // В реальной реализации нужно удалить контейнер из списка игнорируемых
         Ok(())
     }

@@ -99,7 +99,7 @@ impl Default for PrometheusExporterConfig {
 pub struct PrometheusExporter {
     config: PrometheusExporterConfig,
     custom_metrics: HashMap<String, f64>,
-    extended_sensors_monitor: ExtendedHardwareSensorsMonitor,
+    _extended_sensors_monitor: ExtendedHardwareSensorsMonitor,
 }
 
 impl PrometheusExporter {
@@ -113,7 +113,7 @@ impl PrometheusExporter {
         Self {
             config,
             custom_metrics: HashMap::new(),
-            extended_sensors_monitor: ExtendedHardwareSensorsMonitor::new(
+            _extended_sensors_monitor: ExtendedHardwareSensorsMonitor::new(
                 crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default()
             ),
         }
@@ -1151,7 +1151,7 @@ impl Default for PrometheusExporter {
         Self {
             config: PrometheusExporterConfig::default(),
             custom_metrics: HashMap::new(),
-            extended_sensors_monitor: ExtendedHardwareSensorsMonitor::new(
+            _extended_sensors_monitor: ExtendedHardwareSensorsMonitor::new(
                 crate::metrics::extended_hardware_sensors::ExtendedHardwareSensorsConfig::default()
             ),
         }
