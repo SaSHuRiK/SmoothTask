@@ -7,6 +7,7 @@ pub mod logging;
 pub mod metrics;
 pub mod model;
 pub mod notifications;
+pub mod performance_optimizer;
 pub mod policy;
 pub mod utils;
 
@@ -29,6 +30,9 @@ use crate::classify::{
     rules::classify_all,
     rules::PatternDatabase,
 };
+// use crate::performance_optimizer::{
+//     CriticalPathOptimizer, PerformanceMetrics, PerformanceOptimizer, PerformanceProfiler,
+// };
 use crate::config::config_struct::NotificationBackend;
 use crate::config::watcher::ConfigWatcher;
 use crate::notifications::{Notification, NotificationManager, NotificationType};
@@ -886,6 +890,11 @@ pub async fn run_daemon(
         system_calls: crate::metrics::system::SystemCallMetrics::default(),
         inode: crate::metrics::system::InodeMetrics::default(),
         swap: crate::metrics::system::SwapMetrics::default(),
+        cpu_performance: crate::metrics::system::CpuPerformanceMetrics::default(),
+        memory_performance: crate::metrics::system::MemoryPerformanceMetrics::default(),
+        io_performance: crate::metrics::system::IoPerformanceMetrics::default(),
+        system_performance: crate::metrics::system::SystemPerformanceMetrics::default(),
+        network_performance: crate::metrics::system::NetworkPerformanceMetrics::default(),
     }));
     let processes_arc: Arc<tokio::sync::RwLock<Vec<crate::logging::snapshots::ProcessRecord>>> =
         Arc::new(tokio::sync::RwLock::new(Vec::new()));

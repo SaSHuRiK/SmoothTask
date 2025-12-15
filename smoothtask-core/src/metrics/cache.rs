@@ -60,6 +60,18 @@ pub struct MetricsCacheConfig {
 
     /// Максимальный коэффициент уменьшения TTL при высоком давлении.
     pub max_ttl_decrease_factor: f64,
+
+    /// Включить интеллектуальное управление TTL на основе частоты обращений.
+    pub intelligent_ttl_enabled: bool,
+
+    /// Максимальный TTL для часто используемых элементов (в секундах).
+    pub max_frequent_access_ttl: u64,
+
+    /// Коэффициент увеличения TTL для часто используемых элементов.
+    pub frequent_access_ttl_factor: f64,
+
+    /// Порог частоты обращений для рассмотрения элемента как часто используемого.
+    pub frequent_access_threshold: f64,
 }
 
 impl Default for MetricsCacheConfig {
@@ -94,12 +106,16 @@ impl Default for MetricsCacheConfig {
             auto_ttl_tuning_enabled: true,
             max_ttl_increase_factor: 1.5, // Можно увеличить TTL до 1.5x при низком давлении
             max_ttl_decrease_factor: 0.5, // Можно уменьшить TTL до 0.5x при высоком давлении
+            intelligent_ttl_enabled: true, // Включаем интеллектуальное управление TTL
+            max_frequent_access_ttl: 15, // Максимальный TTL для часто используемых элементов
+            frequent_access_ttl_factor: 1.8, // Коэффициент увеличения TTL для часто используемых
+            frequent_access_threshold: 1.0, // Порог частоты обращений (1 обращение в секунду)
         }
     }
 }
 
 /// Кэшированные системные метрики.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct CachedMetrics {
     /// Временная метка создания кэша.
     pub timestamp: Instant,
@@ -118,6 +134,15 @@ pub struct CachedMetrics {
 
     /// Приоритет метрик для инвалидации.
     pub priority: u32,
+
+    /// Счётчик обращений к кэшу (для интеллектуального управления TTL).
+    pub access_count: std::sync::atomic::AtomicUsize,
+
+    /// Временная метка последнего обращения.
+    pub last_access_time: std::sync::Mutex<Instant>,
+
+    /// Средняя частота обращений (обращений в секунду).
+    pub average_access_rate: std::sync::Mutex<f64>,
 }
 
 impl CachedMetrics {
@@ -147,6 +172,9 @@ impl CachedMetrics {
             source_paths,
             approximate_size_bytes,
             priority,
+            access_count: std::sync::atomic::AtomicUsize::new(0),
+            last_access_time: std::sync::Mutex::new(Instant::now()),
+            average_access_rate: std::sync::Mutex::new(0.0),
         }
     }
 
@@ -231,6 +259,96 @@ impl CachedMetrics {
 
         // Добавляем 20% для служебных данных и выравнивания
         size + size / 5
+    }
+
+    /// Обновить статистику обращений к кэшу.
+    pub fn update_access_stats(&self) {
+        // Увеличиваем счётчик обращений
+        self.access_count.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+        // Обновляем временную метку последнего обращения
+        let mut last_access = self.last_access_time.lock().unwrap();
+        *last_access = Instant::now();
+
+        // Обновляем среднюю частоту обращений
+        let access_count = self.access_count.load(std::sync::atomic::Ordering::Relaxed);
+        let elapsed_seconds = self.timestamp.elapsed().as_secs_f64();
+
+        if elapsed_seconds > 0.0 {
+            let mut avg_rate = self.average_access_rate.lock().unwrap();
+            *avg_rate = access_count as f64 / elapsed_seconds;
+        }
+    }
+
+    /// Получить адаптивный TTL на основе частоты обращений.
+    ///
+    /// # Аргументы
+    ///
+    /// * `base_ttl` - базовое время жизни кэша в секундах
+    /// * `min_ttl` - минимальное время жизни кэша в секундах
+    /// * `max_ttl` - максимальное время жизни кэша в секундах
+    ///
+    /// # Возвращает
+    ///
+    /// Адаптивный TTL в секундах.
+    pub fn get_adaptive_ttl(&self, base_ttl: u64, min_ttl: u64, max_ttl: u64) -> u64 {
+        let avg_rate = self.average_access_rate.lock().unwrap();
+        let access_count = self.access_count.load(std::sync::atomic::Ordering::Relaxed);
+
+        // Если кэш никогда не использовался или используется очень редко, используем минимальный TTL
+        if access_count == 0 || *avg_rate < 0.1 {
+            return min_ttl;
+        }
+
+        // Вычисляем адаптивный TTL на основе частоты обращений
+        // Чем чаще обращения, тем дольше TTL (до максимального значения)
+        let mut adaptive_ttl = base_ttl as f64;
+
+        // Увеличиваем TTL для часто используемых элементов
+        if *avg_rate > 1.0 {
+            // Линейное увеличение TTL до максимального значения
+            let increase_factor = (*avg_rate * 0.5).min(2.0); // Максимальный коэффициент увеличения 2x
+            adaptive_ttl = (adaptive_ttl * increase_factor).min(max_ttl as f64);
+        } else {
+            // Уменьшаем TTL для редко используемых элементов
+            let decrease_factor = (0.5 + *avg_rate * 0.5).max(0.3); // Минимальный коэффициент 0.3
+            adaptive_ttl = (adaptive_ttl * decrease_factor).max(min_ttl as f64);
+        }
+
+        adaptive_ttl as u64
+    }
+
+    /// Проверить, устарел ли кэш с учетом адаптивного TTL.
+    ///
+    /// # Аргументы
+    ///
+    /// * `base_ttl` - базовое время жизни кэша в секундах
+    /// * `min_ttl` - минимальное время жизни кэша в секундах
+    /// * `max_ttl` - максимальное время жизни кэша в секундах
+    ///
+    /// # Возвращает
+    ///
+    /// `true`, если кэш устарел, `false` в противном случае.
+    pub fn is_expired_with_adaptive_ttl(&self, base_ttl: u64, min_ttl: u64, max_ttl: u64) -> bool {
+        let adaptive_ttl = self.get_adaptive_ttl(base_ttl, min_ttl, max_ttl);
+        self.timestamp.elapsed() >= Duration::from_secs(adaptive_ttl)
+    }
+
+    /// Создать копию кэшированных метрик (ручная реализация Clone).
+    pub fn clone_manual(&self) -> Self {
+        Self {
+            timestamp: self.timestamp,
+            metric_type: self.metric_type.clone(),
+            metrics: self.metrics.clone(),
+            source_paths: self.source_paths.clone(),
+            approximate_size_bytes: self.approximate_size_bytes,
+            priority: self.priority,
+            access_count: std::sync::atomic::AtomicUsize::new(
+                self.access_count.load(std::sync::atomic::Ordering::Relaxed)
+            ),
+            last_access_time: std::sync::Mutex::new(*self.last_access_time.lock().unwrap()),
+            average_access_rate: std::sync::Mutex::new(*self.average_access_rate.lock().unwrap()),
+        }
     }
 }
 
@@ -368,18 +486,25 @@ impl MetricsCache {
         match cache {
             Ok(mut cache_guard) => {
                 if let Some(cached) = cache_guard.get(key) {
-                    // Используем индивидуальный TTL для типа метрик
-                    if !cached.is_expired_with_type_ttl(self.config.cache_ttl_seconds, &self.config.metric_type_ttl) {
+                    // Обновляем статистику обращений для интеллектуального управления TTL
+                    cached.update_access_stats();
+
+                    // Используем адаптивный TTL на основе частоты обращений
+                    let base_ttl = self.config.cache_ttl_seconds;
+                    let min_ttl = self.config.min_ttl_seconds;
+                    let max_ttl = base_ttl * 2; // Максимальный TTL в 2 раза больше базового
+
+                    if !cached.is_expired_with_adaptive_ttl(base_ttl, min_ttl, max_ttl) {
                         debug!("Найдены актуальные кэшированные метрики для ключа: {}", key);
                         // Увеличиваем счётчик попаданий в кэш
                         self.performance_metrics
                             .cache_hits
                             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        return Some(cached.clone());
+                        return Some(cached.clone_manual());
                     } else {
                         debug!(
-                            "Кэш для ключа {} устарел (TTL: {}s), будет обновлён",
-                            key, self.config.cache_ttl_seconds
+                            "Кэш для ключа {} устарел (адаптивный TTL), будет обновлён",
+                            key
                         );
                         // Увеличиваем счётчик промахов кэша
                         self.performance_metrics
@@ -935,6 +1060,97 @@ impl OptimizedMetricsCollector {
     /// Сбросить метрики производительности кэша.
     pub fn reset_cache_performance_metrics(&self) {
         self.cache.reset_performance_metrics();
+    }
+
+    /// Получить статистику обращений к кэшу для всех элементов.
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор с информацией о частоте обращений для каждого элемента кэша.
+    pub fn get_cache_access_statistics(&self) -> Vec<(String, u64, f64)> {
+        let cache = self.cache.cache.lock();
+        match cache {
+            Ok(cache_guard) => {
+                let mut stats = Vec::new();
+                for (key, cached) in cache_guard.iter() {
+                    let access_count = cached.access_count.load(std::sync::atomic::Ordering::Relaxed) as u64;
+                    let avg_rate = cached.average_access_rate.lock().unwrap();
+                    stats.push((key.clone(), access_count, *avg_rate));
+                }
+                stats
+            }
+            Err(poisoned) => {
+                // Восстанавливаемся от poisoned lock
+                drop(poisoned.into_inner());
+                tracing::error!("Mutex был poisoned при получении статистики обращений");
+                Vec::new()
+            }
+        }
+    }
+
+    /// Получить информацию о часто используемых элементах кэша.
+    ///
+    /// # Аргументы
+    ///
+    /// * `threshold` - порог частоты обращений для рассмотрения элемента как часто используемого
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор с часто используемыми элементами.
+    pub fn get_frequently_accessed_items(&self, threshold: f64) -> Vec<String> {
+        let stats = self.get_cache_access_statistics();
+        stats.into_iter()
+            .filter(|(_, _, avg_rate)| *avg_rate >= threshold)
+            .map(|(key, _, _)| key)
+            .collect()
+    }
+
+    /// Получить информацию о редко используемых элементах кэша.
+    ///
+    /// # Аргументы
+    ///
+    /// * `threshold` - порог частоты обращений для рассмотрения элемента как редко используемого
+    ///
+    /// # Возвращает
+    ///
+    /// Вектор с редко используемыми элементами.
+    pub fn get_infrequently_accessed_items(&self, threshold: f64) -> Vec<String> {
+        let stats = self.get_cache_access_statistics();
+        stats.into_iter()
+            .filter(|(_, _, avg_rate)| *avg_rate < threshold)
+            .map(|(key, _, _)| key)
+            .collect()
+    }
+
+    /// Получить текущий адаптивный TTL для элемента кэша.
+    ///
+    /// # Аргументы
+    ///
+    /// * `key` - ключ элемента кэша
+    ///
+    /// # Возвращает
+    ///
+    /// Опциональный адаптивный TTL в секундах.
+    pub fn get_adaptive_ttl_for_key(&self, key: &str) -> Option<u64> {
+        let cache = self.cache.cache.lock();
+        match cache {
+            Ok(mut cache_guard) => {
+                if let Some(cached) = cache_guard.get(key) {
+                    let base_ttl = self.config.cache_ttl_seconds;
+                    let min_ttl = self.config.min_ttl_seconds;
+                    let max_ttl = self.config.max_frequent_access_ttl;
+                    Some(cached.get_adaptive_ttl(base_ttl, min_ttl, max_ttl))
+                } else {
+                    None
+                }
+            }
+            Err(poisoned) => {
+                // Восстанавливаемся от poisoned lock
+                drop(poisoned.into_inner());
+                tracing::error!("Mutex был poisoned при получении адаптивного TTL");
+                None
+            }
+        }
     }
 
 
@@ -1921,5 +2137,262 @@ mod tests {
         assert!(hit_rate > 0.0);
         assert!(miss_rate >= 0.0);
         assert!(hit_rate + miss_rate <= 1.0);
+    }
+
+    #[test]
+    fn test_adaptive_ttl_based_on_access_frequency() {
+        let config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        cache.insert("frequent_key".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert("infrequent_key".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+
+        // Часто обращаемся к одному ключу
+        for _ in 0..10 {
+            let _result = cache.get("frequent_key");
+            std::thread::sleep(Duration::from_millis(100)); // Небольшая задержка
+        }
+
+        // Редко обращаемся к другому ключу
+        let _result = cache.get("infrequent_key");
+
+        // Проверяем, что адаптивный TTL разный для разных ключей
+        let cache_guard = cache.cache.lock().unwrap();
+        let frequent_cached = cache_guard.get("frequent_key").unwrap();
+        let infrequent_cached = cache_guard.get("infrequent_key").unwrap();
+
+        let base_ttl = config.cache_ttl_seconds;
+        let min_ttl = config.min_ttl_seconds;
+        let max_ttl = config.max_frequent_access_ttl;
+
+        let frequent_ttl = frequent_cached.get_adaptive_ttl(base_ttl, min_ttl, max_ttl);
+        let infrequent_ttl = infrequent_cached.get_adaptive_ttl(base_ttl, min_ttl, max_ttl);
+
+        // Часто используемый элемент должен иметь больший TTL
+        assert!(frequent_ttl > infrequent_ttl);
+        assert!(frequent_ttl > base_ttl); // Должен быть больше базового TTL
+        assert!(infrequent_ttl >= min_ttl); // Должен быть не меньше минимального TTL
+    }
+
+    #[test]
+    fn test_cache_access_statistics() {
+        let config = MetricsCacheConfig::default();
+        let collector = OptimizedMetricsCollector::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        collector.cache.insert("key1".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert("key2".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+
+        // Обращаемся к ключам с разной частотой
+        for _ in 0..5 {
+            let _result = collector.cache.get("key1");
+        }
+        let _result = collector.cache.get("key2");
+
+        // Проверяем статистику обращений
+        let stats = collector.get_cache_access_statistics();
+        assert_eq!(stats.len(), 2);
+
+        // Находим статистику для каждого ключа
+        let key1_stats = stats.iter().find(|(key, _, _)| key == "key1").unwrap();
+        let key2_stats = stats.iter().find(|(key, _, _)| key == "key2").unwrap();
+
+        // key1 должен иметь больше обращений
+        assert!(key1_stats.1 > key2_stats.1);
+        assert!(key1_stats.2 > key2_stats.2); // И большую частоту обращений
+    }
+
+    #[test]
+    fn test_frequently_accessed_items() {
+        let config = MetricsCacheConfig::default();
+        let collector = OptimizedMetricsCollector::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        collector.cache.insert("frequent1".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert("frequent2".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert("infrequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+
+        // Часто обращаемся к некоторым ключам
+        for _ in 0..10 {
+            let _result = collector.cache.get("frequent1");
+            let _result = collector.cache.get("frequent2");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let _result = collector.cache.get("infrequent");
+
+        // Проверяем часто используемые элементы
+        let frequent_items = collector.get_frequently_accessed_items(0.5); // Порог 0.5 обращений в секунду
+        assert!(frequent_items.contains(&"frequent1".to_string()));
+        assert!(frequent_items.contains(&"frequent2".to_string()));
+        assert!(!frequent_items.contains(&"infrequent".to_string()));
+    }
+
+    #[test]
+    fn test_infrequently_accessed_items() {
+        let config = MetricsCacheConfig::default();
+        let collector = OptimizedMetricsCollector::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        collector.cache.insert("frequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert("infrequent1".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        collector.cache.insert("infrequent2".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+
+        // Часто обращаемся к одному ключу
+        for _ in 0..10 {
+            let _result = collector.cache.get("frequent");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Проверяем редко используемые элементы
+        let infrequent_items = collector.get_infrequently_accessed_items(0.5); // Порог 0.5 обращений в секунду
+        assert!(!infrequent_items.contains(&"frequent".to_string()));
+        assert!(infrequent_items.contains(&"infrequent1".to_string()));
+        assert!(infrequent_items.contains(&"infrequent2".to_string()));
+    }
+
+    #[test]
+    fn test_adaptive_ttl_for_key() {
+        let config = MetricsCacheConfig::default();
+        let collector = OptimizedMetricsCollector::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        collector.cache.insert("test_key".to_string(), metrics, source_paths, "test_metrics".to_string());
+
+        // Обращаемся к ключу несколько раз
+        for _ in 0..5 {
+            let _result = collector.cache.get("test_key");
+            std::thread::sleep(Duration::from_millis(100));
+        }
+
+        // Проверяем адаптивный TTL
+        let adaptive_ttl = collector.get_adaptive_ttl_for_key("test_key");
+        assert!(adaptive_ttl.is_some());
+        let ttl = adaptive_ttl.unwrap();
+
+        // TTL должен быть больше базового для часто используемого элемента
+        assert!(ttl > config.cache_ttl_seconds);
+        assert!(ttl <= config.max_frequent_access_ttl);
+    }
+
+    #[test]
+    fn test_intelligent_cache_with_memory_pressure() {
+        let config = MetricsCacheConfig {
+            max_cache_size: 10,
+            cache_ttl_seconds: 2,
+            enable_caching: true,
+            max_memory_bytes: 10_000_000,
+            enable_compression: false,
+            auto_cleanup_enabled: true,
+            enable_performance_metrics: true,
+            min_ttl_seconds: 1,
+            adaptive_ttl_enabled: true,
+            intelligent_ttl_enabled: true,
+            max_frequent_access_ttl: 15,
+            frequent_access_ttl_factor: 1.8,
+            frequent_access_threshold: 1.0,
+        };
+
+        let collector = OptimizedMetricsCollector::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        // Добавляем несколько элементов
+        for i in 0..5 {
+            let key = format!("key_{}", i);
+            collector.cache.insert(key.clone(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        }
+
+        // Часто обращаемся к некоторым ключам
+        for _ in 0..10 {
+            let _result = collector.cache.get("key_0");
+            let _result = collector.cache.get("key_1");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+
+        // Проверяем, что часто используемые элементы имеют больший TTL
+        let frequent_ttl = collector.get_adaptive_ttl_for_key("key_0");
+        let infrequent_ttl = collector.get_adaptive_ttl_for_key("key_4");
+
+        assert!(frequent_ttl.is_some());
+        assert!(infrequent_ttl.is_some());
+        assert!(frequent_ttl.unwrap() > infrequent_ttl.unwrap());
+    }
+
+    #[test]
+    fn test_cache_access_patterns_with_different_frequencies() {
+        let config = MetricsCacheConfig::default();
+        let cache = MetricsCache::new(config);
+
+        let metrics = SystemMetrics::default();
+        let mut source_paths = HashMap::new();
+        source_paths.insert("test".to_string(), PathBuf::from("/proc/test"));
+
+        // Добавляем элементы с разными паттернами обращений
+        cache.insert("very_frequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert("frequent".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert("normal".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert("rare".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+        cache.insert("very_rare".to_string(), metrics.clone(), source_paths.clone(), "test_metrics".to_string());
+
+        // Симулируем разные паттерны обращений
+        for _ in 0..20 {
+            let _result = cache.get("very_frequent");
+        }
+        for _ in 0..10 {
+            let _result = cache.get("frequent");
+        }
+        for _ in 0..5 {
+            let _result = cache.get("normal");
+        }
+        let _result = cache.get("rare");
+        // very_rare не обращаемся вообще
+
+        // Проверяем статистику
+        let stats = cache.get_cache_access_statistics();
+        assert_eq!(stats.len(), 5);
+
+        // Находим статистику для каждого ключа
+        let very_frequent = stats.iter().find(|(key, _, _)| key == "very_frequent").unwrap();
+        let frequent = stats.iter().find(|(key, _, _)| key == "frequent").unwrap();
+        let normal = stats.iter().find(|(key, _, _)| key == "normal").unwrap();
+        let rare = stats.iter().find(|(key, _, _)| key == "rare").unwrap();
+        let very_rare = stats.iter().find(|(key, _, _)| key == "very_rare").unwrap();
+
+        // Проверяем, что частота обращений соответствует паттернам
+        assert!(very_frequent.1 > frequent.1);
+        assert!(frequent.1 > normal.1);
+        assert!(normal.1 > rare.1);
+        assert!(rare.1 > very_rare.1);
+
+        // Проверяем адаптивные TTL
+        let base_ttl = config.cache_ttl_seconds;
+        let min_ttl = config.min_ttl_seconds;
+        let max_ttl = config.max_frequent_access_ttl;
+
+        let very_frequent_ttl = very_frequent.0.get_adaptive_ttl(base_ttl, min_ttl, max_ttl);
+        let very_rare_ttl = very_rare.0.get_adaptive_ttl(base_ttl, min_ttl, max_ttl);
+
+        // Очень часто используемый элемент должен иметь максимальный TTL
+        assert_eq!(very_frequent_ttl, max_ttl);
+        // Очень редко используемый элемент должен иметь минимальный TTL
+        assert_eq!(very_rare_ttl, min_ttl);
     }
 }
