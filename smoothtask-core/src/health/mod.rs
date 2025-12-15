@@ -18,12 +18,14 @@ pub mod diagnostics;
 pub mod monitoring;
 pub mod notifications;
 pub mod security_monitoring;
+pub mod threat_intelligence;
 
 pub use container_health::*;
 pub use diagnostics::*;
 pub use monitoring::*;
 pub use notifications::*;
 pub use security_monitoring::*;
+pub use threat_intelligence::*;
 
 #[cfg(test)]
 pub mod tests;
@@ -741,7 +743,8 @@ impl HealthMonitorTrait for HealthMonitorImpl {
         health_monitor = self.check_components(health_monitor).await?;
 
         // Выполняем улучшенное автоматическое восстановление
-        self.perform_enhanced_auto_recovery(&mut health_monitor).await?;
+        self.perform_enhanced_auto_recovery(&mut health_monitor)
+            .await?;
 
         // Определяем общий статус здоровья
         health_monitor.overall_status = self.determine_overall_status(&health_monitor);
@@ -874,7 +877,8 @@ impl HealthMonitorTrait for HealthMonitorImpl {
             execution_context,
             system_context,
             severity,
-        ).await
+        )
+        .await
     }
 
     /// Выполнить улучшенное автоматическое восстановление.
@@ -883,7 +887,8 @@ impl HealthMonitorTrait for HealthMonitorImpl {
         component_name: &str,
         error_context: EnhancedErrorContext,
     ) -> Result<RecoveryAttempt> {
-        self.enhanced_auto_recovery(component_name, error_context).await
+        self.enhanced_auto_recovery(component_name, error_context)
+            .await
     }
 
     /// Проанализировать паттерны ошибок.
@@ -902,7 +907,8 @@ impl HealthMonitorTrait for HealthMonitorImpl {
         component_name: &str,
         error_context: EnhancedErrorContext,
     ) -> Result<RecoveryAttempt> {
-        self.enhanced_auto_recovery_with_analysis(component_name, error_context).await
+        self.enhanced_auto_recovery_with_analysis(component_name, error_context)
+            .await
     }
 
     /// Создать расширенный контекст ошибки.
@@ -1061,7 +1067,10 @@ impl HealthMonitorImpl {
     }
 
     /// Выполнить улучшенное автоматическое восстановление компонентов.
-    async fn perform_enhanced_auto_recovery(&self, health_monitor: &mut HealthMonitor) -> Result<()> {
+    async fn perform_enhanced_auto_recovery(
+        &self,
+        health_monitor: &mut HealthMonitor,
+    ) -> Result<()> {
         // Проверяем, включено ли автоматическое восстановление
         if !health_monitor.auto_recovery_flags.auto_recovery_enabled {
             debug!("Auto-recovery is disabled");
@@ -1083,7 +1092,10 @@ impl HealthMonitorImpl {
 
         // Выполняем восстановление для каждого компонента
         for component_name in components_to_recover {
-            info!("Attempting enhanced auto-recovery for component: {}", component_name);
+            info!(
+                "Attempting enhanced auto-recovery for component: {}",
+                component_name
+            );
 
             // Получаем текущий статус компонента
             let component_status = health_monitor
@@ -1127,9 +1139,8 @@ impl HealthMonitorImpl {
 
             // Если восстановление успешно, обновляем статус компонента
             if recovery_attempt.status == RecoveryStatus::Success {
-                if let Some(component_status) = health_monitor
-                    .component_statuses
-                    .get_mut(&component_name)
+                if let Some(component_status) =
+                    health_monitor.component_statuses.get_mut(&component_name)
                 {
                     component_status.status = ComponentHealthStatus::Healthy;
                     component_status.consecutive_errors = 0;
@@ -1398,10 +1409,9 @@ impl HealthMonitorImpl {
         );
 
         // Проверяем безопасность системы
-        health_monitor.component_statuses.insert(
-            "security".to_string(),
-            self.check_security().await?,
-        );
+        health_monitor
+            .component_statuses
+            .insert("security".to_string(), self.check_security().await?);
 
         Ok(health_monitor)
     }
@@ -1626,7 +1636,7 @@ impl HealthMonitorImpl {
                     SecurityStatus::Secure => (
                         ComponentHealthStatus::Healthy,
                         "Security is healthy".to_string(),
-                        None
+                        None,
                     ),
                     SecurityStatus::Warning => (
                         ComponentHealthStatus::Warning,
@@ -1635,7 +1645,7 @@ impl HealthMonitorImpl {
                             "Security score: {:.1}, events: {}",
                             security_status.security_score,
                             security_status.event_history.len()
-                        ))
+                        )),
                     ),
                     SecurityStatus::PotentialThreat | SecurityStatus::CriticalThreat => (
                         ComponentHealthStatus::Unhealthy,
@@ -1644,12 +1654,12 @@ impl HealthMonitorImpl {
                             "Security score: {:.1}, critical events: {}",
                             security_status.security_score,
                             security_status.event_history.len()
-                        ))
+                        )),
                     ),
                     SecurityStatus::Unknown => (
                         ComponentHealthStatus::Unknown,
                         "Security status unknown".to_string(),
-                        None
+                        None,
                     ),
                 };
 
@@ -1712,10 +1722,12 @@ impl HealthMonitorImpl {
         error_context: EnhancedErrorContext,
     ) -> Result<()> {
         let mut state = self.health_state.write().await;
-        
+
         // Обновляем или создаем паттерн ошибки
-        let pattern = state.error_patterns.entry(error_type.to_string()).or_insert_with(|| {
-            ErrorPattern {
+        let pattern = state
+            .error_patterns
+            .entry(error_type.to_string())
+            .or_insert_with(|| ErrorPattern {
                 error_type: error_type.to_string(),
                 occurrence_count: 0,
                 first_occurrence: Utc::now(),
@@ -1724,22 +1736,24 @@ impl HealthMonitorImpl {
                 severity,
                 frequency_per_minute: 0.0,
                 last_error_context: None,
-            }
-        });
+            });
 
         // Обновляем паттерн
         pattern.occurrence_count += 1;
         pattern.last_occurrence = Utc::now();
-        
-        if !pattern.affected_components.contains(&component_name.to_string()) {
+
+        if !pattern
+            .affected_components
+            .contains(&component_name.to_string())
+        {
             pattern.affected_components.push(component_name.to_string());
         }
-        
+
         // Обновляем серьезность, если текущая ошибка более серьезная
         if severity > pattern.severity {
             pattern.severity = severity;
         }
-        
+
         // Обновляем контекст ошибки
         pattern.last_error_context = Some(error_context.clone());
 
@@ -1835,10 +1849,7 @@ impl HealthMonitorImpl {
         recovery_attempt.recovery_type = recovery_strategy;
 
         // Получаем рекомендации по восстановлению
-        let suggestions = self.get_recovery_suggestions(
-            &error_context.error_type,
-            component_name,
-        );
+        let suggestions = self.get_recovery_suggestions(&error_context.error_type, component_name);
 
         // Обновляем контекст ошибки с рекомендациями
         let mut updated_context = error_context;
@@ -1864,7 +1875,11 @@ impl HealthMonitorImpl {
         recovery_attempt.recovery_details = Some(format!(
             "Enhanced recovery ({}): {}. Recommendations: {}",
             recovery_strategy,
-            if recovery_result.is_ok() { "success" } else { "failed" },
+            if recovery_result.is_ok() {
+                "success"
+            } else {
+                "failed"
+            },
             suggestions
         ));
 
@@ -1908,7 +1923,10 @@ impl HealthMonitorImpl {
 
     /// Выполнить восстановление с перезапуском.
     async fn perform_restart_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing restart recovery for component: {}", component_name);
+        info!(
+            "Performing restart recovery for component: {}",
+            component_name
+        );
         // В реальной реализации здесь будет логика перезапуска компонента
         tokio::time::sleep(Duration::from_millis(150)).await;
         Ok(())
@@ -1916,7 +1934,10 @@ impl HealthMonitorImpl {
 
     /// Выполнить восстановление со сбросом.
     async fn perform_reset_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing reset recovery for component: {}", component_name);
+        info!(
+            "Performing reset recovery for component: {}",
+            component_name
+        );
         // В реальной реализации здесь будет логика сброса компонента
         tokio::time::sleep(Duration::from_millis(200)).await;
         Ok(())
@@ -1924,7 +1945,10 @@ impl HealthMonitorImpl {
 
     /// Выполнить восстановление с очисткой.
     async fn perform_cleanup_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing cleanup recovery for component: {}", component_name);
+        info!(
+            "Performing cleanup recovery for component: {}",
+            component_name
+        );
         // В реальной реализации здесь будет логика очистки ресурсов
         tokio::time::sleep(Duration::from_millis(250)).await;
         Ok(())
@@ -1932,7 +1956,10 @@ impl HealthMonitorImpl {
 
     /// Выполнить восстановление из резервной копии.
     async fn perform_restore_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing restore recovery for component: {}", component_name);
+        info!(
+            "Performing restore recovery for component: {}",
+            component_name
+        );
         // В реальной реализации здесь будет логика восстановления из резервной копии
         tokio::time::sleep(Duration::from_millis(300)).await;
         Ok(())
@@ -1940,7 +1967,10 @@ impl HealthMonitorImpl {
 
     /// Выполнить восстановление с переконфигурацией.
     async fn perform_reconfigure_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing reconfigure recovery for component: {}", component_name);
+        info!(
+            "Performing reconfigure recovery for component: {}",
+            component_name
+        );
         // В реальной реализации здесь будет логика переконфигурации
         tokio::time::sleep(Duration::from_millis(180)).await;
         Ok(())
@@ -1948,20 +1978,27 @@ impl HealthMonitorImpl {
 
     /// Выполнить универсальное восстановление.
     async fn perform_generic_recovery(&self, component_name: &str) -> Result<()> {
-        info!("Performing generic recovery for component: {}", component_name);
+        info!(
+            "Performing generic recovery for component: {}",
+            component_name
+        );
         // Универсальная логика восстановления
         tokio::time::sleep(Duration::from_millis(120)).await;
         Ok(())
     }
 
     /// Улучшенный анализ паттернов ошибок с классификацией и трендами.
-    pub async fn enhanced_error_pattern_analysis(&self) -> Result<Vec<EnhancedErrorPatternAnalysis>> {
+    pub async fn enhanced_error_pattern_analysis(
+        &self,
+    ) -> Result<Vec<EnhancedErrorPatternAnalysis>> {
         let state = self.health_state.read().await;
         let mut analyses = Vec::new();
 
         for (error_type, pattern) in &state.error_patterns {
             let frequency = if pattern.occurrence_count > 1 {
-                let duration = pattern.last_occurrence.signed_duration_since(pattern.first_occurrence);
+                let duration = pattern
+                    .last_occurrence
+                    .signed_duration_since(pattern.first_occurrence);
                 if duration.num_minutes() > 0 {
                     pattern.occurrence_count as f32 / duration.num_minutes() as f32
                 } else {
@@ -1991,7 +2028,8 @@ impl HealthMonitorImpl {
                 first_occurrence: pattern.first_occurrence,
                 last_occurrence: pattern.last_occurrence,
                 is_recurring: pattern.occurrence_count > 1,
-                needs_attention: pattern.severity as usize >= HealthIssueSeverity::Warning as usize && frequency > 0.1,
+                needs_attention: pattern.severity as usize >= HealthIssueSeverity::Warning as usize
+                    && frequency > 0.1,
                 error_classification,
                 trend_analysis,
                 recovery_priority: self.determine_recovery_priority(pattern),
@@ -2004,7 +2042,9 @@ impl HealthMonitorImpl {
     /// Классифицировать ошибку по паттерну.
     fn classify_error_by_pattern(&self, pattern: &ErrorPattern) -> String {
         let frequency = if pattern.occurrence_count > 1 {
-            let duration = pattern.last_occurrence.signed_duration_since(pattern.first_occurrence);
+            let duration = pattern
+                .last_occurrence
+                .signed_duration_since(pattern.first_occurrence);
             if duration.num_minutes() > 0 {
                 pattern.occurrence_count as f32 / duration.num_minutes() as f32
             } else {
@@ -2050,7 +2090,9 @@ impl HealthMonitorImpl {
 
     /// Проанализировать тренд ошибки.
     fn analyze_error_trend(&self, pattern: &ErrorPattern) -> String {
-        let duration = pattern.last_occurrence.signed_duration_since(pattern.first_occurrence);
+        let duration = pattern
+            .last_occurrence
+            .signed_duration_since(pattern.first_occurrence);
         let hours_since_first = duration.num_hours();
 
         if hours_since_first < 1 {
@@ -2067,7 +2109,9 @@ impl HealthMonitorImpl {
     /// Определить приоритет восстановления.
     fn determine_recovery_priority(&self, pattern: &ErrorPattern) -> String {
         let frequency = if pattern.occurrence_count > 1 {
-            let duration = pattern.last_occurrence.signed_duration_since(pattern.first_occurrence);
+            let duration = pattern
+                .last_occurrence
+                .signed_duration_since(pattern.first_occurrence);
             if duration.num_minutes() > 0 {
                 pattern.occurrence_count as f32 / duration.num_minutes() as f32
             } else {
@@ -2114,10 +2158,7 @@ impl HealthMonitorImpl {
         };
 
         // Получаем рекомендации по восстановлению
-        let suggestions = self.get_recovery_suggestions(
-            &error_context.error_type,
-            component_name,
-        );
+        let suggestions = self.get_recovery_suggestions(&error_context.error_type, component_name);
 
         // Обновляем контекст ошибки с рекомендациями
         let mut updated_context = error_context;
@@ -2140,7 +2181,11 @@ impl HealthMonitorImpl {
 
         recovery_attempt.recovery_details = Some(format!(
             "Enhanced recovery: {}. Recommendations: {}",
-            if recovery_result.is_ok() { "success" } else { "failed" },
+            if recovery_result.is_ok() {
+                "success"
+            } else {
+                "failed"
+            },
             suggestions
         ));
 
@@ -2168,7 +2213,9 @@ impl HealthMonitorImpl {
 
         for (error_type, pattern) in &state.error_patterns {
             let frequency = if pattern.occurrence_count > 1 {
-                let duration = pattern.last_occurrence.signed_duration_since(pattern.first_occurrence);
+                let duration = pattern
+                    .last_occurrence
+                    .signed_duration_since(pattern.first_occurrence);
                 if duration.num_minutes() > 0 {
                     pattern.occurrence_count as f32 / duration.num_minutes() as f32
                 } else {
@@ -2194,7 +2241,8 @@ impl HealthMonitorImpl {
                 first_occurrence: pattern.first_occurrence,
                 last_occurrence: pattern.last_occurrence,
                 is_recurring: pattern.occurrence_count > 1,
-                needs_attention: pattern.severity as usize >= HealthIssueSeverity::Warning as usize && frequency > 0.1,
+                needs_attention: pattern.severity as usize >= HealthIssueSeverity::Warning as usize
+                    && frequency > 0.1,
             });
         }
 
@@ -2225,7 +2273,7 @@ impl HealthMonitorImpl {
         );
 
         // Создаем проблему здоровья с расширенным контекстом
-        let mut health_issue = HealthIssue {
+        let health_issue = HealthIssue {
             issue_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             issue_type: match severity {
@@ -2244,12 +2292,8 @@ impl HealthMonitorImpl {
         };
 
         // Обновляем паттерны ошибок
-        self.update_error_patterns(
-            error_type,
-            component_name,
-            severity,
-            error_context,
-        ).await?;
+        self.update_error_patterns(error_type, component_name, severity, error_context)
+            .await?;
 
         // Добавляем проблему в историю
         let mut state = self.health_state.write().await;
