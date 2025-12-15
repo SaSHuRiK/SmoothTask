@@ -746,10 +746,20 @@ pub fn apply_advanced_auto_scaling(
     // Analyze historical data and predict future resource needs
     let (predicted_cpu_usage, predicted_memory_usage) = predict_resource_usage(historical_data, &current_metric);
     
+    // Calculate scaling confidence
+    let scaling_confidence = calculate_scaling_confidence(historical_data, &current_metric, predicted_cpu_usage, predicted_memory_usage);
+    
+    // Apply confidence-based scaling adjustment
+    let cpu_adjustment_factor = 1.0 - (1.0 - scaling_confidence) * 0.5;
+    let memory_adjustment_factor = 1.0 - (1.0 - scaling_confidence) * 0.5;
+    
+    let adjusted_cpu_usage = current_metric.cpu_usage.usage_percent * (1.0 - cpu_adjustment_factor) + predicted_cpu_usage * cpu_adjustment_factor;
+    let adjusted_memory_usage = current_metric.memory_usage.usage_percent * (1.0 - memory_adjustment_factor) + predicted_memory_usage * memory_adjustment_factor;
+    
     // Calculate new resource limits with bounds checking
     let new_cpu_limit = calculate_scaled_resource(
         current_metric.cpu_usage.usage_percent,
-        predicted_cpu_usage,
+        adjusted_cpu_usage,
         config.target_cpu_usage,
         current_metric.resource_limits.cpu_limit,
         config.min_cpu_limit,
@@ -760,13 +770,24 @@ pub fn apply_advanced_auto_scaling(
         .map(|limit| limit as f64)
         .and_then(|limit| calculate_scaled_resource(
             current_metric.memory_usage.usage_percent,
-            predicted_memory_usage,
+            adjusted_memory_usage,
             config.target_memory_usage,
             Some(limit),
             config.min_memory_limit as f64,
             config.max_memory_limit as f64,
         ))
         .map(|v| v as u64);
+    
+    // Log scaling decision with confidence level
+    tracing::info!(
+        "Auto-scaling container {}: CPU {}% -> {}%, Memory {}MB -> {}MB (confidence: {:.2}%)",
+        container_id,
+        current_metric.cpu_usage.usage_percent,
+        adjusted_cpu_usage,
+        current_metric.memory_usage.usage / (1024 * 1024),
+        new_memory_limit.unwrap_or(0) / (1024 * 1024),
+        scaling_confidence * 100.0
+    );
     
     // Apply the new resource limits
     update_container_resource_limits(
@@ -843,12 +864,21 @@ fn predict_with_trend_analysis(historical_data: &[f64], current_value: f64) -> f
     // Predict next value based on trend
     let trend_prediction = intercept + slope * n;
     
+    // Calculate volatility (standard deviation of recent data)
+    let mean = sum_y / n;
+    let variance: f64 = recent_data.iter().map(|&y| (y - mean).powi(2)).sum();
+    let std_dev = (variance / n).sqrt();
+    
     // Combine EMA and trend prediction with current value
     // Weight: 50% current, 30% EMA, 20% trend
     let final_prediction = 0.5 * current_value + 0.3 * ema + 0.2 * trend_prediction;
     
+    // Apply volatility adjustment - if data is volatile, be more conservative
+    let volatility_factor = 1.0 / (1.0 + std_dev * 0.1);
+    let adjusted_prediction = current_value * (1.0 - volatility_factor) + final_prediction * volatility_factor;
+    
     // Ensure prediction is within reasonable bounds
-    final_prediction.clamp(0.0, 100.0)
+    adjusted_prediction.clamp(0.0, 100.0)
 }
 
 /// Calculate scaled resource with bounds checking
@@ -873,6 +903,83 @@ fn calculate_scaled_resource(
         // Apply bounds checking
         new_limit.clamp(min_limit, max_limit)
     })
+}
+
+/// Calculate scaling confidence based on prediction stability and data quality
+fn calculate_scaling_confidence(
+    historical_data: &[ContainerMetrics],
+    current_metric: &ContainerMetrics,
+    predicted_cpu: f64,
+    predicted_memory: f64,
+) -> f64 {
+    // Calculate confidence based on data quality and prediction stability
+    
+    if historical_data.len() < 3 {
+        return 0.5; // Low confidence with limited data
+    }
+    
+    // Calculate CPU and memory volatility
+    let cpu_history: Vec<f64> = historical_data.iter()
+        .map(|m| m.cpu_usage.usage_percent)
+        .collect();
+    
+    let memory_history: Vec<f64> = historical_data.iter()
+        .map(|m| m.memory_usage.usage_percent)
+        .collect();
+    
+    let cpu_std_dev = calculate_standard_deviation(&cpu_history);
+    let memory_std_dev = calculate_standard_deviation(&memory_history);
+    
+    // Calculate prediction accuracy (how close predictions are to actual values)
+    let cpu_accuracy = 1.0 - (predicted_cpu - current_metric.cpu_usage.usage_percent).abs() / 100.0;
+    let memory_accuracy = 1.0 - (predicted_memory - current_metric.memory_usage.usage_percent).abs() / 100.0;
+    
+    // Calculate trend stability (how consistent the trend is)
+    let cpu_trend_stability = calculate_trend_stability(&cpu_history);
+    let memory_trend_stability = calculate_trend_stability(&memory_history);
+    
+    // Combine factors to calculate overall confidence
+    let volatility_factor = 1.0 / (1.0 + cpu_std_dev * 0.05 + memory_std_dev * 0.05);
+    let accuracy_factor = (cpu_accuracy + memory_accuracy) / 2.0;
+    let stability_factor = (cpu_trend_stability + memory_trend_stability) / 2.0;
+    
+    // Overall confidence (weighted average)
+    let confidence = 0.4 * volatility_factor + 0.3 * accuracy_factor + 0.3 * stability_factor;
+    
+    // Ensure confidence is within reasonable bounds
+    confidence.clamp(0.1, 1.0)
+}
+
+/// Calculate standard deviation of a dataset
+fn calculate_standard_deviation(data: &[f64]) -> f64 {
+    if data.len() < 2 {
+        return 0.0;
+    }
+    
+    let mean = data.iter().sum::<f64>() / data.len() as f64;
+    let variance = data.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / data.len() as f64;
+    variance.sqrt()
+}
+
+/// Calculate trend stability (how consistent the trend is)
+fn calculate_trend_stability(data: &[f64]) -> f64 {
+    if data.len() < 3 {
+        return 0.5;
+    }
+    
+    // Calculate direction changes
+    let mut direction_changes = 0;
+    for i in 1..data.len()-1 {
+        let prev_diff = data[i] - data[i-1];
+        let curr_diff = data[i+1] - data[i];
+        if prev_diff.signum() != curr_diff.signum() && prev_diff != 0.0 && curr_diff != 0.0 {
+            direction_changes += 1;
+        }
+    }
+    
+    // Stability is inversely proportional to direction changes
+    let max_possible_changes = data.len() - 2;
+    1.0 - (direction_changes as f64 / max_possible_changes as f64)
 }
 
 /// Apply container health monitoring with automatic recovery
@@ -2547,6 +2654,145 @@ mod tests {
         // Should handle low usage gracefully
         assert!(predicted_cpu >= 0.0 && predicted_cpu <= 100.0, "Should handle low CPU usage");
         assert!(predicted_memory >= 0.0 && predicted_memory <= 100.0, "Should handle low memory usage");
+    }
+    
+    #[test]
+    fn test_scaling_confidence_calculation() {
+        // Test the scaling confidence calculation with different scenarios
+        
+        // Test case 1: High confidence with stable, predictable data
+        let stable_data = vec![
+            create_test_container_metric("test123", 25.0, 30.0, 1000, 2048),
+            create_test_container_metric("test123", 26.0, 31.0, 1000, 2048),
+            create_test_container_metric("test123", 27.0, 32.0, 1000, 2048),
+            create_test_container_metric("test123", 28.0, 33.0, 1000, 2048),
+            create_test_container_metric("test123", 29.0, 34.0, 1000, 2048),
+        ];
+        
+        let current_metric = create_test_container_metric("test123", 30.0, 35.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&stable_data, &current_metric);
+        let confidence = calculate_scaling_confidence(&stable_data, &current_metric, predicted_cpu, predicted_memory);
+        
+        // Should have high confidence with stable, predictable data
+        assert!(confidence > 0.7, "Should have high confidence with stable data");
+        
+        // Test case 2: Low confidence with volatile, unpredictable data
+        let volatile_data = vec![
+            create_test_container_metric("test123", 10.0, 20.0, 1000, 2048),
+            create_test_container_metric("test123", 50.0, 60.0, 1000, 2048),
+            create_test_container_metric("test123", 15.0, 25.0, 1000, 2048),
+            create_test_container_metric("test123", 45.0, 55.0, 1000, 2048),
+            create_test_container_metric("test123", 20.0, 30.0, 1000, 2048),
+        ];
+        
+        let current_metric = create_test_container_metric("test123", 40.0, 50.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&volatile_data, &current_metric);
+        let confidence = calculate_scaling_confidence(&volatile_data, &current_metric, predicted_cpu, predicted_memory);
+        
+        // Should have lower confidence with volatile data
+        assert!(confidence < 0.6, "Should have low confidence with volatile data");
+        
+        // Test case 3: Medium confidence with limited data
+        let limited_data = vec![
+            create_test_container_metric("test123", 25.0, 30.0, 1000, 2048),
+            create_test_container_metric("test123", 26.0, 31.0, 1000, 2048),
+        ];
+        
+        let current_metric = create_test_container_metric("test123", 27.0, 32.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&limited_data, &current_metric);
+        let confidence = calculate_scaling_confidence(&limited_data, &current_metric, predicted_cpu, predicted_memory);
+        
+        // Should have medium confidence with limited data
+        assert!(confidence > 0.4 && confidence < 0.6, "Should have medium confidence with limited data");
+    }
+    
+    #[test]
+    fn test_standard_deviation_calculation() {
+        // Test standard deviation calculation
+        
+        let stable_data = vec![25.0, 26.0, 27.0, 28.0, 29.0];
+        let std_dev = calculate_standard_deviation(&stable_data);
+        
+        // Should have low standard deviation for stable data
+        assert!(std_dev < 2.0, "Should have low standard deviation for stable data");
+        
+        let volatile_data = vec![10.0, 50.0, 15.0, 45.0, 20.0];
+        let std_dev = calculate_standard_deviation(&volatile_data);
+        
+        // Should have high standard deviation for volatile data
+        assert!(std_dev > 15.0, "Should have high standard deviation for volatile data");
+    }
+    
+    #[test]
+    fn test_trend_stability_calculation() {
+        // Test trend stability calculation
+        
+        // Stable increasing trend
+        let stable_trend = vec![10.0, 15.0, 20.0, 25.0, 30.0, 35.0];
+        let stability = calculate_trend_stability(&stable_trend);
+        
+        // Should have high stability for consistent trend
+        assert!(stability > 0.8, "Should have high stability for consistent trend");
+        
+        // Unstable trend with many direction changes
+        let unstable_trend = vec![10.0, 20.0, 15.0, 25.0, 20.0, 30.0, 25.0];
+        let stability = calculate_trend_stability(&unstable_trend);
+        
+        // Should have lower stability for inconsistent trend
+        assert!(stability < 0.5, "Should have low stability for inconsistent trend");
+    }
+    
+    #[test]
+    fn test_confidence_based_auto_scaling() {
+        // Test the confidence-based auto-scaling algorithm
+        
+        // Create test data with stable trend (high confidence expected)
+        let stable_data = vec![
+            create_test_container_metric("test123", 25.0, 30.0, 1000, 2048),
+            create_test_container_metric("test123", 26.0, 31.0, 1000, 2048),
+            create_test_container_metric("test123", 27.0, 32.0, 1000, 2048),
+            create_test_container_metric("test123", 28.0, 33.0, 1000, 2048),
+            create_test_container_metric("test123", 29.0, 34.0, 1000, 2048),
+        ];
+        
+        let current_metric = create_test_container_metric("test123", 30.0, 35.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&stable_data, &current_metric);
+        let confidence = calculate_scaling_confidence(&stable_data, &current_metric, predicted_cpu, predicted_memory);
+        
+        // With high confidence, should use more of the predicted value
+        let cpu_adjustment_factor = 1.0 - (1.0 - confidence) * 0.5;
+        let memory_adjustment_factor = 1.0 - (1.0 - confidence) * 0.5;
+        
+        let adjusted_cpu = current_metric.cpu_usage.usage_percent * (1.0 - cpu_adjustment_factor) + predicted_cpu * cpu_adjustment_factor;
+        let adjusted_memory = current_metric.memory_usage.usage_percent * (1.0 - memory_adjustment_factor) + predicted_memory * memory_adjustment_factor;
+        
+        // Should be closer to predicted values with high confidence
+        assert!((adjusted_cpu - predicted_cpu).abs() < 5.0, "Should use predicted value with high confidence");
+        assert!((adjusted_memory - predicted_memory).abs() < 5.0, "Should use predicted value with high confidence");
+        
+        // Test with volatile data (low confidence expected)
+        let volatile_data = vec![
+            create_test_container_metric("test123", 10.0, 20.0, 1000, 2048),
+            create_test_container_metric("test123", 50.0, 60.0, 1000, 2048),
+            create_test_container_metric("test123", 15.0, 25.0, 1000, 2048),
+            create_test_container_metric("test123", 45.0, 55.0, 1000, 2048),
+            create_test_container_metric("test123", 20.0, 30.0, 1000, 2048),
+        ];
+        
+        let current_metric = create_test_container_metric("test123", 40.0, 50.0, 1000, 2048);
+        let (predicted_cpu, predicted_memory) = predict_resource_usage(&volatile_data, &current_metric);
+        let confidence = calculate_scaling_confidence(&volatile_data, &current_metric, predicted_cpu, predicted_memory);
+        
+        // With low confidence, should use more of the current value
+        let cpu_adjustment_factor = 1.0 - (1.0 - confidence) * 0.5;
+        let memory_adjustment_factor = 1.0 - (1.0 - confidence) * 0.5;
+        
+        let adjusted_cpu = current_metric.cpu_usage.usage_percent * (1.0 - cpu_adjustment_factor) + predicted_cpu * cpu_adjustment_factor;
+        let adjusted_memory = current_metric.memory_usage.usage_percent * (1.0 - memory_adjustment_factor) + predicted_memory * memory_adjustment_factor;
+        
+        // Should be closer to current values with low confidence
+        assert!((adjusted_cpu - current_metric.cpu_usage.usage_percent).abs() < 10.0, "Should use current value with low confidence");
+        assert!((adjusted_memory - current_metric.memory_usage.usage_percent).abs() < 10.0, "Should use current value with low confidence");
     }
 }
 

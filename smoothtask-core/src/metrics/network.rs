@@ -108,6 +108,146 @@ impl Default for NetworkInterfaceStats {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::net::{Ipv6Addr, IpAddr};
+    
+    #[test]
+    fn test_ipv6_address_conversion() {
+        // Test valid IPv6 address conversion
+        let hex_ip = "20010DB8000000000000000000000001";
+        let network_monitor = NetworkMonitor::new();
+        let result = network_monitor.hex_ipv6_to_std(hex_ip);
+        
+        assert!(result.is_ok(), "Should successfully convert valid IPv6 hex address");
+        let addr = result.unwrap();
+        assert_eq!(addr, Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x1));
+    }
+    
+    #[test]
+    fn test_ipv6_address_conversion_invalid_length() {
+        // Test invalid IPv6 address with wrong length
+        let hex_ip = "20010DB8"; // Too short
+        let network_monitor = NetworkMonitor::new();
+        let result = network_monitor.hex_ipv6_to_std(hex_ip);
+        
+        assert!(result.is_err(), "Should fail with invalid IPv6 hex length");
+    }
+    
+    #[test]
+    fn test_ipv6_address_conversion_invalid_hex() {
+        // Test invalid IPv6 address with non-hex characters
+        let hex_ip = "20010DB800000000000000000000000Z"; // Contains 'Z'
+        let network_monitor = NetworkMonitor::new();
+        let result = network_monitor.hex_ipv6_to_std(hex_ip);
+        
+        assert!(result.is_err(), "Should fail with invalid hex characters");
+    }
+    
+    #[test]
+    fn test_ipv6_loopback_address() {
+        // Test IPv6 loopback address conversion
+        let hex_ip = "00000000000000000000000000000001";
+        let network_monitor = NetworkMonitor::new();
+        let result = network_monitor.hex_ipv6_to_std(hex_ip);
+        
+        assert!(result.is_ok(), "Should successfully convert IPv6 loopback address");
+        let addr = result.unwrap();
+        assert!(addr.is_loopback(), "Should be recognized as loopback address");
+    }
+    
+    #[test]
+    fn test_ipv6_unspecified_address() {
+        // Test IPv6 unspecified address conversion
+        let hex_ip = "00000000000000000000000000000000";
+        let network_monitor = NetworkMonitor::new();
+        let result = network_monitor.hex_ipv6_to_std(hex_ip);
+        
+        assert!(result.is_ok(), "Should successfully convert IPv6 unspecified address");
+        let addr = result.unwrap();
+        assert!(addr.is_unspecified(), "Should be recognized as unspecified address");
+    }
+    
+    #[test]
+    fn test_ipv6_stats_struct_default() {
+        // Test IPv6NetworkStats default values
+        let stats = IPv6NetworkStats::default();
+        
+        assert_eq!(stats.rx_packets, 0, "Default rx_packets should be 0");
+        assert_eq!(stats.tx_packets, 0, "Default tx_packets should be 0");
+        assert_eq!(stats.rx_bytes, 0, "Default rx_bytes should be 0");
+        assert_eq!(stats.tx_bytes, 0, "Default tx_bytes should be 0");
+        assert_eq!(stats.rx_errors, 0, "Default rx_errors should be 0");
+        assert_eq!(stats.tx_errors, 0, "Default tx_errors should be 0");
+        assert_eq!(stats.rx_too_big_errors, 0, "Default rx_too_big_errors should be 0");
+        assert_eq!(stats.rx_no_routes, 0, "Default rx_no_routes should be 0");
+        assert_eq!(stats.rx_addr_errors, 0, "Default rx_addr_errors should be 0");
+        assert_eq!(stats.rx_unknown_protos, 0, "Default rx_unknown_protos should be 0");
+        assert_eq!(stats.forwarding_enabled, false, "Default forwarding_enabled should be false");
+        assert_eq!(stats.default_hop_limit, 0, "Default default_hop_limit should be 0");
+        assert_eq!(stats.neighbor_cache_entries, 0, "Default neighbor_cache_entries should be 0");
+        assert_eq!(stats.destination_cache_entries, 0, "Default destination_cache_entries should be 0");
+        assert_eq!(stats.mtu, 0, "Default mtu should be 0");
+        assert_eq!(stats.accept_router_advertisements, false, "Default accept_router_advertisements should be false");
+        assert_eq!(stats.accept_redirects, false, "Default accept_redirects should be false");
+    }
+    
+    #[test]
+    fn test_ipv6_connection_stats_struct() {
+        // Test IPv6ConnectionStats creation
+        let src_ip = Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x1);
+        let dst_ip = Ipv6Addr::new(0x2001, 0x0db8, 0, 0, 0, 0, 0, 0x2);
+        
+        let connection = IPv6ConnectionStats {
+            src_ip,
+            dst_ip,
+            src_port: 12345,
+            dst_port: 80,
+            protocol: "TCP6".to_string(),
+            state: "ESTABLISHED".to_string(),
+            pid: Some(1234),
+            process_name: Some("test_process".to_string()),
+            bytes_transmitted: 1024,
+            bytes_received: 2048,
+            packets_transmitted: 10,
+            packets_received: 20,
+            start_time: SystemTime::UNIX_EPOCH,
+            last_activity: SystemTime::UNIX_EPOCH,
+            duration: Duration::from_secs(60),
+        };
+        
+        assert_eq!(connection.src_port, 12345, "Source port should match");
+        assert_eq!(connection.dst_port, 80, "Destination port should match");
+        assert_eq!(connection.protocol, "TCP6", "Protocol should match");
+        assert_eq!(connection.state, "ESTABLISHED", "State should match");
+        assert_eq!(connection.pid, Some(1234), "PID should match");
+        assert_eq!(connection.process_name, Some("test_process".to_string()), "Process name should match");
+        assert_eq!(connection.bytes_transmitted, 1024, "Bytes transmitted should match");
+        assert_eq!(connection.bytes_received, 2048, "Bytes received should match");
+    }
+    
+    #[test]
+    fn test_ipv6_address_validation() {
+        // Test various IPv6 address formats
+        let network_monitor = NetworkMonitor::new();
+        
+        // Test valid addresses
+        let valid_addresses = vec![
+            "20010DB8000000000000000000000001", // Global unicast
+            "FE800000000000000000000000000001", // Link-local
+            "FF020000000000000000000000000001", // Multicast
+            "00000000000000000000000000000001", // Loopback
+            "00000000000000000000000000000000", // Unspecified
+        ];
+        
+        for addr in valid_addresses {
+            let result = network_monitor.hex_ipv6_to_std(addr);
+            assert!(result.is_ok(), "Should successfully convert valid IPv6 address: {}", addr);
+        }
+    }
+}
+
 impl Default for NetworkConnectionStats {
     fn default() -> Self {
         Self {
@@ -248,6 +388,14 @@ pub struct IPv6NetworkStats {
     pub rx_errors: u64,
     /// IPv6 transmit errors
     pub tx_errors: u64,
+    /// IPv6 packets received that were too big
+    pub rx_too_big_errors: u64,
+    /// IPv6 packets received with no route
+    pub rx_no_routes: u64,
+    /// IPv6 packets received with address errors
+    pub rx_addr_errors: u64,
+    /// IPv6 packets received with unknown protocols
+    pub rx_unknown_protos: u64,
     /// IPv6 forwarding enabled
     pub forwarding_enabled: bool,
     /// IPv6 default hop limit
@@ -256,6 +404,12 @@ pub struct IPv6NetworkStats {
     pub neighbor_cache_entries: u32,
     /// IPv6 destination cache entries
     pub destination_cache_entries: u32,
+    /// IPv6 MTU (Maximum Transmission Unit)
+    pub mtu: u32,
+    /// IPv6 accept router advertisements
+    pub accept_router_advertisements: bool,
+    /// IPv6 accept redirects
+    pub accept_redirects: bool,
 }
 
 /// IPv6 connection statistics
@@ -3529,11 +3683,18 @@ impl NetworkMonitor {
             for line in snmp6_data.lines() {
                 let parts: Vec<&str> = line.split_whitespace().collect();
                 if parts.len() >= 12 {
-                    // Parse IPv6 statistics
+                    // Parse IPv6 statistics comprehensively
                     // Format: Ip6InReceives Ip6InHdrErrors Ip6InTooBigErrors Ip6InNoRoutes Ip6InAddrErrors ...
                     stats.rx_packets = parts[0].parse().unwrap_or(0);
                     stats.rx_errors = parts[1].parse().unwrap_or(0);
-                    // Add more fields as needed
+                    stats.rx_too_big_errors = parts[2].parse().unwrap_or(0);
+                    stats.rx_no_routes = parts[3].parse().unwrap_or(0);
+                    stats.rx_addr_errors = parts[4].parse().unwrap_or(0);
+                    stats.rx_unknown_protos = parts[5].parse().unwrap_or(0);
+                    stats.tx_packets = parts[8].parse().unwrap_or(0);
+                    stats.tx_errors = parts[9].parse().unwrap_or(0);
+                    stats.tx_bytes = parts[10].parse().unwrap_or(0);
+                    stats.rx_bytes = parts[11].parse().unwrap_or(0);
                     break; // Just take the first line for now
                 }
             }
@@ -3551,7 +3712,46 @@ impl NetworkMonitor {
             }
         }
 
-        tracing::debug!("Collected IPv6 network statistics");
+        // Read additional IPv6 statistics
+        stats = self.collect_additional_ipv6_stats(stats)?;
+
+        tracing::debug!("Collected comprehensive IPv6 network statistics");
+
+        Ok(stats)
+    }
+
+    /// Collect additional IPv6 statistics
+    fn collect_additional_ipv6_stats(&self, mut stats: IPv6NetworkStats) -> Result<IPv6NetworkStats> {
+        // Read IPv6 neighbor cache entries
+        if let Ok(neighbor_cache) = fs::read_to_string("/proc/sys/net/ipv6/neigh/default/gc_thresh1") {
+            if let Ok(entries) = neighbor_cache.trim().parse::<u32>() {
+                stats.neighbor_cache_entries = entries;
+            }
+        }
+
+        // Read IPv6 destination cache entries
+        if let Ok(dest_cache) = fs::read_to_string("/proc/sys/net/ipv6/route/gc_thresh") {
+            if let Ok(entries) = dest_cache.trim().parse::<u32>() {
+                stats.destination_cache_entries = entries;
+            }
+        }
+
+        // Read IPv6 MTU settings
+        if let Ok(mtu) = fs::read_to_string("/proc/sys/net/ipv6/conf/all/mtu") {
+            if let Ok(mtu_value) = mtu.trim().parse::<u32>() {
+                stats.mtu = mtu_value;
+            }
+        }
+
+        // Read IPv6 accept_ra setting
+        if let Ok(accept_ra) = fs::read_to_string("/proc/sys/net/ipv6/conf/all/accept_ra") {
+            stats.accept_router_advertisements = accept_ra.trim() == "1";
+        }
+
+        // Read IPv6 accept_redirects setting
+        if let Ok(accept_redirects) = fs::read_to_string("/proc/sys/net/ipv6/conf/all/accept_redirects") {
+            stats.accept_redirects = accept_redirects.trim() == "1";
+        }
 
         Ok(stats)
     }
@@ -3787,17 +3987,27 @@ impl NetworkMonitor {
         Ok(metrics)
     }
 
-    /// Convert hex IPv6 address to standard format
+    /// Convert hex IPv6 address to standard format with enhanced error handling
     fn hex_ipv6_to_std(&self, hex_ip: &str) -> Result<Ipv6Addr> {
         // Split into IP and port parts
         let ip_part = hex_ip.split(':').next().unwrap_or(hex_ip);
         
-        // Convert hex string to bytes
+        // Validate input length (should be 32 characters for full IPv6)
+        if ip_part.len() != 32 {
+            return Err(anyhow::anyhow!(
+                "Invalid IPv6 hex format: expected 32 characters, got {}",
+                ip_part.len()
+            ));
+        }
+        
+        // Convert hex string to bytes with validation
         let mut bytes = [0u8; 16];
         for (i, chunk) in ip_part.as_bytes().chunks(2).enumerate() {
             if i >= 16 { break; }
-            let hex_str = std::str::from_utf8(chunk)?;
-            bytes[i] = u8::from_str_radix(hex_str, 16)?;
+            let hex_str = std::str::from_utf8(chunk)
+                .map_err(|e| anyhow::anyhow!("Invalid UTF-8 in IPv6 address: {}", e))?;
+            bytes[i] = u8::from_str_radix(hex_str, 16)
+                .map_err(|e| anyhow::anyhow!("Invalid hex digit in IPv6 address: {}", e))?;
         }
         
         // Reverse bytes for network byte order
@@ -3806,7 +4016,13 @@ impl NetworkMonitor {
             final_bytes[i] = bytes[15 - i];
         }
         
-        Ok(Ipv6Addr::from(final_bytes))
+        // Validate the resulting IPv6 address
+        let addr = Ipv6Addr::from(final_bytes);
+        if addr.is_unspecified() && ip_part != "00000000000000000000000000000000" {
+            return Err(anyhow::anyhow!("Invalid IPv6 address conversion result"));
+        }
+        
+        Ok(addr)
     }
 
     /// Get process info from inode (similar to IPv4 implementation)
