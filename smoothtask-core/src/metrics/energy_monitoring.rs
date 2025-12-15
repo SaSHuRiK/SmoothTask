@@ -16,7 +16,7 @@ use serde::{Serialize, Deserialize};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 /// Тип сенсора энергопотребления
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

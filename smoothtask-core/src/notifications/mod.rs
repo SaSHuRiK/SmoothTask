@@ -12,7 +12,7 @@ use tokio::time::{sleep, Duration};
 
 // Import health monitoring types for integration
 use crate::health::monitoring::{HealthEvent, HealthMonitoringService};
-use crate::health::{HealthIssue, HealthIssueSeverity, HealthStatus};
+use crate::health::HealthIssueSeverity;
 
 // Conditional import for libnotify
 // libnotify support is temporarily disabled due to crate availability issues

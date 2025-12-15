@@ -10,7 +10,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
-use tracing::{debug, error, info, warn};
 
 /// Информация о здоровье контейнера.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -285,7 +284,7 @@ impl ContainerHealthMonitorTrait for ContainerHealthMonitorImpl {
         Ok(None)
     }
 
-    async fn update_container_health_config(&self, config: ContainerHealthConfig) -> Result<()> {
+    async fn update_container_health_config(&self, _config: ContainerHealthConfig) -> Result<()> {
         // В реальной реализации нужно обновить конфигурацию
         // Для простоты просто возвращаем Ok
         Ok(())
@@ -300,12 +299,12 @@ impl ContainerHealthMonitorTrait for ContainerHealthMonitorImpl {
         Ok(())
     }
 
-    async fn remove_monitored_container(&self, container_id: &str) -> Result<()> {
+    async fn remove_monitored_container(&self, _container_id: &str) -> Result<()> {
         // В реальной реализации нужно удалить контейнер из списка мониторинга
         Ok(())
     }
 
-    async fn add_ignored_container(&self, container_id: &str) -> Result<()> {
+    async fn add_ignored_container(&self, _container_id: &str) -> Result<()> {
         // В реальной реализации нужно добавить контейнер в список игнорируемых
         Ok(())
     }

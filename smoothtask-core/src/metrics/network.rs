@@ -13,7 +13,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 /// Comprehensive network interface statistics

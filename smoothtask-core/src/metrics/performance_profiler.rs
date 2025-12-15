@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 use std::time::{Instant, Duration};
-use tracing::{debug, info, warn, error};
+use tracing::{debug, info};
 use anyhow::{Result, Context};
 
 /// Структура для хранения метрик производительности.
@@ -100,7 +100,7 @@ impl PerformanceProfiler {
     }
 
     /// Начать профилирование компонента.
-    pub fn start_profiling(&mut self, component_name: &str) -> PerformanceTimer {
+    pub fn start_profiling(&mut self, component_name: &str) -> PerformanceTimer<'_> {
         let start_time = Instant::now();
         PerformanceTimer {
             profiler: self,
@@ -293,7 +293,7 @@ impl GlobalPerformanceProfiler {
     }
 
     /// Начать профилирование компонента.
-    pub fn start_profiling(&mut self, component_name: &str) -> GlobalPerformanceTimer {
+    pub fn start_profiling(&mut self, component_name: &str) -> GlobalPerformanceTimer<'_> {
         let timer = self.inner.start_profiling(component_name);
         GlobalPerformanceTimer {
             timer,
