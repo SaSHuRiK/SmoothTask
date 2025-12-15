@@ -299,4 +299,76 @@ mod tests {
         let recovery_stats = health_monitor.get_recovery_stats().await.unwrap();
         assert!(recovery_stats.total_recovery_attempts > 0);
     }
+
+    #[tokio::test]
+    async fn test_security_integration() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Выполняем проверку здоровья
+        let health_status = health_monitor.check_health().await.unwrap();
+
+        // Проверяем, что компонент безопасности присутствует
+        assert!(health_status.component_statuses.contains_key("security"));
+
+        // Проверяем, что статус безопасности установлен
+        let security_status = health_status.component_statuses.get("security").unwrap();
+        assert_ne!(security_status.status, ComponentHealthStatus::Unknown);
+    }
+
+    #[tokio::test]
+    async fn test_security_component_status() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Выполняем проверку здоровья
+        let health_status = health_monitor.check_health().await.unwrap();
+
+        // Получаем статус компонента безопасности
+        let security_status = health_status.component_statuses.get("security").unwrap();
+
+        // Проверяем, что статус безопасности установлен корректно
+        match security_status.status {
+            ComponentHealthStatus::Healthy => {
+                assert!(security_status.message.as_ref().unwrap().contains("healthy"));
+            }
+            ComponentHealthStatus::Warning => {
+                assert!(security_status.message.as_ref().unwrap().contains("warnings"));
+            }
+            ComponentHealthStatus::Unhealthy => {
+                assert!(security_status.message.as_ref().unwrap().contains("threats"));
+            }
+            ComponentHealthStatus::Unknown => {
+                assert!(security_status.message.as_ref().unwrap().contains("unknown"));
+            }
+            ComponentHealthStatus::Disabled => {
+                panic!("Security component should not be disabled");
+            }
+        }
+
+        // Проверяем, что время последней проверки установлено
+        assert!(security_status.last_check_time.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_security_with_health_monitor() {
+        let config = HealthMonitorConfig::default();
+        let health_monitor = create_health_monitor(config);
+
+        // Выполняем проверку здоровья
+        let health_status = health_monitor.check_health().await.unwrap();
+
+        // Проверяем, что компонент безопасности присутствует
+        assert!(health_status.component_statuses.contains_key("security"));
+
+        // Проверяем, что статус безопасности установлен
+        let security_status = health_status.component_statuses.get("security").unwrap();
+        assert_ne!(security_status.status, ComponentHealthStatus::Unknown);
+
+        // Проверяем, что время последней проверки установлено
+        assert!(security_status.last_check_time.is_some());
+
+        // Проверяем, что сообщение о состоянии установлено
+        assert!(security_status.message.is_some());
+    }
 }

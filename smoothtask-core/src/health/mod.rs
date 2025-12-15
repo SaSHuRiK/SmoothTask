@@ -1067,6 +1067,12 @@ impl HealthMonitorImpl {
             self.check_configuration().await?,
         );
 
+        // Проверяем безопасность системы
+        health_monitor.component_statuses.insert(
+            "security".to_string(),
+            self.check_security().await?,
+        );
+
         Ok(health_monitor)
     }
 
@@ -1275,6 +1281,69 @@ impl HealthMonitorImpl {
             error_details,
             consecutive_errors: 0,
         })
+    }
+
+    /// Проверка безопасности системы.
+    async fn check_security(&self) -> Result<ComponentStatus> {
+        // Создаем временный SecurityMonitor для проверки
+        let security_config = SecurityMonitorConfig::default();
+        let security_monitor = SecurityMonitorImpl::new(security_config);
+
+        // Выполняем проверку безопасности
+        match security_monitor.check_security().await {
+            Ok(security_status) => {
+                let mut status = ComponentHealthStatus::Healthy;
+                let mut message = "Security is healthy".to_string();
+                let mut error_details = None;
+
+                match security_status.overall_status {
+                    SecurityStatus::Secure => {
+                        status = ComponentHealthStatus::Healthy;
+                        message = "Security is healthy".to_string();
+                    }
+                    SecurityStatus::Warning => {
+                        status = ComponentHealthStatus::Warning;
+                        message = "Security warnings detected".to_string();
+                        error_details = Some(format!(
+                            "Security score: {:.1}, events: {}",
+                            security_status.security_score,
+                            security_status.event_history.len()
+                        ));
+                    }
+                    SecurityStatus::PotentialThreat | SecurityStatus::CriticalThreat => {
+                        status = ComponentHealthStatus::Unhealthy;
+                        message = "Security threats detected".to_string();
+                        error_details = Some(format!(
+                            "Security score: {:.1}, critical events: {}",
+                            security_status.security_score,
+                            security_status.event_history.len()
+                        ));
+                    }
+                    SecurityStatus::Unknown => {
+                        status = ComponentHealthStatus::Unknown;
+                        message = "Security status unknown".to_string();
+                    }
+                }
+
+                Ok(ComponentStatus {
+                    status,
+                    last_check_time: Some(Utc::now()),
+                    message: Some(message),
+                    error_details,
+                    consecutive_errors: 0,
+                })
+            }
+            Err(e) => {
+                error!("Failed to check security: {}", e);
+                Ok(ComponentStatus {
+                    status: ComponentHealthStatus::Unhealthy,
+                    last_check_time: Some(Utc::now()),
+                    message: Some("Security check failed".to_string()),
+                    error_details: Some(format!("Error: {}", e)),
+                    consecutive_errors: 1,
+                })
+            }
+        }
     }
 }
 
