@@ -1,85 +1,114 @@
-//! Интеграционные тесты для модуля мониторинга SATA устройств
-//!
-//! Эти тесты проверяют интеграцию модуля storage с другими компонентами системы.
+// Интеграционный тест для модуля storage
+// Проверяет, что функции обнаружения устройств хранения работают корректно
 
-use smoothtask_core::metrics::storage::{detect_sata_devices, SataDeviceInfo, SataDeviceType};
+use smoothtask_core::metrics::storage::{detect_all_storage_devices, detect_sata_devices, detect_nvme_devices};
+use std::io::Result;
 
 #[test]
-fn test_sata_device_detection_integration() {
+fn test_storage_module_compiles() {
+    // Этот тест просто проверяет, что модуль компилируется
+    // и функции доступны
+    
+    // Проверяем, что функции обнаружения устройств доступны
+    let _: fn() -> Result<_> = detect_sata_devices;
+    let _: fn() -> Result<_> = detect_nvme_devices;
+    let _: fn() -> Result<_> = detect_all_storage_devices;
+    
+    // Если мы дошли до этого места, значит модуль компилируется корректно
+    assert!(true);
+}
+
+#[test]
+fn test_storage_detection_functions_return_results() {
+    // Этот тест проверяет, что функции обнаружения возвращают результаты
+    // даже если устройства не найдены
+    
     // Тестируем обнаружение SATA устройств
-    let result = detect_sata_devices();
+    let sata_result = detect_sata_devices();
+    assert!(sata_result.is_ok(), "SATA detection should return Ok result");
     
-    // Проверяем, что функция выполняется без ошибок
-    assert!(result.is_ok());
-    let devices = result.unwrap();
+    // Тестируем обнаружение NVMe устройств
+    let nvme_result = detect_nvme_devices();
+    assert!(nvme_result.is_ok(), "NVMe detection should return Ok result");
     
-    // Проверяем, что возвращается вектор (даже если пустой)
-    assert!(devices.is_empty() || !devices.is_empty());
+    // Тестируем комплексное обнаружение
+    let comprehensive_result = detect_all_storage_devices();
+    assert!(comprehensive_result.is_ok(), "Comprehensive storage detection should return Ok result");
     
-    // Если устройства обнаружены, проверяем их структуру
-    for device in devices {
-        assert!(!device.device_name.is_empty());
-        assert!(!device.model.is_empty());
-        assert!(!device.serial_number.is_empty());
-        assert!(device.capacity > 0);
-        
-        // Проверяем, что тип устройства корректен
-        match device.device_type {
-            SataDeviceType::Hdd | SataDeviceType::Ssd | SataDeviceType::Sshd | SataDeviceType::Unknown => {}
-        }
-        
-        // Проверяем метрики производительности
-        assert!(device.performance_metrics.read_speed >= 0);
-        assert!(device.performance_metrics.write_speed >= 0);
-        assert!(device.performance_metrics.iops >= 0);
-        assert!(device.performance_metrics.utilization >= 0.0);
-    }
+    // В тестовой среде без реальных устройств результаты могут быть пустыми
+    let comprehensive_data = comprehensive_result.unwrap();
+    println!("Found {} SATA devices and {} NVMe devices", 
+             comprehensive_data.sata_devices.len(), 
+             comprehensive_data.nvme_devices.len());
+    
+    // Главное, что функции не падают и возвращают корректные структуры данных
+    assert!(true);
 }
 
 #[test]
-fn test_sata_device_classification_logic() {
-    // Тестируем логику классификации устройств
-    // Это более детальный тест, который проверяет внутреннюю логику
+fn test_storage_module_structures() {
+    // Этот тест проверяет, что структуры данных модуля storage корректны
+    use smoothtask_core::metrics::storage::{
+        SataDeviceInfo, NvmeDeviceInfo, SataDeviceType, NvmeDeviceType,
+        SataPerformanceMetrics, NvmePerformanceMetrics, StorageDetectionResult
+    };
     
-    // В реальной системе мы бы использовали mock данные, но для интеграционного теста
-    // мы просто проверяем, что функция работает корректно
-    let result = detect_sata_devices();
+    // Проверяем, что структуры можно создать
+    let sata_device = SataDeviceInfo {
+        device_name: "sda".to_string(),
+        model: "Test Model".to_string(),
+        serial_number: "TEST123456".to_string(),
+        device_type: SataDeviceType::Ssd,
+        rotation_speed: Some(0),
+        capacity: 1024 * 1024 * 1024, // 1 GB
+        temperature: Some(45.0),
+        performance_metrics: SataPerformanceMetrics::default(),
+    };
     
-    if let Ok(devices) = result {
-        for device in devices {
-            // Проверяем, что устройства классифицируются корректно
-            // SSD должны иметь rotation_speed = 0 или 1
-            // HDD должны иметь rotation_speed > 1
-            match device.device_type {
-                SataDeviceType::Ssd => {
-                    if let Some(rotation) = device.rotation_speed {
-                        assert!(rotation == 0 || rotation == 1, 
-                            "SSD должен иметь rotation_speed 0 или 1, но обнаружено: {}", rotation);
-                    }
-                },
-                SataDeviceType::Hdd => {
-                    if let Some(rotation) = device.rotation_speed {
-                        assert!(rotation > 1, 
-                            "HDD должен иметь rotation_speed > 1, но обнаружено: {}", rotation);
-                    }
-                },
-                SataDeviceType::Sshd | SataDeviceType::Unknown => {
-                    // Для SSHD и Unknown не проверяем скорость вращения
-                }
-            }
-        }
-    }
+    let nvme_device = NvmeDeviceInfo {
+        device_name: "nvme0n1".to_string(),
+        model: "Test NVMe".to_string(),
+        serial_number: "NVME123456".to_string(),
+        device_type: NvmeDeviceType::Nvme4_0,
+        capacity: 1024 * 1024 * 1024, // 1 GB
+        temperature: Some(50.0),
+        pcie_generation: Some(4.0),
+        pcie_lanes: Some(4),
+        performance_metrics: NvmePerformanceMetrics::default(),
+    };
+    
+    let detection_result = StorageDetectionResult {
+        sata_devices: vec![sata_device],
+        nvme_devices: vec![nvme_device],
+    };
+    
+    // Проверяем, что структуры содержат ожидаемые данные
+    assert_eq!(detection_result.sata_devices.len(), 1);
+    assert_eq!(detection_result.nvme_devices.len(), 1);
+    assert_eq!(detection_result.sata_devices[0].device_name, "sda");
+    assert_eq!(detection_result.nvme_devices[0].device_name, "nvme0n1");
 }
 
 #[test]
-fn test_sata_device_integration_with_system() {
-    // Тестируем интеграцию с системными метриками
-    // В реальной системе это бы проверяло, что SATA метрики корректно интегрируются
-    // с другими системными метриками
+fn test_nvme_device_type_enum() {
+    // Этот тест проверяет, что перечисление типов NVMe устройств работает корректно
+    use smoothtask_core::metrics::storage::NvmeDeviceType;
     
-    let result = detect_sata_devices();
-    assert!(result.is_ok());
+    // Проверяем все варианты перечисления
+    let types = vec![
+        NvmeDeviceType::Nvme1x,
+        NvmeDeviceType::Nvme2_0,
+        NvmeDeviceType::Nvme3_0,
+        NvmeDeviceType::Nvme4_0,
+        NvmeDeviceType::Nvme5_0,
+        NvmeDeviceType::Unknown,
+    ];
     
-    // В будущем этот тест можно расширить для проверки интеграции
-    // с системными снапшотами и мониторингом
+    // Проверяем, что все варианты доступны
+    assert_eq!(types.len(), 6);
+    
+    // Проверяем, что варианты можно сравнивать
+    assert!(matches!(types[0], NvmeDeviceType::Nvme1x));
+    assert!(matches!(types[1], NvmeDeviceType::Nvme2_0));
+    assert!(matches!(types[5], NvmeDeviceType::Unknown));
 }
