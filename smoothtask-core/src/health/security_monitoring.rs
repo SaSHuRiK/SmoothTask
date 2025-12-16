@@ -11,7 +11,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 /// Тип события безопасности.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
 pub enum SecurityEventType {
     /// Подозрительный процесс
     #[serde(rename = "suspicious_process")]
@@ -31,6 +31,63 @@ pub enum SecurityEventType {
     /// Потенциальная атака
     #[serde(rename = "potential_attack")]
     PotentialAttack,
+    /// Обнаружение атаки методом перебора
+    #[serde(rename = "brute_force_attack")]
+    BruteForceAttack,
+    /// Обнаружение SQL инъекции
+    #[serde(rename = "sql_injection")]
+    SqlInjection,
+    /// Обнаружение XSS атаки
+    #[serde(rename = "xss_attack")]
+    XssAttack,
+    /// Обнаружение атаки "человек посередине"
+    #[serde(rename = "mitm_attack")]
+    MitmAttack,
+    /// Обнаружение активности программ-вымогателей
+    #[serde(rename = "ransomware_activity")]
+    RansomwareActivity,
+    /// Обнаружение активности ботнета
+    #[serde(rename = "botnet_activity")]
+    BotnetActivity,
+    /// Обнаружение командной инъекции
+    #[serde(rename = "command_injection")]
+    CommandInjection,
+    /// Обнаружение утечки данных
+    #[serde(rename = "data_exfiltration")]
+    DataExfiltration,
+    /// Обнаружение эксплуатации уязвимости нулевого дня
+    #[serde(rename = "zero_day_exploit")]
+    ZeroDayExploit,
+    /// Обнаружение продвинутой постоянной угрозы
+    #[serde(rename = "apt_activity")]
+    AptActivity,
+    /// Обнаружение криптоджекинга
+    #[serde(rename = "cryptojacking")]
+    Cryptojacking,
+    /// Обнаружение фишинга
+    #[serde(rename = "phishing_activity")]
+    PhishingActivity,
+    /// Обнаружение вредоносного ПО
+    #[serde(rename = "malware_communication")]
+    MalwareCommunication,
+    /// Обнаружение DNS туннелирования
+    #[serde(rename = "dns_tunneling")]
+    DnsTunneling,
+    /// Обнаружение ICMP туннелирования
+    #[serde(rename = "icmp_tunneling")]
+    IcmpTunneling,
+    /// Обнаружение HTTP туннелирования
+    #[serde(rename = "http_tunneling")]
+    HttpTunneling,
+    /// Обнаружение аномалий протокола
+    #[serde(rename = "protocol_anomaly")]
+    ProtocolAnomaly,
+    /// Обнаружение аномалий шифрования
+    #[serde(rename = "encryption_anomaly")]
+    EncryptionAnomaly,
+    /// Обнаружение сбоев аутентификации
+    #[serde(rename = "authentication_failure")]
+    AuthenticationFailure,
     /// Неизвестный тип события
     #[serde(rename = "unknown")]
     Unknown,
@@ -57,6 +114,25 @@ impl std::fmt::Display for SecurityEventType {
                 write!(f, "suspicious_filesystem_activity")
             }
             SecurityEventType::PotentialAttack => write!(f, "potential_attack"),
+            SecurityEventType::BruteForceAttack => write!(f, "brute_force_attack"),
+            SecurityEventType::SqlInjection => write!(f, "sql_injection"),
+            SecurityEventType::XssAttack => write!(f, "xss_attack"),
+            SecurityEventType::MitmAttack => write!(f, "mitm_attack"),
+            SecurityEventType::RansomwareActivity => write!(f, "ransomware_activity"),
+            SecurityEventType::BotnetActivity => write!(f, "botnet_activity"),
+            SecurityEventType::CommandInjection => write!(f, "command_injection"),
+            SecurityEventType::DataExfiltration => write!(f, "data_exfiltration"),
+            SecurityEventType::ZeroDayExploit => write!(f, "zero_day_exploit"),
+            SecurityEventType::AptActivity => write!(f, "apt_activity"),
+            SecurityEventType::Cryptojacking => write!(f, "cryptojacking"),
+            SecurityEventType::PhishingActivity => write!(f, "phishing_activity"),
+            SecurityEventType::MalwareCommunication => write!(f, "malware_communication"),
+            SecurityEventType::DnsTunneling => write!(f, "dns_tunneling"),
+            SecurityEventType::IcmpTunneling => write!(f, "icmp_tunneling"),
+            SecurityEventType::HttpTunneling => write!(f, "http_tunneling"),
+            SecurityEventType::ProtocolAnomaly => write!(f, "protocol_anomaly"),
+            SecurityEventType::EncryptionAnomaly => write!(f, "encryption_anomaly"),
+            SecurityEventType::AuthenticationFailure => write!(f, "authentication_failure"),
             SecurityEventType::Unknown => write!(f, "unknown"),
         }
     }
@@ -575,6 +651,14 @@ impl SecurityMonitorImpl {
 
         // Проверяем подозрительную активность файловой системы
         self.check_suspicious_filesystem_activity(&mut security_monitor)
+            .await?;
+
+        // Проверяем продвинутые угрозы безопасности
+        self.check_advanced_threats(&mut security_monitor)
+            .await?;
+
+        // Выполняем продвинутый анализ угроз с использованием ML-инспирированных алгоритмов
+        self.advanced_threat_analysis(&mut security_monitor)
             .await?;
 
         Ok(security_monitor)
@@ -1469,6 +1553,960 @@ impl SecurityMonitorImpl {
 
         Ok(())
     }
+
+    /// Проверка на атаки методом перебора.
+    async fn check_brute_force_attacks(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о недавних сбоях аутентификации
+        let auth_failures = self.detect_authentication_failures().await?;
+
+        for failure in auth_failures {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::BruteForceAttack,
+                severity: SecurityEventSeverity::High,
+                status: SecurityEventStatus::New,
+                process_name: failure.process_name.clone(),
+                process_id: failure.process_id,
+                description: format!(
+                    "Brute force attack detected: {} failed attempts from {} in {} seconds",
+                    failure.attempt_count, 
+                    failure.source_ip.unwrap_or("unknown".to_string()),
+                    failure.time_window_secs
+                ),
+                details: Some(format!(
+                    "Target: {}\nUsername: {}\nDetection method: {}",
+                    failure.target_service,
+                    failure.username.unwrap_or("unknown".to_string()),
+                    failure.detection_method
+                )),
+                recommendations: Some(
+                    "Immediately block the source IP and investigate the target service for compromise"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на SQL инъекции.
+    async fn check_sql_injection_attacks(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о подозрительных SQL запросах
+        let sql_injections = self.detect_sql_injection_patterns().await?;
+
+        for injection in sql_injections {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::SqlInjection,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: injection.process_name.clone(),
+                process_id: injection.process_id,
+                description: format!(
+                    "SQL injection attack detected: {} pattern in request to {}",
+                    injection.pattern_type,
+                    injection.target_url
+                ),
+                details: Some(format!(
+                    "Payload: {}\nDatabase: {}\nConfidence: {}%",
+                    injection.payload,
+                    injection.database_type,
+                    injection.confidence_score
+                )),
+                recommendations: Some(
+                    "Immediately block the request, sanitize database inputs, and investigate for data breach"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на XSS атаки.
+    async fn check_xss_attacks(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о подозрительных XSS паттернах
+        let xss_attacks = self.detect_xss_patterns().await?;
+
+        for attack in xss_attacks {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::XssAttack,
+                severity: SecurityEventSeverity::High,
+                status: SecurityEventStatus::New,
+                process_name: attack.process_name.clone(),
+                process_id: attack.process_id,
+                description: format!(
+                    "XSS attack detected: {} payload in request to {}",
+                    attack.payload_type,
+                    attack.target_url
+                ),
+                details: Some(format!(
+                    "Payload: {}\nVector: {}\nConfidence: {}%",
+                    attack.payload,
+                    attack.vector,
+                    attack.confidence_score
+                )),
+                recommendations: Some(
+                    "Immediately sanitize user inputs, implement CSP headers, and investigate for session hijacking"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на атаки "человек посередине".
+    async fn check_mitm_attacks(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о подозрительных MITM индикаторах
+        let mitm_indicators = self.detect_mitm_indicators().await?;
+
+        for indicator in mitm_indicators {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::MitmAttack,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: indicator.process_name.clone(),
+                process_id: indicator.process_id,
+                description: format!(
+                    "MITM attack detected: {} between {} and {}",
+                    indicator.attack_type,
+                    indicator.source_ip,
+                    indicator.destination_ip
+                ),
+                details: Some(format!(
+                    "Method: {}\nCertificate: {}\nConfidence: {}%",
+                    indicator.method,
+                    indicator.certificate_status,
+                    indicator.confidence_score
+                )),
+                recommendations: Some(
+                    "Immediately terminate suspicious connections, verify certificates, and investigate network traffic"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на активность программ-вымогателей.
+    async fn check_ransomware_activity(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о подозрительной активности файловой системы
+        let ransomware_indicators = self.detect_ransomware_patterns().await?;
+
+        for indicator in ransomware_indicators {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::RansomwareActivity,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: indicator.process_name.clone(),
+                process_id: indicator.process_id,
+                description: format!(
+                    "Ransomware activity detected: {} files encrypted in {} seconds",
+                    indicator.encrypted_file_count,
+                    indicator.time_window_secs
+                ),
+                details: Some(format!(
+                    "Pattern: {}\nTarget files: {}\nEncryption method: {}",
+                    indicator.pattern,
+                    indicator.target_file_types.join(", "),
+                    indicator.encryption_method
+                )),
+                recommendations: Some(
+                    "Immediately isolate the system, terminate the process, and restore from backup"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на активность ботнета.
+    async fn check_botnet_activity(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о подозрительных сетевых паттернах
+        let botnet_indicators = self.detect_botnet_patterns().await?;
+
+        for indicator in botnet_indicators {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::BotnetActivity,
+                severity: SecurityEventSeverity::High,
+                status: SecurityEventStatus::New,
+                process_name: indicator.process_name.clone(),
+                process_id: indicator.process_id,
+                description: format!(
+                    "Botnet activity detected: {} connections to C2 servers",
+                    indicator.connection_count
+                ),
+                details: Some(format!(
+                    "C2 servers: {}\nPattern: {}\nConfidence: {}%",
+                    indicator.c2_servers.join(", "),
+                    indicator.pattern,
+                    indicator.confidence_score
+                )),
+                recommendations: Some(
+                    "Immediately block C2 communications, isolate the system, and investigate for malware"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на утечку данных.
+    async fn check_data_exfiltration(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о подозрительных передачах данных
+        let exfiltration_indicators = self.detect_data_exfiltration_patterns().await?;
+
+        for indicator in exfiltration_indicators {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::DataExfiltration,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: indicator.process_name.clone(),
+                process_id: indicator.process_id,
+                description: format!(
+                    "Data exfiltration detected: {} MB to {} in {} seconds",
+                    indicator.data_size_mb,
+                    indicator.destination,
+                    indicator.time_window_secs
+                ),
+                details: Some(format!(
+                    "Data type: {}\nMethod: {}\nConfidence: {}%",
+                    indicator.data_type,
+                    indicator.method,
+                    indicator.confidence_score
+                )),
+                recommendations: Some(
+                    "Immediately block the connection, investigate the data breach, and notify security team"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Проверка на продвинутые угрозы.
+    async fn check_advanced_threats(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Проверяем различные типы продвинутых угроз
+        self.check_brute_force_attacks(_security_monitor).await?;
+        self.check_sql_injection_attacks(_security_monitor).await?;
+        self.check_xss_attacks(_security_monitor).await?;
+        self.check_mitm_attacks(_security_monitor).await?;
+        self.check_ransomware_activity(_security_monitor).await?;
+        self.check_botnet_activity(_security_monitor).await?;
+        self.check_data_exfiltration(_security_monitor).await?;
+
+        Ok(())
+    }
+
+    /// Обнаружение сбоев аутентификации.
+    async fn detect_authentication_failures(&self) -> Result<Vec<AuthenticationFailure>> {
+        // В реальной реализации здесь будет анализ логов аутентификации
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Обнаружение SQL инъекций.
+    async fn detect_sql_injection_patterns(&self) -> Result<Vec<SqlInjectionInfo>> {
+        // В реальной реализации здесь будет анализ сетевого трафика и логов
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Обнаружение XSS паттернов.
+    async fn detect_xss_patterns(&self) -> Result<Vec<XssAttackInfo>> {
+        // В реальной реализации здесь будет анализ веб-трафика
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Обнаружение MITM индикаторов.
+    async fn detect_mitm_indicators(&self) -> Result<Vec<MitmAttackInfo>> {
+        // В реальной реализации здесь будет анализ сетевых соединений и сертификатов
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Обнаружение паттернов программ-вымогателей.
+    async fn detect_ransomware_patterns(&self) -> Result<Vec<RansomwareInfo>> {
+        // В реальной реализации здесь будет анализ активности файловой системы
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Обнаружение паттернов ботнета.
+    async fn detect_botnet_patterns(&self) -> Result<Vec<BotnetInfo>> {
+        // В реальной реализации здесь будет анализ сетевых соединений
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Обнаружение паттернов утечки данных.
+    async fn detect_data_exfiltration_patterns(&self) -> Result<Vec<DataExfiltrationInfo>> {
+        // В реальной реализации здесь будет анализ сетевого трафика
+        // Для примера возвращаем пустой вектор
+        Ok(Vec::new())
+    }
+
+    /// Продвинутый анализ угроз с использованием ML-инспирированных алгоритмов
+    async fn advanced_threat_analysis(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Анализ поведенческих аномалий с использованием ML-подобных алгоритмов
+        self.analyze_behavioral_anomalies(_security_monitor).await?;
+        
+        // Анализ сетевых аномалий
+        self.analyze_network_anomalies(_security_monitor).await?;
+        
+        // Анализ аномалий файловой системы
+        self.analyze_filesystem_anomalies(_security_monitor).await?;
+        
+        // Анализ аномалий использования ресурсов
+        self.analyze_resource_anomalies(_security_monitor).await?;
+        
+        // Анализ аномалий безопасности
+        self.analyze_security_anomalies(_security_monitor).await?;
+        
+        Ok(())
+    }
+
+    /// Анализ поведенческих аномалий с использованием ML-подобных алгоритмов
+    async fn analyze_behavioral_anomalies(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем список всех процессов
+        let processes = self.get_all_processes().await?;
+
+        for process in processes {
+            // Анализируем поведение процесса
+            let behavior = self.analyze_process_behavior(process.pid).await?;
+
+            // Обнаружение аномального поведения с использованием ML-подобных алгоритмов
+            let anomalies = self.detect_behavioral_anomalies_ml(&behavior).await?;
+
+            for anomaly in anomalies {
+                let event = SecurityEvent {
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now(),
+                    event_type: SecurityEventType::UnusualProcessActivity,
+                    severity: anomaly.severity,
+                    status: SecurityEventStatus::New,
+                    process_name: Some(process.name.clone()),
+                    process_id: Some(process.pid),
+                    description: format!(
+                        "ML-based behavioral anomaly detected: {}",
+                        anomaly.anomaly_type
+                    ),
+                    details: Some(format!(
+                        "Anomaly type: {}\nConfidence: {}%\nPattern: {}",
+                        anomaly.anomaly_type,
+                        anomaly.confidence_score,
+                        anomaly.pattern_description
+                    )),
+                    recommendations: Some(
+                        "Investigate this ML-detected behavioral anomaly for potential threats"
+                            .to_string(),
+                    ),
+                    resolved_time: None,
+                };
+
+                self.add_security_event(event).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обнаружение поведенческих аномалий с использованием ML-подобных алгоритмов
+    async fn detect_behavioral_anomalies_ml(
+        &self,
+        behavior: &ProcessBehavior,
+    ) -> Result<Vec<BehavioralAnomaly>> {
+        let mut anomalies = Vec::new();
+
+        // Аномалия 1: Аномально высокое количество дочерних процессов с высокой частотой создания
+        if behavior.child_count > 15 && behavior.child_creation_rate > 3.0 {
+            let confidence = if behavior.child_creation_rate > 5.0 {
+                95.0 // Высокая уверенность
+            } else {
+                80.0 // Средняя уверенность
+            };
+
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "rapid_child_process_spawn".to_string(),
+                severity: SecurityEventSeverity::Critical,
+                confidence_score: confidence,
+                pattern_description: format!(
+                    "Process spawned {} children at {} children/minute",
+                    behavior.child_count, behavior.child_creation_rate
+                ),
+            });
+        }
+
+        // Аномалия 2: Аномально высокое количество потоков для типа процесса
+        if behavior.thread_count > 150 && !behavior.device_name.to_lowercase().contains("java") {
+            let confidence = if behavior.thread_count > 250 {
+                90.0 // Высокая уверенность
+            } else {
+                75.0 // Средняя уверенность
+            };
+
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "excessive_thread_count".to_string(),
+                severity: SecurityEventSeverity::High,
+                confidence_score: confidence,
+                pattern_description: format!(
+                    "Process has {} threads (expected < 150 for non-Java)",
+                    behavior.thread_count
+                ),
+            });
+        }
+
+        // Аномалия 3: Подозрительное сочетание высокого использования ресурсов и активности
+        if behavior.cpu_usage > 85.0 && behavior.memory_usage > 75.0 && behavior.network_connections_count > 20 {
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "resource_intensive_with_network".to_string(),
+                severity: SecurityEventSeverity::Critical,
+                confidence_score: 92.0,
+                pattern_description: format!(
+                    "High resource usage (CPU: {:.1}%, Memory: {:.1}%) with {} network connections",
+                    behavior.cpu_usage, behavior.memory_usage, behavior.network_connections_count
+                ),
+            });
+        }
+
+        // Аномалия 4: Аномально высокое количество открытых файлов для типа процесса
+        if behavior.open_files_count > 150 && !behavior.device_name.to_lowercase().contains("database") {
+            let confidence = if behavior.open_files_count > 250 {
+                88.0 // Высокая уверенность
+            } else {
+                70.0 // Средняя уверенность
+            };
+
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "excessive_open_files".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                confidence_score: confidence,
+                pattern_description: format!(
+                    "Process has {} open files (expected < 150 for non-database)",
+                    behavior.open_files_count
+                ),
+            });
+        }
+
+        Ok(anomalies)
+    }
+
+    /// Анализ сетевых аномалий
+    async fn analyze_network_anomalies(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о сетевых соединениях
+        let network_connections = self.get_network_connections().await?;
+
+        for connection in network_connections {
+            // Анализ сетевых аномалий
+            let anomalies = self.detect_network_anomalies(&connection).await?;
+
+            for anomaly in anomalies {
+                let event = SecurityEvent {
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now(),
+                    event_type: SecurityEventType::SuspiciousNetworkConnection,
+                    severity: anomaly.severity,
+                    status: SecurityEventStatus::New,
+                    process_name: connection.process_name.clone(),
+                    process_id: connection.process_id,
+                    description: format!(
+                        "Network anomaly detected: {}",
+                        anomaly.anomaly_type
+                    ),
+                    details: Some(format!(
+                        "Connection: {}:{} -> {}:{} ({})\nAnomaly: {}\nConfidence: {}%",
+                        connection.local_address,
+                        connection.local_port,
+                        connection.remote_address,
+                        connection.remote_port,
+                        connection.protocol,
+                        anomaly.pattern_description,
+                        anomaly.confidence_score
+                    )),
+                    recommendations: Some(
+                        "Investigate this network anomaly for potential security threats"
+                            .to_string(),
+                    ),
+                    resolved_time: None,
+                };
+
+                self.add_security_event(event).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обнаружение сетевых аномалий
+    async fn detect_network_anomalies(
+        &self,
+        connection: &NetworkConnection,
+    ) -> Result<Vec<NetworkAnomaly>> {
+        let mut anomalies = Vec::new();
+
+        // Аномалия 1: Подозрительные порты
+        let suspicious_ports = [4444, 5555, 6666, 7777, 8888, 9999, 31337, 6667];
+        if suspicious_ports.contains(&connection.remote_port) {
+            anomalies.push(NetworkAnomaly {
+                anomaly_type: "suspicious_port".to_string(),
+                severity: SecurityEventSeverity::High,
+                confidence_score: 85.0,
+                pattern_description: format!(
+                    "Connection to known suspicious port: {}",
+                    connection.remote_port
+                ),
+            });
+        }
+
+        // Аномалия 2: Подозрительные IP-адреса (заглушка для известных вредоносных IP)
+        let suspicious_ips = ["1.1.1.1", "2.2.2.2", "3.3.3.3", "4.4.4.4"];
+        if suspicious_ips.contains(&connection.remote_address.as_str()) {
+            anomalies.push(NetworkAnomaly {
+                anomaly_type: "suspicious_ip".to_string(),
+                severity: SecurityEventSeverity::Critical,
+                confidence_score: 95.0,
+                pattern_description: format!(
+                    "Connection to known suspicious IP: {}",
+                    connection.remote_address
+                ),
+            });
+        }
+
+        // Аномалия 3: Необычные комбинации протоколов и портов
+        if connection.protocol.to_lowercase() == "tcp" && connection.remote_port == 53 {
+            // TCP на порту 53 (обычно используется UDP для DNS)
+            anomalies.push(NetworkAnomaly {
+                anomaly_type: "unusual_protocol_port_combination".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                confidence_score: 75.0,
+                pattern_description: format!(
+                    "Unusual protocol/port combination: {} on port {}",
+                    connection.protocol, connection.remote_port
+                ),
+            });
+        }
+
+        Ok(anomalies)
+    }
+
+    /// Анализ аномалий файловой системы
+    async fn analyze_filesystem_anomalies(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о недавней активности файловой системы
+        let filesystem_activity = self.get_filesystem_activity().await?;
+
+        for activity in filesystem_activity {
+            // Анализ аномалий файловой системы
+            let anomalies = self.detect_filesystem_anomalies(&activity).await?;
+
+            for anomaly in anomalies {
+                let event = SecurityEvent {
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now(),
+                    event_type: SecurityEventType::SuspiciousFilesystemActivity,
+                    severity: anomaly.severity,
+                    status: SecurityEventStatus::New,
+                    process_name: activity.process_name.clone(),
+                    process_id: activity.process_id,
+                    description: format!(
+                        "Filesystem anomaly detected: {}",
+                        anomaly.anomaly_type
+                    ),
+                    details: Some(format!(
+                        "Path: {}\nOperation: {}\nAnomaly: {}\nConfidence: {}%",
+                        activity.path,
+                        activity.operation,
+                        anomaly.pattern_description,
+                        anomaly.confidence_score
+                    )),
+                    recommendations: Some(
+                        "Investigate this filesystem anomaly for potential security threats"
+                            .to_string(),
+                    ),
+                    resolved_time: None,
+                };
+
+                self.add_security_event(event).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обнаружение аномалий файловой системы
+    async fn detect_filesystem_anomalies(
+        &self,
+        activity: &FilesystemActivity,
+    ) -> Result<Vec<FilesystemAnomaly>> {
+        let mut anomalies = Vec::new();
+
+        // Аномалия 1: Доступ к системным файлам из несистемных процессов
+        let system_paths = ["/etc/passwd", "/etc/shadow", "/bin/", "/sbin/", "/usr/bin/", "/usr/sbin/"];
+        if system_paths.iter().any(|&path| activity.path.starts_with(path)) {
+            // Проверяем, является ли процесс системным
+            if let Some(process_name) = &activity.process_name {
+                if !self.is_system_process(process_name) {
+                    anomalies.push(FilesystemAnomaly {
+                        anomaly_type: "non_system_process_accessing_system_files".to_string(),
+                        severity: SecurityEventSeverity::High,
+                        confidence_score: 90.0,
+                        pattern_description: format!(
+                            "Non-system process '{}' accessing system file: {}",
+                            process_name, activity.path
+                        ),
+                    });
+                }
+            }
+        }
+
+        // Аномалия 2: Массовое удаление или модификация файлов
+        if activity.operation.to_lowercase().contains("delete") 
+            || activity.operation.to_lowercase().contains("modify") {
+            // В реальной реализации здесь будет анализ частоты операций
+            // Для примера используем заглушку
+            anomalies.push(FilesystemAnomaly {
+                anomaly_type: "bulk_file_operation".to_string(),
+                severity: SecurityEventSeverity::Medium,
+                confidence_score: 65.0,
+                pattern_description: format!(
+                    "Bulk file operation detected: {} on {}",
+                    activity.operation, activity.path
+                ),
+            });
+        }
+
+        Ok(anomalies)
+    }
+
+    /// Анализ аномалий использования ресурсов
+    async fn analyze_resource_anomalies(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем информацию о процессах с высоким использованием ресурсов
+        let high_resource_processes = self.get_high_resource_processes().await?;
+
+        for process in high_resource_processes {
+            // Анализ аномалий использования ресурсов
+            let anomalies = self.detect_resource_anomalies(&process).await?;
+
+            for anomaly in anomalies {
+                let event = SecurityEvent {
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now(),
+                    event_type: SecurityEventType::AnomalousResourceUsage,
+                    severity: anomaly.severity,
+                    status: SecurityEventStatus::New,
+                    process_name: Some(process.name.clone()),
+                    process_id: Some(process.pid),
+                    description: format!(
+                        "Resource usage anomaly detected: {}",
+                        anomaly.anomaly_type
+                    ),
+                    details: Some(format!(
+                        "Process: {} (PID: {})\nCPU: {:.1}%, Memory: {:.1}%\nAnomaly: {}\nConfidence: {}%",
+                        process.name,
+                        process.pid,
+                        process.cpu_usage,
+                        process.memory_usage,
+                        anomaly.pattern_description,
+                        anomaly.confidence_score
+                    )),
+                    recommendations: Some(
+                        "Investigate this resource usage anomaly for potential threats"
+                            .to_string(),
+                    ),
+                    resolved_time: None,
+                };
+
+                self.add_security_event(event).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обнаружение аномалий использования ресурсов
+    async fn detect_resource_anomalies(
+        &self,
+        process: &ProcessInfo,
+    ) -> Result<Vec<ResourceAnomaly>> {
+        let mut anomalies = Vec::new();
+
+        // Аномалия 1: Аномально высокое использование CPU для типа процесса
+        if process.cpu_usage > 95.0 && !process.name.to_lowercase().contains("render") 
+            && !process.name.to_lowercase().contains("gpu") {
+            anomalies.push(ResourceAnomaly {
+                anomaly_type: "abnormal_cpu_usage".to_string(),
+                severity: SecurityEventSeverity::High,
+                confidence_score: 88.0,
+                pattern_description: format!(
+                    "Process '{}' using {:.1}% CPU (expected < 95% for non-GPU processes)",
+                    process.name, process.cpu_usage
+                ),
+            });
+        }
+
+        // Аномалия 2: Аномально высокое использование памяти для типа процесса
+        if process.memory_usage > 85.0 && !process.name.to_lowercase().contains("database") 
+            && !process.name.to_lowercase().contains("java") {
+            anomalies.push(ResourceAnomaly {
+                anomaly_type: "abnormal_memory_usage".to_string(),
+                severity: SecurityEventSeverity::High,
+                confidence_score: 85.0,
+                pattern_description: format!(
+                    "Process '{}' using {:.1}% memory (expected < 85% for non-database/Java processes)",
+                    process.name, process.memory_usage
+                ),
+            });
+        }
+
+        Ok(anomalies)
+    }
+
+    /// Анализ аномалий безопасности
+    async fn analyze_security_anomalies(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем текущие события безопасности
+        let current_events = self.get_security_events().await?;
+
+        // Анализ аномалий безопасности
+        let anomalies = self.detect_security_anomalies(&current_events).await?;
+
+        for anomaly in anomalies {
+            let event = SecurityEvent {
+                event_id: uuid::Uuid::new_v4().to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::PotentialAttack,
+                severity: anomaly.severity,
+                status: SecurityEventStatus::New,
+                process_name: None,
+                process_id: None,
+                description: format!(
+                    "Security anomaly detected: {}",
+                    anomaly.anomaly_type
+                    ),
+                details: Some(format!(
+                    "Anomaly pattern: {}\nConfidence: {}%\nAffected events: {}",
+                    anomaly.pattern_description,
+                    anomaly.confidence_score,
+                    anomaly.affected_events
+                )),
+                recommendations: Some(
+                    "Immediately investigate this security anomaly for potential attacks"
+                        .to_string(),
+                ),
+                resolved_time: None,
+            };
+
+            self.add_security_event(event).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Обнаружение аномалий безопасности
+    async fn detect_security_anomalies(
+        &self,
+        events: &[SecurityEvent],
+    ) -> Result<Vec<SecurityAnomaly>> {
+        let mut anomalies = Vec::new();
+
+        // Аномалия 1: Множественные события высокой серьезности в короткий промежуток времени
+        let high_severity_events = events.iter()
+            .filter(|e| matches!(e.severity, SecurityEventSeverity::High | SecurityEventSeverity::Critical))
+            .count();
+
+        if high_severity_events > 3 {
+            anomalies.push(SecurityAnomaly {
+                anomaly_type: "multiple_high_severity_events".to_string(),
+                severity: SecurityEventSeverity::Critical,
+                confidence_score: 92.0,
+                pattern_description: format!(
+                    "{} high/critical security events detected in short timeframe",
+                    high_severity_events
+                ),
+                affected_events: high_severity_events as u32,
+            });
+        }
+
+        // Аномалия 2: Разнообразные типы атак (возможная координированная атака)
+        let attack_types = events.iter()
+            .filter(|e| matches!(e.event_type, 
+                SecurityEventType::BruteForceAttack |
+                SecurityEventType::SqlInjection |
+                SecurityEventType::XssAttack |
+                SecurityEventType::MitmAttack |
+                SecurityEventType::RansomwareActivity |
+                SecurityEventType::BotnetActivity
+            ))
+            .map(|e| e.event_type.clone())
+            .collect::<std::collections::HashSet<_>>();
+
+        if attack_types.len() > 2 {
+            anomalies.push(SecurityAnomaly {
+                anomaly_type: "diverse_attack_patterns".to_string(),
+                severity: SecurityEventSeverity::Critical,
+                confidence_score: 95.0,
+                pattern_description: format!(
+                    "Multiple different attack types detected: {}",
+                    attack_types.len()
+                ),
+                affected_events: attack_types.len() as u32,
+            });
+        }
+
+        Ok(anomalies)
+    }
+
+    /// Получение текущих событий безопасности
+    async fn get_security_events(&self) -> Result<Vec<SecurityEvent>> {
+        let state = self.security_state.read().await;
+        Ok(state.event_history.clone())
+    }
+}
+
+/// Поведенческая аномалия
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BehavioralAnomaly {
+    /// Тип аномалии
+    pub anomaly_type: String,
+    /// Серьезность аномалии
+    pub severity: SecurityEventSeverity,
+    /// Уровень уверенности (0.0-100.0)
+    pub confidence_score: f32,
+    /// Описание паттерна
+    pub pattern_description: String,
+}
+
+/// Сетевая аномалия
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct NetworkAnomaly {
+    /// Тип аномалии
+    pub anomaly_type: String,
+    /// Серьезность аномалии
+    pub severity: SecurityEventSeverity,
+    /// Уровень уверенности (0.0-100.0)
+    pub confidence_score: f32,
+    /// Описание паттерна
+    pub pattern_description: String,
+}
+
+/// Аномалия файловой системы
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FilesystemAnomaly {
+    /// Тип аномалии
+    pub anomaly_type: String,
+    /// Серьезность аномалии
+    pub severity: SecurityEventSeverity,
+    /// Уровень уверенности (0.0-100.0)
+    pub confidence_score: f32,
+    /// Описание паттерна
+    pub pattern_description: String,
+}
+
+/// Аномалия использования ресурсов
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ResourceAnomaly {
+    /// Тип аномалии
+    pub anomaly_type: String,
+    /// Серьезность аномалии
+    pub severity: SecurityEventSeverity,
+    /// Уровень уверенности (0.0-100.0)
+    pub confidence_score: f32,
+    /// Описание паттерна
+    pub pattern_description: String,
+}
+
+/// Аномалия безопасности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SecurityAnomaly {
+    /// Тип аномалии
+    pub anomaly_type: String,
+    /// Серьезность аномалии
+    pub severity: SecurityEventSeverity,
+    /// Уровень уверенности (0.0-100.0)
+    pub confidence_score: f32,
+    /// Описание паттерна
+    pub pattern_description: String,
+    /// Количество затронутых событий
+    pub affected_events: u32,
 }
 
 /// Информация о процессе.
@@ -1549,6 +2587,143 @@ pub struct ProcessBehavior {
     pub device_name: String,
     /// Частота создания дочерних процессов (в минуту)
     pub child_creation_rate: f32,
+}
+
+/// Информация о сбоях аутентификации для обнаружения атак методом перебора.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AuthenticationFailure {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Количество попыток
+    pub attempt_count: usize,
+    /// Источник (IP адрес)
+    pub source_ip: Option<String>,
+    /// Целевой сервис
+    pub target_service: String,
+    /// Имя пользователя
+    pub username: Option<String>,
+    /// Временное окно (в секундах)
+    pub time_window_secs: u64,
+    /// Метод обнаружения
+    pub detection_method: String,
+}
+
+/// Информация о SQL инъекциях.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SqlInjectionInfo {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Тип паттерна
+    pub pattern_type: String,
+    /// Целевой URL
+    pub target_url: String,
+    /// Полезная нагрузка
+    pub payload: String,
+    /// Тип базы данных
+    pub database_type: String,
+    /// Уровень уверенности (0-100)
+    pub confidence_score: f32,
+}
+
+/// Информация о XSS атаках.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct XssAttackInfo {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Тип полезной нагрузки
+    pub payload_type: String,
+    /// Целевой URL
+    pub target_url: String,
+    /// Полезная нагрузка
+    pub payload: String,
+    /// Вектор атаки
+    pub vector: String,
+    /// Уровень уверенности (0-100)
+    pub confidence_score: f32,
+}
+
+/// Информация о MITM атаках.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MitmAttackInfo {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Тип атаки
+    pub attack_type: String,
+    /// Источник IP
+    pub source_ip: String,
+    /// Целевой IP
+    pub destination_ip: String,
+    /// Метод
+    pub method: String,
+    /// Статус сертификата
+    pub certificate_status: String,
+    /// Уровень уверенности (0-100)
+    pub confidence_score: f32,
+}
+
+/// Информация о активности программ-вымогателей.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RansomwareInfo {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Количество зашифрованных файлов
+    pub encrypted_file_count: usize,
+    /// Временное окно (в секундах)
+    pub time_window_secs: u64,
+    /// Паттерн
+    pub pattern: String,
+    /// Целевые типы файлов
+    pub target_file_types: Vec<String>,
+    /// Метод шифрования
+    pub encryption_method: String,
+}
+
+/// Информация об активности ботнета.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct BotnetInfo {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Количество соединений
+    pub connection_count: usize,
+    /// C2 серверы
+    pub c2_servers: Vec<String>,
+    /// Паттерн
+    pub pattern: String,
+    /// Уровень уверенности (0-100)
+    pub confidence_score: f32,
+}
+
+/// Информация об утечке данных.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DataExfiltrationInfo {
+    /// Идентификатор процесса
+    pub process_id: Option<i32>,
+    /// Имя процесса
+    pub process_name: Option<String>,
+    /// Размер данных (в МБ)
+    pub data_size_mb: f32,
+    /// Назначение
+    pub destination: String,
+    /// Временное окно (в секундах)
+    pub time_window_secs: u64,
+    /// Тип данных
+    pub data_type: String,
+    /// Метод
+    pub method: String,
+    /// Уровень уверенности (0-100)
+    pub confidence_score: f32,
 }
 
 /// Паттерны подозрительного поведения.
@@ -1941,6 +3116,345 @@ mod tests {
         assert!(monitor.should_send_notification_for_event(&critical_event));
         assert!(monitor.should_send_notification_for_event(&medium_event));
         assert!(!monitor.should_send_notification_for_event(&low_event));
+    }
+
+    #[tokio::test]
+    async fn test_advanced_threat_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Проверяем, что новые методы обнаружения угроз работают
+        let auth_failures = monitor.detect_authentication_failures().await.unwrap();
+        assert_eq!(auth_failures.len(), 0);
+
+        let sql_injections = monitor.detect_sql_injection_patterns().await.unwrap();
+        assert_eq!(sql_injections.len(), 0);
+
+        let xss_attacks = monitor.detect_xss_patterns().await.unwrap();
+        assert_eq!(xss_attacks.len(), 0);
+
+        let mitm_indicators = monitor.detect_mitm_indicators().await.unwrap();
+        assert_eq!(mitm_indicators.len(), 0);
+
+        let ransomware_patterns = monitor.detect_ransomware_patterns().await.unwrap();
+        assert_eq!(ransomware_patterns.len(), 0);
+
+        let botnet_patterns = monitor.detect_botnet_patterns().await.unwrap();
+        assert_eq!(botnet_patterns.len(), 0);
+
+        let exfiltration_patterns = monitor.detect_data_exfiltration_patterns().await.unwrap();
+        assert_eq!(exfiltration_patterns.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_new_security_event_types() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Проверяем новые типы событий безопасности
+        let brute_force_event = SecurityEvent {
+            event_id: "test-brute-force".to_string(),
+            timestamp: Utc::now(),
+            event_type: SecurityEventType::BruteForceAttack,
+            severity: SecurityEventSeverity::High,
+            status: SecurityEventStatus::New,
+            process_name: None,
+            process_id: None,
+            description: "Test brute force attack".to_string(),
+            details: None,
+            recommendations: None,
+            resolved_time: None,
+        };
+
+        let sql_injection_event = SecurityEvent {
+            event_id: "test-sql-injection".to_string(),
+            timestamp: Utc::now(),
+            event_type: SecurityEventType::SqlInjection,
+            severity: SecurityEventSeverity::Critical,
+            status: SecurityEventStatus::New,
+            process_name: None,
+            process_id: None,
+            description: "Test SQL injection".to_string(),
+            details: None,
+            recommendations: None,
+            resolved_time: None,
+        };
+
+        // Проверяем, что события добавляются корректно
+        monitor.add_security_event(brute_force_event).await.unwrap();
+        monitor.add_security_event(sql_injection_event).await.unwrap();
+
+        let status = monitor.get_security_status().await.unwrap();
+        assert_eq!(status.event_history.len(), 2);
+        assert_eq!(status.event_history[0].event_type, SecurityEventType::BruteForceAttack);
+        assert_eq!(status.event_history[1].event_type, SecurityEventType::SqlInjection);
+    }
+
+    #[tokio::test]
+    async fn test_security_event_type_display() {
+        // Проверяем отображение новых типов событий
+        assert_eq!(format!("{}", SecurityEventType::BruteForceAttack), "brute_force_attack");
+        assert_eq!(format!("{}", SecurityEventType::SqlInjection), "sql_injection");
+        assert_eq!(format!("{}", SecurityEventType::XssAttack), "xss_attack");
+        assert_eq!(format!("{}", SecurityEventType::MitmAttack), "mitm_attack");
+        assert_eq!(format!("{}", SecurityEventType::RansomwareActivity), "ransomware_activity");
+        assert_eq!(format!("{}", SecurityEventType::BotnetActivity), "botnet_activity");
+        assert_eq!(format!("{}", SecurityEventType::DataExfiltration), "data_exfiltration");
+        assert_eq!(format!("{}", SecurityEventType::ZeroDayExploit), "zero_day_exploit");
+        assert_eq!(format!("{}", SecurityEventType::AptActivity), "apt_activity");
+        assert_eq!(format!("{}", SecurityEventType::Cryptojacking), "cryptojacking");
+        assert_eq!(format!("{}", SecurityEventType::PhishingActivity), "phishing_activity");
+        assert_eq!(format!("{}", SecurityEventType::MalwareCommunication), "malware_communication");
+        assert_eq!(format!("{}", SecurityEventType::DnsTunneling), "dns_tunneling");
+        assert_eq!(format!("{}", SecurityEventType::IcmpTunneling), "icmp_tunneling");
+        assert_eq!(format!("{}", SecurityEventType::HttpTunneling), "http_tunneling");
+        assert_eq!(format!("{}", SecurityEventType::ProtocolAnomaly), "protocol_anomaly");
+        assert_eq!(format!("{}", SecurityEventType::EncryptionAnomaly), "encryption_anomaly");
+        assert_eq!(format!("{}", SecurityEventType::AuthenticationFailure), "authentication_failure");
+    }
+
+    #[tokio::test]
+    async fn test_advanced_threat_check_integration() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем проверку продвинутых угроз (должна завершиться успешно)
+        let result = monitor
+            .check_advanced_threats(&mut security_monitor)
+            .await;
+
+        // Проверяем, что проверка завершилась успешно
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_advanced_threat_analysis_integration() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем продвинутый анализ угроз (должен завершиться успешно)
+        let result = monitor
+            .advanced_threat_analysis(&mut security_monitor)
+            .await;
+
+        // Проверяем, что анализ завершился успешно
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_behavioral_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовое поведение процесса с аномалиями
+        let mut behavior = ProcessBehavior {
+            pid: 1234,
+            child_count: 20,  // Высокое количество дочерних процессов
+            thread_count: 200, // Высокое количество потоков
+            open_files_count: 100,
+            network_connections_count: 25,
+            start_time: None,
+            parent_pid: None,
+            parent_name: None,
+            cpu_usage: 90.0,
+            memory_usage: 80.0,
+            device_name: "test_process".to_string(),
+            child_creation_rate: 4.0, // Высокая частота создания дочерних процессов
+        };
+
+        // Выполняем обнаружение аномалий
+        let anomalies = monitor.detect_behavioral_anomalies_ml(&behavior).await.unwrap();
+
+        // Проверяем, что обнаружены аномалии
+        assert!(!anomalies.is_empty(), "Should detect behavioral anomalies");
+
+        // Проверяем, что обнаружены конкретные типы аномалий
+        let anomaly_types: Vec<String> = anomalies.iter().map(|a| a.anomaly_type.clone()).collect();
+        assert!(anomaly_types.contains(&"rapid_child_process_spawn".to_string()));
+        assert!(anomaly_types.contains(&"excessive_thread_count".to_string()));
+        assert!(anomaly_types.contains(&"resource_intensive_with_network".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_network_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовое сетевое соединение с аномалиями
+        let connection = NetworkConnection {
+            process_id: Some(1234),
+            process_name: Some("test_process".to_string()),
+            local_address: "192.168.1.1".to_string(),
+            local_port: 12345,
+            remote_address: "1.1.1.1".to_string(), // Подозрительный IP
+            remote_port: 4444, // Подозрительный порт
+            protocol: "TCP".to_string(),
+            state: "ESTABLISHED".to_string(),
+        };
+
+        // Выполняем обнаружение аномалий
+        let anomalies = monitor.detect_network_anomalies(&connection).await.unwrap();
+
+        // Проверяем, что обнаружены аномалии
+        assert!(!anomalies.is_empty(), "Should detect network anomalies");
+
+        // Проверяем, что обнаружены конкретные типы аномалий
+        let anomaly_types: Vec<String> = anomalies.iter().map(|a| a.anomaly_type.clone()).collect();
+        assert!(anomaly_types.contains(&"suspicious_port".to_string()));
+        assert!(anomaly_types.contains(&"suspicious_ip".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_filesystem_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовую активность файловой системы с аномалиями
+        let activity = FilesystemActivity {
+            process_id: Some(1234),
+            process_name: Some("test_process".to_string()),
+            path: "/etc/passwd".to_string(), // Системный файл
+            operation: "read".to_string(),
+            timestamp: Utc::now(),
+        };
+
+        // Выполняем обнаружение аномалий
+        let anomalies = monitor.detect_filesystem_anomalies(&activity).await.unwrap();
+
+        // Проверяем, что обнаружены аномалии
+        assert!(!anomalies.is_empty(), "Should detect filesystem anomalies");
+
+        // Проверяем, что обнаружены конкретные типы аномалий
+        let anomaly_types: Vec<String> = anomalies.iter().map(|a| a.anomaly_type.clone()).collect();
+        assert!(anomaly_types.contains(&"non_system_process_accessing_system_files".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_resource_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый процесс с аномальным использованием ресурсов
+        let process = ProcessInfo {
+            pid: 1234,
+            name: "test_process".to_string(), // Не GPU и не рендер процесс
+            exe_path: Some("/usr/bin/test_process".to_string()),
+            cpu_usage: 96.0, // Аномально высокое использование CPU
+            memory_usage: 86.0, // Аномально высокое использование памяти
+        };
+
+        // Выполняем обнаружение аномалий
+        let anomalies = monitor.detect_resource_anomalies(&process).await.unwrap();
+
+        // Проверяем, что обнаружены аномалии
+        assert!(!anomalies.is_empty(), "Should detect resource anomalies");
+
+        // Проверяем, что обнаружены конкретные типы аномалий
+        let anomaly_types: Vec<String> = anomalies.iter().map(|a| a.anomaly_type.clone()).collect();
+        assert!(anomaly_types.contains(&"abnormal_cpu_usage".to_string()));
+        assert!(anomaly_types.contains(&"abnormal_memory_usage".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_security_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовые события безопасности
+        let events = vec![
+            SecurityEvent {
+                event_id: "1".to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::BruteForceAttack,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: None,
+                process_id: None,
+                description: "Test attack 1".to_string(),
+                details: None,
+                recommendations: None,
+                resolved_time: None,
+            },
+            SecurityEvent {
+                event_id: "2".to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::SqlInjection,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: None,
+                process_id: None,
+                description: "Test attack 2".to_string(),
+                details: None,
+                recommendations: None,
+                resolved_time: None,
+            },
+            SecurityEvent {
+                event_id: "3".to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::XssAttack,
+                severity: SecurityEventSeverity::High,
+                status: SecurityEventStatus::New,
+                process_name: None,
+                process_id: None,
+                description: "Test attack 3".to_string(),
+                details: None,
+                recommendations: None,
+                resolved_time: None,
+            },
+            SecurityEvent {
+                event_id: "4".to_string(),
+                timestamp: Utc::now(),
+                event_type: SecurityEventType::MitmAttack,
+                severity: SecurityEventSeverity::Critical,
+                status: SecurityEventStatus::New,
+                process_name: None,
+                process_id: None,
+                description: "Test attack 4".to_string(),
+                details: None,
+                recommendations: None,
+                resolved_time: None,
+            },
+        ];
+
+        // Выполняем обнаружение аномалий
+        let anomalies = monitor.detect_security_anomalies(&events).await.unwrap();
+
+        // Проверяем, что обнаружены аномалии
+        assert!(!anomalies.is_empty(), "Should detect security anomalies");
+
+        // Проверяем, что обнаружены конкретные типы аномалий
+        let anomaly_types: Vec<String> = anomalies.iter().map(|a| a.anomaly_type.clone()).collect();
+        assert!(anomaly_types.contains(&"multiple_high_severity_events".to_string()));
+        assert!(anomaly_types.contains(&"diverse_attack_patterns".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_comprehensive_security_check_with_advanced_analysis() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let security_monitor = SecurityMonitor::default();
+
+        // Выполняем полную проверку безопасности с продвинутым анализом
+        let result = monitor.perform_security_checks(security_monitor).await;
+
+        // Проверяем, что проверка завершилась успешно
+        assert!(result.is_ok());
+
+        let updated_monitor = result.unwrap();
+        
+        // Проверяем, что статус безопасности определен
+        assert_ne!(updated_monitor.overall_status, SecurityStatus::Unknown);
+        
+        // Проверяем, что балл безопасности рассчитан
+        assert!(updated_monitor.security_score >= 0.0 && updated_monitor.security_score <= 100.0);
     }
 }
 

@@ -1741,6 +1741,325 @@ impl Default for ComprehensiveNetworkStatsWithQoS {
     }
 }
 
+/// Enhanced network security analysis result
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EnhancedNetworkSecurityAnalysis {
+    /// Basic network security metrics
+    pub basic_metrics: NetworkSecurityMetrics,
+    /// Advanced connection analysis
+    pub connection_analysis: Vec<AdvancedConnectionAnalysis>,
+    /// Network behavior analysis
+    pub behavioral_analysis: NetworkBehaviorAnalysis,
+    /// Network anomaly detection
+    pub anomaly_detection: NetworkAnomalyDetection,
+    /// Threat intelligence analysis
+    pub threat_intelligence: ThreatIntelligenceAnalysis,
+    /// Comprehensive security score (0.0 to 1.0)
+    pub comprehensive_security_score: f64,
+    /// Comprehensive security recommendations
+    pub comprehensive_recommendations: Vec<String>,
+}
+
+/// Advanced connection analysis
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct AdvancedConnectionAnalysis {
+    /// Connection identifier
+    pub connection_id: String,
+    /// Source IP address
+    pub src_ip: IpAddr,
+    /// Destination IP address
+    pub dst_ip: IpAddr,
+    /// Source port
+    pub src_port: u16,
+    /// Destination port
+    pub dst_port: u16,
+    /// Protocol
+    pub protocol: String,
+    /// Traffic pattern analysis
+    pub traffic_pattern: TrafficPattern,
+    /// Risk score (0.0 to 1.0)
+    pub risk_score: f64,
+    /// Threat indicators
+    pub threat_indicators: Vec<String>,
+    /// ML confidence score (0.0 to 1.0)
+    pub ml_confidence: f64,
+    /// Security recommendations
+    pub recommendations: Vec<String>,
+}
+
+/// Traffic pattern analysis
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct TrafficPattern {
+    /// Traffic volume category
+    pub volume: TrafficVolume,
+    /// Packet rate category
+    pub packet_rate: PacketRate,
+    /// Connection duration category
+    pub duration: ConnectionDuration,
+    /// Protocol behavior
+    pub protocol_behavior: ProtocolBehavior,
+    /// Traffic entropy (0.0 to 1.0)
+    pub traffic_entropy: f64,
+}
+
+/// Traffic volume categories
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TrafficVolume {
+    Low,
+    Medium,
+    High,
+}
+
+impl Default for TrafficVolume {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+/// Packet rate categories
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PacketRate {
+    Low,
+    Medium,
+    High,
+}
+
+impl Default for PacketRate {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+/// Connection duration categories
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ConnectionDuration {
+    Short,
+    Medium,
+    Long,
+}
+
+impl Default for ConnectionDuration {
+    fn default() -> Self {
+        Self::Medium
+    }
+}
+
+/// Protocol behavior categories
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum ProtocolBehavior {
+    Reliable,    // TCP
+    Unreliable,  // UDP
+    Control,     // ICMP
+    Other,
+}
+
+impl Default for ProtocolBehavior {
+    fn default() -> Self {
+        Self::Reliable
+    }
+}
+
+/// Network behavior analysis
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct NetworkBehaviorAnalysis {
+    /// Connection patterns
+    pub connection_patterns: ConnectionPatterns,
+    /// Traffic patterns
+    pub traffic_patterns: TrafficPatterns,
+    /// Protocol distribution
+    pub protocol_distribution: ProtocolDistribution,
+    /// Behavioral anomalies
+    pub behavioral_anomalies: Vec<BehavioralAnomaly>,
+    /// Behavior risk score (0.0 to 1.0)
+    pub behavior_risk_score: f64,
+}
+
+/// Connection patterns
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ConnectionPatterns {
+    /// Average connection duration in seconds
+    pub avg_connection_duration_secs: f64,
+    /// Connection rate per minute
+    pub connection_rate_per_min: f64,
+    /// Estimated concurrent connections
+    pub concurrent_connections: u32,
+    /// Connection churn (rate of connection turnover)
+    pub connection_churn: f64,
+}
+
+/// Traffic patterns
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct TrafficPatterns {
+    /// Total bytes transferred
+    pub total_bytes: u64,
+    /// Total packets transferred
+    pub total_packets: u64,
+    /// Average byte rate in bytes per second
+    pub avg_byte_rate_bps: f64,
+    /// Average packet rate in packets per second
+    pub avg_packet_rate_pps: f64,
+    /// Inbound traffic percentage
+    pub inbound_percentage: f64,
+    /// Outbound traffic percentage
+    pub outbound_percentage: f64,
+}
+
+/// Protocol distribution
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ProtocolDistribution {
+    /// TCP percentage
+    pub tcp_percentage: f64,
+    /// UDP percentage
+    pub udp_percentage: f64,
+    /// ICMP percentage
+    pub icmp_percentage: f64,
+    /// Other protocols percentage
+    pub other_percentage: f64,
+}
+
+/// Behavioral anomaly
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct BehavioralAnomaly {
+    /// Anomaly type
+    pub anomaly_type: String,
+    /// Description
+    pub description: String,
+    /// Severity
+    pub severity: String,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+}
+
+/// Network anomaly detection
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct NetworkAnomalyDetection {
+    /// Port scan anomalies
+    pub port_scan_anomalies: Vec<PortScanAnomaly>,
+    /// DDoS anomalies
+    pub ddos_anomalies: Vec<DDoSAnomaly>,
+    /// Traffic pattern anomalies
+    pub traffic_pattern_anomalies: Vec<TrafficPatternAnomaly>,
+    /// Protocol anomalies
+    pub protocol_anomalies: Vec<ProtocolAnomaly>,
+    /// Overall anomaly score (0.0 to 1.0)
+    pub overall_anomaly_score: f64,
+}
+
+/// Port scan anomaly
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct PortScanAnomaly {
+    /// Source IP address
+    pub source_ip: String,
+    /// Number of unique ports scanned
+    pub unique_ports_scanned: u32,
+    /// Total connections
+    pub total_connections: u32,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+    /// Severity
+    pub severity: String,
+}
+
+/// DDoS anomaly
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DDoSAnomaly {
+    /// Target IP address
+    pub target_ip: String,
+    /// Total connections
+    pub total_connections: u32,
+    /// Unique source IPs
+    pub unique_source_ips: u32,
+    /// Total bytes
+    pub total_bytes: u64,
+    /// Total packets
+    pub total_packets: u64,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+    /// Severity
+    pub severity: String,
+}
+
+/// Traffic pattern anomaly
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct TrafficPatternAnomaly {
+    /// Connection identifier
+    pub connection_id: String,
+    /// Anomaly type
+    pub anomaly_type: String,
+    /// Description
+    pub description: String,
+    /// Severity
+    pub severity: String,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+}
+
+/// Protocol anomaly
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ProtocolAnomaly {
+    /// Connection identifier
+    pub connection_id: String,
+    /// Anomaly type
+    pub anomaly_type: String,
+    /// Description
+    pub description: String,
+    /// Severity
+    pub severity: String,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+}
+
+/// Threat intelligence analysis
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ThreatIntelligenceAnalysis {
+    /// Detected threats
+    pub detected_threats: Vec<DetectedThreat>,
+    /// Threat patterns
+    pub threat_patterns: Vec<ThreatPattern>,
+    /// Threat intelligence score (0.0 to 1.0)
+    pub threat_intelligence_score: f64,
+    /// Recommendations
+    pub recommendations: Vec<String>,
+}
+
+/// Detected threat
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct DetectedThreat {
+    /// Threat identifier
+    pub threat_id: String,
+    /// Threat type
+    pub threat_type: String,
+    /// Description
+    pub description: String,
+    /// Severity
+    pub severity: String,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+    /// Source IP address
+    pub source_ip: IpAddr,
+    /// Destination IP address
+    pub destination_ip: IpAddr,
+    /// Destination port
+    pub destination_port: u16,
+    /// Protocol
+    pub protocol: String,
+}
+
+/// Threat pattern
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ThreatPattern {
+    /// Pattern type
+    pub pattern_type: String,
+    /// Description
+    pub description: String,
+    /// Severity
+    pub severity: String,
+    /// Confidence score (0.0 to 1.0)
+    pub confidence: f64,
+    /// Threat count
+    pub threat_count: u32,
+}
+
 /// Network monitor main structure
 pub struct NetworkMonitor {
     config: NetworkMonitorConfig,
@@ -6311,5 +6630,1102 @@ mod security_tests {
         }
         
         Ok(auth_failure_count)
+    }
+
+    /// Enhanced network security analysis with ML-inspired threat detection
+    pub fn analyze_network_security_enhanced(&mut self) -> Result<EnhancedNetworkSecurityAnalysis> {
+        let mut enhanced_analysis = EnhancedNetworkSecurityAnalysis::default();
+
+        // Collect basic network security metrics
+        let basic_security = self.collect_network_security_metrics()?;
+        enhanced_analysis.basic_metrics = basic_security;
+
+        // Perform advanced connection analysis
+        let connections = self.collect_connection_stats()?;
+        let connection_analysis = self.analyze_connections_advanced(&connections)?;
+        enhanced_analysis.connection_analysis = connection_analysis;
+
+        // Perform behavioral analysis
+        let behavioral_analysis = self.analyze_network_behavior(&connections)?;
+        enhanced_analysis.behavioral_analysis = behavioral_analysis;
+
+        // Perform anomaly detection
+        let anomaly_detection = self.detect_network_anomalies_advanced(&connections)?;
+        enhanced_analysis.anomaly_detection = anomaly_detection;
+
+        // Perform threat intelligence analysis
+        let threat_intel = self.analyze_threat_intelligence(&connections)?;
+        enhanced_analysis.threat_intelligence = threat_intel;
+
+        // Calculate comprehensive security score
+        let security_score = self.calculate_comprehensive_security_score(&enhanced_analysis);
+        enhanced_analysis.comprehensive_security_score = security_score;
+
+        // Generate comprehensive recommendations
+        let recommendations = self.generate_comprehensive_recommendations(&enhanced_analysis);
+        enhanced_analysis.comprehensive_recommendations = recommendations;
+
+        tracing::info!(
+            "Completed enhanced network security analysis: score={:.2}, threats={}, anomalies={}, connections={}",
+            security_score,
+            enhanced_analysis.threat_intelligence.detected_threats.len(),
+            enhanced_analysis.anomaly_detection.anomalies.len(),
+            enhanced_analysis.connection_analysis.len()
+        );
+
+        Ok(enhanced_analysis)
+    }
+
+    /// Advanced connection analysis with ML-inspired patterns
+    fn analyze_connections_advanced(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Result<Vec<AdvancedConnectionAnalysis>> {
+        let mut analyses = Vec::new();
+
+        for connection in connections {
+            let mut analysis = AdvancedConnectionAnalysis {
+                connection_id: format!(
+                    "{}:{}-{}:{}",
+                    connection.src_ip, connection.src_port, connection.dst_ip, connection.dst_port
+                ),
+                src_ip: connection.src_ip,
+                dst_ip: connection.dst_ip,
+                src_port: connection.src_port,
+                dst_port: connection.dst_port,
+                protocol: connection.protocol.clone(),
+                traffic_pattern: self.analyze_traffic_pattern(connection),
+                risk_score: 0.0,
+                threat_indicators: Vec::new(),
+                ml_confidence: 0.0,
+                recommendations: Vec::new(),
+            };
+
+            // Analyze traffic pattern and calculate risk
+            let (risk_score, threat_indicators) = 
+                self.calculate_connection_risk_advanced(connection, &analysis.traffic_pattern);
+            
+            analysis.risk_score = risk_score;
+            analysis.threat_indicators = threat_indicators;
+            
+            // Calculate ML confidence score
+            analysis.ml_confidence = self.calculate_ml_confidence(&analysis);
+            
+            // Generate recommendations
+            analysis.recommendations = self.generate_connection_recommendations_advanced(connection, &analysis);
+            
+            analyses.push(analysis);
+        }
+
+        Ok(analyses)
+    }
+
+    /// Analyze traffic pattern
+    fn analyze_traffic_pattern(&self, connection: &NetworkConnectionStats) -> TrafficPattern {
+        let mut pattern = TrafficPattern::default();
+
+        // Determine traffic volume category
+        if connection.bytes_transmitted > 10_000_000 {
+            pattern.volume = TrafficVolume::High;
+        } else if connection.bytes_transmitted > 1_000_000 {
+            pattern.volume = TrafficVolume::Medium;
+        } else {
+            pattern.volume = TrafficVolume::Low;
+        }
+
+        // Determine packet rate category
+        let duration_secs = connection.duration.as_secs().max(1);
+        let packet_rate = connection.packets_transmitted as f64 / duration_secs as f64;
+        
+        if packet_rate > 1000.0 {
+            pattern.packet_rate = PacketRate::High;
+        } else if packet_rate > 100.0 {
+            pattern.packet_rate = PacketRate::Medium;
+        } else {
+            pattern.packet_rate = PacketRate::Low;
+        }
+
+        // Determine connection duration category
+        if duration_secs > 3600 {
+            pattern.duration = ConnectionDuration::Long;
+        } else if duration_secs > 300 {
+            pattern.duration = ConnectionDuration::Medium;
+        } else {
+            pattern.duration = ConnectionDuration::Short;
+        }
+
+        // Determine protocol behavior
+        pattern.protocol_behavior = match connection.protocol.to_lowercase().as_str() {
+            "tcp" => ProtocolBehavior::Reliable,
+            "udp" => ProtocolBehavior::Unreliable,
+            "icmp" => ProtocolBehavior::Control,
+            _ => ProtocolBehavior::Other,
+        };
+
+        // Calculate traffic entropy (simplified)
+        pattern.traffic_entropy = self.calculate_traffic_entropy(connection);
+
+        pattern
+    }
+
+    /// Calculate traffic entropy (simplified)
+    fn calculate_traffic_entropy(&self, connection: &NetworkConnectionStats) -> f64 {
+        // Simplified entropy calculation based on packet size variation
+        // In a real implementation, this would analyze actual packet content
+        
+        let duration_secs = connection.duration.as_secs().max(1);
+        let byte_rate = connection.bytes_transmitted as f64 / duration_secs as f64;
+        let packet_rate = connection.packets_transmitted as f64 / duration_secs as f64;
+        
+        // Simple heuristic: higher entropy for connections with varying packet sizes
+        let avg_packet_size = if connection.packets_transmitted > 0 {
+            connection.bytes_transmitted as f64 / connection.packets_transmitted as f64
+        } else {
+            0.0
+        };
+
+        // Calculate a simple entropy score (0.0 to 1.0)
+        let mut entropy = 0.5; // Base entropy
+        
+        // Adjust based on traffic characteristics
+        if byte_rate > 1_000_000.0 { // > 1MB/s
+            entropy += 0.2;
+        }
+        
+        if packet_rate > 1000.0 { // > 1000 packets/s
+            entropy += 0.15;
+        }
+        
+        if avg_packet_size > 1500.0 { // Large packets
+            entropy += 0.1;
+        }
+        
+        // Cap at 1.0
+        entropy.min(1.0)
+    }
+
+    /// Calculate connection risk advanced
+    fn calculate_connection_risk_advanced(
+        &self,
+        connection: &NetworkConnectionStats,
+        pattern: &TrafficPattern,
+    ) -> (f64, Vec<String>) {
+        let mut risk_score = 0.0;
+        let mut threat_indicators = Vec::new();
+
+        // Check for known malicious IPs
+        if self.config.known_malicious_ips.contains(&connection.dst_ip.to_string()) {
+            risk_score += 0.4;
+            threat_indicators.push("Known malicious IP destination".to_string());
+        }
+
+        // Check for known malicious ports
+        if self.config.known_malicious_ports.contains(&connection.dst_port) {
+            risk_score += 0.3;
+            threat_indicators.push("Known malicious port".to_string());
+        }
+
+        // Check for suspicious traffic patterns
+        if pattern.volume == TrafficVolume::High && pattern.duration == ConnectionDuration::Short {
+            risk_score += 0.25;
+            threat_indicators.push("High volume, short duration traffic (potential data exfiltration)".to_string());
+        }
+
+        if pattern.packet_rate == PacketRate::High && pattern.traffic_entropy > 0.8 {
+            risk_score += 0.2;
+            threat_indicators.push("High packet rate with high entropy (potential encrypted C2)".to_string());
+        }
+
+        // Check for unusual protocol/port combinations
+        if connection.protocol.to_lowercase() == "tcp" && connection.dst_port == 53 {
+            risk_score += 0.15;
+            threat_indicators.push("TCP on DNS port (potential DNS tunneling)".to_string());
+        }
+
+        // Check for connections to common attack ports
+        let common_attack_ports = [4444, 5555, 6666, 7777, 8888, 9999, 31337, 6667];
+        if common_attack_ports.contains(&connection.dst_port) {
+            risk_score += 0.2;
+            threat_indicators.push(format!("Connection to common attack port: {}", connection.dst_port));
+        }
+
+        // Cap risk score at 1.0
+        risk_score = risk_score.min(1.0);
+
+        (risk_score, threat_indicators)
+    }
+
+    /// Calculate ML confidence score
+    fn calculate_ml_confidence(&self, analysis: &AdvancedConnectionAnalysis) -> f64 {
+        // ML-inspired confidence calculation
+        let mut confidence = 0.7; // Base confidence
+
+        // Higher confidence for higher risk scores
+        if analysis.risk_score > 0.8 {
+            confidence += 0.2;
+        } else if analysis.risk_score > 0.5 {
+            confidence += 0.1;
+        }
+
+        // Higher confidence when multiple threat indicators are present
+        if analysis.threat_indicators.len() > 2 {
+            confidence += 0.15;
+        } else if analysis.threat_indicators.len() > 0 {
+            confidence += 0.05;
+        }
+
+        // Lower confidence for low-risk connections
+        if analysis.risk_score < 0.2 {
+            confidence -= 0.1;
+        }
+
+        // Cap confidence between 0.1 and 1.0
+        confidence.max(0.1).min(1.0)
+    }
+
+    /// Generate connection recommendations advanced
+    fn generate_connection_recommendations_advanced(
+        &self,
+        connection: &NetworkConnectionStats,
+        analysis: &AdvancedConnectionAnalysis,
+    ) -> Vec<String> {
+        let mut recommendations = Vec::new();
+
+        // Base recommendations based on risk score
+        if analysis.risk_score > 0.8 {
+            recommendations.push("CRITICAL: Immediately investigate this high-risk connection".to_string());
+            recommendations.push("Consider blocking this connection if not legitimate".to_string());
+        } else if analysis.risk_score > 0.5 {
+            recommendations.push("HIGH: Investigate this suspicious connection".to_string());
+            recommendations.push("Monitor this connection closely".to_string());
+        } else if analysis.risk_score > 0.3 {
+            recommendations.push("MEDIUM: Review this connection for potential threats".to_string());
+        } else {
+            recommendations.push("LOW: This connection appears normal, continue monitoring".to_string());
+        }
+
+        // Specific recommendations based on threat indicators
+        for indicator in &analysis.threat_indicators {
+            if indicator.contains("malicious IP") {
+                recommendations.push(format!("Block IP {} in firewall rules", connection.dst_ip));
+            } else if indicator.contains("malicious port") {
+                recommendations.push(format!("Review and potentially block port {}", connection.dst_port));
+            } else if indicator.contains("data exfiltration") {
+                recommendations.push("Investigate potential data exfiltration attempt".to_string());
+                recommendations.push("Review data transfer policies".to_string());
+            } else if indicator.contains("DNS tunneling") {
+                recommendations.push("Investigate potential DNS tunneling".to_string());
+                recommendations.push("Monitor DNS traffic for anomalies".to_string());
+            }
+        }
+
+        // ML confidence-based recommendations
+        if analysis.ml_confidence > 0.9 {
+            recommendations.push("HIGH CONFIDENCE: ML analysis strongly suggests this requires attention".to_string());
+        } else if analysis.ml_confidence < 0.3 {
+            recommendations.push("LOW CONFIDENCE: ML analysis suggests this may be a false positive".to_string());
+        }
+
+        recommendations
+    }
+
+    /// Analyze network behavior
+    fn analyze_network_behavior(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Result<NetworkBehaviorAnalysis> {
+        let mut behavior_analysis = NetworkBehaviorAnalysis::default();
+
+        // Analyze connection patterns
+        let connection_patterns = self.analyze_connection_patterns(connections);
+        behavior_analysis.connection_patterns = connection_patterns;
+
+        // Analyze traffic patterns
+        let traffic_patterns = self.analyze_traffic_patterns_overall(connections);
+        behavior_analysis.traffic_patterns = traffic_patterns;
+
+        // Analyze protocol distribution
+        let protocol_distribution = self.analyze_protocol_distribution(connections);
+        behavior_analysis.protocol_distribution = protocol_distribution;
+
+        // Detect behavioral anomalies
+        let behavioral_anomalies = self.detect_behavioral_anomalies(connections);
+        behavior_analysis.behavioral_anomalies = behavioral_anomalies;
+
+        // Calculate behavior risk score
+        let behavior_risk_score = self.calculate_behavior_risk_score(&behavior_analysis);
+        behavior_analysis.behavior_risk_score = behavior_risk_score;
+
+        Ok(behavior_analysis)
+    }
+
+    /// Analyze connection patterns
+    fn analyze_connection_patterns(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> ConnectionPatterns {
+        let mut patterns = ConnectionPatterns::default();
+
+        if connections.is_empty() {
+            return patterns;
+        }
+
+        // Calculate average connection duration
+        let total_duration_secs: u64 = connections.iter()
+            .map(|c| c.duration.as_secs())
+            .sum();
+        patterns.avg_connection_duration_secs = total_duration_secs as f64 / connections.len() as f64;
+
+        // Calculate connection rate
+        patterns.connection_rate_per_min = connections.len() as f64 / 
+            (patterns.avg_connection_duration_secs / 60.0).max(1.0);
+
+        // Calculate concurrent connections (simplified)
+        patterns.concurrent_connections = (connections.len() as f64 * 0.3) as u32; // Estimate
+
+        // Calculate connection churn
+        patterns.connection_churn = if patterns.avg_connection_duration_secs > 0.0 {
+            patterns.connection_rate_per_min / patterns.avg_connection_duration_secs
+        } else {
+            0.0
+        };
+
+        patterns
+    }
+
+    /// Analyze traffic patterns overall
+    fn analyze_traffic_patterns_overall(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> TrafficPatterns {
+        let mut patterns = TrafficPatterns::default();
+
+        if connections.is_empty() {
+            return patterns;
+        }
+
+        // Calculate total traffic
+        let total_bytes: u64 = connections.iter().map(|c| c.bytes_transmitted + c.bytes_received).sum();
+        let total_packets: u64 = connections.iter().map(|c| c.packets_transmitted + c.packets_received).sum();
+
+        patterns.total_bytes = total_bytes;
+        patterns.total_packets = total_packets;
+
+        // Calculate average traffic rates
+        let total_duration_secs: u64 = connections.iter().map(|c| c.duration.as_secs()).sum();
+        let avg_duration_secs = (total_duration_secs as f64 / connections.len() as f64).max(1.0);
+
+        patterns.avg_byte_rate_bps = total_bytes as f64 / avg_duration_secs;
+        patterns.avg_packet_rate_pps = total_packets as f64 / avg_duration_secs;
+
+        // Calculate traffic distribution
+        let inbound_bytes: u64 = connections.iter().map(|c| c.bytes_received).sum();
+        let outbound_bytes: u64 = connections.iter().map(|c| c.bytes_transmitted).sum();
+
+        if total_bytes > 0 {
+            patterns.inbound_percentage = inbound_bytes as f64 / total_bytes as f64;
+            patterns.outbound_percentage = outbound_bytes as f64 / total_bytes as f64;
+        }
+
+        patterns
+    }
+
+    /// Analyze protocol distribution
+    fn analyze_protocol_distribution(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> ProtocolDistribution {
+        let mut distribution = ProtocolDistribution::default();
+
+        if connections.is_empty() {
+            return distribution;
+        }
+
+        let mut protocol_counts: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
+
+        for connection in connections {
+            let protocol = connection.protocol.to_lowercase();
+            *protocol_counts.entry(protocol).or_insert(0) += 1;
+        }
+
+        // Calculate percentages
+        let total_connections = connections.len() as f64;
+        
+        for (protocol, count) in protocol_counts {
+            let percentage = count as f64 / total_connections;
+            
+            match protocol.as_str() {
+                "tcp" => distribution.tcp_percentage = percentage,
+                "udp" => distribution.udp_percentage = percentage,
+                "icmp" => distribution.icmp_percentage = percentage,
+                _ => distribution.other_percentage += percentage,
+            }
+        }
+
+        distribution
+    }
+
+    /// Detect behavioral anomalies
+    fn detect_behavioral_anomalies(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Vec<BehavioralAnomaly> {
+        let mut anomalies = Vec::new();
+
+        if connections.is_empty() {
+            return anomalies;
+        }
+
+        // Anomaly 1: High connection churn
+        let connection_patterns = self.analyze_connection_patterns(connections);
+        if connection_patterns.connection_churn > 10.0 {
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "high_connection_churn".to_string(),
+                description: format!("Unusually high connection churn: {:.2}", connection_patterns.connection_churn),
+                severity: "high".to_string(),
+                confidence: 0.85,
+            });
+        }
+
+        // Anomaly 2: Unbalanced traffic (mostly outbound)
+        let traffic_patterns = self.analyze_traffic_patterns_overall(connections);
+        if traffic_patterns.outbound_percentage > 0.9 && traffic_patterns.total_bytes > 1_000_000 {
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "unbalanced_outbound_traffic".to_string(),
+                description: format!("Unusually high outbound traffic: {:.1}%", traffic_patterns.outbound_percentage * 100.0),
+                severity: "medium".to_string(),
+                confidence: 0.75,
+            });
+        }
+
+        // Anomaly 3: Unusual protocol distribution
+        let protocol_distribution = self.analyze_protocol_distribution(connections);
+        if protocol_distribution.icmp_percentage > 0.3 {
+            anomalies.push(BehavioralAnomaly {
+                anomaly_type: "high_icmp_traffic".to_string(),
+                description: format!("Unusually high ICMP traffic: {:.1}%", protocol_distribution.icmp_percentage * 100.0),
+                severity: "medium".to_string(),
+                confidence: 0.70,
+            });
+        }
+
+        anomalies
+    }
+
+    /// Calculate behavior risk score
+    fn calculate_behavior_risk_score(&self, analysis: &NetworkBehaviorAnalysis) -> f64 {
+        let mut risk_score = 0.0;
+
+        // Base risk from behavioral anomalies
+        for anomaly in &analysis.behavioral_anomalies {
+            match anomaly.severity.as_str() {
+                "high" => risk_score += 0.3,
+                "medium" => risk_score += 0.2,
+                "low" => risk_score += 0.1,
+                _ => risk_score += 0.05,
+            }
+        }
+
+        // Additional risk from traffic patterns
+        if analysis.traffic_patterns.outbound_percentage > 0.85 {
+            risk_score += 0.15;
+        }
+
+        if analysis.connection_patterns.connection_churn > 5.0 {
+            risk_score += 0.1;
+        }
+
+        // Cap risk score at 1.0
+        risk_score.min(1.0)
+    }
+
+    /// Detect network anomalies advanced
+    fn detect_network_anomalies_advanced(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Result<NetworkAnomalyDetection> {
+        let mut anomaly_detection = NetworkAnomalyDetection::default();
+
+        // Detect port scan anomalies
+        let port_scan_anomalies = self.detect_port_scan_anomalies(connections);
+        anomaly_detection.port_scan_anomalies = port_scan_anomalies;
+
+        // Detect DDoS anomalies
+        let ddos_anomalies = self.detect_ddos_anomalies(connections);
+        anomaly_detection.ddos_anomalies = ddos_anomalies;
+
+        // Detect traffic pattern anomalies
+        let traffic_anomalies = self.detect_traffic_pattern_anomalies(connections);
+        anomaly_detection.traffic_pattern_anomalies = traffic_anomalies;
+
+        // Detect protocol anomalies
+        let protocol_anomalies = self.detect_protocol_anomalies(connections);
+        anomaly_detection.protocol_anomalies = protocol_anomalies;
+
+        // Calculate overall anomaly score
+        let anomaly_score = self.calculate_anomaly_score(&anomaly_detection);
+        anomaly_detection.overall_anomaly_score = anomaly_score;
+
+        Ok(anomaly_detection)
+    }
+
+    /// Detect port scan anomalies
+    fn detect_port_scan_anomalies(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Vec<PortScanAnomaly> {
+        let mut anomalies = Vec::new();
+
+        // Group connections by source IP
+        let mut connections_by_ip: std::collections::HashMap<String, Vec<&NetworkConnectionStats>> = 
+            std::collections::HashMap::new();
+
+        for connection in connections {
+            connections_by_ip.entry(connection.src_ip.to_string())
+                .or_insert_with(Vec::new)
+                .push(connection);
+        }
+
+        // Analyze each source IP for port scanning behavior
+        for (src_ip, ip_connections) in connections_by_ip {
+            if ip_connections.len() < 5 {
+                continue; // Not enough connections to be suspicious
+            }
+
+            // Count unique destination ports
+            let unique_ports: std::collections::HashSet<u16> = ip_connections
+                .iter()
+                .map(|c| c.dst_port)
+                .collect();
+
+            if unique_ports.len() > 3 {
+                // Multiple ports from same source - potential port scan
+                anomalies.push(PortScanAnomaly {
+                    source_ip: src_ip,
+                    unique_ports_scanned: unique_ports.len() as u32,
+                    total_connections: ip_connections.len() as u32,
+                    confidence: 0.8,
+                    severity: "high".to_string(),
+                });
+            }
+        }
+
+        anomalies
+    }
+
+    /// Detect DDoS anomalies
+    fn detect_ddos_anomalies(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Vec<DDoSAnomaly> {
+        let mut anomalies = Vec::new();
+
+        // Group connections by destination IP
+        let mut connections_by_dst_ip: std::collections::HashMap<String, Vec<&NetworkConnectionStats>> = 
+            std::collections::HashMap::new();
+
+        for connection in connections {
+            connections_by_dst_ip.entry(connection.dst_ip.to_string())
+                .or_insert_with(Vec::new)
+                .push(connection);
+        }
+
+        // Analyze each destination IP for DDoS patterns
+        for (dst_ip, ip_connections) in connections_by_dst_ip {
+            if ip_connections.len() < 10 {
+                continue; // Not enough connections to be suspicious
+            }
+
+            // Calculate total traffic to this destination
+            let total_bytes: u64 = ip_connections.iter()
+                .map(|c| c.bytes_transmitted + c.bytes_received)
+                .sum();
+
+            let total_packets: u64 = ip_connections.iter()
+                .map(|c| c.packets_transmitted + c.packets_received)
+                .sum();
+
+            // Count unique source IPs
+            let unique_sources: std::collections::HashSet<String> = ip_connections
+                .iter()
+                .map(|c| c.src_ip.to_string())
+                .collect();
+
+            // DDoS detection heuristics
+            if total_packets > 1000 && unique_sources.len() > 5 {
+                anomalies.push(DDoSAnomaly {
+                    target_ip: dst_ip,
+                    total_connections: ip_connections.len() as u32,
+                    unique_source_ips: unique_sources.len() as u32,
+                    total_bytes,
+                    total_packets,
+                    confidence: 0.85,
+                    severity: "critical".to_string(),
+                });
+            }
+        }
+
+        anomalies
+    }
+
+    /// Detect traffic pattern anomalies
+    fn detect_traffic_pattern_anomalies(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Vec<TrafficPatternAnomaly> {
+        let mut anomalies = Vec::new();
+
+        for connection in connections {
+            // Calculate bytes per packet
+            let packets = (connection.packets_transmitted + connection.packets_received).max(1);
+            let bytes_per_packet = (connection.bytes_transmitted + connection.bytes_received) as f64 / packets as f64;
+
+            // Detect unusually large packets
+            if bytes_per_packet > 1500.0 { // MTU is typically 1500
+                anomalies.push(TrafficPatternAnomaly {
+                    connection_id: format!("{}:{}", connection.src_ip, connection.src_port),
+                    anomaly_type: "jumbo_packets".to_string(),
+                    description: format!("Unusually large packets: {:.1} bytes/packet", bytes_per_packet),
+                    severity: "medium".to_string(),
+                    confidence: 0.7,
+                });
+            }
+
+            // Detect unusually small packets
+            if bytes_per_packet < 50.0 && packets > 10 {
+                anomalies.push(TrafficPatternAnomaly {
+                    connection_id: format!("{}:{}", connection.src_ip, connection.src_port),
+                    anomaly_type: "tiny_packets".to_string(),
+                    description: format!("Unusually small packets: {:.1} bytes/packet", bytes_per_packet),
+                    severity: "low".to_string(),
+                    confidence: 0.6,
+                });
+            }
+
+            // Detect high packet rate with low byte rate (potential scanning)
+            let duration_secs = connection.duration.as_secs().max(1);
+            let packet_rate = (connection.packets_transmitted + connection.packets_received) as f64 / duration_secs as f64;
+            let byte_rate = (connection.bytes_transmitted + connection.bytes_received) as f64 / duration_secs as f64;
+
+            if packet_rate > 100.0 && byte_rate < 1000.0 {
+                anomalies.push(TrafficPatternAnomaly {
+                    connection_id: format!("{}:{}", connection.src_ip, connection.src_port),
+                    anomaly_type: "high_packet_low_byte_rate".to_string(),
+                    description: format!("High packet rate ({:.1} pps) with low byte rate ({:.1} Bps)", packet_rate, byte_rate),
+                    severity: "high".to_string(),
+                    confidence: 0.8,
+                });
+            }
+        }
+
+        anomalies
+    }
+
+    /// Detect protocol anomalies
+    fn detect_protocol_anomalies(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Vec<ProtocolAnomaly> {
+        let mut anomalies = Vec::new();
+
+        for connection in connections {
+            // Check for TCP on UDP ports
+            if connection.protocol.to_lowercase() == "tcp" && 
+               (connection.dst_port == 53 || connection.dst_port == 67 || connection.dst_port == 68) {
+                anomalies.push(ProtocolAnomaly {
+                    connection_id: format!("{}:{}", connection.src_ip, connection.src_port),
+                    anomaly_type: "tcp_on_udp_port".to_string(),
+                    description: format!("TCP protocol on UDP port {}", connection.dst_port),
+                    severity: "medium".to_string(),
+                    confidence: 0.75,
+                });
+            }
+
+            // Check for UDP on TCP ports
+            if connection.protocol.to_lowercase() == "udp" && 
+               (connection.dst_port == 80 || connection.dst_port == 443 || connection.dst_port == 22) {
+                anomalies.push(ProtocolAnomaly {
+                    connection_id: format!("{}:{}", connection.src_ip, connection.src_port),
+                    anomaly_type: "udp_on_tcp_port".to_string(),
+                    description: format!("UDP protocol on TCP port {}", connection.dst_port),
+                    severity: "medium".to_string(),
+                    confidence: 0.75,
+                });
+            }
+
+            // Check for ICMP with unusual payload sizes
+            if connection.protocol.to_lowercase() == "icmp" && 
+               (connection.bytes_transmitted > 100 || connection.bytes_received > 100) {
+                anomalies.push(ProtocolAnomaly {
+                    connection_id: format!("{}:{}", connection.src_ip, connection.src_port),
+                    anomaly_type: "large_icmp_payload".to_string(),
+                    description: format!("ICMP with large payload: {} bytes", 
+                        connection.bytes_transmitted.max(connection.bytes_received)),
+                    severity: "high".to_string(),
+                    confidence: 0.85,
+                });
+            }
+        }
+
+        anomalies
+    }
+
+    /// Calculate anomaly score
+    fn calculate_anomaly_score(&self, detection: &NetworkAnomalyDetection) -> f64 {
+        let mut score = 0.0;
+
+        // Score based on number and severity of anomalies
+        for anomaly in &detection.port_scan_anomalies {
+            match anomaly.severity.as_str() {
+                "critical" => score += 0.3,
+                "high" => score += 0.25,
+                "medium" => score += 0.15,
+                "low" => score += 0.05,
+                _ => score += 0.02,
+            }
+        }
+
+        for anomaly in &detection.ddos_anomalies {
+            match anomaly.severity.as_str() {
+                "critical" => score += 0.4,
+                "high" => score += 0.3,
+                "medium" => score += 0.2,
+                "low" => score += 0.1,
+                _ => score += 0.05,
+            }
+        }
+
+        for anomaly in &detection.traffic_pattern_anomalies {
+            match anomaly.severity.as_str() {
+                "critical" => score += 0.25,
+                "high" => score += 0.2,
+                "medium" => score += 0.1,
+                "low" => score += 0.05,
+                _ => score += 0.02,
+            }
+        }
+
+        for anomaly in &detection.protocol_anomalies {
+            match anomaly.severity.as_str() {
+                "critical" => score += 0.3,
+                "high" => score += 0.25,
+                "medium" => score += 0.15,
+                "low" => score += 0.05,
+                _ => score += 0.02,
+            }
+        }
+
+        // Cap score at 1.0
+        score.min(1.0)
+    }
+
+    /// Analyze threat intelligence
+    fn analyze_threat_intelligence(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Result<ThreatIntelligenceAnalysis> {
+        let mut threat_intel = ThreatIntelligenceAnalysis::default();
+
+        // Detect known threats
+        let detected_threats = self.detect_known_threats(connections);
+        threat_intel.detected_threats = detected_threats;
+
+        // Analyze threat patterns
+        let threat_patterns = self.analyze_threat_patterns(&threat_intel.detected_threats);
+        threat_intel.threat_patterns = threat_patterns;
+
+        // Calculate threat intelligence score
+        let threat_intel_score = self.calculate_threat_intelligence_score(&threat_intel);
+        threat_intel.threat_intelligence_score = threat_intel_score;
+
+        // Generate threat intelligence recommendations
+        let recommendations = self.generate_threat_intelligence_recommendations(&threat_intel);
+        threat_intel.recommendations = recommendations;
+
+        Ok(threat_intel)
+    }
+
+    /// Detect known threats
+    fn detect_known_threats(
+        &self,
+        connections: &[NetworkConnectionStats],
+    ) -> Vec<DetectedThreat> {
+        let mut threats = Vec::new();
+
+        for connection in connections {
+            // Check for connections to known malicious IPs
+            if self.config.known_malicious_ips.contains(&connection.dst_ip.to_string()) {
+                threats.push(DetectedThreat {
+                    threat_id: format!("threat-{}-{}", connection.src_ip, connection.dst_ip),
+                    threat_type: "known_malicious_ip".to_string(),
+                    description: format!("Connection to known malicious IP: {}", connection.dst_ip),
+                    severity: "critical".to_string(),
+                    confidence: 0.95,
+                    source_ip: connection.src_ip,
+                    destination_ip: connection.dst_ip,
+                    destination_port: connection.dst_port,
+                    protocol: connection.protocol.clone(),
+                });
+            }
+
+            // Check for connections to known malicious ports
+            if self.config.known_malicious_ports.contains(&connection.dst_port) {
+                threats.push(DetectedThreat {
+                    threat_id: format!("threat-{}-{}", connection.src_ip, connection.dst_port),
+                    threat_type: "known_malicious_port".to_string(),
+                    description: format!("Connection to known malicious port: {}", connection.dst_port),
+                    severity: "high".to_string(),
+                    confidence: 0.90,
+                    source_ip: connection.src_ip,
+                    destination_ip: connection.dst_ip,
+                    destination_port: connection.dst_port,
+                    protocol: connection.protocol.clone(),
+                });
+            }
+
+            // Check for potential brute force attacks (multiple connections to auth ports)
+            if (connection.dst_port == 22 || connection.dst_port == 3389) && 
+               connection.packets_transmitted > 10 {
+                threats.push(DetectedThreat {
+                    threat_id: format!("threat-brute-{}-{}", connection.src_ip, connection.dst_port),
+                    threat_type: "potential_brute_force".to_string(),
+                    description: format!("Potential brute force attack on port {}", connection.dst_port),
+                    severity: "high".to_string(),
+                    confidence: 0.85,
+                    source_ip: connection.src_ip,
+                    destination_ip: connection.dst_ip,
+                    destination_port: connection.dst_port,
+                    protocol: connection.protocol.clone(),
+                });
+            }
+        }
+
+        threats
+    }
+
+    /// Analyze threat patterns
+    fn analyze_threat_patterns(&self, threats: &[DetectedThreat]) -> Vec<ThreatPattern> {
+        let mut patterns = Vec::new();
+
+        if threats.is_empty() {
+            return patterns;
+        }
+
+        // Group threats by type
+        let mut threats_by_type: std::collections::HashMap<String, Vec<&DetectedThreat>> = 
+            std::collections::HashMap::new();
+
+        for threat in threats {
+            threats_by_type.entry(threat.threat_type.clone())
+                .or_insert_with(Vec::new)
+                .push(threat);
+        }
+
+        // Analyze patterns for each threat type
+        for (threat_type, type_threats) in threats_by_type {
+            if type_threats.len() > 3 {
+                // Multiple threats of same type - potential coordinated attack
+                patterns.push(ThreatPattern {
+                    pattern_type: format!("coordinated_{}", threat_type),
+                    description: format!("Multiple {} threats detected: {}", type_threats.len(), threat_type),
+                    severity: "critical".to_string(),
+                    confidence: 0.9,
+                    threat_count: type_threats.len() as u32,
+                });
+            }
+        }
+
+        // Check for diverse threat types (potential multi-vector attack)
+        if threats_by_type.len() > 2 {
+            patterns.push(ThreatPattern {
+                pattern_type: "multi_vector_attack".to_string(),
+                description: format!("Diverse threat types detected: {}", threats_by_type.len()),
+                severity: "critical".to_string(),
+                confidence: 0.95,
+                threat_count: threats_by_type.len() as u32,
+            });
+        }
+
+        patterns
+    }
+
+    /// Calculate threat intelligence score
+    fn calculate_threat_intelligence_score(&self, analysis: &ThreatIntelligenceAnalysis) -> f64 {
+        let mut score = 0.0;
+
+        // Score based on detected threats
+        for threat in &analysis.detected_threats {
+            match threat.severity.as_str() {
+                "critical" => score += 0.3,
+                "high" => score += 0.2,
+                "medium" => score += 0.1,
+                "low" => score += 0.05,
+                _ => score += 0.02,
+            }
+        }
+
+        // Additional score for threat patterns
+        for pattern in &analysis.threat_patterns {
+            match pattern.severity.as_str() {
+                "critical" => score += 0.2,
+                "high" => score += 0.15,
+                "medium" => score += 0.1,
+                "low" => score += 0.05,
+                _ => score += 0.02,
+            }
+        }
+
+        // Cap score at 1.0
+        score.min(1.0)
+    }
+
+    /// Generate threat intelligence recommendations
+    fn generate_threat_intelligence_recommendations(
+        &self,
+        analysis: &ThreatIntelligenceAnalysis,
+    ) -> Vec<String> {
+        let mut recommendations = Vec::new();
+
+        if analysis.threat_intelligence_score > 0.8 {
+            recommendations.push("CRITICAL: Immediate action required - high threat intelligence score".to_string());
+            recommendations.push("Activate incident response procedures".to_string());
+        } else if analysis.threat_intelligence_score > 0.5 {
+            recommendations.push("HIGH: Significant threats detected - investigate immediately".to_string());
+        } else if analysis.threat_intelligence_score > 0.3 {
+            recommendations.push("MEDIUM: Threats detected - review and monitor closely".to_string());
+        } else {
+            recommendations.push("LOW: Minimal threats detected - continue normal monitoring".to_string());
+        }
+
+        // Specific recommendations based on threat types
+        for threat in &analysis.detected_threats {
+            match threat.threat_type.as_str() {
+                "known_malicious_ip" => {
+                    recommendations.push(format!("Block malicious IP {} in firewall", threat.destination_ip));
+                }
+                "known_malicious_port" => {
+                    recommendations.push(format!("Review and restrict access to port {}", threat.destination_port));
+                }
+                "potential_brute_force" => {
+                    recommendations.push("Enable rate limiting and account lockout policies".to_string());
+                }
+                _ => {
+                    recommendations.push(format!("Investigate {} threat", threat.threat_type));
+                }
+            }
+        }
+
+        // Pattern-based recommendations
+        for pattern in &analysis.threat_patterns {
+            if pattern.pattern_type.contains("coordinated") {
+                recommendations.push("Investigate potential coordinated attack".to_string());
+            } else if pattern.pattern_type.contains("multi_vector") {
+                recommendations.push("Review security posture - multi-vector attack detected".to_string());
+            }
+        }
+
+        recommendations
+    }
+
+    /// Calculate comprehensive security score
+    fn calculate_comprehensive_security_score(&self, analysis: &EnhancedNetworkSecurityAnalysis) -> f64 {
+        let mut score = 1.0; // Start with perfect score
+
+        // Reduce score based on basic security metrics
+        let basic_metrics = &analysis.basic_metrics;
+        
+        // Security events reduce score
+        let security_event_penalty = (basic_metrics.total_security_events as f64 * 0.01).min(0.5);
+        score -= security_event_penalty;
+
+        // High threat level reduces score
+        let threat_level_penalty = basic_metrics.threat_level * 0.8; // 80% of threat level
+        score -= threat_level_penalty;
+
+        // Low detection confidence reduces score
+        let confidence_penalty = (1.0 - basic_metrics.detection_confidence) * 0.2; // 20% of confidence loss
+        score -= confidence_penalty;
+
+        // Reduce score based on anomaly detection
+        let anomaly_score_penalty = analysis.anomaly_detection.overall_anomaly_score * 0.3; // 30% of anomaly score
+        score -= anomaly_score_penalty;
+
+        // Reduce score based on threat intelligence
+        let threat_intel_penalty = analysis.threat_intelligence.threat_intelligence_score * 0.5; // 50% of threat intel score
+        score -= threat_intel_penalty;
+
+        // Reduce score based on behavioral analysis
+        let behavior_penalty = analysis.behavioral_analysis.behavior_risk_score * 0.4; // 40% of behavior risk
+        score -= behavior_penalty;
+
+        // Cap score between 0.0 and 1.0
+        score.max(0.0).min(1.0)
+    }
+
+    /// Generate comprehensive recommendations
+    fn generate_comprehensive_recommendations(&self, analysis: &EnhancedNetworkSecurityAnalysis) -> Vec<String> {
+        let mut recommendations = Vec::new();
+
+        // Overall security score recommendation
+        let security_score = analysis.comprehensive_security_score;
+        if security_score > 0.9 {
+            recommendations.push("EXCELLENT: Network security is in excellent condition".to_string());
+        } else if security_score > 0.8 {
+            recommendations.push("GOOD: Network security is good with minor issues".to_string());
+        } else if security_score > 0.7 {
+            recommendations.push("FAIR: Network security needs attention".to_string());
+        } else if security_score > 0.6 {
+            recommendations.push("POOR: Network security requires immediate improvement".to_string());
+        } else {
+            recommendations.push("CRITICAL: Network security is in critical condition - immediate action required".to_string());
+        }
+
+        // Add basic security recommendations
+        recommendations.extend(self.generate_security_recommendations_comprehensive(&analysis.basic_metrics));
+
+        // Add anomaly-based recommendations
+        if !analysis.anomaly_detection.port_scan_anomalies.is_empty() {
+            recommendations.push("Investigate potential port scanning activity".to_string());
+        }
+
+        if !analysis.anomaly_detection.ddos_anomalies.is_empty() {
+            recommendations.push("Review DDoS protection measures".to_string());
+        }
+
+        if !analysis.anomaly_detection.traffic_pattern_anomalies.is_empty() {
+            recommendations.push("Analyze unusual traffic patterns".to_string());
+        }
+
+        if !analysis.anomaly_detection.protocol_anomalies.is_empty() {
+            recommendations.push("Investigate protocol anomalies".to_string());
+        }
+
+        // Add threat intelligence recommendations
+        recommendations.extend(analysis.threat_intelligence.recommendations.clone());
+
+        // Add behavioral recommendations
+        if analysis.behavioral_analysis.behavior_risk_score > 0.7 {
+            recommendations.push("Review network behavior - high risk patterns detected".to_string());
+        }
+
+        // Add connection-specific recommendations (top 3 most risky)
+        let mut risky_connections: Vec<&AdvancedConnectionAnalysis> = analysis.connection_analysis
+            .iter()
+            .filter(|c| c.risk_score > 0.5)
+            .collect();
+        
+        risky_connections.sort_by(|a, b| b.risk_score.partial_cmp(&a.risk_score).unwrap());
+        
+        for (i, connection) in risky_connections.into_iter().take(3).enumerate() {
+            recommendations.push(format!(
+                "TOP {} RISKY CONNECTION: {} (risk: {:.1}%) - {}",
+                i + 1,
+                connection.connection_id,
+                connection.risk_score * 100.0,
+                connection.threat_indicators.join(", ")
+            ));
+        }
+
+        recommendations
     }
 }

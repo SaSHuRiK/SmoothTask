@@ -209,6 +209,216 @@ impl Default for EnergyMonitoringConfig {
     }
 }
 
+/// Продвинутый анализ энергопотребления
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct AdvancedEnergyAnalysis {
+    /// Распределение энергопотребления по компонентам
+    pub component_distribution: AdvancedComponentDistribution,
+    /// Энергоэффективность системы
+    pub energy_efficiency: AdvancedEnergyEfficiency,
+    /// Обнаружение аномалий
+    pub anomaly_detection: EnergyAnomalyDetection,
+    /// Анализ трендов
+    pub trend_analysis: EnergyTrendAnalysis,
+    /// Комплексный балл энергоэффективности (0.0 to 100.0)
+    pub comprehensive_efficiency_score: f64,
+    /// Рекомендации по оптимизации
+    pub optimization_recommendations: Vec<String>,
+}
+
+/// Продвинутое распределение энергопотребления по компонентам
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct AdvancedComponentDistribution {
+    /// Анализ компонентов
+    pub components: Vec<ComponentEnergyAnalysis>,
+    /// Балл распределения (0.0 to 1.0)
+    pub distribution_score: f64,
+}
+
+/// Анализ энергопотребления компонента
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ComponentEnergyAnalysis {
+    /// Тип компонента
+    pub component_type: String,
+    /// Общее энергопотребление
+    pub energy_uj: u64,
+    /// Процент от общего энергопотребления
+    pub percentage: f64,
+    /// Балл эффективности
+    pub efficiency_score: f64,
+    /// Паттерн использования мощности
+    pub power_usage_pattern: PowerUsagePattern,
+    /// Потенциал оптимизации (0.0 to 1.0)
+    pub optimization_potential: f64,
+    /// Рекомендации
+    pub recommendations: Vec<String>,
+}
+
+/// Паттерн использования мощности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum PowerUsagePattern {
+    /// Переменное использование
+    Variable,
+    /// Постоянно высокое использование
+    ConsistentHigh,
+    /// Постоянно низкое использование
+    ConsistentLow,
+    /// Умеренное использование
+    Moderate,
+}
+
+impl Default for PowerUsagePattern {
+    fn default() -> Self {
+        Self::Moderate
+    }
+}
+
+/// Анализ эффективности компонента
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ComponentEfficiencyAnalysis {
+    /// Балл эффективности
+    pub efficiency_score: f64,
+    /// Паттерн использования мощности
+    pub power_usage_pattern: PowerUsagePattern,
+    /// Потенциал оптимизации (0.0 to 1.0)
+    pub optimization_potential: f64,
+    /// Рекомендации
+    pub recommendations: Vec<String>,
+}
+
+/// Продвинутая энергоэффективность системы
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct AdvancedEnergyEfficiency {
+    /// Общее энергопотребление
+    pub total_energy_uj: u64,
+    /// Общая мощность
+    pub total_power_w: f32,
+    /// Средняя эффективность
+    pub average_efficiency: f32,
+    /// Максимальная эффективность
+    pub max_efficiency: f32,
+    /// Минимальная эффективность
+    pub min_efficiency: f32,
+    /// Эффективность по компонентам
+    pub component_efficiencies: Vec<ComponentEfficiency>,
+    /// Паттерны эффективности
+    pub efficiency_patterns: Vec<EfficiencyPattern>,
+    /// Балл эффективности (0.0 to 100.0)
+    pub efficiency_score: f64,
+}
+
+/// Эффективность компонента
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ComponentEfficiency {
+    /// Тип компонента
+    pub component_type: String,
+    /// Балл эффективности
+    pub efficiency_score: f32,
+    /// Мощность
+    pub power_w: f32,
+    /// Использование
+    pub utilization_percent: f32,
+}
+
+/// Паттерн эффективности
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EfficiencyPattern {
+    /// Тип паттерна
+    pub pattern_type: String,
+    /// Описание
+    pub description: String,
+    /// Серьезность
+    pub severity: String,
+    /// Затронутые компоненты
+    pub affected_components: Vec<String>,
+}
+
+/// Обнаружение аномалий энергопотребления
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EnergyAnomalyDetection {
+    /// Аномалии
+    pub anomalies: Vec<EnergyAnomaly>,
+    /// Общий балл аномалий (0.0 to 1.0)
+    pub overall_anomaly_score: f64,
+}
+
+/// Аномалия энергопотребления
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EnergyAnomaly {
+    /// Идентификатор сенсора
+    pub sensor_id: String,
+    /// Тип аномалии
+    pub anomaly_type: String,
+    /// Описание
+    pub description: String,
+    /// Серьезность
+    pub severity: String,
+    /// Уверенность (0.0 to 1.0)
+    pub confidence: f64,
+    /// Тип компонента
+    pub component_type: String,
+    /// Текущая мощность
+    pub current_power_w: f32,
+    /// Пороговое значение
+    pub threshold_w: f32,
+}
+
+/// Анализ трендов энергопотребления
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct EnergyTrendAnalysis {
+    /// Тренды компонентов
+    pub component_trends: Vec<ComponentTrend>,
+    /// Общий тренд
+    pub overall_trend: OverallTrend,
+}
+
+/// Тренд компонента
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+pub struct ComponentTrend {
+    /// Тип компонента
+    pub component_type: String,
+    /// Тренд мощности
+    pub power_trend: TrendDirection,
+    /// Тренд эффективности
+    pub efficiency_trend: TrendDirection,
+    /// Уверенность (0.0 to 1.0)
+    pub confidence: f64,
+}
+
+/// Направление тренда
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum TrendDirection {
+    /// Увеличение
+    Increasing,
+    /// Уменьшение
+    Decreasing,
+    /// Стабильно
+    Stable,
+}
+
+impl Default for TrendDirection {
+    fn default() -> Self {
+        Self::Stable
+    }
+}
+
+/// Общий тренд
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum OverallTrend {
+    /// Увеличение потребления
+    IncreasingConsumption,
+    /// Уменьшение потребления
+    DecreasingConsumption,
+    /// Стабильно
+    Stable,
+}
+
+impl Default for OverallTrend {
+    fn default() -> Self {
+        Self::Stable
+    }
+}
+
 /// Основной монитор энергопотребления
 #[derive(Debug)]
 pub struct EnergyMonitor {

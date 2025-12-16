@@ -1320,35 +1320,9 @@ impl ThreatIntelligenceImpl {
 }
 
 /// Вспомогательные структуры для интеграции
-/// Информация о процессе для проверки угроз.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ProcessInfo {
-    /// Идентификатор процесса
-    pub pid: i32,
-    /// Имя процесса
-    pub name: String,
-    /// Путь к исполняемому файлу
-    pub exe_path: Option<String>,
-    /// Использование CPU (в процентах)
-    pub cpu_usage: f32,
-    /// Использование памяти (в процентах)
-    pub memory_usage: f32,
-}
 
-/// Информация о сетевом соединении для проверки угроз.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct NetworkConnection {
-    /// Локальный адрес
-    pub local_address: String,
-    /// Локальный порт
-    pub local_port: u16,
-    /// Удаленный адрес
-    pub remote_address: String,
-    /// Удаленный порт
-    pub remote_port: u16,
-    /// Протокол
-    pub protocol: String,
-}
+
+
 
 /// Вспомогательная функция для создания ThreatIntelligence.
 pub fn create_threat_intelligence(config: ThreatIntelligenceConfig) -> ThreatIntelligenceImpl {

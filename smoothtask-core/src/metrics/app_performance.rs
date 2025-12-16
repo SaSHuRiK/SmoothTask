@@ -614,7 +614,7 @@ fn calculate_extended_metrics(
     let fps: Option<f64> = {
         let fps_values: Vec<f64> = processes
             .iter()
-            .filter_map(|p| p.gpu_api_calls)
+            .filter_map(|p| p.gpu_api_calls.map(|v| v as f64))
             .collect();
         if !fps_values.is_empty() {
             Some(fps_values.iter().sum::<f64>() / fps_values.len() as f64)
@@ -666,7 +666,7 @@ fn calculate_extended_metrics(
     let gpu_usage_percent: Option<f64> = {
         let gpu_usage_values: Vec<f64> = processes
             .iter()
-            .filter_map(|p| p.gpu_utilization)
+            .filter_map(|p| p.gpu_utilization.map(|v| v as f64))
             .collect();
         if !gpu_usage_values.is_empty() {
             Some(gpu_usage_values.iter().sum::<f64>() / gpu_usage_values.len() as f64)
@@ -751,7 +751,7 @@ fn calculate_extended_metrics(
         let total_connections = processes
             .iter()
             .map(|p| p.network_tcp_connections.unwrap_or(0) + p.network_udp_connections.unwrap_or(0))
-            .sum();
+            .sum::<u64>() as usize;
         if total_connections > 0 {
             Some(total_connections)
         } else {
@@ -1501,7 +1501,7 @@ pub fn analyze_performance_history(
             continue;
         }
 
-        let analysis = analyze_group_history(metrics_list, &app_config)?;
+        let analysis = analyze_group_history(&metrics_list, &app_config)?;
         analysis_results.insert(app_group_id, analysis);
     }
 
@@ -1559,7 +1559,7 @@ fn analyze_group_history(
             .collect();
         if !fps_values.is_empty() {
             let avg = fps_values.iter().sum::<f64>() / fps_values.len() as f64;
-            let max = fps_values.iter().fold(0.0, |a, &b| a.max(b));
+            let max = fps_values.iter().fold(0.0f64, |a, &b| a.max(b));
             (Some(avg), Some(max))
         } else {
             (None, None)
@@ -1574,7 +1574,7 @@ fn analyze_group_history(
             .collect();
         if !latency_values.is_empty() {
             let avg = latency_values.iter().sum::<f64>() / latency_values.len() as f64;
-            let max = latency_values.iter().fold(0.0, |a, &b| a.max(b));
+            let max = latency_values.iter().fold(0.0f64, |a, &b| a.max(b));
             (Some(avg), Some(max))
         } else {
             (None, None)
@@ -1589,7 +1589,7 @@ fn analyze_group_history(
             .collect();
         if !gpu_values.is_empty() {
             let avg = gpu_values.iter().sum::<f64>() / gpu_values.len() as f64;
-            let max = gpu_values.iter().fold(0.0, |a, &b| a.max(b));
+            let max = gpu_values.iter().fold(0.0f64, |a, &b| a.max(b));
             (Some(avg), Some(max))
         } else {
             (None, None)
@@ -1677,7 +1677,7 @@ fn analyze_group_history(
         app_group_id: first_metrics.app_group_id.clone(),
         avg_cpu_usage,
         max_cpu_usage,
-        avg_memory_mb: avg_memory_mb as u64,
+        avg_memory_mb,
         max_memory_mb,
         avg_io_bytes_per_sec: avg_io_bytes_per_sec as u64,
         max_io_bytes_per_sec,

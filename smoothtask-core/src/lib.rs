@@ -873,6 +873,9 @@ pub async fn run_daemon(
             cached_kb: 0,
             swap_total_kb: 0,
             swap_free_kb: 0,
+            top_process_memory_usage: None,
+            memory_fragmentation_percent: None,
+            memory_pressure: None,
         },
         load_avg: LoadAvg {
             one: 0.0,
@@ -892,6 +895,7 @@ pub async fn run_daemon(
         swap: crate::metrics::system::SwapMetrics::default(),
         cpu_performance: crate::metrics::system::CpuPerformanceMetrics::default(),
         memory_performance: crate::metrics::system::MemoryPerformanceMetrics::default(),
+        enhanced_memory_metrics: crate::metrics::system::EnhancedMemoryPerformanceMetrics::default(),
         io_performance: crate::metrics::system::IoPerformanceMetrics::default(),
         system_performance: crate::metrics::system::SystemPerformanceMetrics::default(),
         network_performance: crate::metrics::system::NetworkPerformanceMetrics::default(),
@@ -1667,6 +1671,9 @@ pub async fn collect_snapshot(
                 return InputMetrics {
                     user_active: false,
                     time_since_last_input_ms: None,
+                    devices: HashMap::new(),
+                    total_events: 0,
+                    active_devices: Vec::new(),
                 };
             }
         };
@@ -1683,6 +1690,9 @@ pub async fn collect_snapshot(
             InputMetrics {
                 user_active: false,
                 time_since_last_input_ms: None,
+                devices: HashMap::new(),
+                total_events: 0,
+                active_devices: Vec::new(),
             }
         }
     };
