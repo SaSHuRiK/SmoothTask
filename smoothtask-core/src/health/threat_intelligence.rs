@@ -334,6 +334,112 @@ impl Default for ThreatIntelligenceConfig {
             security_integration: ThreatSecurityIntegration::default(),
         }
     }
+
+    /// Создать конфигурацию по умолчанию с базовыми источниками угроз
+    pub fn default_with_basic_feeds() -> Self {
+        let mut config = Self::default();
+        
+        // Добавляем базовые источники угроз
+        config.feeds = vec![
+            ThreatFeedConfig {
+                feed_id: uuid::Uuid::new_v4().to_string(),
+                name: "Basic Malware Signatures".to_string(),
+                url: "https://example.com/malware-signatures.json".to_string(),
+                format: ThreatFeedFormat::Json,
+                update_interval: Duration::from_secs(86400), // 24 часа
+                enabled: true,
+                trust_level: 0.85,
+                api_key: None,
+                headers: None,
+            },
+            ThreatFeedConfig {
+                feed_id: uuid::Uuid::new_v4().to_string(),
+                name: "Phishing Domains".to_string(),
+                url: "https://example.com/phishing-domains.csv".to_string(),
+                format: ThreatFeedFormat::Csv,
+                update_interval: Duration::from_secs(43200), // 12 часов
+                enabled: true,
+                trust_level: 0.90,
+                api_key: None,
+                headers: None,
+            },
+            ThreatFeedConfig {
+                feed_id: uuid::Uuid::new_v4().to_string(),
+                name: "Botnet C2 Servers".to_string(),
+                url: "https://example.com/botnet-c2.txt".to_string(),
+                format: ThreatFeedFormat::Txt,
+                update_interval: Duration::from_secs(21600), // 6 часов
+                enabled: true,
+                trust_level: 0.95,
+                api_key: None,
+                headers: None,
+            },
+            ThreatFeedConfig {
+                feed_id: uuid::Uuid::new_v4().to_string(),
+                name: "Ransomware Indicators".to_string(),
+                url: "https://example.com/ransomware-indicators.json".to_string(),
+                format: ThreatFeedFormat::Json,
+                update_interval: Duration::from_secs(86400), // 24 часа
+                enabled: true,
+                trust_level: 0.90,
+                api_key: None,
+                headers: None,
+            },
+            ThreatFeedConfig {
+                feed_id: uuid::Uuid::new_v4().to_string(),
+                name: "Cryptojacking Signatures".to_string(),
+                url: "https://example.com/cryptojacking-signatures.csv".to_string(),
+                format: ThreatFeedFormat::Csv,
+                update_interval: Duration::from_secs(43200), // 12 часов
+                enabled: true,
+                trust_level: 0.85,
+                api_key: None,
+                headers: None,
+            },
+        ];
+        
+        config
+    }
+
+    /// Добавить пользовательские сигнатуры угроз
+    pub fn add_custom_threat_signatures(&mut self, signatures: Vec<ThreatIntel>) -> Result<()> {
+        let mut database = self.threat_database.write().await;
+        
+        for signature in signatures {
+            database.insert(signature.threat_id.clone(), signature);
+        }
+        
+        // Обновляем статистику
+        let mut state = self.threat_state.write().await;
+        state.total_threats = database.len();
+        state.active_threats = database.len();
+        
+        Ok(())
+    }
+
+    /// Добавить пользовательские индикаторы угроз
+    pub fn add_custom_threat_indicators(&mut self, indicators: Vec<ThreatIndicator>) -> Result<()> {
+        let mut database = self.threat_database.write().await;
+        
+        // Создаем новую угрозу для каждого индикатора
+        for indicator in indicators {
+            let mut threat = ThreatIntel::default();
+            threat.threat_type = ThreatType::Unknown; // Будет определено позже
+            threat.severity = ThreatSeverity::Medium; // Средний уровень по умолчанию
+            threat.description = format!("Custom threat indicator: {}", indicator.value);
+            threat.source = "custom".to_string();
+            threat.indicators.push(indicator);
+            
+            database.insert(threat.threat_id.clone(), threat);
+        }
+        
+        // Обновляем статистику
+        let mut state = self.threat_state.write().await;
+        state.total_threats = database.len();
+        state.active_threats = database.len();
+        
+        Ok(())
+    }
 }
 
 /// Настройки интеграции с мониторингом безопасности.

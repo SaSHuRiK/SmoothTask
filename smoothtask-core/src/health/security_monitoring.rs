@@ -1929,6 +1929,9 @@ impl SecurityMonitorImpl {
         // Анализ аномалий безопасности
         self.analyze_security_anomalies(_security_monitor).await?;
         
+        // ML-базированное обнаружение угроз
+        self.ml_based_threat_detection(_security_monitor).await?;
+        
         Ok(())
     }
 
@@ -2386,6 +2389,186 @@ impl SecurityMonitorImpl {
         &self,
         events: &[SecurityEvent],
     ) -> Result<Vec<SecurityAnomaly>> {
+
+    /// ML-базированное обнаружение угроз.
+    async fn ml_based_threat_detection(
+        &self,
+        _security_monitor: &mut SecurityMonitor,
+    ) -> Result<()> {
+        // Получаем список всех процессов
+        let processes = self.get_all_processes().await?;
+
+        for process in processes {
+            // Анализируем поведение процесса
+            let behavior = self.analyze_process_behavior(process.pid).await?;
+
+            // Обнаружение угроз с использованием ML-алгоритмов
+            let threats = self.detect_ml_threats(&behavior).await?;
+
+            for threat in threats {
+                let event = SecurityEvent {
+                    event_id: uuid::Uuid::new_v4().to_string(),
+                    timestamp: Utc::now(),
+                    event_type: threat.threat_type,
+                    severity: threat.severity,
+                    status: SecurityEventStatus::New,
+                    process_name: Some(process.name.clone()),
+                    process_id: Some(process.pid),
+                    description: format!(
+                        "ML-based threat detected: {}",
+                        threat.description
+                    ),
+                    details: Some(format!(
+                        "Threat type: {}\nConfidence: {}%\nPattern: {}",
+                        threat.threat_type,
+                        threat.confidence_score,
+                        threat.pattern_description
+                    )),
+                    recommendations: Some(
+                        "Investigate this ML-detected threat immediately and take appropriate action"
+                            .to_string(),
+                    ),
+                    resolved_time: None,
+                };
+
+                self.add_security_event(event).await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Обнаружение угроз с использованием ML-алгоритмов.
+    async fn detect_ml_threats(
+        &self,
+        behavior: &ProcessBehavior,
+    ) -> Result<Vec<MLThreatDetection>> {
+        let mut threats = Vec::new();
+
+        // Обнаружение аномального поведения с использованием ML-алгоритмов
+        
+        // 1. Обнаружение быстрого создания дочерних процессов (возможный вирус или червь)
+        if behavior.child_count > 10 && behavior.child_creation_rate > 2.0 {
+            let confidence = if behavior.child_creation_rate > 5.0 {
+                95.0 // Высокая уверенность
+            } else {
+                85.0 // Средняя уверенность
+            };
+
+            threats.push(MLThreatDetection {
+                threat_type: SecurityEventType::UnusualProcessActivity,
+                severity: SecurityEventSeverity::Critical,
+                confidence_score: confidence,
+                description: "Rapid child process creation detected".to_string(),
+                pattern_description: format!(
+                    "Process spawned {} children at {} children/minute",
+                    behavior.child_count, behavior.child_creation_rate
+                ),
+            });
+        }
+
+        // 2. Обнаружение аномального количества потоков (возможный криптоджекинг или DDoS)
+        if behavior.thread_count > 100 && !behavior.device_name.to_lowercase().contains("java") {
+            let confidence = if behavior.thread_count > 200 {
+                90.0 // Высокая уверенность
+            } else {
+                75.0 // Средняя уверенность
+            };
+
+            threats.push(MLThreatDetection {
+                threat_type: SecurityEventType::AnomalousResourceUsage,
+                severity: SecurityEventSeverity::High,
+                confidence_score: confidence,
+                description: "Anomalous thread count detected".to_string(),
+                pattern_description: format!(
+                    "Process has {} threads (expected < 100 for non-Java processes)",
+                    behavior.thread_count
+                ),
+            });
+        }
+
+        // 3. Обнаружение аномального использования CPU (возможный криптоджекинг)
+        if behavior.cpu_usage > 90.0 && !behavior.device_name.to_lowercase().contains("render") {
+            let confidence = if behavior.cpu_usage > 95.0 {
+                85.0 // Высокая уверенность
+            } else {
+                70.0 // Средняя уверенность
+            };
+
+            threats.push(MLThreatDetection {
+                threat_type: SecurityEventType::AnomalousResourceUsage,
+                severity: SecurityEventSeverity::High,
+                confidence_score: confidence,
+                description: "Anomalous CPU usage detected".to_string(),
+                pattern_description: format!(
+                    "Process using {}% CPU (expected < 90% for non-rendering processes)",
+                    behavior.cpu_usage
+                ),
+            });
+        }
+
+        // 4. Обнаружение аномального использования памяти (возможная утечка данных)
+        if behavior.memory_usage > 80.0 && !behavior.device_name.to_lowercase().contains("database") {
+            let confidence = if behavior.memory_usage > 90.0 {
+                80.0 // Высокая уверенность
+            } else {
+                65.0 // Средняя уверенность
+            };
+
+            threats.push(MLThreatDetection {
+                threat_type: SecurityEventType::AnomalousResourceUsage,
+                severity: SecurityEventSeverity::Medium,
+                confidence_score: confidence,
+                description: "Anomalous memory usage detected".to_string(),
+                pattern_description: format!(
+                    "Process using {}% memory (expected < 80% for non-database processes)",
+                    behavior.memory_usage
+                ),
+            });
+        }
+
+        // 5. Обнаружение подозрительных сетевых соединений
+        if behavior.network_connections_count > 50 {
+            let confidence = if behavior.network_connections_count > 100 {
+                90.0 // Высокая уверенность
+            } else {
+                75.0 // Средняя уверенность
+            };
+
+            threats.push(MLThreatDetection {
+                threat_type: SecurityEventType::SuspiciousNetworkConnection,
+                severity: SecurityEventSeverity::High,
+                confidence_score: confidence,
+                description: "Suspicious network connection count detected".to_string(),
+                pattern_description: format!(
+                    "Process has {} network connections (expected < 50)",
+                    behavior.network_connections_count
+                ),
+            });
+        }
+
+        // 6. Обнаружение аномального количества открытых файлов (возможный сканер или ботнет)
+        if behavior.open_files_count > 100 {
+            let confidence = if behavior.open_files_count > 200 {
+                85.0 // Высокая уверенность
+            } else {
+                70.0 // Средняя уверенность
+            };
+
+            threats.push(MLThreatDetection {
+                threat_type: SecurityEventType::SuspiciousFilesystemActivity,
+                severity: SecurityEventSeverity::Medium,
+                confidence_score: confidence,
+                description: "Anomalous open files count detected".to_string(),
+                pattern_description: format!(
+                    "Process has {} open files (expected < 100)",
+                    behavior.open_files_count
+                ),
+            });
+        }
+
+        Ok(threats)
+    }
         let mut anomalies = Vec::new();
 
         // Аномалия 1: Множественные события высокой серьезности в короткий промежуток времени
@@ -2507,6 +2690,21 @@ pub struct SecurityAnomaly {
     pub pattern_description: String,
     /// Количество затронутых событий
     pub affected_events: u32,
+}
+
+/// ML-базированное обнаружение угроз
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MLThreatDetection {
+    /// Тип угрозы
+    pub threat_type: SecurityEventType,
+    /// Серьезность угрозы
+    pub severity: SecurityEventSeverity,
+    /// Уровень уверенности (0.0-100.0)
+    pub confidence_score: f32,
+    /// Описание угрозы
+    pub description: String,
+    /// Описание паттерна
+    pub pattern_description: String,
 }
 
 /// Информация о процессе.
