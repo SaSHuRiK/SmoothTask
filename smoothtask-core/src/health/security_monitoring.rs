@@ -1912,25 +1912,25 @@ impl SecurityMonitorImpl {
     /// Продвинутый анализ угроз с использованием ML-инспирированных алгоритмов
     async fn advanced_threat_analysis(
         &self,
-        _security_monitor: &mut SecurityMonitor,
+        security_monitor: &mut SecurityMonitor,
     ) -> Result<()> {
         // Анализ поведенческих аномалий с использованием ML-подобных алгоритмов
-        self.analyze_behavioral_anomalies(_security_monitor).await?;
+        self.analyze_behavioral_anomalies(security_monitor).await?;
         
         // Анализ сетевых аномалий
-        self.analyze_network_anomalies(_security_monitor).await?;
+        self.analyze_network_anomalies(security_monitor).await?;
         
         // Анализ аномалий файловой системы
-        self.analyze_filesystem_anomalies(_security_monitor).await?;
+        self.analyze_filesystem_anomalies(security_monitor).await?;
         
         // Анализ аномалий использования ресурсов
-        self.analyze_resource_anomalies(_security_monitor).await?;
+        self.analyze_resource_anomalies(security_monitor).await?;
         
         // Анализ аномалий безопасности
-        self.analyze_security_anomalies(_security_monitor).await?;
+        self.analyze_security_anomalies(security_monitor).await?;
         
         // ML-базированное обнаружение угроз
-        self.ml_based_threat_detection(_security_monitor).await?;
+        self.ml_based_threat_detection(security_monitor).await?;
         
         Ok(())
     }
@@ -3730,6 +3730,194 @@ mod tests {
         
         // Проверяем, что балл безопасности рассчитан
         assert!(updated_monitor.security_score >= 0.0 && updated_monitor.security_score <= 100.0);
+    }
+
+    #[tokio::test]
+    async fn test_ml_based_threat_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем ML-базированное обнаружение угроз
+        let result = monitor.ml_based_threat_detection(&mut security_monitor).await;
+
+        // Проверяем, что обнаружение завершилось успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "ML-based threat detection should generate security events");
+
+        // Проверяем, что обнаружены различные типы угроз
+        let threat_types: Vec<SecurityEventType> = events.iter().map(|e| e.event_type).collect();
+        assert!(threat_types.contains(&SecurityEventType::UnusualProcessActivity));
+        assert!(threat_types.contains(&SecurityEventType::AnomalousResourceUsage));
+        assert!(threat_types.contains(&SecurityEventType::SuspiciousNetworkConnection));
+    }
+
+    #[tokio::test]
+    async fn test_advanced_threat_analysis() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем продвинутый анализ угроз
+        let result = monitor.advanced_threat_analysis(&mut security_monitor).await;
+
+        // Проверяем, что анализ завершился успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "Advanced threat analysis should generate security events");
+
+        // Проверяем, что обнаружены различные типы аномалий
+        let event_types: Vec<SecurityEventType> = events.iter().map(|e| e.event_type).collect();
+        assert!(event_types.contains(&SecurityEventType::UnusualProcessActivity));
+        assert!(event_types.contains(&SecurityEventType::AnomalousResourceUsage));
+        assert!(event_types.contains(&SecurityEventType::SuspiciousNetworkConnection));
+        assert!(event_types.contains(&SecurityEventType::SuspiciousFilesystemActivity));
+    }
+
+    #[tokio::test]
+    async fn test_network_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем обнаружение сетевых аномалий
+        let result = monitor.analyze_network_anomalies(&mut security_monitor).await;
+
+        // Проверяем, что обнаружение завершилось успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "Network anomaly detection should generate security events");
+
+        // Проверяем, что обнаружены сетевые аномалии
+        let network_events: Vec<&SecurityEvent> = events
+            .iter()
+            .filter(|e| e.event_type == SecurityEventType::SuspiciousNetworkConnection)
+            .collect();
+        assert!(!network_events.is_empty(), "Should detect network anomalies");
+    }
+
+    #[tokio::test]
+    async fn test_filesystem_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем обнаружение аномалий файловой системы
+        let result = monitor.analyze_filesystem_anomalies(&mut security_monitor).await;
+
+        // Проверяем, что обнаружение завершилось успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "Filesystem anomaly detection should generate security events");
+
+        // Проверяем, что обнаружены аномалии файловой системы
+        let filesystem_events: Vec<&SecurityEvent> = events
+            .iter()
+            .filter(|e| e.event_type == SecurityEventType::SuspiciousFilesystemActivity)
+            .collect();
+        assert!(!filesystem_events.is_empty(), "Should detect filesystem anomalies");
+    }
+
+    #[tokio::test]
+    async fn test_resource_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем обнаружение аномалий использования ресурсов
+        let result = monitor.analyze_resource_anomalies(&mut security_monitor).await;
+
+        // Проверяем, что обнаружение завершилось успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "Resource anomaly detection should generate security events");
+
+        // Проверяем, что обнаружены аномалии использования ресурсов
+        let resource_events: Vec<&SecurityEvent> = events
+            .iter()
+            .filter(|e| e.event_type == SecurityEventType::AnomalousResourceUsage)
+            .collect();
+        assert!(!resource_events.is_empty(), "Should detect resource anomalies");
+    }
+
+    #[tokio::test]
+    async fn test_security_anomaly_detection() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем обнаружение аномалий безопасности
+        let result = monitor.analyze_security_anomalies(&mut security_monitor).await;
+
+        // Проверяем, что обнаружение завершилось успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "Security anomaly detection should generate security events");
+
+        // Проверяем, что обнаружены аномалии безопасности
+        let security_events: Vec<&SecurityEvent> = events
+            .iter()
+            .filter(|e| e.event_type == SecurityEventType::PotentialAttack)
+            .collect();
+        assert!(!security_events.is_empty(), "Should detect security anomalies");
+    }
+
+    #[tokio::test]
+    async fn test_comprehensive_security_analysis() {
+        let config = SecurityMonitorConfig::default();
+        let monitor = SecurityMonitorImpl::new(config);
+
+        // Создаем тестовый SecurityMonitor
+        let mut security_monitor = SecurityMonitor::default();
+
+        // Выполняем комплексный анализ безопасности
+        let result = monitor.advanced_threat_analysis(&mut security_monitor).await;
+
+        // Проверяем, что анализ завершился успешно
+        assert!(result.is_ok());
+
+        // Проверяем, что события безопасности были добавлены
+        let events = monitor.get_security_events().await.unwrap();
+        assert!(!events.is_empty(), "Comprehensive security analysis should generate security events");
+
+        // Проверяем, что обнаружены различные типы угроз
+        let event_types: Vec<SecurityEventType> = events.iter().map(|e| e.event_type).collect();
+        assert!(event_types.contains(&SecurityEventType::UnusualProcessActivity));
+        assert!(event_types.contains(&SecurityEventType::AnomalousResourceUsage));
+        assert!(event_types.contains(&SecurityEventType::SuspiciousNetworkConnection));
+        assert!(event_types.contains(&SecurityEventType::SuspiciousFilesystemActivity));
+        assert!(event_types.contains(&SecurityEventType::PotentialAttack));
+
+        // Проверяем, что балл безопасности рассчитан
+        assert!(security_monitor.security_score >= 0.0 && security_monitor.security_score <= 100.0);
+
+        // Проверяем, что статус безопасности определен
+        assert_ne!(security_monitor.overall_status, SecurityStatus::Unknown);
     }
 }
 
