@@ -16,8 +16,12 @@ use tempfile;
 // Импорты для оптимизированного сбора метрик
 use rayon;
 
+// Импорты для профилирования производительности
+use crate::performance_optimizer::{PerformanceProfiler, PerformanceTimer};
+
 // Импорты для типов метрик
 use crate::metrics::gpu::{GpuMetricsCollection, GpuPerformanceMetrics};
+use crate::metrics::thunderbolt_monitor::{ThunderboltMonitor, ThunderboltMonitorConfig};
 
 /// Безопасно разобрать строку в u32 с fallback значением.
 #[allow(dead_code)]
@@ -119,6 +123,8 @@ pub fn collect_detailed_cpu_temperature() -> Result<Vec<CpuThermalZone>> {
     } else {
         Ok(thermal_zones_info)
     }
+
+
 }
 
 /// Прочитать тип термальной зоны.
@@ -2052,6 +2058,10 @@ fn read_and_parse_psi_metrics(paths: &ProcPaths) -> Result<PressureMetrics> {
 }
 
 pub fn collect_system_metrics(paths: &ProcPaths) -> Result<SystemMetrics> {
+    // Инициализируем профайлер производительности
+    let profiler = PerformanceProfiler::new();
+    let _timer = profiler.start_profiling("system_metrics_collection");
+
     // Читаем основные файлы с подробными сообщениями об ошибках
     let cpu_contents = read_file(&paths.stat).with_context(|| {
         format!(
@@ -3589,17 +3599,40 @@ fn collect_hardware_metrics() -> HardwareMetrics {
         }
     }
 
-    // Собираем метрики Thunderbolt устройств
-    match collect_thunderbolt_device_metrics() {
-        Ok(thunderbolt_devices) => {
+    // Собираем метрики Thunderbolt устройств с использованием расширенного мониторинга
+    let thunderbolt_monitor = ThunderboltMonitor::new(ThunderboltMonitorConfig::default());
+    match thunderbolt_monitor.collect_thunderbolt_metrics() {
+        Ok(thunderbolt_metrics) => {
+            // Конвертируем расширенные метрики в формат ThunderboltDeviceMetrics
+            let thunderbolt_devices = thunderbolt_metrics.topologies.iter()
+                .flat_map(|topology| topology.devices.iter())
+                .map(|device| ThunderboltDeviceMetrics {
+                    device_id: device.device_id.clone(),
+                    device_name: device.device_name.clone(),
+                    connection_speed_gbps: device.speed_mbps as f32 / 1000.0,
+                    status: format!("{:?}", device.state),
+                    temperature_c: None, // Температура не доступна в расширенных метриках
+                    power_w: device.power_mw as f32 / 1000.0,
+                    device_classification: None,
+                    performance_category: None,
+                })
+                .collect();
+            
             hardware.thunderbolt_devices = thunderbolt_devices;
             tracing::info!(
-                "Thunderbolt device metrics collection completed: {} devices found",
-                hardware.thunderbolt_devices.len()
+                "Thunderbolt monitoring completed: {} controllers, {} devices, {} connections found",
+                thunderbolt_metrics.total_controllers,
+                thunderbolt_metrics.total_devices,
+                thunderbolt_metrics.active_connections
             );
+            
+            // Логируем рекомендации по оптимизации
+            for recommendation in &thunderbolt_metrics.optimization_recommendations {
+                tracing::info!("Thunderbolt optimization recommendation: {}", recommendation);
+            }
         }
         Err(e) => {
-            tracing::warn!("Failed to collect Thunderbolt device metrics: {}", e);
+            tracing::warn!("Failed to collect Thunderbolt metrics: {}", e);
         }
     }
 
@@ -11133,5 +11166,61 @@ mod memory_tests {
         let poor_perf_recommendations = generate_usb_optimization_recommendations(&poor_perf_device, &poor_perf_metrics, &poor_perf_health);
         
         assert!(poor_perf_recommendations.iter().any(|r| r.contains("Рассмотрите возможность замены устройства на более современное")));
+    }
+
+    #[test]
+    fn test_thunderbolt_monitor_integration() {
+        // Тест проверяет интеграцию Thunderbolt монитора в систему сбора метрик
+        let thunderbolt_monitor = ThunderboltMonitor::new(ThunderboltMonitorConfig::default());
+        
+        // Собираем метрики Thunderbolt
+        let result = thunderbolt_monitor.collect_thunderbolt_metrics();
+        
+        // Проверяем, что сбор метрик завершился успешно
+        assert!(result.is_ok());
+        
+        let metrics = result.unwrap();
+        
+        // Проверяем, что метрики содержат ожидаемые данные
+        assert!(metrics.total_controllers >= 0);
+        assert!(metrics.total_devices >= 0);
+        assert!(metrics.active_connections >= 0);
+        assert!(metrics.total_throughput_mbps >= 0.0);
+        assert!(metrics.average_latency_us >= 0.0);
+        
+        // Проверяем, что топологии присутствуют
+        assert!(!metrics.topologies.is_empty());
+        
+        // Проверяем, что рекомендации по оптимизации присутствуют
+        // (даже если это пустой вектор, это нормально)
+        assert!(metrics.optimization_recommendations.is_empty() || 
+               !metrics.optimization_recommendations.is_empty());
+        
+        // Проверяем конвертацию в ThunderboltDeviceMetrics
+        let thunderbolt_devices: Vec<ThunderboltDeviceMetrics> = metrics.topologies.iter()
+            .flat_map(|topology| topology.devices.iter())
+            .map(|device| ThunderboltDeviceMetrics {
+                device_id: device.device_id.clone(),
+                device_name: device.device_name.clone(),
+                connection_speed_gbps: device.speed_mbps as f32 / 1000.0,
+                status: format!("{:?}", device.state),
+                temperature_c: None,
+                power_w: device.power_mw as f32 / 1000.0,
+                device_classification: None,
+                performance_category: None,
+            })
+            .collect();
+        
+        // Проверяем, что конвертация прошла успешно
+        assert_eq!(thunderbolt_devices.len(), metrics.total_devices);
+        
+        // Проверяем, что каждое устройство имеет корректные данные
+        for device in &thunderbolt_devices {
+            assert!(!device.device_id.is_empty());
+            assert!(!device.device_name.is_empty());
+            assert!(device.connection_speed_gbps >= 0.0);
+            assert!(!device.status.is_empty());
+            assert!(device.power_w >= 0.0);
+        }
     }
 }

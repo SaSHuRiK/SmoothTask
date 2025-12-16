@@ -9,7 +9,8 @@
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 use smoothtask_core::performance_optimizer::{
-    CriticalPathOptimizer, PerformanceMetrics, PerformanceOptimizer, PerformanceProfiler,
+    CriticalPathOptimizer, MemoryOptimizationStrategy, PerformanceMetrics, 
+    PerformanceOptimizer, PerformanceProfiler,
 };
 use std::collections::HashMap;
 use std::time::Duration;
@@ -202,6 +203,82 @@ fn benchmark_critical_path_optimizer_thresholds(c: &mut Criterion) {
     });
 }
 
+/// Benchmark for memory optimization strategy
+fn benchmark_memory_optimization_strategy(c: &mut Criterion) {
+    let optimizer = MemoryOptimizationStrategy::new();
+
+    // Create test metrics with varying memory usage
+    let mut metrics = HashMap::new();
+    for i in 0..100 {
+        let memory_usage = if i % 10 == 0 {
+            5 * 1024 * 1024 // 5MB - high memory usage
+        } else {
+            1024 // 1KB - low memory usage
+        };
+
+        metrics.insert(
+            format!("component_{}", i),
+            PerformanceMetrics {
+                memory_usage,
+                invocations: if i % 5 == 0 { 100 } else { 10 }, // Varying invocation counts
+                ..Default::default()
+            },
+        );
+    }
+
+    c.bench_function("memory_optimization_analysis", |b| {
+        b.iter(|| {
+            let optimizations = optimizer.analyze_memory_usage(&metrics);
+            black_box(optimizations);
+        })
+    });
+}
+
+/// Benchmark for performance optimizer with multiple strategies
+fn benchmark_performance_optimizer_multiple_strategies(c: &mut Criterion) {
+    let mut optimizer = PerformanceOptimizer::new();
+    let critical_path_optimizer = CriticalPathOptimizer::new();
+    let memory_optimizer = MemoryOptimizationStrategy::new();
+    
+    optimizer.add_strategy(critical_path_optimizer);
+    optimizer.add_strategy(memory_optimizer);
+
+    // Create comprehensive test metrics
+    let mut metrics = HashMap::new();
+    for i in 0..50 {
+        let execution_time = if i % 5 == 0 {
+            Duration::from_millis(50) // Some slow components
+        } else {
+            Duration::from_micros(50) // Mostly fast components
+        };
+
+        let memory_usage = if i % 10 == 0 {
+            2 * 1024 * 1024 // 2MB - some high memory components
+        } else {
+            1024 // 1KB - mostly low memory components
+        };
+
+        metrics.insert(
+            format!("component_{}", i),
+            PerformanceMetrics {
+                execution_time,
+                memory_usage,
+                invocations: 10,
+                cache_hits: 100,
+                cache_misses: 10,
+                ..Default::default()
+            },
+        );
+    }
+
+    c.bench_function("performance_optimizer_multiple_strategies", |b| {
+        b.iter(|| {
+            let results = optimizer.apply_optimizations().unwrap();
+            black_box(results);
+        })
+    });
+}
+
 criterion_group! {
     name = performance_optimizer_benches;
     config = Criterion::default().sample_size(10);
@@ -210,7 +287,9 @@ criterion_group! {
         benchmark_critical_path_analysis,
         benchmark_optimization_strategy_application,
         benchmark_performance_optimizer_realistic,
-        benchmark_critical_path_optimizer_thresholds
+        benchmark_critical_path_optimizer_thresholds,
+        benchmark_memory_optimization_strategy,
+        benchmark_performance_optimizer_multiple_strategies
 }
 
 criterion_main!(performance_optimizer_benches);

@@ -344,6 +344,136 @@ impl OptimizationStrategy for CriticalPathOptimizer {
     }
 }
 
+/// Memory optimization strategy for reducing memory usage
+#[derive(Debug, Default)]
+pub struct MemoryOptimizationStrategy {
+    /// Memory optimization thresholds
+    thresholds: MemoryOptimizationThresholds,
+}
+
+impl MemoryOptimizationStrategy {
+    /// Create a new memory optimization strategy with default thresholds
+    pub fn new() -> Self {
+        Self {
+            thresholds: MemoryOptimizationThresholds::default(),
+        }
+    }
+
+    /// Create a new memory optimization strategy with custom thresholds
+    pub fn with_thresholds(thresholds: MemoryOptimizationThresholds) -> Self {
+        Self { thresholds }
+    }
+
+    /// Analyze memory usage and identify optimization opportunities
+    pub fn analyze_memory_usage(
+        &self,
+        metrics: &HashMap<String, PerformanceMetrics>,
+    ) -> Vec<MemoryOptimizationAnalysis> {
+        let mut optimizations = Vec::new();
+
+        for (component_name, component_metrics) in metrics {
+            // Check if memory usage exceeds threshold
+            if component_metrics.memory_usage > self.thresholds.high_memory_threshold {
+                let optimization_score = self.calculate_memory_optimization_score(component_metrics);
+
+                optimizations.push(MemoryOptimizationAnalysis {
+                    component_name: component_name.clone(),
+                    current_memory_usage: component_metrics.memory_usage,
+                    optimization_score,
+                    invocations: component_metrics.invocations,
+                });
+            }
+        }
+
+        // Sort by optimization score (descending)
+        optimizations.sort_by(|a, b| {
+            b.optimization_score
+                .partial_cmp(&a.optimization_score)
+                .unwrap()
+        });
+
+        optimizations
+    }
+
+    /// Calculate memory optimization score
+    fn calculate_memory_optimization_score(&self, metrics: &PerformanceMetrics) -> f64 {
+        let memory_score = metrics.memory_usage as f64 / self.thresholds.high_memory_threshold as f64;
+        let invocation_score = (metrics.invocations as f64).ln_1p(); // Logarithmic scaling
+
+        memory_score * (1.0 + invocation_score)
+    }
+}
+
+/// Memory optimization analysis result
+#[derive(Debug, Clone)]
+pub struct MemoryOptimizationAnalysis {
+    /// Component name
+    pub component_name: String,
+    /// Current memory usage in bytes
+    pub current_memory_usage: usize,
+    /// Optimization score (higher is more critical)
+    pub optimization_score: f64,
+    /// Number of invocations
+    pub invocations: u64,
+}
+
+/// Thresholds for memory optimization
+#[derive(Debug, Clone)]
+pub struct MemoryOptimizationThresholds {
+    /// Threshold for high memory usage (in bytes)
+    pub high_memory_threshold: usize,
+    /// Threshold for excessive memory usage (in bytes)
+    pub excessive_memory_threshold: usize,
+}
+
+impl Default for MemoryOptimizationThresholds {
+    fn default() -> Self {
+        Self {
+            high_memory_threshold: 1024 * 1024,     // 1MB
+            excessive_memory_threshold: 10 * 1024 * 1024, // 10MB
+        }
+    }
+}
+
+/// Implementation of OptimizationStrategy for memory optimization
+impl OptimizationStrategy for MemoryOptimizationStrategy {
+    fn apply(&self, metrics: &HashMap<String, PerformanceMetrics>) -> Result<OptimizationResult> {
+        let memory_optimizations = self.analyze_memory_usage(metrics);
+
+        if memory_optimizations.is_empty() {
+            return Ok(OptimizationResult {
+                name: "Memory Optimization".to_string(),
+                description: "No memory optimization opportunities identified".to_string(),
+                affected_components: Vec::new(),
+                expected_improvement: 0.0,
+                applied: false,
+            });
+        }
+
+        let mut total_improvement = 0.0;
+        let mut affected_components = Vec::new();
+
+        for optimization in &memory_optimizations {
+            // Calculate potential improvement based on optimization score
+            let improvement = optimization.optimization_score * 0.2; // Assume 20% improvement potential
+            total_improvement += improvement;
+            affected_components.push(optimization.component_name.clone());
+        }
+
+        Ok(OptimizationResult {
+            name: "Memory Optimization".to_string(),
+            description: format!(
+                "Identified {} memory optimization opportunities with total improvement potential of {:.1}%",
+                memory_optimizations.len(),
+                total_improvement
+            ),
+            affected_components,
+            expected_improvement: total_improvement,
+            applied: true,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -405,5 +535,68 @@ mod tests {
         let results = optimizer.apply_optimizations().unwrap();
         assert_eq!(results.len(), 1);
         assert!(!results[0].applied);
+    }
+
+    #[test]
+    fn test_memory_optimization_strategy() {
+        let optimizer = MemoryOptimizationStrategy::new();
+
+        // Create test metrics with high memory usage
+        let mut metrics = HashMap::new();
+        metrics.insert(
+            "low_memory_component".to_string(),
+            PerformanceMetrics {
+                memory_usage: 1024, // 1KB - below threshold
+                invocations: 100,
+                ..Default::default()
+            },
+        );
+
+        metrics.insert(
+            "high_memory_component".to_string(),
+            PerformanceMetrics {
+                memory_usage: 2 * 1024 * 1024, // 2MB - above threshold
+                invocations: 10,
+                ..Default::default()
+            },
+        );
+
+        let optimizations = optimizer.analyze_memory_usage(&metrics);
+        assert_eq!(optimizations.len(), 1);
+        assert_eq!(optimizations[0].component_name, "high_memory_component");
+    }
+
+    #[test]
+    fn test_performance_optimizer_with_multiple_strategies() {
+        let mut optimizer = PerformanceOptimizer::new();
+        let critical_path_optimizer = CriticalPathOptimizer::new();
+        let memory_optimizer = MemoryOptimizationStrategy::new();
+        
+        optimizer.add_strategy(critical_path_optimizer);
+        optimizer.add_strategy(memory_optimizer);
+
+        // Create test metrics with both slow execution and high memory usage
+        let mut metrics = HashMap::new();
+        metrics.insert(
+            "slow_high_memory_component".to_string(),
+            PerformanceMetrics {
+                execution_time: Duration::from_millis(100),
+                memory_usage: 2 * 1024 * 1024,
+                invocations: 10,
+                ..Default::default()
+            },
+        );
+
+        let results = optimizer.apply_optimizations().unwrap();
+        assert_eq!(results.len(), 2);
+        
+        // Check that both strategies were applied
+        let critical_path_result = &results[0];
+        let memory_result = &results[1];
+        
+        assert!(critical_path_result.applied);
+        assert!(memory_result.applied);
+        assert_eq!(critical_path_result.name, "Critical Path Optimization");
+        assert_eq!(memory_result.name, "Memory Optimization");
     }
 }
