@@ -2395,30 +2395,30 @@ impl SecurityMonitorImpl {
         for event in events {
             // Проверяем различные типы аномалий безопасности
             match event.event_type {
-                SecurityEventType::UnauthorizedAccess => {
+                SecurityEventType::AuthenticationFailure => {
                     anomalies.push(SecurityAnomaly {
-                        anomaly_type: "unauthorized_access_pattern".to_string(),
+                        anomaly_type: "authentication_failure_pattern".to_string(),
                         severity: SecurityEventSeverity::High,
                         confidence_score: 90.0,
-                        pattern_description: format!("Unauthorized access detected: {}", event.description),
+                        pattern_description: format!("Authentication failure detected: {}", event.description),
                         affected_events: 1,
                     });
                 }
-                SecurityEventType::SuspiciousNetworkActivity => {
+                SecurityEventType::SuspiciousNetworkConnection => {
                     anomalies.push(SecurityAnomaly {
                         anomaly_type: "suspicious_network_pattern".to_string(),
                         severity: SecurityEventSeverity::Medium,
                         confidence_score: 80.0,
-                        pattern_description: format!("Suspicious network activity: {}", event.description),
+                        pattern_description: format!("Suspicious network connection: {}", event.description),
                         affected_events: 1,
                     });
                 }
-                SecurityEventType::MalwareDetected => {
+                SecurityEventType::MalwareCommunication => {
                     anomalies.push(SecurityAnomaly {
                         anomaly_type: "malware_pattern".to_string(),
                         severity: SecurityEventSeverity::Critical,
                         confidence_score: 95.0,
-                        pattern_description: format!("Malware detected: {}", event.description),
+                        pattern_description: format!("Malware communication detected: {}", event.description),
                         affected_events: 1,
                     });
                 }
@@ -2431,25 +2431,28 @@ impl SecurityMonitorImpl {
                         affected_events: 1,
                     });
                 }
-                SecurityEventType::PrivilegeEscalation => {
+                SecurityEventType::PotentialAttack => {
                     anomalies.push(SecurityAnomaly {
-                        anomaly_type: "privilege_escalation_pattern".to_string(),
+                        anomaly_type: "potential_attack_pattern".to_string(),
                         severity: SecurityEventSeverity::Critical,
                         confidence_score: 95.0,
-                        pattern_description: format!("Privilege escalation detected: {}", event.description),
+                        pattern_description: format!("Potential attack detected: {}", event.description),
                         affected_events: 1,
                     });
                 }
                 _ => {
                     // Для других типов событий выполняем базовый анализ
-                    if event.severity >= SecurityEventSeverity::High {
-                        anomalies.push(SecurityAnomaly {
-                            anomaly_type: "general_security_anomaly".to_string(),
-                            severity: event.severity,
-                            confidence_score: 70.0,
-                            pattern_description: format!("High severity security event: {}", event.description),
-                            affected_events: 1,
-                        });
+                    match event.severity {
+                        SecurityEventSeverity::High | SecurityEventSeverity::Critical => {
+                            anomalies.push(SecurityAnomaly {
+                                anomaly_type: "general_security_anomaly".to_string(),
+                                severity: event.severity,
+                                confidence_score: 70.0,
+                                pattern_description: format!("High severity security event: {}", event.description),
+                                affected_events: 1,
+                            });
+                        }
+                        _ => {}
                     }
                 }
             }
