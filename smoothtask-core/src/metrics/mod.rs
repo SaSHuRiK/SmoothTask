@@ -71,6 +71,13 @@ pub mod windows;
 pub mod windows_wayland;
 pub mod windows_x11;
 
+// Re-export container performance types for easy access
+pub use container::{
+    collect_container_performance_metrics, ContainerPerformanceMetrics, 
+    CpuPerformanceMetrics, MemoryPerformanceMetrics, NetworkPerformanceMetrics, 
+    StoragePerformanceMetrics
+};
+
 /// Интеграция асинхронного логирования в модуль метрик
 use crate::logging::async_logging::{write_log_batch_async, write_log_entry_async};
 use anyhow::Result;

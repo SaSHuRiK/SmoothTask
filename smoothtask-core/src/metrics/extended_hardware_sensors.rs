@@ -4,11 +4,10 @@
 //! Расширенный модуль для мониторинга дополнительных аппаратных сенсоров
 //! Добавляет поддержку дополнительных типов сенсоров, не покрытых базовым мониторингом
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::Path;
-use std::str::FromStr;
 use tracing::{debug, info, warn};
 
 /// Расширенные метрики аппаратных сенсоров

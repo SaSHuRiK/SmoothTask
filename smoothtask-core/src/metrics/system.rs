@@ -281,7 +281,7 @@ impl CpuTimes {
 }
 
 /// Основные метрики памяти (значения в килобайтах).
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct MemoryInfo {
     pub mem_total_kb: u64,
     pub mem_available_kb: u64,

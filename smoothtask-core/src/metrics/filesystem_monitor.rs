@@ -9,13 +9,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info, warn};
+use tracing::{info, warn};
 
 // Import notify crate for real filesystem monitoring
 use notify::{Event as NotifyEvent, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::mpsc::{channel, Receiver};
 use std::fs;
-use std::io;
 
 // Import storage detection module
 use crate::metrics::storage;
