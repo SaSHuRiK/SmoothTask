@@ -2389,6 +2389,74 @@ impl SecurityMonitorImpl {
         &self,
         events: &[SecurityEvent],
     ) -> Result<Vec<SecurityAnomaly>> {
+        let mut anomalies = Vec::new();
+        
+        // Анализируем события безопасности на предмет аномалий
+        for event in events {
+            // Проверяем различные типы аномалий безопасности
+            match event.event_type {
+                SecurityEventType::UnauthorizedAccess => {
+                    anomalies.push(SecurityAnomaly {
+                        anomaly_type: "unauthorized_access_pattern".to_string(),
+                        severity: SecurityEventSeverity::High,
+                        confidence_score: 90.0,
+                        pattern_description: format!("Unauthorized access detected: {}", event.description),
+                        affected_events: 1,
+                    });
+                }
+                SecurityEventType::SuspiciousNetworkActivity => {
+                    anomalies.push(SecurityAnomaly {
+                        anomaly_type: "suspicious_network_pattern".to_string(),
+                        severity: SecurityEventSeverity::Medium,
+                        confidence_score: 80.0,
+                        pattern_description: format!("Suspicious network activity: {}", event.description),
+                        affected_events: 1,
+                    });
+                }
+                SecurityEventType::MalwareDetected => {
+                    anomalies.push(SecurityAnomaly {
+                        anomaly_type: "malware_pattern".to_string(),
+                        severity: SecurityEventSeverity::Critical,
+                        confidence_score: 95.0,
+                        pattern_description: format!("Malware detected: {}", event.description),
+                        affected_events: 1,
+                    });
+                }
+                SecurityEventType::BruteForceAttack => {
+                    anomalies.push(SecurityAnomaly {
+                        anomaly_type: "brute_force_pattern".to_string(),
+                        severity: SecurityEventSeverity::High,
+                        confidence_score: 90.0,
+                        pattern_description: format!("Brute force attack detected: {}", event.description),
+                        affected_events: 1,
+                    });
+                }
+                SecurityEventType::PrivilegeEscalation => {
+                    anomalies.push(SecurityAnomaly {
+                        anomaly_type: "privilege_escalation_pattern".to_string(),
+                        severity: SecurityEventSeverity::Critical,
+                        confidence_score: 95.0,
+                        pattern_description: format!("Privilege escalation detected: {}", event.description),
+                        affected_events: 1,
+                    });
+                }
+                _ => {
+                    // Для других типов событий выполняем базовый анализ
+                    if event.severity >= SecurityEventSeverity::High {
+                        anomalies.push(SecurityAnomaly {
+                            anomaly_type: "general_security_anomaly".to_string(),
+                            severity: event.severity,
+                            confidence_score: 70.0,
+                            pattern_description: format!("High severity security event: {}", event.description),
+                            affected_events: 1,
+                        });
+                    }
+                }
+            }
+        }
+        
+        Ok(anomalies)
+    }
 
     /// ML-базированное обнаружение угроз.
     async fn ml_based_threat_detection(
@@ -2569,6 +2637,12 @@ impl SecurityMonitorImpl {
 
         Ok(threats)
     }
+
+    /// Анализ шаблонов безопасности для обнаружения сложных аномалий
+    async fn analyze_security_patterns(
+        &self,
+        events: &[SecurityEvent],
+    ) -> Result<Vec<SecurityAnomaly>> {
         let mut anomalies = Vec::new();
 
         // Аномалия 1: Множественные события высокой серьезности в короткий промежуток времени
