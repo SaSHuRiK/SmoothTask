@@ -4,13 +4,10 @@
 //! с использованием ML-инспирированных алгоритмов и поведенческого анализа.
 
 use anyhow::Result;
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
-use uuid::Uuid;
 
 /// Тип обнаруженной угрозы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Hash)]
@@ -126,9 +123,9 @@ impl std::fmt::Display for ThreatType {
     }
 }
 
-/// Уровень серьезности угрозы.
+/// Уровень серьезности обнаруженной угрозы.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum ThreatSeverity {
+pub enum ThreatDetectionSeverity {
     /// Информационный уровень
     #[serde(rename = "info")]
     Info,
@@ -146,20 +143,20 @@ pub enum ThreatSeverity {
     Critical,
 }
 
-impl Default for ThreatSeverity {
+impl Default for ThreatDetectionSeverity {
     fn default() -> Self {
         Self::Info
     }
 }
 
-impl std::fmt::Display for ThreatSeverity {
+impl std::fmt::Display for ThreatDetectionSeverity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ThreatSeverity::Info => write!(f, "info"),
-            ThreatSeverity::Low => write!(f, "low"),
-            ThreatSeverity::Medium => write!(f, "medium"),
-            ThreatSeverity::High => write!(f, "high"),
-            ThreatSeverity::Critical => write!(f, "critical"),
+            ThreatDetectionSeverity::Info => write!(f, "info"),
+            ThreatDetectionSeverity::Low => write!(f, "low"),
+            ThreatDetectionSeverity::Medium => write!(f, "medium"),
+            ThreatDetectionSeverity::High => write!(f, "high"),
+            ThreatDetectionSeverity::Critical => write!(f, "critical"),
         }
     }
 }
@@ -203,7 +200,7 @@ pub struct ThreatDetection {
     /// Тип угрозы
     pub threat_type: ThreatType,
     /// Серьезность угрозы
-    pub severity: ThreatSeverity,
+    pub severity: ThreatDetectionSeverity,
     /// Статус угрозы
     pub status: ThreatStatus,
     /// Имя процесса (если применимо)
@@ -228,7 +225,7 @@ impl Default for ThreatDetection {
             threat_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::Unknown,
-            severity: ThreatSeverity::Info,
+            severity: ThreatDetectionSeverity::Info,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -417,7 +414,7 @@ pub struct ThreatDetectionSystem {
     /// Время последней проверки угроз
     pub last_check_time: Option<DateTime<Utc>>,
     /// Общий статус угроз
-    pub overall_status: ThreatStatus,
+    pub overall_status: ThreatSystemStatus,
     /// История обнаруженных угроз
     pub threat_history: Vec<ThreatDetection>,
     /// Конфигурация системы обнаружения угроз
@@ -425,7 +422,7 @@ pub struct ThreatDetectionSystem {
     /// Текущий балл безопасности (0-100)
     pub security_score: f32,
     /// История баллов безопасности для анализа трендов
-    pub security_score_history: Vec<SecurityScoreEntry>,
+    pub security_score_history: Vec<ThreatSecurityScoreEntry>,
     /// ML-модель для обнаружения угроз
     pub ml_model: Option<MLThreatDetectionModel>,
 }
@@ -458,7 +455,7 @@ impl Default for ThreatSystemStatus {
 
 /// Запись балла безопасности с временной меткой.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct SecurityScoreEntry {
+pub struct ThreatSecurityScoreEntry {
     /// Время записи балла
     pub timestamp: DateTime<Utc>,
     /// Балл безопасности (0-100)
@@ -467,7 +464,7 @@ pub struct SecurityScoreEntry {
     pub status: ThreatSystemStatus,
 }
 
-impl Default for SecurityScoreEntry {
+impl Default for ThreatSecurityScoreEntry {
     fn default() -> Self {
         Self {
             timestamp: Utc::now(),
@@ -851,7 +848,7 @@ impl ThreatDetectionSystemImpl {
             threat_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::NetworkAnomaly,
-            severity: ThreatSeverity::High,
+            severity: ThreatDetectionSeverity::High,
             status: ThreatStatus::New,
             process_name: Some("network_process".to_string()),
             process_id: Some(1234),
@@ -878,7 +875,7 @@ impl ThreatDetectionSystemImpl {
             threat_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::FilesystemAnomaly,
-            severity: ThreatSeverity::Medium,
+            severity: ThreatDetectionSeverity::Medium,
             status: ThreatStatus::New,
             process_name: Some("filesystem_process".to_string()),
             process_id: Some(5678),
@@ -905,7 +902,7 @@ impl ThreatDetectionSystemImpl {
             threat_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::ResourceAnomaly,
-            severity: ThreatSeverity::High,
+            severity: ThreatDetectionSeverity::High,
             status: ThreatStatus::New,
             process_name: Some("resource_process".to_string()),
             process_id: Some(9012),
@@ -932,7 +929,7 @@ impl ThreatDetectionSystemImpl {
             threat_id: uuid::Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::BehavioralAnomaly,
-            severity: ThreatSeverity::Critical,
+            severity: ThreatDetectionSeverity::Critical,
             status: ThreatStatus::New,
             process_name: Some("behavioral_process".to_string()),
             process_id: Some(3456),
@@ -972,21 +969,21 @@ impl ThreatDetectionSystemImpl {
     fn should_send_notification_for_threat(&self, threat: &ThreatDetection) -> bool {
         // Проверяем, включены ли уведомления в конфигурации
         match threat.severity {
-            ThreatSeverity::Critical => {
+            ThreatDetectionSeverity::Critical => {
                 self.config
                     .notification_settings
                     .enable_critical_notifications
             }
-            ThreatSeverity::High => {
+            ThreatDetectionSeverity::High => {
                 self.config.notification_settings.enable_high_notifications
             }
-            ThreatSeverity::Medium => {
+            ThreatDetectionSeverity::Medium => {
                 self.config
                     .notification_settings
                     .enable_medium_notifications
             }
-            ThreatSeverity::Low => false, // Не отправляем уведомления для низкого уровня
-            ThreatSeverity::Info => false, // Не отправляем уведомления для информационного уровня
+            ThreatDetectionSeverity::Low => false, // Не отправляем уведомления для низкого уровня
+            ThreatDetectionSeverity::Info => false, // Не отправляем уведомления для информационного уровня
         }
     }
 
@@ -995,11 +992,11 @@ impl ThreatDetectionSystemImpl {
         if let Some(notifier) = &self.notifier {
             // Преобразуем уровень серьезности угрозы в тип уведомления
             let notification_type = match threat.severity {
-                ThreatSeverity::Critical => crate::notifications::NotificationType::Critical,
-                ThreatSeverity::High => crate::notifications::NotificationType::Critical,
-                ThreatSeverity::Medium => crate::notifications::NotificationType::Warning,
-                ThreatSeverity::Low => crate::notifications::NotificationType::Info,
-                ThreatSeverity::Info => crate::notifications::NotificationType::Info,
+                ThreatDetectionSeverity::Critical => crate::notifications::NotificationType::Critical,
+                ThreatDetectionSeverity::High => crate::notifications::NotificationType::Critical,
+                ThreatDetectionSeverity::Medium => crate::notifications::NotificationType::Warning,
+                ThreatDetectionSeverity::Low => crate::notifications::NotificationType::Info,
+                ThreatDetectionSeverity::Info => crate::notifications::NotificationType::Info,
             };
 
             // Создаем уведомление
@@ -1030,9 +1027,9 @@ impl ThreatDetectionSystemImpl {
                 || threat.status == ThreatStatus::Analyzing
             {
                 match threat.severity {
-                    ThreatSeverity::Critical => has_critical = true,
-                    ThreatSeverity::High => has_high = true,
-                    ThreatSeverity::Medium => has_medium = true,
+                    ThreatDetectionSeverity::Critical => has_critical = true,
+                    ThreatDetectionSeverity::High => has_high = true,
+                    ThreatDetectionSeverity::Medium => has_medium = true,
                     _ => {}
                 }
             }
@@ -1070,11 +1067,11 @@ impl ThreatDetectionSystemImpl {
                 || threat.status == ThreatStatus::Analyzing
             {
                 match threat.severity {
-                    ThreatSeverity::Critical => score -= 20.0,
-                    ThreatSeverity::High => score -= 10.0,
-                    ThreatSeverity::Medium => score -= 5.0,
-                    ThreatSeverity::Low => score -= 2.0,
-                    ThreatSeverity::Info => score -= 1.0,
+                    ThreatDetectionSeverity::Critical => score -= 20.0,
+                    ThreatDetectionSeverity::High => score -= 10.0,
+                    ThreatDetectionSeverity::Medium => score -= 5.0,
+                    ThreatDetectionSeverity::Low => score -= 2.0,
+                    ThreatDetectionSeverity::Info => score -= 1.0,
                 }
             }
         }
@@ -1093,7 +1090,7 @@ impl ThreatDetectionSystemImpl {
         let score = self.calculate_security_score(threat_system);
         threat_system.security_score = score;
 
-        let entry = SecurityScoreEntry {
+        let entry = ThreatSecurityScoreEntry {
             timestamp: Utc::now(),
             score,
             status: threat_system.overall_status,
@@ -1142,7 +1139,7 @@ mod tests {
             threat_id: "test-threat-1".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::BehavioralAnomaly,
-            severity: ThreatSeverity::High,
+            severity: ThreatDetectionSeverity::High,
             status: ThreatStatus::New,
             process_name: Some("test_process".to_string()),
             process_id: Some(1234),
@@ -1169,7 +1166,7 @@ mod tests {
             threat_id: "test-threat-2".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::NetworkAnomaly,
-            severity: ThreatSeverity::High,
+            severity: ThreatDetectionSeverity::High,
             status: ThreatStatus::New,
             process_name: Some("test_process".to_string()),
             process_id: Some(1234),
@@ -1203,7 +1200,7 @@ mod tests {
             threat_id: "test-threat-3".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::FilesystemAnomaly,
-            severity: ThreatSeverity::Medium,
+            severity: ThreatDetectionSeverity::Medium,
             status: ThreatStatus::New,
             process_name: Some("test_process".to_string()),
             process_id: Some(1234),
@@ -1285,7 +1282,7 @@ mod tests {
             threat_id: "test-1".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::BehavioralAnomaly,
-            severity: ThreatSeverity::Critical,
+            severity: ThreatDetectionSeverity::Critical,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -1300,7 +1297,7 @@ mod tests {
             threat_id: "test-2".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::NetworkAnomaly,
-            severity: ThreatSeverity::High,
+            severity: ThreatDetectionSeverity::High,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -1315,7 +1312,7 @@ mod tests {
             threat_id: "test-3".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::FilesystemAnomaly,
-            severity: ThreatSeverity::Medium,
+            severity: ThreatDetectionSeverity::Medium,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -1345,7 +1342,7 @@ mod tests {
             threat_id: "test-critical".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::PotentialAttack,
-            severity: ThreatSeverity::Critical,
+            severity: ThreatDetectionSeverity::Critical,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -1360,7 +1357,7 @@ mod tests {
             threat_id: "test-medium".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::ResourceAnomaly,
-            severity: ThreatSeverity::Medium,
+            severity: ThreatDetectionSeverity::Medium,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -1375,7 +1372,7 @@ mod tests {
             threat_id: "test-low".to_string(),
             timestamp: Utc::now(),
             threat_type: ThreatType::BehavioralAnomaly,
-            severity: ThreatSeverity::Low,
+            severity: ThreatDetectionSeverity::Low,
             status: ThreatStatus::New,
             process_name: None,
             process_id: None,
@@ -1482,7 +1479,7 @@ mod tests {
         
         // Проверяем свойства сетевой угрозы
         let network_threat = network_threats[0];
-        assert_eq!(network_threat.severity, ThreatSeverity::High);
+        assert_eq!(network_threat.severity, ThreatDetectionSeverity::High);
         assert!(network_threat.confidence_score > 70.0);
         assert!(network_threat.description.contains("network"));
     }
@@ -1513,7 +1510,7 @@ mod tests {
         
         // Проверяем свойства угрозы файловой системы
         let filesystem_threat = filesystem_threats[0];
-        assert_eq!(filesystem_threat.severity, ThreatSeverity::Medium);
+        assert_eq!(filesystem_threat.severity, ThreatDetectionSeverity::Medium);
         assert!(filesystem_threat.confidence_score > 50.0);
         assert!(filesystem_threat.description.contains("filesystem"));
     }
@@ -1544,7 +1541,7 @@ mod tests {
         
         // Проверяем свойства угрозы использования ресурсов
         let resource_threat = resource_threats[0];
-        assert_eq!(resource_threat.severity, ThreatSeverity::High);
+        assert_eq!(resource_threat.severity, ThreatDetectionSeverity::High);
         assert!(resource_threat.confidence_score > 80.0);
         assert!(resource_threat.description.contains("resource"));
     }
@@ -1575,7 +1572,7 @@ mod tests {
         
         // Проверяем свойства поведенческой угрозы
         let behavioral_threat = behavioral_threats[0];
-        assert_eq!(behavioral_threat.severity, ThreatSeverity::Critical);
+        assert_eq!(behavioral_threat.severity, ThreatDetectionSeverity::Critical);
         assert!(behavioral_threat.confidence_score > 90.0);
         assert!(behavioral_threat.description.contains("behavioral"));
     }
