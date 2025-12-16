@@ -18,6 +18,7 @@ pub mod diagnostics;
 pub mod monitoring;
 pub mod notifications;
 pub mod security_monitoring;
+pub mod threat_detection;
 pub mod threat_intelligence;
 
 pub use container_health::*;
@@ -25,6 +26,7 @@ pub use diagnostics::*;
 pub use monitoring::*;
 pub use notifications::*;
 pub use security_monitoring::*;
+pub use threat_detection::*;
 pub use threat_intelligence::*;
 
 #[cfg(test)]
